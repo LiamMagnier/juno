@@ -6,16 +6,23 @@
 // old coral, hsl(15 63% 60%), was byte-identical to provider-colors.ts's
 // `anthropic` badge, so the product's own brand chip and the Anthropic provider
 // logo were literally the same colour. Every value below now matches globals.css.
+//
+// `label` is the human name, the same one JunoAccent shows natively. The
+// picker uses it as the swatch's accessible name, so a screen reader hears
+// "Cobalt" rather than a stored id. The generator projects it to Swift
+// (`JunoAccent.generatedLabel`).
 export const ACCENTS = [
   // "coral" is the stored default id; since the Alevr refoundation it is
   // Graphite, the brand's primary control colour (globals.css base values).
-  { id: "coral", color: "hsl(216 9% 11%)" },
-  { id: "ultramarine", color: "hsl(229.231 63.415% 48.235%)" },
-  { id: "juniper", color: "hsl(152 44% 31%)" },
-  { id: "teal", color: "hsl(180 63% 31.5%)" },
-  { id: "violet", color: "hsl(249 59% 60%)" },
-  { id: "amber", color: "hsl(39 67% 55%)" },
-  { id: "sage", color: "hsl(120 18% 42.5%)" },
+  { id: "coral", label: "Graphite", color: "hsl(216 9% 11%)" },
+  // "ultramarine" is the stored id of Cobalt (wave 2 D26, owner sign-off S7):
+  // it was byte-identical to presence, and accents never paint presence.
+  { id: "ultramarine", label: "Cobalt", color: "hsl(205 78% 36%)" },
+  { id: "juniper", label: "Juniper", color: "hsl(152 44% 31%)" },
+  { id: "teal", label: "Teal", color: "hsl(180 63% 31.5%)" },
+  { id: "violet", label: "Violet", color: "hsl(249 59% 60%)" },
+  { id: "amber", label: "Amber", color: "hsl(39 67% 55%)" },
+  { id: "sage", label: "Sage", color: "hsl(120 18% 42.5%)" },
 ] as const;
 
 export const ACCENT_IDS = ["coral", "ultramarine", "juniper", "teal", "violet", "amber", "sage"] as const;

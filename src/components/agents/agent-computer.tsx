@@ -7,23 +7,30 @@ import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogCloseButton,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronLeft, FileText, Folder, Hand, Maximize2, MoreHorizontal, X } from "@/components/ui/icons";
+import { ChevronLeft, FileText, Folder, Hand, Maximize2, MoreHorizontal, Upload, X } from "@/components/ui/icons";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { ComputerTerminal } from "@/components/agents/computer-terminal";
+import { TEACH_UI_COPY, TeachRecordingLine, TeachReviewCard, useComputerTeach } from "@/components/agents/computer-teach";
 import { useConversationWork } from "@/components/chat/use-conversation-work";
+import { AgentFace } from "@/components/agents/agent-face";
 import { AgentPresence } from "@/components/agents/agent-presence";
 import { useAgentDetail } from "@/components/agents/use-agents";
 import {
+  COMPUTER_INBOX_FOLDER,
   COMPUTER_WORK_FOLDER,
   announceAgentsChanged,
   computerAction,
@@ -31,6 +38,7 @@ import {
   computerHeartbeat,
   fetchComputerFiles,
   readComputerTakeover,
+  uploadComputerFile,
   type ClientAgentComputerFolder,
   type ClientAgentComputerLive,
   type ClientComputerTakeover,
@@ -46,6 +54,7 @@ import {
   type TakeoverPin,
 } from "@/lib/agents/computer-handback";
 import type { ClientAgent } from "@/lib/agents/types";
+import { freezeFailedLine, takeoverInfoLine } from "@/lib/computer/access-copy";
 import { cn } from "@/lib/utils";
 
 const ComputerViewer = nextDynamic(
@@ -105,6 +114,10 @@ export function AgentComputerOverlay({
 }) {
   const { detail, refresh } = useAgentDetail(agent.id, null);
   const work = useConversationWork(open ? agent.conversationId : null);
+  // Teach by demonstration: shown only when the server says it is on.
+  const teach = useComputerTeach(agent.id, open);
+  // "Show it how" asked for control; recording starts once control is live.
+  const recordOnControl = React.useRef(false);
   const workRef = React.useRef(work);
   workRef.current = work;
   const [mode, setMode] = React.useState<"watch" | "control">(initialMode);
@@ -118,11 +131,32 @@ export function AgentComputerOverlay({
   const [controlInWindow, setControlInWindow] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [announcement, setAnnouncement] = React.useState("");
+  // Whether the agent's processes were paused for this take over (the view
+  // route says so for a new one). Only "ok" earns the line that says so.
+  const [freeze, setFreeze] = React.useState<"ok" | "failed" | "unavailable" | null>(null);
 
   const [filesOpen, setFilesOpen] = React.useState(false);
   const [folder, setFolder] = React.useState<ClientAgentComputerFolder | null>(null);
   const [filesError, setFilesError] = React.useState<string | null>(null);
   const [filesLoading, setFilesLoading] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  // Narrow screens show the screen or the terminal, one at a time.
+  const [pane, setPane] = React.useState<"screen" | "terminal">("screen");
+  const addFile = async (file: File) => {
+    setUploading(true);
+    const outcome = await uploadComputerFile(agent.id, file);
+    setUploading(false);
+    if (outcome.kind !== "ok") {
+      toast.error(outcome.message);
+      return;
+    }
+    toast.success(
+      outcome.value.name === file.name
+        ? `Added ${outcome.value.name} to ${agent.name}’s inbox.`
+        : `Added ${file.name} to ${agent.name}’s inbox as ${outcome.value.name}.`
+    );
+    void loadFolder(COMPUTER_INBOX_FOLDER);
+  };
   const loadFolder = async (path?: string) => {
     setFilesLoading(true);
     setFilesError(null);
@@ -156,6 +190,7 @@ export function AgentComputerOverlay({
     setControlConnected(false);
     setControlInWindow(false);
     setNotice(null);
+    setPane("screen");
   }, [open, initialMode, agent.id]);
 
   const inControl = mode === "control" || controlInWindow;
@@ -166,15 +201,6 @@ export function AgentComputerOverlay({
     else onClose();
   }, [inControl, onClose]);
 
-  React.useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || confirmClose || confirmReset || filesOpen) return;
-      requestClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, requestClose, confirmClose, confirmReset, filesOpen]);
 
   // A resting computer opens instantly; waking it is the point of opening the view.
   React.useEffect(() => {
@@ -200,9 +226,11 @@ export function AgentComputerOverlay({
     refresh();
   };
 
-  const takeControl = () => {
+  const takeControl = (opts?: { record?: boolean }) => {
+    recordOnControl.current = opts?.record === true;
     takeover.current = pinTakeover(work.questions);
     setNotice(null);
+    setFreeze(null);
     setControlConnected(false);
     setMode("control");
   };
@@ -231,6 +259,9 @@ export function AgentComputerOverlay({
       return false;
     }
     broadcastHandBack(agent.id);
+    recordOnControl.current = false;
+    // The server stopped any recording before handing back; show what it kept.
+    void teach.refresh();
     // Watching from here on, before the answer goes out: the viewer swaps to
     // a watch stream instead of retrying control.
     setControlConnected(false);
@@ -317,8 +348,6 @@ export function AgentComputerOverlay({
       });
   };
 
-  if (!open) return null;
-
   const usingNow = computer?.usingNow?.summary ?? null;
   const heldElsewhere = !inControl ? holderSentence(takeoverState) : null;
   const caption = inControl
@@ -328,26 +357,36 @@ export function AgentComputerOverlay({
       : computerStateSentence({ status, agentName: agent.name, restMinutes: computer?.restMinutes, usingNow, opened: true });
   const waking = status === "starting" || status === "resting";
   const posterUrl = computer?.hasPoster ? `/api/agents/${encodeURIComponent(agent.id)}/computer/poster` : null;
+  // The newest task's shell output, read-only, beside the screen (S5.1).
+  const terminalRunId = work.run?.id ?? null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${agent.name}’s computer`}
-      className="fixed inset-0 z-modal flex flex-col bg-background/85 backdrop-blur-xl motion-safe:animate-in motion-safe:fade-in duration-base"
-    >
+    // The house dialog, full screen: focus is trapped in the view and handed
+    // back to whatever opened it, the page behind is scroll-locked, and it
+    // fades out the way it faded in. Escape and the ✕ both go through
+    // onOpenChange, so closing while in control always asks first; Radix gives
+    // Escape to the top layer, so an open menu or confirm closes before the
+    // view does (a window listener used to skip the confirms but not the menu).
+    <Dialog open={open} onOpenChange={(next) => !next && requestClose()}>
+      <DialogContent
+        bare
+        hideClose
+        sheet={false}
+        aria-describedby={undefined}
+        className="inset-0 left-0 top-0 flex h-dvh max-h-none w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 bg-background [translate:none] data-[state=open]:animate-fade-in data-[state=closed]:animate-[fade-out_var(--dur-exit)_var(--ease-in)_both]"
+      >
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
       <div className="flex shrink-0 items-center gap-3 px-5 py-4">
         <AgentPresence avatar={agent.avatar} state={agent.state} size={28} haloScale={1.8} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-ui font-medium text-foreground">{agent.name}’s computer</p>
+          <DialogTitle className="truncate text-ui font-medium text-foreground">{agent.name}’s computer</DialogTitle>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" size="icon-sm" variant="ghost" aria-label="Computer options" className="text-muted-foreground coarse:size-11">
-              <MoreHorizontal className="size-[1.125rem]" aria-hidden="true" />
+              <MoreHorizontal className="size-4" aria-hidden="true" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -358,64 +397,123 @@ export function AgentComputerOverlay({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Close" onClick={requestClose} className="text-muted-foreground coarse:size-11">
-          <X className="size-[1.125rem]" aria-hidden="true" />
-        </Button>
+        <DialogCloseButton size="md" className="static" />
       </div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-5">
-        <div className="w-full max-w-[min(100%,calc((100dvh-11rem)*1.6))]">
-          <div
-            className={cn(
-              "overflow-hidden rounded-panel bg-muted shadow-[0_30px_80px_-20px_hsl(var(--foreground)/0.35)]",
-              // The ring is the one sign of who drives: it eases between
-              // watching and control on the motion tokens, and snaps when
-              // motion is reduced.
-              "transition-shadow duration-base ease-out-soft motion-reduce:transition-none",
-              mode === "control" ? "ring-2 ring-primary" : "ring-1 ring-border/60"
-            )}
-          >
-            {status === "awake" ? (
-              // One viewer for watching and control: switching swaps the
-              // stream under the last frame instead of remounting it.
-              <ComputerViewer
-                agentId={agent.id}
-                agentName={agent.name}
-                initialMode={mode}
-                mode={mode}
-                inputTools
-                posterUrl={posterUrl}
-                onModeChange={setMode}
-                onConnected={(connected) => {
-                  if (connected === "control") {
-                    setControlConnected(true);
-                    announce("You have control");
-                  } else {
+        <div
+          className={cn(
+            "w-full",
+            // Beside the screen on a wide window, the terminal takes 22rem and
+            // a 1rem gap; the screen keeps its height inside the viewport.
+            terminalRunId
+              ? "max-w-[min(100%,calc((100dvh-14rem)*1.6))] lg:max-w-[min(100%,calc((100dvh-11rem)*1.6+23rem))]"
+              : "max-w-[min(100%,calc((100dvh-11rem)*1.6))]"
+          )}
+        >
+          {terminalRunId ? (
+            <SegmentedControl
+              value={pane}
+              onChange={setPane}
+              options={[
+                { value: "screen", label: "Screen" },
+                { value: "terminal", label: "Terminal" },
+              ]}
+              ariaLabel={`Show ${agent.name}’s screen or terminal`}
+              size="sm"
+              className="mb-3 w-full max-w-[16rem] lg:hidden"
+            />
+          ) : null}
+          <div className="flex gap-4">
+            <div
+              className={cn(
+                // Cut from --shadow-ink, never --foreground: a foreground-tinted
+                // shadow is a light glow on the dark theme.
+                "min-w-0 flex-1 overflow-hidden rounded-panel bg-muted shadow-[0_30px_80px_-20px_hsl(var(--shadow-ink)/0.35)]",
+                // On a narrow screen the terminal tab hides the screen without
+                // unmounting it, so the live view stays connected.
+                terminalRunId && pane === "terminal" && "max-lg:hidden",
+                // The ring is the one sign of who drives: it eases between
+                // watching and control on the motion tokens, and snaps when
+                // motion is reduced.
+                "transition-shadow duration-base ease-out-soft",
+                mode === "control" ? "ring-2 ring-primary" : "ring-1 ring-border/60"
+              )}
+            >
+              {status === "awake" ? (
+                // One viewer for watching and control: switching swaps the
+                // stream under the last frame instead of remounting it.
+                <ComputerViewer
+                  agentId={agent.id}
+                  agentName={agent.name}
+                  initialMode={mode}
+                  mode={mode}
+                  inputTools
+                  posterUrl={posterUrl}
+                  onModeChange={setMode}
+                  onConnected={(connected) => {
+                    if (connected === "control") {
+                      setControlConnected(true);
+                      announce("You have control");
+                      if (recordOnControl.current) {
+                        recordOnControl.current = false;
+                        void teach.start();
+                      }
+                    } else {
+                      setControlConnected(false);
+                    }
+                  }}
+                  onComputer={(next) => {
+                    if (next) setLive(next);
+                  }}
+                  onControlLost={(message) => {
+                    if (handingBack.current) return;
+                    takeover.current = null;
                     setControlConnected(false);
-                  }
-                }}
-                onComputer={(next) => {
-                  if (next) setLive(next);
-                }}
-                onControlLost={(message) => {
-                  if (handingBack.current) return;
-                  takeover.current = null;
-                  setControlConnected(false);
-                  setNotice(message);
-                  announce(message);
-                }}
-              />
-            ) : (
-              <Poster agent={agent} computer={computer} status={status} />
-            )}
+                    setNotice(message);
+                    announce(message);
+                  }}
+                  onFreeze={(next) => {
+                    setFreeze(next);
+                    if (next === "failed") announce(freezeFailedLine(agent.name));
+                  }}
+                />
+              ) : (
+                <Poster agent={agent} computer={computer} status={status} />
+              )}
+            </div>
+            {terminalRunId ? (
+              // The pane fills a box the layout sizes (the screen's row on a wide
+              // window, a fixed height in the narrow tab), and never grows it: a
+              // long output scrolls inside the pane instead of stretching the screen.
+              <div
+                className={cn(
+                  "relative min-w-0 lg:w-[22rem] lg:shrink-0",
+                  // Taller than the screen's 16:10 in the narrow tab: output is read in lines.
+                  pane === "terminal" ? "max-lg:h-[min(60dvh,34rem)] max-lg:flex-1" : "max-lg:hidden"
+                )}
+              >
+                <ComputerTerminal agentId={agent.id} agentName={agent.name} runId={terminalRunId} className="absolute inset-0" />
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-4 flex min-h-10 flex-wrap items-center justify-between gap-3">
             {mode === "control" ? (
-              <p className="flex items-center gap-2 text-ui font-medium text-primary">
-                <Hand className="size-4 shrink-0" aria-hidden="true" />
-                {controlConnected ? controlSentence(agent.name) : "Taking control…"}
-              </p>
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-ui font-medium text-primary">
+                  <Hand className="size-4 shrink-0" aria-hidden="true" />
+                  {controlConnected ? controlSentence(agent.name) : "Taking control…"}
+                </p>
+                {/* Said only when it is true: the pause worked, or it did not. */}
+                {controlConnected && freeze === "ok" ? (
+                  <p className="mt-1 text-ui text-muted-foreground">{takeoverInfoLine(agent.name)}</p>
+                ) : null}
+                {freeze === "failed" ? (
+                  <p className="mt-1 text-ui text-destructive-ink">{freezeFailedLine(agent.name)}</p>
+                ) : null}
+                <TeachRecordingLine teach={teach} />
+              </div>
             ) : controlInWindow ? (
               <p className="flex items-center gap-2 text-ui font-medium text-primary">
                 <Hand className="size-4 shrink-0" aria-hidden="true" />
@@ -430,19 +528,45 @@ export function AgentComputerOverlay({
             <div className="flex items-center gap-2">
               {status === "awake" ? (
                 inControl ? (
-                  <Button type="button" className="rounded-full px-5 coarse:min-h-11" loading={busy === "handback"} onClick={() => void handBack()}>
-                    Hand back
-                  </Button>
+                  <>
+                    {teach.state.enabled && mode === "control" && controlConnected && !teach.state.recording ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="rounded-full px-4 coarse:min-h-11"
+                        loading={teach.busy === "start"}
+                        onClick={() => void teach.start()}
+                      >
+                        {TEACH_UI_COPY.record}
+                      </Button>
+                    ) : null}
+                    <Button type="button" className="rounded-full px-5 coarse:min-h-11" loading={busy === "handback"} onClick={() => void handBack()}>
+                      Hand back
+                    </Button>
+                  </>
                 ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-full px-5 coarse:min-h-11"
-                    disabled={takeoverState?.active === true && takeoverState.holderKind === "app"}
-                    onClick={takeControl}
-                  >
-                    Take control
-                  </Button>
+                  <>
+                    {teach.state.enabled ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="rounded-full px-4 coarse:min-h-11"
+                        disabled={takeoverState?.active === true}
+                        onClick={() => takeControl({ record: true })}
+                      >
+                        {TEACH_UI_COPY.showItHow}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full px-5 coarse:min-h-11"
+                      disabled={takeoverState?.active === true && takeoverState.holderKind === "app"}
+                      onClick={() => takeControl()}
+                    >
+                      Take control
+                    </Button>
+                  </>
                 )
               ) : status === "error" || status === "asleep" ? (
                 <Button type="button" variant="outline" className="rounded-full px-5 coarse:min-h-11" loading={busy === "wake"} onClick={() => void run("wake")}>
@@ -451,6 +575,7 @@ export function AgentComputerOverlay({
               ) : null}
             </div>
           </div>
+          {!inControl ? <TeachReviewCard teach={teach} className="mt-3 max-w-xl" /> : null}
         </div>
       </div>
 
@@ -458,7 +583,7 @@ export function AgentComputerOverlay({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Files on {agent.name}’s computer</DialogTitle>
-            <DialogDescription>What it saved in its work folder. Open a folder, or download anything you need.</DialogDescription>
+            <DialogDescription>What it saved in its work folder. Open a folder, download anything you need, or add a file for it to use.</DialogDescription>
           </DialogHeader>
           <FilesBrowser
             agentId={agent.id}
@@ -467,61 +592,78 @@ export function AgentComputerOverlay({
             error={filesError}
             onOpenFolder={(path) => void loadFolder(path)}
           />
-        </DialogContent>
-      </Dialog>
-      <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Hand back to {agent.name}?</DialogTitle>
-            <DialogDescription>
-              You have control of {agent.name}’s computer. It waits until you hand back.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirmClose(false)}>
-              Keep control
-            </Button>
-            <Button
-              type="button"
-              loading={busy === "handback"}
-              onClick={() => {
-                void handBack().then((done) => {
-                  setConfirmClose(false);
-                  if (done) onClose();
-                });
-              }}
-            >
-              Hand back
-            </Button>
+          <DialogFooter className="items-center sm:justify-between">
+            <p className="text-caption text-muted-foreground">Files you add go to its inbox folder.</p>
+            <AddFileButton busy={uploading} disabled={status !== "awake" && status !== "resting"} onFile={(file) => void addFile(file)} />
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reset {agent.name}’s computer?</DialogTitle>
-            <DialogDescription>
-              Everything it signed in to and every file on it is deleted, and it starts again with a clean desktop.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirmReset(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                setConfirmReset(false);
-                void run("reset");
-              }}
-            >
-              Reset
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+      <ConfirmDialog
+        open={confirmClose}
+        onOpenChange={setConfirmClose}
+        tone="default"
+        busy={busy === "handback"}
+        title={`Hand back to ${agent.name}?`}
+        description={`You have control of ${agent.name}’s computer. It waits until you hand back.`}
+        cancelLabel="Keep control"
+        confirmLabel="Hand back"
+        onConfirm={() => {
+          void handBack().then((done) => {
+            setConfirmClose(false);
+            if (done) onClose();
+          });
+        }}
+      />
+      <ConfirmDialog
+        open={confirmReset}
+        onOpenChange={setConfirmReset}
+        title={`Reset ${agent.name}’s computer?`}
+        description="Everything it signed in to and every file on it is deleted, and it starts again with a clean desktop."
+        confirmLabel="Reset"
+        onConfirm={() => {
+          setConfirmReset(false);
+          void run("reset");
+        }}
+      />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * "Add a file": a native file picker behind a button. The file goes to the
+ * computer's ~/work/inbox (the server checks the size, the name and the
+ * plan, and works while the person has control).
+ */
+function AddFileButton({ busy, disabled, onFile }: { busy: boolean; disabled: boolean; onFile: (file: File) => void }) {
+  const input = React.useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (file) onFile(file);
+        }}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1.5 coarse:min-h-11"
+        loading={busy}
+        disabled={disabled}
+        onClick={() => input.current?.click()}
+      >
+        <Upload className="size-4" aria-hidden="true" />
+        Add a file
+      </Button>
+    </>
   );
 }
 
@@ -628,8 +770,11 @@ function Poster({
           className={cn("absolute inset-0 h-full w-full object-cover", status === "error" ? "opacity-20" : "opacity-45")}
         />
       ) : null}
+      {/* A still: the header above already carries the live face, and only
+          one copy moves. Resting, never "sleeping": a computer that is
+          asleep is not a paused agent, and the dormant grey would say so. */}
       <div className="absolute inset-0 grid place-items-center">
-        <AgentPresence avatar={agent.avatar} state={status === "error" ? "blocked" : "sleeping"} size={64} haloScale={2.4} />
+        <AgentFace avatar={agent.avatar} state={status === "error" ? "blocked" : agent.status === "paused" ? "sleeping" : "idle"} size={64} still />
       </div>
     </div>
   );
@@ -660,7 +805,7 @@ export function AgentComputerPip({ agent, onOpen }: { agent: ClientAgent; onOpen
       <div
         className={cn(
           "overflow-hidden rounded-card bg-card",
-          "transition-[box-shadow,transform] duration-base ease-out-soft motion-reduce:transition-none",
+          "transition-[box-shadow,transform] duration-base ease-out-soft motion-reduce:transition-[box-shadow]",
           waiting
             ? "shadow-[0_24px_60px_-18px_hsl(var(--foreground)/0.55)] ring-2 ring-[hsl(var(--signal))] motion-safe:-translate-y-1"
             : "shadow-[0_18px_50px_-18px_hsl(var(--foreground)/0.45)] ring-1 ring-border/60"

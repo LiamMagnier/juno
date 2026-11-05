@@ -44,6 +44,7 @@ extension DesktopDestination {
     /// Code's own rows (Customize, Pull requests), which the Code column draws.
     init?(_ destination: JunoShellDestination) {
         switch destination {
+        case .activity: self = .activity
         case .library: self = .library
         case .projects: self = .projects
         case .artifacts: self = .artifacts
@@ -62,6 +63,7 @@ extension DesktopDestination {
     /// the web reaches from Settings and ⌘K.
     var shell: JunoShellDestination? {
         switch self {
+        case .activity: .activity
         case .library: .library
         case .projects: .projects
         case .artifacts: .artifacts

@@ -15,7 +15,7 @@ import {
   SECRET_FIELD_REFUSAL,
 } from "@/lib/work/browser-page";
 import { computerProvider } from "./provider";
-import type { ComputerHandle, ComputerProvider, ComputerSecrets } from "./types";
+import type { ComputerHandle, ComputerProvider, ComputerSecrets, Endpoints } from "./types";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 25_000;
@@ -69,6 +69,28 @@ export interface PointDescriber {
 
 export interface RemoteAgentBrowser extends WorkBrowser, PointDescriber {
   withPage<T>(fn: (page: Page) => Promise<T>): Promise<T>;
+}
+
+/**
+ * The URL the agent browser connects to. Docker: the gate on the computer's
+ * address, at the gate's one path. A remote host's tunnel (`cdpHeaders` set):
+ * exactly as given, since the host relays the path itself.
+ */
+export function cdpConnectUrl(ep: Pick<Endpoints, "cdpUrl" | "cdpHeaders">): string {
+  if (ep.cdpHeaders) return ep.cdpUrl;
+  const endpoint = new URL(ep.cdpUrl);
+  endpoint.protocol = ["https:", "wss:"].includes(endpoint.protocol) ? "wss:" : "ws:";
+  endpoint.pathname = "/devtools/browser";
+  return endpoint.toString();
+}
+
+/**
+ * The connection's headers: the gate's token always, and a remote host's
+ * tunnel ticket when it has one. No subprotocol is offered either way (the
+ * host selects none, and Playwright offers none).
+ */
+export function cdpConnectHeaders(ep: Pick<Endpoints, "cdpHeaders">, cdpToken: string): Record<string, string> {
+  return { ...(ep.cdpHeaders ?? {}), "X-Juno-Cdp-Token": cdpToken };
 }
 
 /** Whether a browser can describe points (the runner holds it as a plain WorkBrowser). */
@@ -151,6 +173,36 @@ export function readPageTarget(raw: unknown): PageTarget | null {
   const cleanHost = host.toLowerCase().trim();
   if (!/^[a-z0-9.-]{1,253}$/.test(cleanHost)) return null;
   return { role: cleanRole, name: name.slice(0, 200), host: cleanHost };
+}
+
+/**
+ * Whether a page is a tab in a browser window. Chromium also exposes its own
+ * WebUI as page targets: the address bar's suggestion popup
+ * (chrome://omnibox-popup.top-chrome/, which Playwright reports as
+ * chrome-error://chromewebdata/ and lists before the tabs). It has no window,
+ * and an agent driving it acts on a page nobody sees (found on a real computer,
+ * tests/computer-real-e2e.test.ts). A tab showing an error page still has one.
+ */
+export async function isBrowserTab(page: Page): Promise<boolean> {
+  try {
+    const session = await page.context().newCDPSession(page);
+    try {
+      await session.send("Browser.getWindowForTarget");
+      return true;
+    } finally {
+      await session.detach().catch(() => {});
+    }
+  } catch {
+    return false;
+  }
+}
+
+/** The first of `pages` that is a tab, in order; null when none is. */
+export async function firstBrowserTab<P>(pages: readonly P[], isTab: (page: P) => Promise<boolean>): Promise<P | null> {
+  for (const candidate of pages) {
+    if (await isTab(candidate)) return candidate;
+  }
+  return null;
 }
 
 function createFakeAgentBrowser(): RemoteAgentBrowser {
@@ -276,13 +328,6 @@ export function connectAgentBrowser(
     }
   }
 
-  function resolveWsEndpoint(baseCdpUrl: string): string {
-    const endpoint = new URL(baseCdpUrl);
-    endpoint.protocol = ["https:", "wss:"].includes(endpoint.protocol) ? "wss:" : "ws:";
-    endpoint.pathname = "/devtools/browser";
-    return endpoint.toString();
-  }
-
   async function ensurePage(): Promise<Page | string> {
     if (page && !page.isClosed()) return page;
     if (unavailable) return unavailable;
@@ -292,13 +337,12 @@ export function connectAgentBrowser(
     }
 
     try {
-      const ep = await provider.endpoints(handle);
-      const wsUrl = await resolveWsEndpoint(ep.cdpUrl);
+      // A new connection asks for its endpoint again: a remote host's tunnel
+      // ticket is single use, so a reconnect gets a fresh one.
+      const ep = await provider.endpoints(handle, { purpose: "cdp" });
       const { chromium } = await import("playwright");
-      browser = await chromium.connectOverCDP(wsUrl, {
-        headers: {
-          "X-Juno-Cdp-Token": secrets.cdpToken,
-        },
+      browser = await chromium.connectOverCDP(cdpConnectUrl(ep), {
+        headers: cdpConnectHeaders(ep, secrets.cdpToken),
         timeout: 15_000,
       });
 
@@ -306,8 +350,12 @@ export function connectAgentBrowser(
       context = existingContexts[0] ?? (await browser.newContext());
       context.setDefaultNavigationTimeout(navigationTimeout);
       context.setDefaultTimeout(actionTimeout);
+      // A tab the page opens becomes the agent's page; Chromium's own WebUI
+      // pages (the address bar's suggestion popup) never do (isBrowserTab).
       context.on("page", (opened) => {
-        page = opened;
+        void isBrowserTab(opened).then((tab) => {
+          if (tab && !opened.isClosed()) page = opened;
+        });
       });
       if (options?.navigationRefusal) {
         const policy = options.navigationRefusal;
@@ -328,8 +376,12 @@ export function connectAgentBrowser(
           await route.continue().catch(() => {});
         });
       }
-      const existingPages = context.pages();
-      page = existingPages[0] ?? (await context.newPage());
+      // The first real tab, not the first page target: Playwright lists
+      // Chromium's omnibox popup WebUI before the tabs, and an agent that
+      // drove it acted on a page nobody can see, under the person's live view.
+      page =
+        (await firstBrowserTab(context.pages().filter((candidate) => !candidate.isClosed()), isBrowserTab)) ??
+        (await context.newPage());
       return page;
     } catch (error) {
       unavailable = `${PRODUCT_NAME} could not connect to the agent computer's browser: ${describeBrowserError(error)}`;

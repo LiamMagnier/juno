@@ -1,14 +1,18 @@
 import "server-only";
 import { isExecConfigured } from "@/lib/exec/config";
+import { isArtifactAiEnabled, isToneCharacteristicsEnabled } from "@/lib/env";
 import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import { buildSemanticEditPrompt } from "@/lib/artifact-ops";
 import { isSemanticArtifactType } from "@/lib/work/deliverables/semantic";
 import { safeOutline } from "./semantic";
 import { backgroundWorkHint, detectBackgroundWork, recurringWorkHint } from "@/lib/chat/work-intent";
+import { detectImageIntent } from "@/lib/router/image-intent";
+import { IMAGE_INTENT_HINT } from "@/lib/tools/specs/generate-image.prompt";
 import { buildSystemPromptSections } from "@/lib/anthropic";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { buildArtifactEditPrompt, type ArtifactSourceForEdit } from "@/lib/artifact-edit";
 import { appendSkillBlock, composeSystemPrompt } from "@/lib/chat/prompt-sections";
+import { skillKeepsUnlistedSurfaces } from "@/lib/chat/skills";
 import { appendAgentBlock } from "@/lib/agents/prompt";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
 import type { ChatRequestBody } from "@/lib/chat/request";
@@ -48,6 +52,9 @@ export function composeTurnSystem({
   untrustedContentInTurn,
   taskToolOn,
   routineToolOn = false,
+  imageToolOn = false,
+  skillDraftToolOn = false,
+  skillDraftUnavailable = false,
   useWebSearch,
   useAlevrSearch,
   attachmentToolToggles,
@@ -70,6 +77,12 @@ export function composeTurnSystem({
   taskToolOn: boolean;
   /** `propose_routine` is attached (src/lib/chat/routine-tool.ts). */
   routineToolOn?: boolean;
+  /** `generate_image` is attached (src/lib/chat/image-tool.ts). */
+  imageToolOn?: boolean;
+  /** `draft_skill` is attached (src/lib/chat/skill-draft-tool.ts). */
+  skillDraftToolOn?: boolean;
+  /** The person asked to teach something and `draft_skill` is not attached. */
+  skillDraftUnavailable?: boolean;
   useWebSearch: boolean;
   useAlevrSearch: boolean;
   attachmentToolToggles: { documents: boolean; code: boolean; images: boolean };
@@ -88,6 +101,9 @@ export function composeTurnSystem({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
+    // The row itself: the builder reads only the tone* columns, leniently.
+    // Only while the server has them on (TONE_CHARACTERISTICS_ENABLED).
+    characteristics: isToneCharacteristicsEnabled() ? settings : null,
     responseLanguage: settings?.responseLanguage ?? "auto",
     // The ranked notes are per-question and ride the tail (route.ts turnTail);
     // the consolidated summary is stable and stays in the cached system tier.
@@ -103,15 +119,24 @@ export function composeTurnSystem({
     untrustedContent: untrustedContentInTurn,
     taskHandoff: taskToolOn,
     routineProposals: routineToolOn,
-    // An agent's thread sets its own routines up (`propose_setup_change`,
-    // and its brief says so), so it is never told routines cannot be made here.
+    imageGeneration: imageToolOn,
+    skillDrafts: skillDraftToolOn,
+    skillDraftsUnavailable: skillDraftUnavailable && !skillDraftToolOn,
+    // An agent's thread sets its own routines up and saves the methods it is
+    // taught (`propose_setup_change`, and its brief says so), so it is never
+    // told routines or skills cannot be made here.
     agentThread: agentContext !== null && agentContext !== undefined,
     // Interactive views: the web always renders them; a native build only
     // when it says so (shipped builds would show raw JSON).
     liveUi: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui") ?? false),
     liveUiExercise: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui_exercise") ?? false),
+    liveUiDo: legacyChatClientForOrigin(input) === "web",
     codeRun: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("code_run") ?? false),
     codeSandbox: isExecConfigured(),
+    // `window.alevr` in artifacts (ARTIFACT_AI_RULE): only while the server
+    // has it on (ARTIFACT_AI_ENABLED) and only for the web, whose sandbox
+    // carries the bridge.
+    artifactAi: isArtifactAiEnabled() && legacyChatClientForOrigin(input) === "web",
   });
   const baseSystem = baseSystemSections.variable
     ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`
@@ -153,13 +178,22 @@ export function composeTurnSystem({
       ),
       agentContext?.block
         ? roomSetup
-          ? `${agentContext.block}\n\n${roomPromptBlock(roomSetup, user.name, roomMessageId)}`
+          ? `${agentContext.block}\n\n${roomPromptBlock(
+              roomSetup,
+              user.name,
+              roomMessageId,
+              skillKeepsUnlistedSurfaces(appliedSkill)
+            )}`
           : agentContext.block
         : null
     ),
     input
   );
-  const withHint = backgroundHint ? `${systemBase}\n\n${backgroundHint}` : systemBase;
+  // A clear picture request (Auto's intent detection, src/lib/router/image-intent.ts)
+  // gets one line saying so, only when the turn can actually make one.
+  const imageHint = imageToolOn && !input.regenerate && detectImageIntent(input.message) ? IMAGE_INTENT_HINT : null;
+  const hints = [backgroundHint, imageHint].filter((hint): hint is string => !!hint);
+  const withHint = hints.length > 0 ? `${systemBase}\n\n${hints.join("\n\n")}` : systemBase;
   const system = localFolder ? `${withHint}\n\n${localFolderPromptSection(localFolder)}` : withHint;
   return { baseSystemSections, system };
 }

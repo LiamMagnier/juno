@@ -133,6 +133,18 @@ test("the sentence names the task, and an idle agent says what is next", () => {
     agentStateSentence({ state: "waiting", task: glance, nextRoutine: null, now: NOW }),
     "Needs your approval on Competitor pricing"
   );
+  // Parked after the attended wait (on a question or an approval), then put back
+  // in the queue by the person's answer: never "You stopped this", never working.
+  assert.equal(
+    agentStateSentence({ state: "waiting", task: task("paused", { needsAttention: true }), nextRoutine: null, now: NOW }),
+    "Waiting for you on Competitor pricing"
+  );
+  assert.equal(
+    agentStateSentence({ state: "waiting", task: task("queued", { needsAttention: true }), nextRoutine: null, now: NOW }),
+    "Resuming Competitor pricing"
+  );
+  assert.equal(deriveAgentState({ status: "active", task: task("paused", { needsAttention: true }), now: NOW }), "waiting");
+  assert.equal(deriveAgentState({ status: "active", task: task("queued", { needsAttention: true }), now: NOW }), "waiting");
   assert.equal(
     agentStateSentence({ state: "working", task: task("running"), nextRoutine: null, now: NOW }),
     "Working on Competitor pricing"

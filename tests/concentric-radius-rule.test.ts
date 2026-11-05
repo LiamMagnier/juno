@@ -80,19 +80,19 @@ test("concentric-radius: wrapper radii match the rungs their sources use", () =>
 
 ruleTester.run("concentric-radius", rule as never, {
   valid: [
-    // A segmented track: 14 − 4 = 10.
+    // A segmented track: 12 − 4 = 8.
     {
       code: `const A = () => (
         <div className="rounded-menu p-1">
-          <span className="rounded-field bg-card">x</span>
+          <span className="rounded-control bg-card">x</span>
         </div>
       )`,
     },
-    // The dropdown shell: 14 − 6 = 8.
+    // The dropdown shell: 12 − 6 = 6.
     {
       code: `const A = () => (
         <div className="rounded-menu p-1.5">
-          <div className="rounded-control bg-accent">x</div>
+          <div className="rounded-xs bg-accent">x</div>
         </div>
       )`,
     },
@@ -200,7 +200,7 @@ ruleTester.run("concentric-radius", rule as never, {
     // Under the concentric pair, a child that states its own radius is checked.
     {
       code: `const A = () => (
-        <div className="nest-menu nest-p-1">
+        <div className="nest-menu nest-p-1.5">
           <div className="rounded-control bg-accent">x</div>
         </div>
       )`,
@@ -220,7 +220,7 @@ ruleTester.run("concentric-radius", rule as never, {
     // and a Button carries its radius in its own source.
     {
       code: `const A = () => (
-        <div className="rounded-menu p-1">
+        <div className="rounded-menu p-2">
           <Button variant="ghost" size="sm" className="h-7 px-2">x</Button>
         </div>
       )`,

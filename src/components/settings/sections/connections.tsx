@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SettingRow, SettingsGroup, SettingsInlineError } from "@/components/settings/setting-row";
+import { SettingRow, SettingRowSkeleton, SettingsGroup, SettingsInlineError } from "@/components/settings/setting-row";
 import { useSettingsResource } from "@/components/settings/use-settings-resource";
 import { BRAND } from "@/lib/brand/names";
 import { SubscriptionConnections } from "@/components/code/v2/connections-settings";
@@ -70,7 +70,7 @@ function ProviderRow({
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
       if (!res.ok) {
-        setNote([body.error ?? "Couldn't save this key.", body.detail].filter(Boolean).join(" "));
+        setNote([body.error ?? "Couldn’t save this key.", body.detail].filter(Boolean).join(" "));
         return;
       }
       setDraft("");
@@ -88,10 +88,10 @@ function ProviderRow({
     try {
       const res = await fetch(`${URL}/${provider.id}/test`, { method: "POST" });
       const body = (await res.json().catch(() => ({}))) as { result?: string; detail?: string | null; error?: string };
-      if (!res.ok) setNote(body.error ?? "Couldn't test this key.");
+      if (!res.ok) setNote(body.error ?? "Couldn’t test this key.");
       else if (body.result === "valid") setNote("The provider accepted this key.");
       else if (body.result === "invalid") setNote(`The provider refused this key. ${body.detail ?? ""}`.trim());
-      else setNote(`Couldn't reach the provider. ${body.detail ?? ""}`.trim());
+      else setNote(`Couldn’t reach the provider. ${body.detail ?? ""}`.trim());
       await onChanged();
     } finally {
       setBusy(null);
@@ -103,7 +103,7 @@ function ProviderRow({
     setNote(null);
     try {
       const res = await fetch(`${URL}/${provider.id}`, { method: "DELETE" });
-      if (!res.ok && res.status !== 404) setNote("Couldn't remove this key.");
+      if (!res.ok && res.status !== 404) setNote("Couldn’t remove this key.");
       await onChanged();
     } finally {
       setBusy(null);
@@ -169,28 +169,46 @@ function ProviderRow({
   );
 }
 
-export function ConnectionsSection() {
+/**
+ * Subscriptions, then API keys: the top of Settings › Code (it was the
+ * Connections section). Subscriptions render whatever the keys' read does:
+ * they come from the Mac, not from /api/provider-keys, and a failed or slow
+ * key list used to take the whole section with it (it returned before either
+ * group). The keys group stands in its own place while it loads, and a
+ * failure stays inside it.
+ */
+export function CodeConnectionsGroups() {
   const { data, error, reload } = useSettingsResource(URL, parse);
-  if (!data) {
-    return error ? <SettingsInlineError onRetry={reload}>Couldn&rsquo;t load your API keys.</SettingsInlineError> : null;
-  }
   return (
     <>
-    <SubscriptionConnections />
-    <SettingsGroup
-      title="API keys"
-      description={`${BRAND.code.label} runs on your own key whenever you have one for that provider. The provider bills you directly, and those runs don't count against your plan.`}
-    >
-      {data.providers.map((provider) => (
-        <ProviderRow
-          key={provider.id}
-          provider={provider}
-          keyView={data.keys.find((k) => k.provider === provider.id)}
-          usage={data.usage.find((u) => u.provider === provider.id)}
-          onChanged={reload}
-        />
-      ))}
-    </SettingsGroup>
+      <SubscriptionConnections />
+      <SettingsGroup
+        title="API keys"
+        description={`${BRAND.code.label} runs on your own key whenever you have one for that provider. The provider bills you directly, and those runs don’t count against your plan.`}
+      >
+        {!data ? (
+          error ? (
+            <SettingsInlineError onRetry={reload}>Couldn’t load your API keys.</SettingsInlineError>
+          ) : (
+            <div role="status" aria-label="Loading your API keys" className="divide-y divide-border/60">
+              <SettingRowSkeleton />
+              <SettingRowSkeleton />
+            </div>
+          )
+        ) : data.providers.length === 0 ? (
+          <p className="py-4 text-ui text-muted-foreground">No provider takes your own key on this server.</p>
+        ) : (
+          data.providers.map((provider) => (
+            <ProviderRow
+              key={provider.id}
+              provider={provider}
+              keyView={data.keys.find((k) => k.provider === provider.id)}
+              usage={data.usage.find((u) => u.provider === provider.id)}
+              onChanged={reload}
+            />
+          ))
+        )}
+      </SettingsGroup>
     </>
   );
 }

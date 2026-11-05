@@ -90,7 +90,7 @@ Also:
 
 | # | Decision |
 |---|---|
-| D1 | **One persistent computer per agent, on the owner's own server.** It is a Docker container with a full Linux desktop (Xvfb + XFCE), headful Chromium, a shell and a per-agent volume at `/home/agent`. The design is in `INFRA.md`. **No third-party sandbox vendor.** A computer is never shared between agents or users. It is created lazily and has two idle tiers: **resting** (`docker pause`: RAM kept, instant resume) and **asleep** (`docker stop`: RAM freed; the disk keeps logins and files). It wakes on demand. It is destroyed on reset, retire, disable, account deletion, or after `COMPUTER_RETENTION_DAYS` asleep. The owner is upgrading the server, so **size for a real server**; do not cut capabilities to fit today's small one. This deliberately reverses AGENTS.md's "clean computer every run" at the owner's request. Update the docs (Phase 8). |
+| D1 | **One persistent computer per agent, on the owner's own server.** It is a Docker container with a full Linux desktop (Xvfb + XFCE), headful Chromium, a shell and a per-agent volume at `/home/agent`. The design is in `INFRA.md`. **No third-party sandbox vendor.** A computer is never shared between agents or users. It is created lazily and has two idle tiers: **resting** (`docker pause`: RAM kept, instant resume) and **asleep** (`docker stop`: RAM freed; the disk keeps logins and files). It wakes on demand. It is destroyed on reset, retire, disable, account deletion, or after `COMPUTER_RETENTION_DAYS` asleep. [Superseded October 2026: retention is off unless the owner turns it on; see OPERATIONS.md.] The owner is upgrading the server, so **size for a real server**; do not cut capabilities to fit today's small one. This deliberately reverses AGENTS.md's "clean computer every run" at the owner's request. Update the docs (Phase 8). |
 | D2 | **No second runtime.** Agent work still runs as Work runs in `juno-work` (`scripts/work-runner.ts`). The computer is a set of tools that run's `buildTools` attaches when the run's session has an `agentId` whose computer is enabled. Plain Work runs with no agent stay exactly as they are. |
 | D3 | **The existing `browser` tool drives the agent's own Chrome** over CDP when a computer is attached: same tool name, same risk ladder, same purchase floor, but real, persistent, visible, with images loaded. No request interception: egress leaves from the container's own firewalled network (`INFRA.md`, `firewall.sh`), never from the app process. Pixel tools (`computer_*`), shell and files are added beside it. |
 | D4 | **Configuration by chat** is five native chat tools: `create_agent`, `update_agent`, `agent_goal`, `agent_routine`, `agent_memory`. Direct changes apply at once, with an Undo card. Widening changes go through the existing chat approval broker (`authorizeExternalAction`, connector id `juno_agents`) as a card. Forms remain as a secondary path. |
@@ -344,7 +344,7 @@ export interface ComputerProvider {
   5. At most every 6 h, lists `listOwned()`:
      - removes containers and volumes with no matching row, which covers deleted agents
        and deleted accounts;
-     - destroys computers asleep longer than `COMPUTER_RETENTION_DAYS`;
+     - destroys computers asleep longer than `COMPUTER_RETENTION_DAYS`; [Superseded October 2026: retention is off unless the owner turns it on; see OPERATIONS.md.]
      - resets any `waking` status stuck for more than 3 min to `error`.
   6. Reconciles the state: a row that says `awake` for a container Docker reports as
      `stopped` becomes `asleep`. This happens after a server reboot, because containers
@@ -681,8 +681,8 @@ without a code change.
   `COMPUTER_MIN_FREE_DISK_GB` (10). This keeps the website itself healthy.
 - **Rest** (`docker pause`) after `COMPUTER_IDLE_PAUSE_SECONDS` (180) with no lease and no
   viewer. **Sleep** (`docker stop`) after `COMPUTER_IDLE_STOP_MINUTES` (30) of rest.
-- **Retention:** destroy after `COMPUTER_RETENTION_DAYS` (30) asleep. The UI says, in
-  Setup: "Asleep more than 30 days: its sign-ins and files are cleared."
+- **Retention:** destroy after `COMPUTER_RETENTION_DAYS` (30) asleep. [Superseded October 2026: retention is off unless the owner turns it on; see OPERATIONS.md.] The UI says, in
+  Setup: "Asleep more than 30 days: its sign-ins and files are cleared." [Never shipped: no screen says this.]
 - **Cost:** `COMPUTER_COST_MICRO_USD_PER_SECOND` defaults to `0`. It's the owner's
   server; they may set a value so computer time counts in the usage windows.
 - **Plan:** computers are available where Work is available (reuse the existing

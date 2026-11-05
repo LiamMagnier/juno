@@ -12,6 +12,7 @@ import { useApp } from "@/components/app/app-provider";
 import { LibraryBrowserSkeleton, LibraryGrid, LibraryList } from "@/components/library/library-browser";
 import { FileVersionsDialog, RenameFileDialog } from "@/components/library/library-dialogs";
 import { LibraryDropOverlay, useFileDrop } from "@/components/library/library-drop-zone";
+import { LibraryQuickLook } from "@/components/library/library-quick-look";
 import { LibraryStorageCaption, LibraryToolbar, LibraryToolbarSkeleton } from "@/components/library/library-toolbar";
 import type { LibraryItem, LibraryKind, LibrarySort, LibraryView } from "@/components/library/library-types";
 import { useLibrary } from "@/components/library/use-library";
@@ -67,6 +68,7 @@ export default function LibraryPage() {
   const [selected, setSelected] = React.useState<Set<string>>(() => new Set());
   const [renameTarget, setRenameTarget] = React.useState<LibraryItem | null>(null);
   const [versionsTarget, setVersionsTarget] = React.useState<LibraryItem | null>(null);
+  const [previewTarget, setPreviewTarget] = React.useState<LibraryItem | null>(null);
   const fileInput = React.useRef<HTMLInputElement>(null);
 
   const library = useLibrary({ q, kind, sort, deleted: deletedView });
@@ -76,7 +78,8 @@ export default function LibraryPage() {
     setKind("all");
   }, []);
 
-  const maxBytes = PLANS[quota.plan].maxUploadMb * 1024 * 1024;
+  const limitMb = PLANS[quota.plan].maxUploadMb;
+  const maxBytes = limitMb * 1024 * 1024;
   const { addUploaded } = library;
   const uploads = useLibraryUploads({
     maxBytes,
@@ -205,6 +208,7 @@ export default function LibraryPage() {
     onDelete: (item: LibraryItem) => library.deleteItems([item]),
     onRestore: (item: LibraryItem) => void library.restoreItems([item]),
     onVersions: setVersionsTarget,
+    onPreview: setPreviewTarget,
     onRetryUpload: uploads.retry,
     onDismissUpload: uploads.dismiss,
   };
@@ -326,7 +330,7 @@ export default function LibraryPage() {
             <EmptyState
               icon={AppIcons.library}
               title="No files yet"
-              description="Upload files here, or drop them anywhere on this page. Files you share in chats are kept here too."
+              description={`Upload files here, or drop them anywhere on this page, up to ${limitMb} MB each. Files you share in chats are kept here too.`}
               action={
                 <>
                   <Button size="sm" onClick={openPicker}>
@@ -417,9 +421,10 @@ export default function LibraryPage() {
           onOpenChange={(open) => !open && setVersionsTarget(null)}
           onRestored={() => void library.reload()}
         />
+        <LibraryQuickLook item={previewTarget} onOpenChange={(open) => !open && setPreviewTarget(null)} />
       </AppPage>
 
-      <LibraryDropOverlay open={dragging} />
+      <LibraryDropOverlay open={dragging} limitMb={limitMb} />
     </div>
   );
 }

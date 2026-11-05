@@ -1,4 +1,4 @@
-import type { ProviderEvents, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
+import type { ProviderEvents, SessionEstablished, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
 
 /**
  * Dev-only provider (RELAY_ENABLE_MOCK=1): no external calls. Replies to any
@@ -15,9 +15,15 @@ export class MockVoiceSession implements VoiceProviderSession {
   private silentMs = 0;
   private replying = false;
   private counter = 0;
+  private tools: string[] = [];
 
-  async connect(_seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
+  async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
     this.events = events;
+    this.tools = events.onToolCall ? (seed.tools ?? []).map((tool) => tool.name) : [];
+  }
+
+  established(): SessionEstablished {
+    return { thinking: false, tools: this.tools.length };
   }
 
   sendAudio(pcm16k: Buffer): void {
@@ -45,6 +51,17 @@ export class MockVoiceSession implements VoiceProviderSession {
   }
 
   sendText(text: string): void {
+    // "call <tool> <json>" stands in for a model deciding to call a tool, so
+    // the whole tools path can be driven without a provider account.
+    const asked = /^call (\S+)(?: (.*))?$/s.exec(text.trim());
+    const onToolCall = this.events?.onToolCall;
+    if (asked && onToolCall && this.tools.includes(asked[1])) {
+      const id = `mock_call_${++this.counter}`;
+      void onToolCall({ id, name: asked[1], arguments: asked[2]?.trim() || "{}" }).then((output) =>
+        this.reply(`The tool answered: ${output}`)
+      );
+      return;
+    }
     this.reply(`You said: ${text}. Mock reply number ${++this.counter}.`);
   }
 

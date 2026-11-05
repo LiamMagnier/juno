@@ -1,0 +1,31 @@
+# Installed by setup-vm.sh as /etc/systemd/system/juno-computers-egress.service,
+# with @MAX_MB_PER_HOUR@ replaced (JUNO_EGRESS_MAX_MB_PER_HOUR, default 1024).
+[Unit]
+Description=Validated public egress for Juno computers
+After=docker.service juno-computers-egress-map.service
+Wants=juno-computers-egress-map.service
+PartOf=docker.service
+
+[Service]
+ExecStart=/usr/bin/python3 -I /usr/local/sbin/juno-computers-egress-proxy
+Environment=JUNO_EGRESS_MAX_MB_PER_HOUR=@MAX_MB_PER_HOUR@
+Environment=JUNO_EGRESS_MAP=/run/juno-computers/egress-map.json
+DynamicUser=yes
+# The egress log (egress.jsonl, one line per connection: never a path, a query,
+# a header or a body) goes to its own file, not journald, whose per-service
+# rate limit can drop lines. logrotate keeps JUNO_EGRESS_LOG_DAYS of it.
+LogsDirectory=juno-computers-egress
+LogsDirectoryMode=0750
+# The per-computer budget, saved every 10 s and at SIGTERM (budget.json).
+StateDirectory=juno-computers-egress
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+Restart=on-failure
+MemoryMax=96M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target docker.service

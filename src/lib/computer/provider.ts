@@ -2,6 +2,7 @@ import "server-only";
 import { env } from "@/lib/env";
 import { dockerComputerProvider } from "./docker";
 import { fakeComputerProvider } from "./fake";
+import { remoteComputerProvider } from "./remote";
 import type { ComputerProvider } from "./types";
 
 let availabilityCache: {
@@ -18,6 +19,12 @@ export function computerProvider(): ComputerProvider | null {
   const mode = env.agentComputer.provider.toLowerCase();
   if (mode === "docker") {
     return dockerComputerProvider;
+  }
+  if (mode === "remote") {
+    // A separate computer host (deploy/computer-host/). Null, logged once,
+    // when its URL is not https (or loopback http outside production) or its
+    // token is not in the generator's format.
+    return remoteComputerProvider();
   }
   if (mode === "fake") {
     if (process.env.NODE_ENV === "production") {

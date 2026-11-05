@@ -7,12 +7,14 @@ CHAIN=JUNO-COMPUTERS
 
 iptables -N "$CHAIN" 2>/dev/null || iptables -F "$CHAIN"
 iptables -A "$CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
-# Computers have no direct Internet egress. Public DNS is the sole forwarding
-# exception; HTTP and HTTPS go through the host proxy's validated/pinned sockets.
-for resolver in 1.1.1.1 9.9.9.9; do
-  iptables -A "$CHAIN" -d "$resolver" -p udp --dport 53 -j RETURN
-  iptables -A "$CHAIN" -d "$resolver" -p tcp --dport 53 -j RETURN
-done
+# Computers have no direct Internet egress and no DNS (pipe-v4): HTTP and HTTPS
+# go through the host proxy's validated, pinned sockets, which resolve names on
+# the host. The public-resolver exception that used to be here was a tunnel out.
+# Port 53 is rejected rather than dropped, so a lookup (Docker's resolver
+# forwards to the RFC 5737 address 192.0.2.53 the create argv pins) fails at once
+# instead of hanging a tool for its whole timeout.
+iptables -A "$CHAIN" -p udp --dport 53 -j REJECT --reject-with icmp-port-unreachable
+iptables -A "$CHAIN" -p tcp --dport 53 -j REJECT --reject-with tcp-reset
 iptables -A "$CHAIN" -j DROP
 
 iptables -N DOCKER-USER 2>/dev/null || true

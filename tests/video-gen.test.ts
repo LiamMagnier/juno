@@ -4,9 +4,13 @@ import { isGoogleOmniModel, parseGoogleOmniInteraction } from "../src/lib/video-
 import { hasRetired, migrateModelId, resolveModel } from "../src/lib/models";
 
 test("Gemini Omni and Veo Lite are callable video catalog entries", () => {
+  // Veo never takes the Omni path. The Veo 3.1 previews shut down 2026-10-22,
+  // and from then a stored id lands on the GA Omni model.
+  assert.equal(isGoogleOmniModel({ provider: "google", providerModel: "veo-3.1-lite-generate-preview" }), false);
   const veoLite = resolveModel("google:veo-3.1-lite-generate-preview");
   assert.ok(veoLite);
-  assert.equal(isGoogleOmniModel(veoLite), false);
+  if (hasRetired({ retiresOn: "2026-10-22" })) assert.equal(veoLite.id, "google:gemini-omni-1.1-flash");
+  else assert.equal(isGoogleOmniModel(veoLite), false);
   // The GA model runs on the Omni path.
   const omniGa = resolveModel("google:gemini-omni-1.1-flash");
   assert.ok(omniGa);

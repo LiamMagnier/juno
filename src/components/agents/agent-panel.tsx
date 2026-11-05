@@ -2,18 +2,13 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Monitor, X } from "@/components/ui/icons";
 import { AgentPresence } from "@/components/agents/agent-presence";
 import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
@@ -21,26 +16,44 @@ import { formatLocalWhen, localStateSentence } from "@/components/agents/agent-b
 import { useAgentDetail } from "@/components/agents/use-agents";
 import { useCostConfirmation } from "@/components/agents/confirm-cost-dialog";
 import { AgentGoalRow } from "@/components/agents/agent-goal-row";
+import { AgentLogins } from "@/components/agents/agent-logins";
 import {
   advanceGoal,
   announceAgentsChanged,
   computerAction,
   decideIdea,
   deleteNote,
+  keepNote,
   retireAgent,
   setAgentMemoryAccess,
+  setComputerPolicy,
+  type ComputerPolicySetting,
   updateAgent,
   updateGoal,
   updateRoutine,
 } from "@/components/agents/agents-transport";
 import type { ClientAgentDetail, ClientAgentIdea } from "@/lib/agents/types";
+import {
+  AGENT_EXECUTION_TARGETS,
+  AGENT_NOTIFY_LEVELS,
+  AGENT_NOTIFY_META,
+  agentNotifyLevel,
+  type AgentExecutionTarget,
+  type AgentNotifyLevel,
+} from "@/lib/agents/domain";
+import { ModelPicker } from "@/components/agents/agent-profile-fields";
+import { useOptionalApp } from "@/components/app/app-provider";
+import { CLOUD_WORKER_DOWN_MESSAGE, macChoiceSaves, preferredHostGone, runsOnHostLabel } from "@/components/agents/thread-agent-state";
+import { WORK_POLL_MS, WORK_SYNC_EVENT, fetchWorkHosts } from "@/components/work/work-transport";
+import type { ClientWorkHost } from "@/lib/work/serializers";
 import { Input } from "@/components/ui/input";
 import { MAX_MEMBER_BUDGET_MICRO_USD } from "@/lib/agents/budget";
 import { describeBudgetLine, type BudgetLine } from "@/lib/budgets";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
 import { cn } from "@/lib/utils";
 import { AGENT_MEMORY_ACCESS, AGENT_MEMORY_ACCESS_META, DEFAULT_AGENT_MEMORY_ACCESS } from "@/lib/memory-scope";
-import { AGENT_STATE_NAMES } from "@/lib/brand/names";
+import { AGENT_STATE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
+import { COMPUTER_POLICY_CONTROL_LABEL } from "@/lib/computer/access-copy";
 
 /**
  * `profile` is the agent's profile in the chat's side slot; `computer` is its
@@ -65,8 +78,9 @@ const ASKS_COPY: Record<WorkPermissionPolicy, string> = {
 
 /**
  * The profile: what the agent is, in prose. Almost nothing here is a form. It can
- * be paused, an app or note removed, its computer turned off, and it can retire;
- * every other change is made by telling it.
+ * be paused, an app or note removed (and a note it learned in a task kept), its
+ * notifications, model, memory, budget and where it runs set, its computer
+ * turned off, and it can retire; every other change is made by telling it.
  */
 export function AgentPanel({
   agentId,
@@ -132,11 +146,26 @@ export function AgentProfile({
   const [busy, setBusy] = React.useState<string | null>(null);
   // Active goals, and paused ones that stopped to ask (a run bound, a budget):
   // those are waiting on the person, so they stay in view with their reason.
-  const activeGoals = detail.goals.filter((goal) => goal.status === "active" || (goal.status === "paused" && (goal.blockers?.length ?? 0) > 0));
+  // Unverified ones too: every step ran and the person decides whether it is met.
+  const activeGoals = detail.goals.filter(
+    (goal) => goal.status === "active" || goal.status === "unverified" || (goal.status === "paused" && (goal.blockers?.length ?? 0) > 0)
+  );
   const needsYou = agent.state === "waiting" || agent.needsYou > 0;
   const task = agent.task;
   const computer = detail.computerConfigured ? detail.computer ?? null : null;
-  const canGetComputer = !!detail.computerConfigured && (!computer || computer.status === "disabled");
+  // The account's verdict (src/lib/computer/access.ts). Absent from an older
+  // server: fall back to whether computers are configured at all.
+  const computerAccess = detail.computerAccess ?? (detail.computerConfigured ? { ok: true, reason: null, message: null, upgradePlan: null } : null);
+  const computerOpen = computerAccess?.ok === true;
+  const hasComputer = !!computer && computer.status !== "disabled";
+  // A Mac agent's tasks run on the Mac and never use this computer
+  // (prepareRunComputer), so its policy would promise nothing: it is not offered.
+  const runsOnMac = agent.executionTarget === "mac";
+  const canGetComputer = computerOpen && !hasComputer && !runsOnMac;
+  const computerPolicy: ComputerPolicySetting = agent.computerPolicy ?? "ask";
+  const notify = agentNotifyLevel(agent.notify);
+  const pendingNotes = detail.pendingNotes ?? [];
+  const hasApp = useOptionalApp() !== null;
 
   const act = async (key: string, fn: () => Promise<{ kind: string; message?: string }>) => {
     setBusy(key);
@@ -199,7 +228,7 @@ export function AgentProfile({
           <Section title={needsYou ? AGENT_STATE_NAMES.needsAnswer : "Working on"}>
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
-                <p className={cn("text-body", needsYou ? "font-medium text-[hsl(var(--attention))]" : "text-foreground")}>
+                <p className={cn("text-body", needsYou ? "font-medium text-status-needs-you-ink" : "text-foreground")}>
                   {task?.title ?? localStateSentence(agent, agent.state)}
                 </p>
                 <button
@@ -261,70 +290,168 @@ export function AgentProfile({
           </Section>
         ) : null}
 
-        {detail.notes.length > 0 ? (
+        {detail.notes.length > 0 || pendingNotes.length > 0 ? (
           <Section title="What it knows">
-            <ul className="space-y-2.5">
-              {detail.notes.map((note) => (
-                <li key={note.id} className="group flex items-start gap-3">
-                  <p className="min-w-0 flex-1 text-body text-foreground">{note.content}</p>
-                  <button
-                    type="button"
-                    disabled={busy === note.id}
-                    onClick={() => void act(note.id, () => deleteNote(agent.id, note.id))}
-                    aria-label="Forget this"
-                    className="mt-0.5 shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
-                  >
-                    <X className="size-3.5" aria-hidden="true" />
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {pendingNotes.length > 0 ? (
+              // Saved by its own tasks and waiting for the person (its "What it
+              // may remember" setting asks for review): nothing reads these yet.
+              <div className={detail.notes.length > 0 ? "mb-5" : undefined}>
+                <p className="text-ui text-muted-foreground">
+                  {`Learned in its tasks. ${agent.name} uses ${pendingNotes.length === 1 ? "this" : "these"} only once you keep ${pendingNotes.length === 1 ? "it" : "them"}.`}
+                </p>
+                <ul className="mt-2 space-y-2.5">
+                  {pendingNotes.map((note) => (
+                    <li key={note.id} className="flex items-start gap-3" data-pending-note={note.id}>
+                      <p className="min-w-0 flex-1 text-body text-foreground">{note.content}</p>
+                      <span className="flex shrink-0 items-center gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="rounded-full"
+                          loading={busy === `keep-${note.id}`}
+                          disabled={busy === note.id}
+                          onClick={() => void act(`keep-${note.id}`, () => keepNote(agent.id, note.id))}
+                        >
+                          Keep
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="text-muted-foreground"
+                          loading={busy === note.id}
+                          disabled={busy === `keep-${note.id}`}
+                          onClick={() => void act(note.id, () => deleteNote(agent.id, note.id))}
+                        >
+                          Forget
+                        </Button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {detail.notes.length > 0 ? (
+              <ul className="space-y-2.5">
+                {detail.notes.map((note) => (
+                  <li key={note.id} className="group flex items-start gap-3">
+                    <p className="min-w-0 flex-1 text-body text-foreground">{note.content}</p>
+                    <button
+                      type="button"
+                      disabled={busy === note.id}
+                      onClick={() => void act(note.id, () => deleteNote(agent.id, note.id))}
+                      aria-label="Forget this"
+                      className="mt-0.5 shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
+                    >
+                      <X className="size-3.5" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </Section>
         ) : null}
 
-        {agent.connectorIds.length > 0 || (computer && computer.status !== "disabled") || canGetComputer ? (
+        {agent.connectorIds.length > 0 || hasComputer || computerAccess ? (
           <Section title="What it can use">
             <ul className="space-y-3">
-              {computer && computer.status !== "disabled" ? (
+              {computerAccess && !computerOpen ? (
+                // Off on this server, not open to this account, or not in its
+                // plan: said in one line, never hidden (S1.8).
                 <li className="flex items-center gap-3">
                   <Monitor className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-body text-foreground">Its own computer</span>
-                    <span className="block text-ui text-muted-foreground">{computerWords(computer.status)}</span>
+                  <span className="min-w-0 flex-1 text-ui text-muted-foreground">
+                    {computerAccess.message}
+                    {computerAccess.reason === "plan" && computerAccess.upgradePlan ? (
+                      <>
+                        {" "}
+                        <Link href="/upgrade" className="text-foreground underline-offset-4 hover:underline">
+                          See plans
+                        </Link>
+                      </>
+                    ) : null}
                   </span>
-                  {onOpenComputer ? (
-                    <Button type="button" size="sm" variant="outline" className="rounded-full" onClick={onOpenComputer}>
-                      Open
+                  {hasComputer ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground"
+                      onClick={() => setConfirm("computer-off")}
+                    >
+                      Delete computer
                     </Button>
                   ) : null}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="text-muted-foreground"
-                    onClick={() => setConfirm("computer-off")}
-                  >
-                    Turn off
-                  </Button>
                 </li>
               ) : null}
-              {canGetComputer ? (
-                <li className="flex items-center gap-3">
-                  <Monitor className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-body text-foreground">A computer of its own</span>
-                    <span className="block text-ui text-muted-foreground">To sign in to sites, run code and keep files.</span>
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="rounded-full"
-                    loading={busy === "computer"}
-                    onClick={() => setConfirm("computer-on")}
-                  >
-                    Give it one
-                  </Button>
+              {computerOpen ? (
+                <li className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <Monitor className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-body text-foreground">{hasComputer ? "Its own computer" : "A computer of its own"}</span>
+                      <span className="block text-ui text-muted-foreground">
+                        {hasComputer
+                          ? computerWords(computer!.status)
+                          : runsOnMac
+                            ? MAC_AGENT_NO_COMPUTER_LINE
+                            : computerPolicyWords(computerPolicy)}
+                      </span>
+                    </span>
+                    {hasComputer && onOpenComputer ? (
+                      <Button type="button" size="sm" variant="outline" className="rounded-full" onClick={onOpenComputer}>
+                        Open
+                      </Button>
+                    ) : null}
+                    {hasComputer ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground"
+                        onClick={() => setConfirm("computer-off")}
+                      >
+                        Delete computer
+                      </Button>
+                    ) : null}
+                    {canGetComputer ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="rounded-full"
+                        loading={busy === "computer"}
+                        onClick={() => setConfirm("computer-on")}
+                      >
+                        Give it one
+                      </Button>
+                    ) : null}
+                  </div>
+                  {runsOnMac ? (
+                    hasComputer ? (
+                      <p className="pl-7 text-ui text-muted-foreground">{MAC_AGENT_COMPUTER_LINE}</p>
+                    ) : null
+                  ) : (
+                    <div className="flex items-center gap-3 pl-7">
+                      <span className="min-w-0 flex-1 text-ui text-muted-foreground">Its tasks may use it</span>
+                      <SegmentedControl<ComputerPolicySetting>
+                        value={computerPolicy}
+                        onChange={(next) => {
+                          if (next === computerPolicy) return;
+                          void act("computer-policy", () => setComputerPolicy(agent.id, next));
+                        }}
+                        options={(["off", "ask", "allowed"] as const).map((value) => ({
+                          value,
+                          label: COMPUTER_POLICY_CONTROL_LABEL[value],
+                        }))}
+                        ariaLabel={`Whether ${agent.name}’s tasks may use its computer`}
+                        size="sm"
+                        columns="content"
+                        optionClassName="whitespace-nowrap text-caption"
+                      />
+                    </div>
+                  )}
                 </li>
               ) : null}
               {agent.connectorIds.map((id) => (
@@ -348,10 +475,60 @@ export function AgentProfile({
           </Section>
         ) : null}
 
+        {/* Only beside a computer it can sign in on; the section hides itself
+            when saved logins are off on this server (agent-logins.tsx). */}
+        {computerOpen && hasComputer && !runsOnMac ? <AgentLogins agentId={agent.id} agentName={agent.name} /> : null}
+
         <Section title="How much it asks">
           <p className="text-body text-foreground">{ASKS_COPY[agent.approvalMode]}</p>
           <p className="mt-1 text-ui text-muted-foreground">Ask {agent.name} to change this.</p>
         </Section>
+
+        {/* Set here or in its thread; both go through the same agent patch
+            (`patchAgentSchema`, then `updateAgentForUser`'s plan check). */}
+        <Section title="When it tells you">
+          <p className="text-body text-foreground">{AGENT_NOTIFY_META[notify].label}</p>
+          <div className="mt-2">
+            <SegmentedControl<AgentNotifyLevel>
+              value={notify}
+              onChange={(next) => {
+                if (next === notify || busy === "notify") return;
+                void act("notify", () => updateAgent(agent.id, { notify: next }));
+              }}
+              options={AGENT_NOTIFY_LEVELS.map((value) => ({ value, label: AGENT_NOTIFY_META[value].short }))}
+              ariaLabel={`When ${agent.name} notifies you`}
+              size="sm"
+              columns="content"
+              optionClassName="whitespace-nowrap text-caption"
+            />
+          </div>
+        </Section>
+
+        <Section title="What it thinks with">
+          {/* The picker reads the catalogue and the plan from the app; a
+              render without the app (a design gallery) names the model. */}
+          {hasApp ? (
+            <ModelPicker
+              model={agent.model}
+              reasoningEffort={agent.reasoningEffort}
+              onChange={(next) => {
+                if (busy === "model") return;
+                void act("model", () => updateAgent(agent.id, next));
+              }}
+            />
+          ) : (
+            <p className="text-body text-foreground">{agent.model ?? "Your default"}</p>
+          )}
+          <p className="mt-2 text-ui text-muted-foreground">
+            Its tasks use this model, and so do its replies here unless you pick another one for a message.
+          </p>
+        </Section>
+
+        <RunsOnSection
+          agent={agent}
+          busy={busy === "runs-on"}
+          onSave={(patch) => act("runs-on", () => updateAgent(agent.id, patch))}
+        />
 
         <Section title="What it may remember about you">
           {/* Set here and only here: the agent's own tools cannot widen this. */}
@@ -370,7 +547,7 @@ export function AgentProfile({
                     if (!current) void act("memory", () => setAgentMemoryAccess(agent.id, access));
                   }}
                   className={cn(
-                    "-mx-2 rounded-md px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                    "-mx-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     current && "bg-secondary/60"
                   )}
                 >
@@ -423,50 +600,39 @@ export function AgentProfile({
 
       <AgentFaceStudio agent={agent} open={studio} onOpenChange={setStudio} onSaved={() => onChanged()} />
 
-      <Dialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {confirm === "retire"
-                ? `Retire ${agent.name}?`
-                : confirm === "computer-on"
-                  ? `Give ${agent.name} a computer?`
-                  : `Turn off ${agent.name}’s computer?`}
-            </DialogTitle>
-            <DialogDescription>
-              {confirm === "retire"
-                ? "Its routines stop and it leaves your agents. This conversation stays in your history."
-                : confirm === "computer-on"
-                  ? "It gets a private desktop on your server. What it signs in to and the files it keeps stay there between tasks, until you reset or turn it off."
-                  : "The computer is deleted, with everything it signed in to and every file on it."}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirm(null)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant={confirm === "computer-on" ? "default" : "destructive"}
-              onClick={() => {
-                const which = confirm;
-                setConfirm(null);
-                if (which === "retire") {
-                  void act("retire", () => retireAgent(agent.id)).then((ok) => {
-                    if (ok) window.location.assign("/agents");
-                  });
-                } else if (which === "computer-on") {
-                  void act("computer", () => computerAction(agent.id, "enable"));
-                } else {
-                  void act("computer", () => computerAction(agent.id, "disable"));
-                }
-              }}
-            >
-              {confirm === "retire" ? "Retire" : confirm === "computer-on" ? "Give it one" : "Turn off"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirm !== null}
+        onOpenChange={(open) => !open && setConfirm(null)}
+        tone={confirm === "computer-on" ? "default" : "destructive"}
+        title={
+          confirm === "retire"
+            ? `Retire ${agent.name}?`
+            : confirm === "computer-on"
+              ? `Give ${agent.name} a computer?`
+              : `Delete ${agent.name}’s computer?`
+        }
+        description={
+          confirm === "retire"
+            ? "Its routines stop and it leaves your agents. This conversation stays in your history."
+            : confirm === "computer-on"
+              ? "It gets a private desktop on your server, and its tasks start it on their own. What it signs in to and the files it keeps stay there between tasks, until you reset or delete it."
+              : "The computer is deleted, with everything it signed in to and every file on it."
+        }
+        confirmLabel={confirm === "retire" ? "Retire" : confirm === "computer-on" ? "Give it one" : "Delete computer"}
+        onConfirm={() => {
+          const which = confirm;
+          setConfirm(null);
+          if (which === "retire") {
+            void act("retire", () => retireAgent(agent.id)).then((ok) => {
+              if (ok) window.location.assign("/agents");
+            });
+          } else if (which === "computer-on") {
+            void act("computer", () => computerAction(agent.id, "enable"));
+          } else {
+            void act("computer", () => computerAction(agent.id, "disable"));
+          }
+        }}
+      />
     </div>
   );
 }
@@ -531,6 +697,215 @@ function BudgetSection({
           ? `${name} stops when this or your account’s own limit runs out, whichever comes first.`
           : "Leave it empty, or enter an amount up to $2,000."}
       </p>
+    </Section>
+  );
+}
+
+const RUNS_ON_COPY: Record<AgentExecutionTarget, { label: string; description: string }> = {
+  cloud: { label: "Cloud", description: "Works with your laptop closed." },
+  mac: { label: "Your Mac", description: `Needs the ${PRODUCT_NAME} Mac app open. If your Mac is offline, tasks don’t start.` },
+};
+
+const RUNS_ON_MESSAGE = {
+  noMac: `No Mac is set up yet. Open the ${PRODUCT_NAME} Mac app and turn on Allow ${PRODUCT_NAME} Work on this Mac.`,
+  anyMac: "Any of your Macs",
+  checking: "Checking your Macs…",
+  loadFailed: "Couldn’t check your Macs.",
+  retry: "Try again",
+  goneMac: "The Mac it used is no longer connected, so its tasks go to any of your Macs. Pick one to keep them on it.",
+  pickMac: "Pick the Mac it should use.",
+} as const;
+
+type WorkHostsState =
+  | { kind: "loading" }
+  | { kind: "ok"; hosts: ClientWorkHost[] }
+  | { kind: "failed"; message: string };
+
+/**
+ * The account's Macs for "Runs on", kept fresh while the profile is open: the
+ * shared Work poll, the Work sync event and a re-read when the tab comes back,
+ * as Settings, Devices does, so a Mac waking up shows as online without a
+ * reload. A dropped poll after a good read keeps the list rather than blanking
+ * it; a failure before one is said, with a retry.
+ */
+function useRunsOnHosts(active: boolean): { state: WorkHostsState; retry: () => void } {
+  const [state, setState] = React.useState<WorkHostsState>({ kind: "loading" });
+  const load = React.useCallback(async () => {
+    const res = await fetchWorkHosts();
+    if (res.kind === "ok") {
+      setState({ kind: "ok", hosts: res.value.filter((host) => host.revokedAt === null) });
+      return;
+    }
+    const message = res.kind === "failed" ? res.message : res.explanation;
+    setState((prev) => (prev.kind === "ok" ? prev : { kind: "failed", message: message || RUNS_ON_MESSAGE.loadFailed }));
+  }, []);
+
+  React.useEffect(() => {
+    if (!active) return;
+    let live = true;
+    const tick = () => {
+      if (live && !document.hidden) void load();
+    };
+    void load();
+    const interval = window.setInterval(tick, WORK_POLL_MS);
+    window.addEventListener(WORK_SYNC_EVENT, tick);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      live = false;
+      window.clearInterval(interval);
+      window.removeEventListener(WORK_SYNC_EVENT, tick);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [active, load]);
+
+  const retry = React.useCallback(() => {
+    setState({ kind: "loading" });
+    void load();
+  }, [load]);
+  return { state, retry };
+}
+
+/**
+ * Where its tasks, routines and goal steps run: the cloud, or the person's Mac
+ * through the Work relay. Set here and only here: no agent tool can move it.
+ * Its routines move with it (the server refuses the change in words when a
+ * Mac routine would have no Mac to name, and then the Mac list opens so one
+ * can be picked). A Mac that is offline makes a task refuse with the
+ * dispatcher's own sentence; nothing quietly moves to the cloud.
+ */
+function RunsOnSection({
+  agent,
+  busy,
+  onSave,
+}: {
+  agent: ClientAgentDetail["agent"];
+  busy: boolean;
+  onSave: (patch: { executionTarget?: AgentExecutionTarget; preferredHostId?: string | null }) => Promise<boolean>;
+}) {
+  const target: AgentExecutionTarget = agent.executionTarget ?? "cloud";
+  // Opened when a move to the Mac was refused for want of a named Mac: the
+  // list then shows under "Your Mac" so the person can pick one, and picking
+  // sends the target and the Mac together.
+  const [choosingMac, setChoosingMac] = React.useState(false);
+  const showMacs = target === "mac" || choosingMac;
+  const { state: hostsState, retry } = useRunsOnHosts(showMacs);
+  const preferredHostId = agent.preferredHostId ?? null;
+
+  const chooseMac = (id: string | null) => {
+    if (target === "mac") {
+      if (id !== preferredHostId) void onSave({ preferredHostId: id });
+      return;
+    }
+    void onSave({ executionTarget: "mac", preferredHostId: id }).then((saved) => {
+      if (saved) setChoosingMac(false);
+    });
+  };
+
+  return (
+    <Section title="Runs on">
+      <div role="radiogroup" aria-label={`Where ${agent.name}’s tasks run`} className="flex flex-col gap-1">
+        {AGENT_EXECUTION_TARGETS.map((option) => {
+          const current = target === option;
+          return (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={current}
+              disabled={busy}
+              data-execution-target={option}
+              onClick={() => {
+                if (current) return;
+                void onSave({ executionTarget: option }).then((saved) => {
+                  setChoosingMac(!saved && option === "mac");
+                });
+              }}
+              className={cn(
+                "-mx-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                current && "bg-secondary/60"
+              )}
+            >
+              <span className={cn("block text-body", current ? "font-medium text-foreground" : "text-foreground")}>
+                {RUNS_ON_COPY[option].label}
+              </span>
+              <span className="block text-ui text-muted-foreground">{RUNS_ON_COPY[option].description}</span>
+            </button>
+          );
+        })}
+      </div>
+      {target === "cloud" && agent.cloudWorkAvailable === false ? (
+        <p className="mt-2 text-ui font-medium text-[hsl(var(--attention))]" role="status">
+          {CLOUD_WORKER_DOWN_MESSAGE}
+        </p>
+      ) : null}
+      {showMacs ? (
+        hostsState.kind === "loading" ? (
+          <p className="mt-2 text-ui text-muted-foreground" role="status" aria-live="polite">
+            {RUNS_ON_MESSAGE.checking}
+          </p>
+        ) : hostsState.kind === "failed" ? (
+          <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-ui text-[hsl(var(--attention))]" role="alert">
+            <span>{hostsState.message}</span>
+            <button
+              type="button"
+              onClick={retry}
+              className="rounded-sm font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {RUNS_ON_MESSAGE.retry}
+            </button>
+          </p>
+        ) : hostsState.hosts.length === 0 ? (
+          <p className="mt-2 text-ui text-[hsl(var(--attention))]" role="status">
+            {RUNS_ON_MESSAGE.noMac}
+          </p>
+        ) : (
+          <>
+            {target === "mac" && preferredHostGone(preferredHostId, hostsState.hosts) ? (
+              <p className="mt-2 text-ui text-[hsl(var(--attention))]" role="status">
+                {RUNS_ON_MESSAGE.goneMac}
+              </p>
+            ) : null}
+            {target !== "mac" ? <p className="mt-2 text-ui text-muted-foreground">{RUNS_ON_MESSAGE.pickMac}</p> : null}
+            <div role="radiogroup" aria-label={`Which Mac ${agent.name} uses`} className="mt-2 flex flex-col gap-1">
+              {[null, ...hostsState.hosts].map((host) => {
+                const id = host?.id ?? null;
+                // A preference that no longer resolves is "any Mac" in practice,
+                // and is shown as that. Nothing is checked until it runs on a Mac.
+                const effective = preferredHostGone(preferredHostId, hostsState.hosts) ? null : preferredHostId;
+                const current = target === "mac" && effective === id;
+                const state = host ? runsOnHostLabel(host) : null;
+                // "Any Mac" earns a row when there is a choice to make, or when
+                // it is what is in force.
+                if (host === null && hostsState.hosts.length < 2 && !current) return null;
+                return (
+                  <button
+                    key={id ?? "any"}
+                    type="button"
+                    role="radio"
+                    aria-checked={current}
+                    disabled={busy}
+                    data-preferred-host={id ?? "any"}
+                    onClick={() => {
+                      // Against the stored id, not the row shown as current:
+                      // "Any of your Macs" over a gone Mac still clears it.
+                      if (macChoiceSaves({ target, storedPreferredHostId: preferredHostId, choice: id })) chooseMac(id);
+                    }}
+                    className={cn(
+                      "-mx-2 flex items-baseline gap-2 rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      current && "bg-secondary/60"
+                    )}
+                  >
+                    <span className={cn("min-w-0 flex-1 truncate text-body text-foreground", current && "font-medium")} translate={host ? "no" : undefined}>
+                      {host ? host.displayName : RUNS_ON_MESSAGE.anyMac}
+                    </span>
+                    {state ? <span className="shrink-0 text-ui text-muted-foreground">{state}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )
+      ) : null}
     </Section>
   );
 }
@@ -604,6 +979,23 @@ function IdeasSection({ detail, onChanged }: { detail: ClientAgentDetail; onChan
       {dialog}
     </Section>
   );
+}
+
+/** A Mac agent with no computer: why there is nothing to give it. */
+const MAC_AGENT_NO_COMPUTER_LINE = "Its tasks run on your Mac, so they don’t use one.";
+/** A Mac agent that still has a computer: it can be opened or deleted, but its tasks don't use it. */
+const MAC_AGENT_COMPUTER_LINE = "Its tasks run on your Mac and don’t use this computer.";
+
+/** What the policy means when it has no computer yet. */
+function computerPolicyWords(policy: ComputerPolicySetting): string {
+  switch (policy) {
+    case "off":
+      return "Its tasks don’t use a computer.";
+    case "allowed":
+      return "Its tasks start one on their own when they need it.";
+    default:
+      return "Its tasks ask you before starting one.";
+  }
 }
 
 function computerWords(status: string): string {

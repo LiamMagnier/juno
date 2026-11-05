@@ -1,0 +1,123 @@
+/*
+ * A DIALOG'S ANATOMY (ui/dialog.tsx). Imported once, by the root layout,
+ * beside sheet.css (which turns the same panel into a bottom sheet on a
+ * phone).
+ *
+ * The panel is a frame that never scrolls. Its content sits in one body that
+ * does, so the frame's own chrome (the ✕ and the phone grabber) stays put
+ * however long the content is. A `DialogHeader` and a `DialogFooter` inside
+ * the body are pinned to its top and bottom edge with `position: sticky`, on
+ * the panel's own fill: the title and the actions are always on screen and
+ * only the middle scrolls between them. Each spans the panel edge to edge
+ * (negative margins equal to the body's inset, the inset given back as
+ * padding), and a band of the same fill on its inner side (a pseudo
+ * element, so whatever spacing its parent gives it is left alone) hides
+ * what scrolls up to it. The layout is exactly the unpinned one until
+ * something scrolls under it.
+ *
+ * Every number reads two custom properties, so the body, the pinned rows and
+ * the ✕ can never disagree: `--dialog-pad`, the body's inset (20px on a
+ * phone, 24px from 640px: the old `p-5 sm:p-6`), and `--dialog-close`, the
+ * ✕'s own size (`Pressable kind="icon" size="lg"`: 36px, 44px on a coarse
+ * pointer).
+ *
+ * A dialog that lays out its own panel (`bare`) has no body and pins nothing:
+ * its call site owns its header, its scroller and its gutter.
+ */
+
+.ui-dialog {
+  --dialog-pad: 1.25rem;
+  --dialog-close: 2.25rem;
+  /* The guide rule for a modal: a scroll gesture that reaches an edge must
+     not chain to the page behind. */
+  overscroll-behavior: contain;
+}
+@media (min-width: 640px) {
+  .ui-dialog {
+    --dialog-pad: 1.5rem;
+  }
+}
+@media (pointer: coarse) {
+  .ui-dialog {
+    --dialog-close: 2.75rem;
+  }
+}
+
+/* The one scroller. A grid at the old panel's 1rem gap, so the rows inside
+   lay out exactly as they did when the panel itself was the grid. */
+.ui-dialog-body {
+  display: grid;
+  gap: 1rem;
+  flex: 0 1 auto;
+  min-height: 0;
+  /* Vertical only: the pinned rows reach the panel's edges. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--dialog-pad);
+}
+
+/* Sticky offsets are measured inside the scroller's padding (every engine
+   deflates the sticky rectangle by it), so a row pinned flush with the
+   panel's edge sits at minus the inset. At 0 it was pushed down by the inset
+   at rest, over the first line of the body, and stuck short of the edge. */
+.ui-dialog-body .ui-dialog-header {
+  position: sticky;
+  top: calc(var(--dialog-pad) * -1);
+  z-index: 1;
+  margin-top: calc(var(--dialog-pad) * -1);
+  margin-inline: calc(var(--dialog-pad) * -1);
+  padding-top: var(--dialog-pad);
+  padding-inline: var(--dialog-pad);
+  background-color: hsl(var(--popover));
+}
+
+.ui-dialog-body .ui-dialog-footer {
+  position: sticky;
+  bottom: calc(var(--dialog-pad) * -1);
+  z-index: 1;
+  margin-bottom: calc(var(--dialog-pad) * -1);
+  margin-inline: calc(var(--dialog-pad) * -1);
+  padding-bottom: var(--dialog-pad);
+  padding-inline: var(--dialog-pad);
+  background-color: hsl(var(--popover));
+}
+
+/* The band on each pinned row's inner side, in the panel's fill, so text
+   scrolling under a row disappears before it touches the title or the
+   buttons. Half the body's gap, so it never covers content that sits
+   closer than the grid's 1rem (a header inside a tighter form). */
+.ui-dialog-body .ui-dialog-header::after,
+.ui-dialog-body .ui-dialog-footer::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  height: 0.5rem;
+  background-color: inherit;
+  pointer-events: none;
+}
+.ui-dialog-body .ui-dialog-header::after {
+  top: 100%;
+}
+.ui-dialog-body .ui-dialog-footer::before {
+  bottom: 100%;
+}
+
+/* The ✕ gutter: the button's inset (1rem), its size, and the 0.5rem the eye
+   needs between a word and a control. Without it a title in a 384px confirm
+   ran under the button, and call sites patched it with pr-10/pr-12/pr-14.
+   Pinned headers only: they span the panel edge to edge, so the gutter is
+   measured from the same edge as the ✕. A bare dialog's header sits inside
+   whatever padding its call site chose, and keeps its own gutter. */
+.ui-dialog[data-dialog-close] .ui-dialog-body .ui-dialog-header {
+  padding-inline-end: calc(1rem + var(--dialog-close) + 0.5rem);
+}
+
+/* The ✕ in the frame's corner, centred on the title's first line: the body's
+   top inset plus half the heading's line box (text-heading, 1.125rem at a
+   1.3 line height), less half the button. It used to sit 16px down whatever
+   the inset, which put a 44px button 6px below the title on a phone. */
+.ui-dialog .ui-dialog-close {
+  z-index: 2;
+  top: calc(var(--dialog-pad) + (1.125rem * 1.3 - var(--dialog-close)) / 2);
+}

@@ -122,7 +122,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl overflow-hidden p-6">
+      <DialogContent className="max-w-2xl">
         <DialogHeader className="gap-2">
           <div className="flex items-center gap-3">
             {/* A quiet tile, not a coral one: the accent is state and the
@@ -200,7 +200,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                       "[animation-fill-mode:backwards] motion-safe:animate-rise-in",
                       // Hover darkens the hairline; nothing lifts or casts a
                       // shadow (FLAT_UI.md §2). The press dips on --dur-press.
-                      "transition-[transform,border-color] duration-fast ease-out-soft hover:border-foreground/25 active:scale-[0.98] active:duration-press motion-reduce:transition-none motion-reduce:active:scale-100",
+                      "transition-[transform,border-color] duration-fast ease-out-soft hover:border-foreground/25 active:scale-[0.98] active:duration-press motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
                       isSel && "border-primary hover:border-primary"
                     )}
                   >
@@ -220,10 +220,10 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                     <span
                       aria-hidden="true"
                       className={cn(
-                        "absolute left-1.5 top-1.5 flex size-5 items-center justify-center rounded-sm border backdrop-blur-xs transition-colors duration-fast ease-out-soft",
+                        "absolute left-1.5 top-1.5 flex size-5 items-center justify-center rounded-sm border transition-colors duration-fast ease-out-soft",
                         isSel
                           ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border/80 bg-background/80 text-transparent group-hover:border-foreground/40"
+                          : "border-border/80 bg-background text-transparent group-hover:border-foreground/40"
                       )}
                     >
                       {/* 12px draws the set's bold cut on its own — no

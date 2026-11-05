@@ -9,6 +9,9 @@ chmod 700 /home/browser /home/browser/.chrome
 # shared with the agent (mode 1777), and whether a file the agent planted there
 # could capture a write depended on host sysctls. Anything else here: stop.
 [ -d /run/juno ] && [ "$(stat -c '%u:%a' /run/juno)" = "1001:700" ] || { echo "/run/juno is not a private browser-owned tmpfs" >&2; exit 1; }
+# The take-over marker and the browser-sandbox state (pipe-v4): the agent may
+# read them, only this uid may write them. Anything else here: stop.
+[ -d /run/juno-state ] && [ "$(stat -c '%u:%a' /run/juno-state)" = "1001:755" ] || { echo "/run/juno-state is not a browser-owned tmpfs" >&2; exit 1; }
 rm -f /tmp/.X0-lock /home/browser/.chrome/SingletonLock /home/browser/.chrome/SingletonSocket /home/browser/.chrome/SingletonCookie
 Xvfb :0 -screen 0 1280x800x24 -nolisten tcp -ac -dpi 96 >/tmp/xvfb.log 2>&1 &
 xvfb=$!

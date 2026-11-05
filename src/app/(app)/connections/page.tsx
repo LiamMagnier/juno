@@ -4,11 +4,12 @@ import { CustomizeFrame } from "@/components/customize/customize-nav";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Link2Off, Loader2, Plus } from "@/components/ui/icons";
+import { Link2Off, Plus } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { type ConnectorStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ConnectorDirectory, tileAnchor, type DirectoryItem } from "@/components/connections/connector-directory";
@@ -387,35 +388,24 @@ export default function ConnectionsPage() {
         onConnected={credentialsConnected}
       />
 
-      <Dialog open={!!disconnectTarget} onOpenChange={(open) => !open && setDisconnectTarget(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>
-              {disconnectTarget?.source === "user_mcp" ? `Remove ${disconnectTarget?.label}?` : `Disconnect ${disconnectTarget?.label}?`}
-            </DialogTitle>
-            <DialogDescription>
-              {disconnectTarget?.source === "user_mcp"
-                ? `${PRODUCT_NAME} will forget this MCP server and its Authorization header. You can add it again later.`
-                : `${PRODUCT_NAME} will lose access to your ${disconnectTarget?.label} account. You can reconnect anytime.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDisconnectTarget(null)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={disconnect} disabled={busy}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : <Link2Off className="size-4" />}
-              {busy
-                ? disconnectTarget?.source === "user_mcp"
-                  ? "Removing…"
-                  : "Disconnecting…"
-                : disconnectTarget?.source === "user_mcp"
-                  ? "Remove"
-                  : "Disconnect"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!disconnectTarget}
+        onOpenChange={(open) => !open && setDisconnectTarget(null)}
+        busy={busy}
+        title={disconnectTarget?.source === "user_mcp" ? `Remove ${disconnectTarget?.label}?` : `Disconnect ${disconnectTarget?.label}?`}
+        description={
+          disconnectTarget?.source === "user_mcp"
+            ? `${PRODUCT_NAME} will forget this MCP server and its Authorization header. You can add it again later.`
+            : `${PRODUCT_NAME} will lose access to your ${disconnectTarget?.label} account. You can reconnect anytime.`
+        }
+        confirmLabel={
+          <>
+            <Link2Off className="size-4" />
+            {disconnectTarget?.source === "user_mcp" ? "Remove" : "Disconnect"}
+          </>
+        }
+        onConfirm={disconnect}
+      />
     </CustomizeFrame>
   );
 }

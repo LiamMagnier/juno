@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { LiveUIGallery } from "./gallery";
 
 /**
@@ -9,5 +10,9 @@ import { LiveUIGallery } from "./gallery";
  */
 export default function LiveUIDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <LiveUIGallery />;
+  return (
+    <PageRoot>
+      <LiveUIGallery />
+    </PageRoot>
+  );
 }

@@ -18,7 +18,7 @@ import { useReducedMotion } from "@/lib/motion-preference";
  * — controlled stays controlled, uncontrolled stays uncontrolled — and this
  * copy only ever decides where a decorative thumb is drawn.
  */
-const TabsThumbContext = React.createContext<{ value: string | undefined; id: string } | null>(null);
+const TabsThumbContext = React.createContext<{ value: string | undefined; id: string; switched: boolean } | null>(null);
 
 const Tabs = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Root>,
@@ -29,7 +29,13 @@ const Tabs = React.forwardRef<
   const id = `${React.useId()}-tabs-thumb`;
   const [uncontrolled, setUncontrolled] = React.useState(defaultValue);
   const current = value ?? uncontrolled;
-  const thumb = React.useMemo(() => ({ value: current, id }), [current, id]);
+  // Whether the selection has moved since mount (TabsContent fades only then).
+  // Updated during render rather than in `onValueChange`: a controlled
+  // `value` can change without that callback, and once moved it stays moved.
+  const [opened] = React.useState(current);
+  const [switched, setSwitched] = React.useState(false);
+  if (!switched && current !== opened) setSwitched(true);
+  const thumb = React.useMemo(() => ({ value: current, id, switched }), [current, id, switched]);
   return (
     <TabsThumbContext.Provider value={thumb}>
       <TabsPrimitive.Root
@@ -119,7 +125,7 @@ const TabsTrigger = React.forwardRef<
         // the thumb's, which covers the border box. The inactive hover is a
         // faint wash below the thumb's own contrast: it says "you can press
         // here", not "a second selected state".
-        "relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap border border-transparent text-ui font-medium transition-[color,background-color,border-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none hover:text-foreground data-[state=inactive]:hover:bg-accent/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground [&_svg]:size-4 [&_svg]:shrink-0",
+        "relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap border border-transparent text-ui font-medium transition-[color,background-color,border-color,box-shadow] duration-fast ease-out-soft hover:text-foreground data-[state=inactive]:hover:bg-accent/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground [&_svg]:size-4 [&_svg]:shrink-0",
         metrics.segment,
         thumb === null && "data-[state=active]:surface-key data-[state=active]:border-border/60",
         className
@@ -153,18 +159,25 @@ TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
 const TabsContent = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.Content
-    ref={ref}
-    className={cn(
-      // Opacity only: the panel is the size of the page region it replaces,
-      // and a panel that travels reads as a route change.
-      "data-[state=active]:animate-fade-in",
-      className
-    )}
-    {...props}
-  />
-));
+>(({ className, ...props }, ref) => {
+  // The incoming panel fades in when the reader SWITCHES tabs. The panel a
+  // page opens on is part of the page arriving, and used to fade in a second
+  // time on its own as the page landed. Outside our root (no context) the
+  // fade plays as before.
+  const switched = React.useContext(TabsThumbContext)?.switched ?? true;
+  return (
+    <TabsPrimitive.Content
+      ref={ref}
+      className={cn(
+        // Opacity only: the panel is the size of the page region it replaces,
+        // and a panel that travels reads as a route change.
+        switched && "data-[state=active]:animate-fade-in",
+        className
+      )}
+      {...props}
+    />
+  );
+});
 TabsContent.displayName = TabsPrimitive.Content.displayName;
 
 export { Tabs, TabsList, TabsTrigger, TabsContent };

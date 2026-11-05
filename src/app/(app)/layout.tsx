@@ -3,6 +3,7 @@ import { requireUser, getSessionBan } from "@/lib/session";
 import { getAppBootstrap } from "@/lib/app-data";
 import { AppProvider } from "@/components/app/app-provider";
 import { AppShell } from "@/components/app/app-shell";
+import { PageRoot } from "@/components/app/page-root";
 import { SettingsModalLazy } from "@/components/settings/settings-modal-lazy";
 
 export const dynamic = "force-dynamic";
@@ -13,15 +14,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await requireUser();
   const bootstrap = await getAppBootstrap(user);
 
+  // `PageRoot` takes the layout's place in Next's `[layerAssets, layout]`
+  // list, so the client `AppProvider` is an only child: when its chunk is
+  // late, React's replay has no list position to lose, and the sidebar's
+  // Radix ids match the server's (page-root.tsx, facebook/react#35518).
   return (
-    <AppProvider bootstrap={bootstrap}>
-      {/* The aura is NOT mounted here any more. It used to portal to <body>
-          and paint the whole window frame — across the sidebar — for whatever
-          any of five sources happened to be doing. It belongs to voice, and to
-          the content column voice runs in, so it is mounted inside <main> by
-          `AppShell`. */}
-      <AppShell>{children}</AppShell>
-      <SettingsModalLazy />
-    </AppProvider>
+    <PageRoot>
+      <AppProvider bootstrap={bootstrap}>
+        {/* The aura is NOT mounted here any more. It used to portal to <body>
+            and paint the whole window frame — across the sidebar — for whatever
+            any of five sources happened to be doing. It belongs to voice, and to
+            the content column voice runs in, so it is mounted inside <main> by
+            `AppShell`. */}
+        <AppShell>{children}</AppShell>
+        <SettingsModalLazy />
+      </AppProvider>
+    </PageRoot>
   );
 }

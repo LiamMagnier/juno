@@ -216,6 +216,8 @@ function installFixtures(hostsParam: string | null) {
   };
   // The app provider opens the account's sync stream; there is no account here.
   class SilentEventSource {
+    // Takes the URL the app opens, as EventSource does, and never connects.
+    constructor(readonly url: string | URL) {}
     addEventListener() {}
     removeEventListener() {}
     close() {}

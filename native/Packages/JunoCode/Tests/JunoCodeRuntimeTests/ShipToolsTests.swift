@@ -75,80 +75,72 @@ final class ShipToolsTests: XCTestCase {
         ToolContext(sessionID: sessionID, toolCallID: "call", emitOutput: { _, _ in })
     }
 
-    // MARK: - Every push asks
+    // MARK: - A push asks unless the session has Full access
 
-    func testGitPushIsPinnedAndDestructive() {
+    func testGitPushAsksUnlessFullAccess() {
         let tool = GitPushTool(publisher: FakePublisher(target: target))
         let input: JSONValue = ["branch": "juno/fix", "remote": "origin"]
-        XCTAssertEqual(tool.assessRisk(input: input), .destructive)
-        XCTAssertEqual(tool.approvalPolicy, .alwaysRequiresApproval)
+        XCTAssertEqual(tool.assessRisk(input: input), .critical)
+        XCTAssertEqual(tool.approvalPolicy, .asksUnlessFullAccess)
         XCTAssertEqual(tool.summary(input: input), "Push juno/fix to origin")
     }
 
-    func testGitPushAsksInEveryModeThatAllowsIt() {
-        for mode in [PermissionMode.askBeforeChanges, .workspaceWrite, .fullAccess] {
+    func testGitPushAsksInTheSupervisedModesAndGoesAheadInFullAccess() {
+        for mode in [PermissionMode.askBeforeChanges, .workspaceWrite] {
             let ruling = PermissionCoordinator.ruling(
                 mode: mode,
-                risk: .destructive,
-                approvalPolicy: .alwaysRequiresApproval,
+                risk: .critical,
+                approvalPolicy: .asksUnlessFullAccess,
                 rule: nil,
                 toolName: "git_push"
             )
             XCTAssertEqual(ruling, .requireApproval, "\(mode) must ask before a push")
         }
+        let full = PermissionCoordinator.ruling(
+            mode: .fullAccess,
+            risk: .critical,
+            approvalPolicy: .asksUnlessFullAccess,
+            rule: nil,
+            toolName: "git_push"
+        )
+        XCTAssertEqual(full, .allow, "Full access pushes without asking")
         let readOnly = PermissionCoordinator.ruling(
             mode: .readOnly,
-            risk: .destructive,
-            approvalPolicy: .alwaysRequiresApproval,
+            risk: .critical,
+            approvalPolicy: .asksUnlessFullAccess,
             rule: nil,
             toolName: "git_push"
         )
         guard case .deny = readOnly else { return XCTFail("a read-only session never pushes") }
     }
 
-    func testNoAllowRuleOrHookSilencesAPush() {
-        let byRule = PermissionCoordinator.ruling(
-            mode: .fullAccess,
-            risk: .destructive,
-            approvalPolicy: .alwaysRequiresApproval,
-            rule: .allow(PermissionRule(tool: "git_push")),
-            toolName: "git_push"
-        )
-        XCTAssertEqual(byRule, .requireApproval, "an allow rule never silences a push")
+    func testAHookAllowDoesNotSilenceAPushBelowFullAccess() {
         let byHook = PermissionCoordinator.ruling(
-            mode: .fullAccess,
-            risk: .destructive,
-            approvalPolicy: .alwaysRequiresApproval,
+            mode: .workspaceWrite,
+            risk: .critical,
+            approvalPolicy: .asksUnlessFullAccess,
             rule: nil,
             hook: .allow,
             toolName: "git_push"
         )
-        XCTAssertEqual(byHook, .requireApproval, "a hook never silences a push")
+        XCTAssertEqual(byHook, .requireApproval, "a project hook is not the reader")
     }
 
-    func testAPushOffersNoAlwaysAllow() async {
+    func testAPushInFullAccessRunsWithoutAPrompt() async {
         let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
         let tool = GitPushTool(publisher: FakePublisher(target: target))
         let input: JSONValue = ["branch": "juno/fix", "remote": "origin"]
-        let authorization = Task {
-            await coordinator.authorize(
-                toolName: tool.name,
-                actionDigest: tool.actionDigest(input: input),
-                risk: tool.assessRisk(input: input),
-                summary: tool.summary(input: input),
-                approvalPolicy: tool.approvalPolicy,
-                subject: ToolRuleSubjects.subject(toolName: tool.name, input: input)
-            )
-        }
-        var pending: [ApprovalRequest] = []
-        for _ in 0..<500 where pending.isEmpty {
-            pending = await coordinator.pendingApprovals
-            if pending.isEmpty { try? await Task.sleep(for: .milliseconds(2)) }
-        }
-        XCTAssertEqual(pending.count, 1, "Full access still asks before a push")
-        XCTAssertNil(pending.first?.suggestedRule, "Always allow is never offered for a push")
-        await coordinator.resolve(approvalID: pending[0].id, decision: .denied)
-        _ = await authorization.value
+        let outcome = await coordinator.authorize(
+            toolName: tool.name,
+            actionDigest: tool.actionDigest(input: input),
+            risk: tool.assessRisk(input: input),
+            summary: tool.summary(input: input),
+            approvalPolicy: tool.approvalPolicy,
+            subject: ToolRuleSubjects.subject(toolName: tool.name, input: input)
+        )
+        XCTAssertEqual(outcome, .allowed)
+        let pending = await coordinator.pendingApprovals
+        XCTAssertTrue(pending.isEmpty, "Full access does not ask before a push")
     }
 
     func testGitPushRefusesATargetThatIsNotTheCurrentOne() async throws {

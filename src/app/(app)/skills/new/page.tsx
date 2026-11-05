@@ -8,9 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
-import { AppIcons } from "@/lib/app-icons";
+import { GraduationCap } from "@/components/ui/icons";
 import { skillSlugFromName } from "@/lib/work/skills";
-import { openSkillDraftingChat } from "@/components/skills/add-skill-menu";
 import { createSkill, skillsFailureMessage } from "@/components/skills/skills-transport";
 import { MAX_SKILL_MD_CHARS, parseSkillMd, SKILL_MD_REFUSAL_MESSAGES, type ParsedSkillMd } from "@/lib/skills/skill-md";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -107,14 +106,9 @@ export default function NewSkillPage() {
         backHref="/skills"
         backLabel="Back to skills"
         actions={
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => openSkillDraftingChat((href) => router.push(href))}
-          >
-            <AppIcons.conversation className="size-4" aria-hidden="true" />
-            {`Create with ${PRODUCT_NAME}`}
+          <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => router.push("/skills/teach")}>
+            <GraduationCap className="size-4" aria-hidden="true" />
+            {`Teach ${PRODUCT_NAME} instead`}
           </Button>
         }
       />

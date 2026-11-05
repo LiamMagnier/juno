@@ -202,11 +202,22 @@ public protocol ScreenCapturing: Sendable {
     /// and the ones the reader denied. A takeover sees the whole display,
     /// but a password manager's window on it is not the model's to read.
     func capture(display: DisplayInfo, excluding own: OwnProcess, alsoExcluding bundleIDs: Set<String>) async throws -> CapturedImage
+    /// A display showing only the windows of `bundleIDs` (lowercased): the
+    /// granted apps. ScreenCaptureKit's include-list filter, so an app the
+    /// reader did not grant is not in the picture at all — not blurred, not
+    /// cropped, absent. Juno and refused apps stay out even when listed.
+    func capture(display: DisplayInfo, excluding own: OwnProcess, showingOnly bundleIDs: Set<String>) async throws -> CapturedImage
 }
 
 public extension ScreenCapturing {
     func capture(display: DisplayInfo, excluding own: OwnProcess, alsoExcluding _: Set<String>) async throws -> CapturedImage {
         try await capture(display: display, excluding: own)
+    }
+
+    /// Fails closed: a capturer that cannot limit a frame to granted apps
+    /// gives no frame rather than the whole display.
+    func capture(display _: DisplayInfo, excluding _: OwnProcess, showingOnly _: Set<String>) async throws -> CapturedImage {
+        throw ScreenControlError.unsupported("This Mac cannot limit the screenshot to the granted apps, so none was taken.")
     }
 }
 

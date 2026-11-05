@@ -30,7 +30,7 @@ import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/li
 import { cn } from "@/lib/utils";
 import type { ClientAttachment, GenerateEditPayload } from "@/types/chat";
 import type { ImageEditInput, SendResult } from "@/hooks/use-chat";
-import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
+import { DURATION, SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 import "./image-edit.css";
 import { prefersReducedMotion } from "@/lib/motion-preference";
 
@@ -225,8 +225,8 @@ export function ImageEditOverlay({
   const fieldRef = React.useRef<HTMLTextAreaElement>(null);
   const dragRef = React.useRef<Drag | null>(null);
   const flippedRef = React.useRef(false);
-  // How focus last moved, so the composer's keyboard ring (C1) only shows for keys.
-  const modalityRef = React.useRef<"pointer" | "keyboard">("pointer");
+  // The composer's keyboard ring (C1) is ComposerShell's own: it follows the
+  // shared input modality, so the Enter that opened this editor counts.
 
   const [sel, setSel] = React.useState<Selection>(EMPTY);
   const [past, setPast] = React.useState<Selection[]>([]);
@@ -241,7 +241,6 @@ export function ImageEditOverlay({
   const [frameSize, setFrameSize] = React.useState<{ width: number; height: number } | null>(null);
   const [announcement, setAnnouncement] = React.useState("");
   const [helpOpen, setHelpOpen] = React.useState(false);
-  const [kbdFocus, setKbdFocus] = React.useState(false);
   // A phone's field holds one short line; the longer hint wraps under the row.
   const [narrow, setNarrow] = React.useState(false);
   const statusId = React.useId();
@@ -277,7 +276,6 @@ export function ImageEditOverlay({
     dragRef.current = null;
     flippedRef.current = false;
     setFrameSize(null);
-    modalityRef.current = "pointer";
     const el = imgRef.current;
     const complete = !!el?.complete;
     const decoded = complete && !!el?.naturalWidth;
@@ -362,7 +360,7 @@ export function ImageEditOverlay({
         { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` },
         { transform: "none" },
       ],
-      { duration: 460, easing: "cubic-bezier(.16, 1, .3, 1)", fill: "backwards" }
+      { duration: DURATION.emphasis, easing: "cubic-bezier(.16, 1, .3, 1)", fill: "backwards" }
     );
   }, [open, imgReady, imgFailed, frameSize, originRect]);
 
@@ -487,7 +485,6 @@ export function ImageEditOverlay({
     if (e.pointerType === "mouse" && e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     frameRef.current?.focus({ preventScroll: true });
-    setKbdFocus(false);
     const p = toNormalized(e);
     if (tool === "brush" && frameSize) {
       const stroke: Stroke = { points: [p.x, p.y], r: brush / 2 / frameSize.width, erase: e.altKey };
@@ -602,7 +599,7 @@ export function ImageEditOverlay({
     e.preventDefault();
     e.stopPropagation();
     const step = e.altKey ? 0.005 : 0.02;
-    let next = region;
+    let next: NonNullable<typeof region>;
     if (e.shiftKey) {
       if (e.key === "ArrowLeft") next = { ...region, w: Math.max(MIN_REGION, region.w - step) };
       else if (e.key === "ArrowRight") next = { ...region, w: Math.min(1 - region.x, region.w + step) };
@@ -718,12 +715,6 @@ export function ImageEditOverlay({
           className="ie-root fixed inset-0 z-modal flex flex-col outline-none"
           aria-describedby={undefined}
           onKeyDown={handleRootKeyDown}
-          onKeyDownCapture={(e) => {
-            if (e.key === "Tab") modalityRef.current = "keyboard";
-          }}
-          onPointerDownCapture={() => {
-            modalityRef.current = "pointer";
-          }}
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             // A phone would raise its keyboard over the picture; there the
@@ -745,14 +736,43 @@ export function ImageEditOverlay({
             {announcement}
           </p>
 
-          {/* Chrome: close, the one tool rail, shortcuts. Equal 16px insets. */}
+          {/* Chrome: shortcuts, the one tool rail, close. Equal 16px insets. The
+              close sits top-right, where every other overlay keeps its ✕. */}
           <header className="ie-chrome grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 p-4">
             <div className="flex justify-start">
-              <DialogPrimitive.Close asChild>
-                <button type="button" className="ie-round pressable" aria-label="Close image editor">
-                  <X className="size-4" aria-hidden="true" />
-                </button>
-              </DialogPrimitive.Close>
+              <Popover open={helpOpen} onOpenChange={setHelpOpen}>
+                <PopoverTrigger asChild>
+                  <button type="button" className="ie-round pressable max-sm:invisible" aria-label="Keyboard shortcuts" aria-keyshortcuts="?">
+                    <Keyboard className="size-4" aria-hidden="true" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" sideOffset={8} className="w-64 p-3" aria-labelledby={helpId}>
+                  <p id={helpId} className="sr-only">Keyboard shortcuts</p>
+                  <dl className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 text-label">
+                    {[
+                      ["Area tool", ["M"]],
+                      ["Brush", ["B"]],
+                      ["Brush size", ["[", "]"]],
+                      ["Erase while brushing", ["Alt"]],
+                      ["Select the centre", ["Enter"]],
+                      ["Move selection", ["Arrows"]],
+                      ["Resize selection", ["⇧", "Arrows"]],
+                      ["Clear selection", ["⌫"]],
+                      ["Undo", [mod, "Z"]],
+                      ["Close", ["Esc"]],
+                    ].map(([label, keys]) => (
+                      <React.Fragment key={label as string}>
+                        <dt className="text-muted-foreground">{label as string}</dt>
+                        <dd className="flex justify-end gap-1">
+                          {(keys as string[]).map((k) => (
+                            <Kbd key={k}>{k}</Kbd>
+                          ))}
+                        </dd>
+                      </React.Fragment>
+                    ))}
+                  </dl>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="ie-rail flex items-center gap-0.5 rounded-full p-1" role="toolbar" aria-label="Selection tools">
@@ -803,39 +823,11 @@ export function ImageEditOverlay({
             </div>
 
             <div className="flex justify-end">
-              <Popover open={helpOpen} onOpenChange={setHelpOpen}>
-                <PopoverTrigger asChild>
-                  <button type="button" className="ie-round pressable max-sm:invisible" aria-label="Keyboard shortcuts" aria-keyshortcuts="?">
-                    <Keyboard className="size-4" aria-hidden="true" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="end" sideOffset={8} className="w-64 p-3" aria-labelledby={helpId}>
-                  <p id={helpId} className="sr-only">Keyboard shortcuts</p>
-                  <dl className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 text-label">
-                    {[
-                      ["Area tool", ["M"]],
-                      ["Brush", ["B"]],
-                      ["Brush size", ["[", "]"]],
-                      ["Erase while brushing", ["Alt"]],
-                      ["Select the centre", ["Enter"]],
-                      ["Move selection", ["Arrows"]],
-                      ["Resize selection", ["⇧", "Arrows"]],
-                      ["Clear selection", ["⌫"]],
-                      ["Undo", [mod, "Z"]],
-                      ["Close", ["Esc"]],
-                    ].map(([label, keys]) => (
-                      <React.Fragment key={label as string}>
-                        <dt className="text-muted-foreground">{label as string}</dt>
-                        <dd className="flex justify-end gap-1">
-                          {(keys as string[]).map((k) => (
-                            <Kbd key={k}>{k}</Kbd>
-                          ))}
-                        </dd>
-                      </React.Fragment>
-                    ))}
-                  </dl>
-                </PopoverContent>
-              </Popover>
+              <DialogPrimitive.Close asChild>
+                <button type="button" className="ie-round pressable" aria-label="Close image editor">
+                  <X className="size-4" aria-hidden="true" />
+                </button>
+              </DialogPrimitive.Close>
             </div>
           </header>
 
@@ -950,7 +942,6 @@ export function ImageEditOverlay({
             <ComposerShell
               className="mx-auto max-w-[44rem]"
               frame="dock"
-              keyboardFocus={kbdFocus}
               field={
                 <textarea
                   ref={fieldRef}
@@ -962,8 +953,6 @@ export function ImageEditOverlay({
                       handleSubmit();
                     }
                   }}
-                  onFocus={() => setKbdFocus(modalityRef.current === "keyboard")}
-                  onBlur={() => setKbdFocus(false)}
                   rows={1}
                   placeholder={placeholder}
                   aria-label="Describe the change"

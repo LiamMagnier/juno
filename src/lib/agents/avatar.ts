@@ -44,10 +44,15 @@ export interface AgentAvatar {
   mark: AgentMark;
 }
 
-/** What each choice is called where a person picks it. */
+/**
+ * What each choice is called where a person picks it. Display names only:
+ * the stored values above never change (they are mirrored natively), so
+ * `halo`, drawn as a soft gumdrop since the October 2026 face rebuild, is
+ * offered as "Gumdrop".
+ */
 export const AGENT_SHAPE_LABEL: Record<AgentShape, string> = {
   tile: "Tile",
-  halo: "Halo",
+  halo: "Gumdrop",
   prism: "Prism",
   orb: "Orb",
   pebble: "Pebble",
@@ -66,11 +71,12 @@ export const AGENT_TONE_LABEL: Record<AgentTone, string> = {
   sage: "Sage",
 };
 
+/** The four eye cuts (face-geometry.ts `CUT`): a pill, a near-round dot, a tall pill, and a pill set wide apart. */
 export const AGENT_EYES_LABEL: Record<AgentEyes, string> = {
   soft: "Soft",
   round: "Round",
   tall: "Tall",
-  wide: "Wide",
+  wide: "Wide-set",
 };
 
 export const AGENT_MARK_LABEL: Record<AgentMark, string> = {

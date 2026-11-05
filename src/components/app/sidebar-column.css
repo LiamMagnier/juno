@@ -1,0 +1,112 @@
+/*
+ * The sidebar column's own rules (app-sidebar.tsx), the two that a Tailwind
+ * class cannot say on its own.
+ *
+ * ── A TITLE THAT DOES NOT FIT FADES; IT IS NEVER CUT WITH "…" ──────────────
+ *
+ * Every row used to end in a CSS ellipsis, and Chrome makes the cut where the
+ * box runs out, so half of them read "Post the renewal summary …" with a
+ * space hanging in front of the dots, and on a phone, where the row's "···"
+ * always stands, as two clusters of dots side by side. The hovered row
+ * already faded its last letters under the kebab, so the column showed two
+ * truncation styles at once. Both references (ChatGPT, Claude) fade.
+ *
+ * ONLY A TITLE THAT IS ACTUALLY CUT FADES. A mask on every row would also dim
+ * the last letter of a title that fits but reaches the edge. The mask rides a
+ * scroll-driven animation on the row's own inline scroller: `overflow:
+ * hidden` makes the label a scroll container, and its scroll timeline is only
+ * active when the text overflows it, so a title that fits has no active
+ * timeline and takes no mask. Where scroll timelines are not supported
+ * (Firefox today) every label carries the fade, which only touches a title
+ * that runs to within 28px of the edge.
+ *
+ * 28px (1.75rem) is about two letters at the 14px `nav` rung: enough to read
+ * as "this goes on", not so much that a short last word disappears.
+ */
+.title-fade {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 1.75rem);
+  mask-image: linear-gradient(to left, transparent, #000 1.75rem);
+}
+.title-fade:dir(rtl) {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 1.75rem);
+  mask-image: linear-gradient(to right, transparent, #000 1.75rem);
+}
+
+/*
+ * A LABEL THAT HUGS ITS TEXT TAKES THE MASK ONLY WHERE A CUT CAN BE TOLD.
+ * The fallback above is harmless on a label that fills its slot: the 28px it
+ * fades is empty space unless the title runs to the edge. A label sized to
+ * its own text (the Code list's project name, its "All projects" filter)
+ * always ends on its last letter, so without scroll timelines every name was
+ * faded at the end, the ones that fit included. `title-fade-hug` drops the
+ * always-on mask; the scroll-driven rule below still fades it while it is
+ * actually cut. Without scroll timelines a hugging label that is too long is
+ * clipped at its edge, which is the rarer and the lesser fault.
+ */
+.title-fade.title-fade-hug,
+.title-fade.title-fade-hug:dir(rtl) {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+@supports (animation-timeline: scroll()) {
+  .title-fade,
+  .title-fade:dir(rtl) {
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: title-fade-when-cut linear both;
+    animation-timeline: scroll(self inline);
+  }
+  .title-fade:dir(rtl) {
+    animation-name: title-fade-when-cut-rtl;
+  }
+  /* An AI rename cross-fades the label in (`.animated-title__current`,
+     globals.css). That rule is more specific than this one, so the two
+     animations are listed together here, or the fade would drop for the
+     220ms of the cross-fade. */
+  .animated-title--resolving .title-fade.animated-title__current {
+    animation: title-fade-in var(--dur-base) var(--ease-out-soft) both, title-fade-when-cut linear both;
+    animation-timeline: auto, scroll(self inline);
+  }
+}
+
+@keyframes title-fade-when-cut {
+  from,
+  to {
+    -webkit-mask-image: linear-gradient(to left, transparent, #000 1.75rem);
+    mask-image: linear-gradient(to left, transparent, #000 1.75rem);
+  }
+}
+@keyframes title-fade-when-cut-rtl {
+  from,
+  to {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 1.75rem);
+    mask-image: linear-gradient(to right, transparent, #000 1.75rem);
+  }
+}
+
+/*
+ * ── THE WELL'S TOP EDGE IS CLEAN ───────────────────────────────────────────
+ *
+ * ScrollFade's top band ramps from the ground to clear over 36px, which left
+ * a row scrolled half under it ghosted a few pixels below "Customize": a
+ * faded folder and title that read as disabled or overlapping, not as an
+ * edge. In this column the band holds the full ground for its first 18px,
+ * so whatever is that close to the edge is gone rather than ghosted, and only
+ * then ramps out. 18px, not 12: a 14-16px title is centred in its 32 or 44px
+ * row, so with only 12px held a row half under the band still showed the
+ * bottoms of its letters as a faint strip below the solid part. Past 18px a
+ * row's text is mostly below the band and reads as a row fading, not as a
+ * sliver. The bottom band is unchanged: there the fade is the "more below"
+ * cue, and nothing sits against it.
+ */
+.sidebar-well > .scroll-fade-edge[data-edge="top"] {
+  background: linear-gradient(
+    to bottom,
+    hsl(var(--scroll-fade-ground, var(--background))) 1.125rem,
+    hsl(var(--scroll-fade-ground, var(--background)) / 0)
+  );
+}

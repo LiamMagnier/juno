@@ -114,6 +114,14 @@ export interface AgentLoopOptions {
    * nothing queued, which is the common case and costs a function call.
    */
   takeQueuedUserText?: () => string[];
+  /**
+   * Awaited at the top of every step, before anything is sent: the one place
+   * a run can be held cooperatively (a paused subagent). It runs before
+   * `takeQueuedUserText`, so a message sent while the run was held rides into
+   * the first step after it resumes. It must settle when `signal` aborts; the
+   * loop re-checks the signal after it returns.
+   */
+  beforeStep?: () => Promise<void>;
   /** Longest silence from a stream before it is judged dead, in ms. */
   silenceTimeoutMs?: number;
   /**
@@ -590,6 +598,13 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
     if (opts.signal.aborted) {
       stopReason = 'aborted';
       break;
+    }
+    if (opts.beforeStep) {
+      await opts.beforeStep();
+      if (opts.signal.aborted) {
+        stopReason = 'aborted';
+        break;
+      }
     }
     // Anything a person said since the last step rides into this one. See
     // `takeQueuedUserText` for why it is folded into the last user message.

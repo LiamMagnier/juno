@@ -649,8 +649,12 @@ struct DesktopMessageRow: View {
                 if let progress = shown.mediaProgress, shown.errorDescription == nil {
                     NativeMediaGenerationView(progress: progress)
                 } else if let error = standaloneError {
-                    DesktopTurnError(message: error, retry: showsRetry ? actions.retry : nil)
-                } else if !parts.isEmpty || !shown.attachments.isEmpty {
+                    DesktopTurnError(
+                        message: error,
+                        retry: showsRetry ? actions.retry : nil,
+                        answerWith: answerWithSuggestion
+                    )
+                } else if !parts.isEmpty || !shown.attachments.isEmpty || !imageGenerations.isEmpty {
                     answerBody
                 }
 
@@ -733,6 +737,17 @@ struct DesktopMessageRow: View {
                     attachments: shown.attachments,
                     canEditImages: !isPrivate && !isGenerating
                 )
+            }
+            // Pictures the model made mid-answer (G04): the wait, then who
+            // made them under the files above, or why none came back.
+            ForEach(imageGenerations, id: \.callID) { generation in
+                NativeImageGenerationCard(
+                    generation: generation,
+                    answerAttachmentIDs: Set(shown.attachments.map(\.id)),
+                    copy: DesktopImageGenerationCopy.copy(for: generation)
+                ) { images in
+                    AssistantAttachments(attachments: images, canEditImages: false)
+                }
             }
             if !parts.isEmpty {
                 // Paced: the words are released at a steady cadence and the
@@ -826,6 +841,13 @@ struct DesktopMessageRow: View {
         }
     }
 
+    /// The pictures this answer's model made (`generate_image`), as the card
+    /// should draw them: a row left generating on a finished answer reads as
+    /// failed.
+    private var imageGenerations: [NativeImageGeneration] {
+        NativeChatActivity.imageGenerations(in: shown.activity, live: shown.isPending)
+    }
+
     /// A reply that failed with nothing to show for it: the error takes the
     /// answer's place. With a partial answer, the failure is its note instead.
     private var standaloneError: String? {
@@ -837,6 +859,16 @@ struct DesktopMessageRow: View {
     /// Try Again, on the newest reply with nothing running.
     private var showsRetry: Bool {
         isNewest && !isGenerating && actions.retry != nil
+    }
+
+    /// "Answer with <model>", beside Try Again: the model the failed turn's
+    /// error frame offered (chat wire 1.1), asked the way Switch Model asks
+    /// (`.model`) — the reader's explicit choice, never a reroute.
+    private var answerWithSuggestion: (name: String, action: () -> Void)? {
+        guard isNewest, !isGenerating, actions.regenerate != nil,
+            let modelID = shown.suggestedModelID
+        else { return nil }
+        return (shown.suggestedModelName ?? modelID, { requestRegenerate(.model(modelID)) })
     }
 
     /// The note under the answer: a partial answer's failure, or why it ended
@@ -1081,6 +1113,50 @@ struct MessageGhostButtonStyle: ButtonStyle {
                 .onHover { hovered = $0 }
                 .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: lit)
                 .animation(JunoMotion.reduced(JunoMotion.press, when: reduceMotion), value: configuration.isPressed)
+        }
+    }
+}
+
+// MARK: - Images made in chat
+
+/// An image card's words from the shell table (`image.*`), in the reader's
+/// language. Which sentence a failure gets is decided in JunoChatKit
+/// (``NativeImageGeneration/failureSentence``); this only says it.
+enum DesktopImageGenerationCopy {
+    static func copy(for generation: NativeImageGeneration) -> NativeImageGenerationCopy {
+        NativeImageGenerationCopy(
+            caption: generation.caption.map(Self.caption),
+            saved: JunoShellStrings.imageSavedToLibrary,
+            failedTitle: JunoShellStrings.imageFailedTitle,
+            failureSentence: generation.failureSentence.map(Self.sentence) ?? ""
+        )
+    }
+
+    static func caption(_ caption: NativeImageGeneration.Caption) -> String {
+        switch caption {
+        case .autoPicked(let model): JunoShellStrings.imageAutoPicked(model: model)
+        case .madeWith(let model): JunoShellStrings.imageMadeWith(model: model)
+        }
+    }
+
+    static func sentence(_ sentence: NativeImageGeneration.FailureSentence) -> String {
+        switch sentence {
+        case .noModel: JunoShellStrings.imageFailureNoModel
+        case .notConfigured(let model): JunoShellStrings.imageFailureNotConfigured(model: model)
+        case .unavailable(let model): JunoShellStrings.imageFailureUnavailable(model: model)
+        case .plan(let model, let plan): JunoShellStrings.imageFailurePlan(model: model, plan: plan)
+        case .budget: JunoShellStrings.imageFailureBudget
+        case .rateLimited: JunoShellStrings.imageFailureRateLimited
+        case .quota: JunoShellStrings.imageFailureQuota
+        case .policy: JunoShellStrings.imageFailurePolicy
+        case .workspace: JunoShellStrings.imageFailureWorkspace
+        case .edit(let model): JunoShellStrings.imageFailureEdit(model: model)
+        case .reference: JunoShellStrings.imageFailureReference
+        case .libraryFull: JunoShellStrings.imageFailureLibraryFull
+        case .tooMany: JunoShellStrings.imageFailureTooMany
+        case .notRequested: JunoShellStrings.imageFailureNotRequested
+        case .provider(let model): JunoShellStrings.imageFailureProvider(model: model)
+        case .message(let text): text
         }
     }
 }

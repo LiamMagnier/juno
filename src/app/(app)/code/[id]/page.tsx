@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import { getConversationThreadPage } from "@/lib/queries";
 import { CodeV2Client } from "./client";
+import { PageRoot } from "@/components/app/page-root";
 
 export const dynamic = "force-dynamic";
 
@@ -24,16 +25,18 @@ export default async function CodeSessionPage({ params }: { params: Promise<{ id
   const c = thread.conversation;
   if (c.kind !== "code" || !(c.codeWorkspacePath || c.codeWorkspaceKey)) redirect(`/chat/${id}`);
   return (
-    <CodeV2Client
-      conversation={{
-        id: c.id,
-        title: c.title,
-        codeWorkspaceName: c.codeWorkspaceName ?? null,
-        codeWorkspacePath: c.codeWorkspacePath ?? null,
-        codeWorkspaceKey: c.codeWorkspaceKey ?? null,
-      }}
-      initialMessages={thread.messages}
-      initialHistory={thread.history}
-    />
+    <PageRoot>
+      <CodeV2Client
+        conversation={{
+          id: c.id,
+          title: c.title,
+          codeWorkspaceName: c.codeWorkspaceName ?? null,
+          codeWorkspacePath: c.codeWorkspacePath ?? null,
+          codeWorkspaceKey: c.codeWorkspaceKey ?? null,
+        }}
+        initialMessages={thread.messages}
+        initialHistory={thread.history}
+      />
+    </PageRoot>
   );
 }

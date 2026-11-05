@@ -204,7 +204,7 @@ public final class NativePrivateChatModel {
             if let reasoning = message.reasoning { turns[index].reasoning = reasoning }
             if let model = message.model { turns[index].model = model }
             phase = .idle
-        case .failed(let message, _, _, _):
+        case .failed(let message, _, _, _, _):
             lastErrorDescription = message
             phase = .failed(message)
         default:

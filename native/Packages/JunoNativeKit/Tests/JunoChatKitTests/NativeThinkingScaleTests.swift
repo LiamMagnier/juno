@@ -71,6 +71,25 @@ final class NativeThinkingScaleTests: XCTestCase {
         XCTAssertEqual(scale.adjusting(.max).effort, .medium)
     }
 
+    /// A declared default outranks Instant, as the web's `defaultReasoning`
+    /// does: Claude Haiku 5.5 offers Instant but opens on Medium. A model
+    /// that declares none and can switch off still opens on Instant.
+    func testADeclaredDefaultOutranksInstant() {
+        let haiku55 = NativeThinkingScale(
+            model: option(
+                id: "anthropic:claude-haiku-5-5",
+                name: "Claude Haiku 5.5",
+                efforts: [.low, .medium, .high, .xhigh, .max],
+                defaultEffort: .medium
+            )
+        )
+        XCTAssertEqual(haiku55.stops.first, .instant)
+        XCTAssertEqual(haiku55.defaultStop, .effort(.medium))
+
+        let undeclared = NativeThinkingScale(model: option(efforts: [.low, .high]))
+        XCTAssertEqual(undeclared.defaultStop, .instant)
+    }
+
     func testNonReasoningModelPresentsNoControlAtAll() {
         let scale = NativeThinkingScale(model: option(reasoning: false))
 

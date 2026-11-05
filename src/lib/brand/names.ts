@@ -73,12 +73,27 @@ export const FEATURE_NAMES = {
   customize: { label: "Customize" },
   apps: { label: "Apps" },
   skills: { label: "Skills" },
-  routines: { label: "Routines" },
+  /**
+   * Routines (spec §6.7): "Routines" and "New routine" everywhere; the
+   * /automations route stays. The same words as the shared string table
+   * (`product.routines`, `product.newRoutine`), which the Mac and the iPhone
+   * read; tests/wave2-p1-strings.test.ts holds the two together. Literals
+   * rather than an import so a component that names a feature does not ship
+   * the whole table.
+   */
+  routines: { label: "Routines", newLabel: "New routine" },
   memory: { label: "Memory" },
   instructions: { label: "Instructions" },
-  /** Deep research (D-038): a mode, always two words; quick lookups stay Search. */
-  research: { label: "Deep Field", description: "Deep research", accessibleLabel: "Deep Field, deep research" },
+  /**
+   * Deep research (spec §6.9): the visible label is "Deep research", with
+   * "Deep Field" as the brand subtitle — the label says what it does, the
+   * brand stays as the name of the surface. Held to the shared string table
+   * (`product.research`, `product.researchBrand`) like routines above.
+   */
+  research: { label: "Deep research", description: "Deep Field", accessibleLabel: "Deep research, Deep Field" },
   needsYou: { label: "Needs you" },
+  /** Activity (G70): everything live across chats, Code and research, grouped by what it needs. */
+  activity: { label: "Activity" },
   createAgent: { label: "Create agent" },
   /**
    * What Alevr makes (stored and routed as artifacts). The collection is

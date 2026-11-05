@@ -33,7 +33,12 @@ extension ScreenControlService.Dependencies {
             pointerLocation: {
                 guard let location = CGEvent(source: nil)?.location else { return nil }
                 return ScreenPoint(x: location.x, y: location.y)
-            }
+            },
+            // A locked Mac pauses every run; the display stays awake only
+            // while one is working. Neither ever unlocks anything.
+            sessionLock: SystemSessionLockMonitor(),
+            displayAwake: SystemDisplayAwakeAssertion(),
+            idleTimer: SystemIdleTimer()
         )
     }
 }
@@ -300,6 +305,26 @@ public struct SystemScreenCapture: ScreenCapturing {
                 || AppCategories.category(bundleID: $0.bundleIdentifier) == .refused
         }
         let filter = SCContentFilter(display: scDisplay, excludingApplications: hidden, exceptingWindows: [])
+        return try await shoot(display: display, filter: filter)
+    }
+
+    public func capture(display: DisplayInfo, excluding own: OwnProcess, showingOnly bundleIDs: Set<String>) async throws -> CapturedImage {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let scDisplay = content.displays.first(where: { $0.displayID == display.id }) else {
+            throw ScreenControlError.driverFailed("That display is no longer connected.")
+        }
+        // The include list: only granted apps' windows are composited. Juno
+        // and refused apps are dropped even if a grant somehow named them.
+        let shown = content.applications.filter {
+            bundleIDs.contains($0.bundleIdentifier.lowercased())
+                && !own.owns(pid: $0.processID, bundleID: $0.bundleIdentifier)
+                && AppCategories.category(bundleID: $0.bundleIdentifier) != .refused
+        }
+        let filter = SCContentFilter(display: scDisplay, including: shown, exceptingWindows: [])
+        return try await shoot(display: display, filter: filter)
+    }
+
+    private func shoot(display: DisplayInfo, filter: SCContentFilter) async throws -> CapturedImage {
         let configuration = SCStreamConfiguration()
         configuration.width = max(1, Int((display.frame.width * display.backingScale).rounded()))
         configuration.height = max(1, Int((display.frame.height * display.backingScale).rounded()))

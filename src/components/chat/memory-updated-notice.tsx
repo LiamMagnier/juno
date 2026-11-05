@@ -2,11 +2,15 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { X } from "@/components/ui/icons";
+import { motion } from "framer-motion";
+import { Check, X } from "@/components/ui/icons";
+import { ComposerIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MemoryFactRow, forgetMemoryFact, useAllForgotten } from "@/components/chat/memory-fact-row";
 import { memoryEntryHref } from "@/lib/chat/memory-receipts";
 import { cn } from "@/lib/utils";
+import { DURATION } from "@/lib/design/tokens.generated";
+import { useReducedMotion } from "@/lib/motion-preference";
 import type { ClientMemoryWrite } from "@/types/chat";
 
 /*
@@ -30,20 +34,46 @@ import type { ClientMemoryWrite } from "@/types/chat";
  * keys it), so an older timer can never cut a newer notice short.
  *
  * Motion is the house pair for a floating status: rise in on arrival, the
- * title-out exit on the way out. The in-app Reduced setting and the system
+ * title-out exit on the way out. The mark swaps to a tick in place when the
+ * change is undone, and a hairline along the bottom drains over the stay
+ * time, so the reader can see it will leave and that pointing at it holds it. The in-app Reduced setting and the system
  * setting both reach them (globals.css and `motion-safe`).
+ *
+ * ONE NOTIFICATION SURFACE. It is drawn as a toast is (sonner.tsx and the
+ * toaster rules in globals.css): `.surface-float` at the card corner (12),
+ * the float shadow, and 32px actions at the 13px `ui` rung with a 44px touch
+ * pad. It was a 16px panel on the lighter legacy "glass" shadow with 28px,
+ * 12px text buttons, so the two notices the product raises read as two
+ * families. Its place (top centre on a wide window, above the composer on a
+ * phone) and its stay are its own.
+ *
+ * The live region is the words, not the whole notice: a `role="status"`
+ * wrapped around View, Edit, Undo and Dismiss read their names out as part
+ * of the news.
  */
 
 /** How long the notice stays once nobody is looking at it. */
 export const MEMORY_NOTICE_MS = 6000;
-/** The exit's length: `--dur-exit`, read as a number for the unmount. */
-const EXIT_MS = 180;
+/** The exit's length: `--dur-exit` (`animate-title-out`), read from the token table for the unmount. It was a hand-typed 180. */
+const EXIT_MS = DURATION.exit;
 
 const actionClass =
-  "inline-flex h-7 items-center rounded-control px-2 font-sans text-label text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-9";
+  "hit-44 relative inline-flex h-8 items-center gap-1 rounded-control px-2.5 font-sans text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground";
 
-function truncate(text: string, max = 56): string {
-  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+/**
+ * The fact, short enough for two lines of the notice, cut only between words.
+ * It used to be one line clipped by CSS and a cut at the 71st character, so a
+ * phone showed "Halvorsen is the …" with the fact's subject cut off mid-name.
+ * Only a single word longer than half the limit (a pasted address) is cut
+ * inside itself, because there is nowhere else to cut it.
+ */
+export function noticeSummary(text: string, max = 72): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  const head = clean.slice(0, max);
+  const lastSpace = head.lastIndexOf(" ");
+  const cut = lastSpace > max / 2 ? head.slice(0, lastSpace) : head.slice(0, max - 1);
+  return `${cut.replace(/[\s,;:.\u2013\u2014-]+$/, "")}…`;
 }
 
 export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryWrite | null; onDismiss: () => void }) {
@@ -55,6 +85,8 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
   const dismissRef = React.useRef(onDismiss);
   /** Where focus goes once Undo has taken its own button (and Edit) away. */
   const closeRef = React.useRef<HTMLButtonElement>(null);
+  /** Restarts the countdown hairline each time the stay timer restarts. */
+  const [lap, setLap] = React.useState(0);
   React.useEffect(() => {
     dismissRef.current = onDismiss;
   }, [onDismiss]);
@@ -74,6 +106,7 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
   // cleared the moment somebody is (or it unmounts).
   React.useEffect(() => {
     if (held || editOpen || leaving) return;
+    setLap((n) => n + 1);
     const stay = window.setTimeout(leave, MEMORY_NOTICE_MS);
     return () => window.clearTimeout(stay);
   }, [editOpen, held, leave, leaving]);
@@ -85,17 +118,19 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
   );
 
   const summary = first
-    ? truncate(first.content)
+    ? noticeSummary(first.content)
     : forgotten[0]
-      ? truncate(forgotten[0])
+      ? noticeSummary(forgotten[0])
       : null;
   const more = saved.length > 1 ? saved.length - 1 : forgotten.length > 1 && !first ? forgotten.length - 1 : 0;
+  const forgetOnly = !first && forgotten.length > 0;
+  const counting = !held && !editOpen && !leaving;
+  const reduce = useReducedMotion();
 
   return (
     <div
-      role="status"
-      aria-live="polite"
       data-memory-notice=""
+      data-state={allUndone ? "undone" : forgetOnly ? "forgotten" : "saved"}
       onPointerEnter={() => setHeld(true)}
       onPointerLeave={() => setHeld(false)}
       onFocus={() => setHeld(true)}
@@ -103,25 +138,55 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHeld(false);
       }}
       className={cn(
-        "pointer-events-auto inline-flex max-w-[min(40rem,calc(100vw-2rem))] items-center gap-1 rounded-full border border-border/70 bg-popover/95 py-1 pl-3 pr-1 shadow-glass backdrop-blur-sm",
+        "surface-float pointer-events-auto relative isolate flex w-max max-w-[min(40rem,calc(100vw-2rem))] items-center gap-3 overflow-hidden rounded-card py-2 pl-2 pr-1.5",
         leaving
           ? "motion-safe:animate-title-out motion-safe:[animation-fill-mode:forwards]"
           : "motion-safe:animate-rise-in",
       )}
     >
-      <span className="shrink-0 font-mono text-label text-muted-foreground">
-        {/* "Forgotten" only when the turn named what it forgot; a write it
-            could not name (no receipt on the row) is still an update. */}
-        {allUndone ? "Memory change undone" : !first && forgotten.length > 0 ? "Forgotten" : "Memory updated"}
+      {/* The mark: memory's own glyph on a tile, a tick once the change is
+          taken back. It swaps in place rather than the notice re-arriving. */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          "grid size-8 shrink-0 place-items-center rounded-card transition-colors duration-base ease-out-soft",
+          allUndone ? "bg-secondary text-muted-foreground" : "bg-primary/10 text-primary-ink",
+        )}
+      >
+        {allUndone ? (
+          <Check key="undone" className="size-4 motion-safe:animate-check-morph" />
+        ) : forgetOnly ? (
+          <ComposerIcons.memory key="forgot" className="size-4 motion-safe:animate-fade-in" />
+        ) : (
+          <ComposerIcons.memory key="saved" className="size-4 motion-safe:animate-fade-in" />
+        )}
       </span>
-      {summary && !allUndone && (
-        <span className="hidden min-w-0 truncate text-label text-foreground/85 sm:inline">
-          {" · "}
-          {summary}
-          {more > 0 ? <span className="text-muted-foreground"> +{more}</span> : null}
+
+      <span role="status" aria-live="polite" className="grid min-w-0 flex-1 gap-0.5">
+        <span className="flex items-center gap-1.5 text-caption text-muted-foreground">
+          {/* "Forgotten" only when the turn named what it forgot; a write it
+              could not name (no receipt on the row) is still an update. */}
+          <span className="truncate">{allUndone ? "Memory change undone" : forgetOnly ? "Forgotten" : "Memory updated"}</span>
+          {more > 0 && !allUndone ? (
+            <span className="shrink-0 rounded-full bg-secondary px-1.5 font-mono text-micro tabular-nums">+{more}</span>
+          ) : null}
         </span>
-      )}
-      <span className="ml-1 flex shrink-0 items-center">
+        {summary && !allUndone ? (
+          // Wraps to a second line rather than clipping: `noticeSummary`
+          // already cut it between words, short enough for two.
+          <span
+            data-no-auto-translate
+            className={cn(
+              "min-w-0 whitespace-normal break-words text-ui font-medium leading-5 text-foreground",
+              forgetOnly && "text-muted-foreground line-through decoration-muted-foreground/40",
+            )}
+          >
+            {summary}
+          </span>
+        ) : null}
+      </span>
+
+      <span className="flex shrink-0 items-center">
         <Link
           href={first ? memoryEntryHref(first.id) : "/memory"}
           className={actionClass}
@@ -136,8 +201,8 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
                 {saved.length > 1 ? "Edit or undo" : "Edit"}
               </button>
             </PopoverTrigger>
-            <PopoverContent align="center" side="bottom" sideOffset={8} className="w-[min(24rem,calc(100vw-2rem))] p-3">
-              <p className="font-mono text-micro text-muted-foreground">Saved from this turn</p>
+            <PopoverContent align="end" side="bottom" sideOffset={8} className="w-[min(24rem,calc(100vw-2rem))] p-3">
+              <p className="text-caption font-medium text-muted-foreground">Saved from this turn</p>
               <ul className="divide-y divide-border/60">
                 {saved.map((fact) => (
                   <MemoryFactRow key={fact.id} fact={fact} saved onNavigate={() => setEditOpen(false)} />
@@ -149,10 +214,27 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
         {first && saved.length === 1 && !allUndone && (
           <UndoButton id={first.id} onUndone={() => requestAnimationFrame(() => closeRef.current?.focus())} />
         )}
-        <button ref={closeRef} type="button" aria-label="Dismiss" onClick={() => leave()} className={cn(actionClass, "px-1.5")}>
+        <span aria-hidden="true" className="mx-1 h-4 w-px bg-border/80" />
+        <button ref={closeRef} type="button" aria-label="Dismiss" onClick={() => leave()} className={cn(actionClass, "w-8 justify-center px-0")}>
           <X aria-hidden="true" className="size-3.5" />
         </button>
       </span>
+
+      {/* How long it stays, drawn: a hairline that drains while nobody holds
+          the notice and refills when somebody does. Motion only; under
+          reduced motion it is not drawn (the notice still leaves on time). */}
+      {counting && !reduce ? (
+        <motion.span
+          key={lap}
+          aria-hidden="true"
+          data-notice-countdown=""
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-px origin-left bg-foreground/15"
+          initial={{ scaleX: 1 }}
+          animate={{ scaleX: 0 }}
+          // A countdown runs at the clock's own pace: linear, the stay's length.
+          transition={{ duration: MEMORY_NOTICE_MS / 1000, ease: "linear" }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -179,9 +261,44 @@ function UndoButton({ id, onUndone }: { id: string; onUndone: () => void }) {
         // moves on to Dismiss rather than falling to the page.
         if (failure === null) onUndone();
       }}
-      className={cn(actionClass, failed && "text-destructive hover:text-destructive")}
+      className={cn(actionClass, "text-foreground", failed && "text-destructive hover:text-destructive")}
     >
       {busy ? "Undoing…" : failed ? "Try again" : "Undo"}
     </button>
+  );
+}
+
+/**
+ * On a phone, "Memory updated" is not drawn over the conversation: the answer
+ * that saved the fact already says it in its own chip (AnswerMemory, "Memory
+ * updated" under the answer) with the same View, Edit and Undo, so a notice
+ * at the top only covered the transcript the reader was looking at. What a
+ * screen reader would have heard from the notice is still said, here, once:
+ * the region is in place before its words arrive, so it is announced, and it
+ * goes with the notice's own timing. Used only for a write the turn could
+ * name; one it could not has no chip, so the notice is drawn (above the
+ * composer, chat-view.tsx).
+ */
+export function MemoryUpdatedAnnouncement({ write, onDismiss }: { write: ClientMemoryWrite; onDismiss: () => void }) {
+  const [text, setText] = React.useState("");
+  const dismissRef = React.useRef(onDismiss);
+  React.useEffect(() => {
+    dismissRef.current = onDismiss;
+  }, [onDismiss]);
+  const first = write.saved[0];
+  const forgotten = write.forgotten?.[0];
+  const sentence = first ? `Memory updated: ${noticeSummary(first.content)}` : forgotten ? `Forgotten: ${noticeSummary(forgotten)}` : "Memory updated";
+  React.useEffect(() => {
+    const frame = requestAnimationFrame(() => setText(sentence));
+    const stay = window.setTimeout(() => dismissRef.current(), MEMORY_NOTICE_MS);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(stay);
+    };
+  }, [sentence]);
+  return (
+    <p role="status" aria-live="polite" className="sr-only" data-memory-announcement="">
+      {text}
+    </p>
   );
 }

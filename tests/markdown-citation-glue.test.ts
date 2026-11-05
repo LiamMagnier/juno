@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Markdown } from "@/components/chat/markdown";
+import { Markdown, isOnlyComments } from "@/components/chat/markdown";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 /*
@@ -49,4 +49,22 @@ test("HTML comments are notes in the source, never text on the page", () => {
   // Anything that is not only a comment is left exactly as before.
   assert.match(render("<!-- open and still streaming"), /&lt;!-- open and still streaming/);
   assert.match(render("<div>raw</div>"), /&lt;div&gt;raw&lt;\/div&gt;/);
+});
+
+test("only a node made of whole comments counts as comments, however they are nested or split", () => {
+  assert.equal(isOnlyComments("<!-- a -->"), true);
+  assert.equal(isOnlyComments("  <!-- a -->\n<!-- b -->  "), true);
+  assert.equal(isOnlyComments("<!---->"), true);
+  // Not only comments: text between or after them, an unclosed one, nothing at all.
+  assert.equal(isOnlyComments("<!-- a --> text"), false);
+  assert.equal(isOnlyComments("<!-- a --><b>x</b>"), false);
+  assert.equal(isOnlyComments("<!-- open"), false);
+  assert.equal(isOnlyComments("<!-->"), false);
+  assert.equal(isOnlyComments(""), false);
+  assert.equal(isOnlyComments(undefined), false);
+  // A removal that would stitch a new opener together never makes it "only comments".
+  assert.equal(isOnlyComments("<!<!-- x -->-- y -->"), false);
+  assert.equal(isOnlyComments("<!-- a --><!-- b"), false);
+  // And through the component: such a node stays visible text.
+  assert.match(render("<!<!-- x -->-- y -->"), /&lt;!/);
 });

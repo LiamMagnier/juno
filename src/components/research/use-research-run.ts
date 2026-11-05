@@ -183,6 +183,8 @@ export interface ResearchRunView extends ResearchRunViewAdditions {
     contradicted: number;
     unverified: number;
     duplicateSources: number;
+    contested?: number;
+    unresolvedCitations?: number;
   } | null;
   costMicroUsd: string;
   budgetMicroUsd: string | null;

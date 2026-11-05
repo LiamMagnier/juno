@@ -40,7 +40,18 @@ export const CODING_MEMORY_LIMIT = 8;
  */
 export function selectCodingMemories(
   entries: readonly LifecycleEntry[],
-  opts: { query: string; now?: Date }
+  opts: {
+    query: string;
+    now?: Date;
+    /**
+     * The account's block-list — forgotten statements and excluded topics.
+     * Every other memory reader applies it on the read side as well as at
+     * write time; a Code run's background has to too, or a fact written in
+     * the instant before a forget (or by a path that missed it) reaches a CI
+     * runner the person never asked to tell.
+     */
+    suppressions: readonly string[];
+  }
 ): { id: string; content: string }[] {
   const now = opts.now ?? new Date();
   const allowed = new Set<string>(CODING_MEMORY_CATEGORIES);
@@ -60,6 +71,7 @@ export function selectCodingMemories(
     now,
     budgetTokens: CODING_MEMORY_BUDGET_TOKENS,
     limit: CODING_MEMORY_LIMIT,
+    suppressions: opts.suppressions,
     // Already narrowed to how the user works, which applies to every task;
     // the task text only orders them.
     relevanceGate: false,
@@ -76,7 +88,9 @@ export function selectCodingMemories(
  * profile is never a task on its own.
  */
 export function foldMemoryIntoPrompt(prompt: string, facts: readonly string[]): string {
-  const lines = facts.map((fact) => fact.trim()).filter(Boolean);
+  // One line each, as in a chat's notes (turn-context-tail.ts): a fact
+  // holding a newline must not open a section of the agent's prompt.
+  const lines = facts.map((fact) => fact.replace(/\s+/g, " ").trim()).filter(Boolean);
   if (!prompt.trim() || lines.length === 0) return prompt;
   return `${prompt}\n\n---\nBackground from what ${PRODUCT_NAME} remembers about how this user works. It is context, not part of the task — where it and the task disagree, the task wins:\n${lines
     .map((line) => `- ${line}`)

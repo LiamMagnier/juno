@@ -282,9 +282,9 @@ struct CodeV2TeamModelPicker: View {
 
     private var stopID: Binding<String?> {
         Binding(
-            get: { (selection.effort ?? model?.defaultEffort)?.rawValue },
+            get: { CodeV2ModelControl.stopID(for: selection.effort ?? model?.defaultEffort) },
             set: { id in
-                guard let id, let level = CodeV2.EffortLevel(rawValue: id) else { return }
+                guard let id, let level = CodeV2ModelControl.level(forStopID: id) else { return }
                 selection.effort = level
             }
         )

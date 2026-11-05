@@ -11,14 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Monitor, MoreHorizontal, Pause, Play, Shapes, User } from "@/components/ui/icons";
 import { AgentPresence, AgentStatusLine } from "@/components/agents/agent-presence";
@@ -36,6 +29,10 @@ import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/brand/names";
 import { prefersReducedMotion } from "@/lib/motion-preference";
+import { staggerDelay } from "@/lib/motion";
+import { TIMING_TOKENS } from "@/lib/design/tokens.generated";
+
+import { threadWorkNotice } from "@/components/agents/thread-agent-state";
 
 export { threadAgentState } from "@/components/agents/thread-agent-state";
 
@@ -128,12 +125,31 @@ export function AgentThreadHeader({
     }
   };
 
-  const attention = state === "waiting" || state === "blocked" || agent.needsYou > 0;
+  // The sentence is inked by what it says, beside the face that says the
+  // same: the needs-you ember (never --attention, which is for warnings) for
+  // a wait, the blocked ink for a block, and the plain status line for
+  // anything else, even while another task needs you (a "Thinking" is never
+  // painted as an alert).
+  const asking = state === "waiting";
+  const blocked = state === "blocked";
+  // Cloud work cannot start right now: said in words where the state goes,
+  // rather than a thread that looks ready and then refuses every task.
+  const workNotice = asking || blocked || agent.needsYou > 0 ? null : threadWorkNotice(agent, state);
   const profileOpen = activePanelTab === "profile";
+
+  // One live copy of a face per screen: while the profile's face or the empty
+  // thread's greeting (both larger) is up, this one is held still, so two
+  // copies of one agent never blink and glance out of step. One face, one
+  // element throughout: held, it eases into its still frame from where it is
+  // (a blink under way finishes first), never a swap for another copy.
+  const greeting = useGreetingShown(agent.id);
+  const faceStill = profileOpen || greeting;
+  const { ref: barRef, roomy } = useBarRoom();
 
   return (
     <div
-      className="agent-thread-bar relative isolate flex shrink-0 justify-center px-4 py-2.5"
+      ref={barRef}
+      className="agent-thread-bar @container/bar relative isolate flex shrink-0 justify-center px-4 py-2.5"
       style={{ "--bar-tone": `var(--agent-${agent.avatar.tone})` } as React.CSSProperties}
     >
       <div className="flex w-full max-w-3xl items-center gap-3">
@@ -143,15 +159,22 @@ export function AgentThreadHeader({
           onClick={() => onTogglePanel?.("profile")}
           data-face-trigger
           className="flex min-w-0 flex-1 items-center gap-3 rounded-control py-0.5 pr-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={`${agent.name}. ${sentence}. Open profile`}
+          aria-label={`${agent.name}. ${workNotice ?? sentence}. Open profile`}
           aria-expanded={profileOpen}
         >
-          <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} gaze />
-          <span className="min-w-0 flex-1">
+          <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} gaze still={faceStill} />
+          {/* A floor, so the labelled actions beside it never squeeze the
+              name and the state sentence out (the face never carries the
+              state alone). */}
+          <span className="min-w-[7rem] flex-1">
             <span className="block truncate font-serif text-body-lg leading-6 tracking-[-0.012em] text-foreground [font-optical-sizing:auto]">{agent.name}</span>
-            {attention ? (
-              <span className="block truncate text-caption font-medium text-[hsl(var(--attention))]" aria-live="polite">
+            {asking || blocked ? (
+              <span className={cn("block truncate text-caption font-medium", asking ? "text-status-needs-you-ink" : "text-destructive-ink")} aria-live="polite">
                 {sentence}
+              </span>
+            ) : workNotice ? (
+              <span className="block truncate text-caption font-medium text-[hsl(var(--attention))]" aria-live="polite" data-work-notice="cloud">
+                {workNotice}
               </span>
             ) : (
               <AgentStatusLine text={sentence} state={state} className="text-caption text-muted-foreground" />
@@ -178,7 +201,10 @@ export function AgentThreadHeader({
               <TooltipContent>Computer</TooltipContent>
             </Tooltip>
           ) : null}
-          {/* Named actions where there is room (design: About, Appearance, Pause), icons on a phone. */}
+          {/* Named actions where the bar has room (design: About, Appearance,
+              Pause), icons when it is narrow. Keyed on the bar's own width,
+              not the viewport's: with the profile open the bar is half the
+              window. */}
           <Button
             type="button"
             size="sm"
@@ -188,14 +214,14 @@ export function AgentThreadHeader({
             className={cn("gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground", profileOpen && "bg-selected text-foreground")}
           >
             <User className="size-4" aria-hidden="true" />
-            <span className="hidden sm:inline">{`About ${agent.name}`}</span>
-            <span className="sr-only sm:hidden">{`About ${agent.name}`}</span>
+            <span className="hidden @[40rem]/bar:inline">{`About ${agent.name}`}</span>
+            <span className="sr-only @[40rem]/bar:hidden">{`About ${agent.name}`}</span>
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => setStudio(true)} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground md:inline-flex">
+          <Button type="button" size="sm" variant="ghost" onClick={() => setStudio(true)} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground @[44rem]/bar:inline-flex">
             <Shapes className="size-4" aria-hidden="true" />
             Appearance
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => void handlePauseResume()} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground md:inline-flex">
+          <Button type="button" size="sm" variant="ghost" onClick={() => void handlePauseResume()} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground @[44rem]/bar:inline-flex">
             {agent.status === "paused" ? <Play className="size-4" aria-hidden="true" /> : <Pause className="size-4" aria-hidden="true" />}
             {agent.status === "paused" ? "Resume" : "Pause"}
           </Button>
@@ -213,10 +239,16 @@ export function AgentThreadHeader({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-44">
-              <DropdownMenuItem className="md:hidden" onSelect={() => setStudio(true)}>Appearance</DropdownMenuItem>
-              <DropdownMenuItem className="md:hidden" onSelect={() => void handlePauseResume()}>
-                {agent.status === "paused" ? "Resume" : "Pause"}
-              </DropdownMenuItem>
+              {/* The menu opens in a portal, outside the bar's container, so
+                  these two follow the bar's measured width instead. */}
+              {roomy ? null : (
+                <>
+                  <DropdownMenuItem onSelect={() => setStudio(true)}>Appearance</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void handlePauseResume()}>
+                    {agent.status === "paused" ? "Resume" : "Pause"}
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuItem
                 onSelect={() =>
                   void run("Pin", () => updateAgent(agent.id, { pinned: !agent.pinnedAt }))
@@ -239,31 +271,17 @@ export function AgentThreadHeader({
 
       <AgentFaceStudio agent={agent} open={studio} onOpenChange={setStudio} />
 
-      <Dialog open={confirmRetire} onOpenChange={setConfirmRetire}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Retire {agent.name}?</DialogTitle>
-            <DialogDescription>
-              {`Its routines and tasks stop and it leaves ${BRAND.orbit.label}. This conversation stays in your history.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirmRetire(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                setConfirmRetire(false);
-                void handleRetire();
-              }}
-            >
-              Retire
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmRetire}
+        onOpenChange={setConfirmRetire}
+        title={`Retire ${agent.name}?`}
+        description={`Its routines and tasks stop and it leaves ${BRAND.orbit.label}. This conversation stays in your history.`}
+        confirmLabel="Retire"
+        onConfirm={() => {
+          setConfirmRetire(false);
+          void handleRetire();
+        }}
+      />
     </div>
   );
 }
@@ -272,8 +290,54 @@ export function AgentThreadHeader({
  * The empty thread greets in the agent's own voice. No suggestion chips: the
  * composer below is the invitation, and its placeholder says what to type.
  */
+// After `--delay-greeting`, on the tile stagger (45ms, at most four steps,
+// spec D17) and the expo token. It was 80 + 40·step on a literal curve: a
+// retired 80, a step on no rung, and a curve reduced motion could not flatten.
 function GREETING_RISE(step: number): React.CSSProperties {
-  return { animationDelay: `${80 + step * 40}ms`, animationDuration: "var(--dur-slow)", animationTimingFunction: "cubic-bezier(.16, 1, .3, 1)", animationFillMode: "both" };
+  return { ...staggerDelay(step, "base", TIMING_TOKENS.delay.greeting), animationDuration: "var(--dur-slow)", animationTimingFunction: "var(--ease-out-expo)", animationFillMode: "both" };
+}
+
+/*
+ * Which agents' greetings are on screen, so the header can draw its face
+ * still beside the greeting's live one (one live copy of a face per screen,
+ * docs/design/AGENTS.md §4.2). Both live in this file; the thread page needs
+ * to know nothing about it.
+ */
+const greetingsShown = new Map<string, number>();
+const greetingListeners = new Set<() => void>();
+function noteGreeting(agentId: string, delta: 1 | -1) {
+  const n = (greetingsShown.get(agentId) ?? 0) + delta;
+  if (n > 0) greetingsShown.set(agentId, n);
+  else greetingsShown.delete(agentId);
+  for (const listener of greetingListeners) listener();
+}
+function subscribeGreetings(listener: () => void) {
+  greetingListeners.add(listener);
+  return () => {
+    greetingListeners.delete(listener);
+  };
+}
+function useGreetingShown(agentId: string) {
+  return React.useSyncExternalStore(
+    subscribeGreetings,
+    () => greetingsShown.has(agentId),
+    () => false,
+  );
+}
+
+/** Whether the bar has room for its named actions (the same 44rem its container query uses), for the parts a portal takes out of it. */
+function useBarRoom() {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const [roomy, setRoomy] = React.useState(true);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const rem = () => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const observer = new ResizeObserver(([entry]) => setRoomy(entry.contentRect.width >= 44 * rem()));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, roomy };
 }
 
 export function AgentGreeting({
@@ -284,6 +348,10 @@ export function AgentGreeting({
   onSelectSuggestion?: (text: string) => void;
 }) {
   const paused = agent.status === "paused";
+  React.useEffect(() => {
+    noteGreeting(agent.id, 1);
+    return () => noteGreeting(agent.id, -1);
+  }, [agent.id]);
   return (
     <div className="flex flex-col items-center text-center" data-face-trigger>
       <span className="motion-safe:animate-agent-arrive">

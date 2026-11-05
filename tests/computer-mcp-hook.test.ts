@@ -155,7 +155,9 @@ test("calls go to the bridge under the scoped session id, emit items per session
   const hook = registerComputerUseOnAlevrMcp(mcp, {
     bridge,
     session: resolve,
-    onItem: (sessionId, item) => items.push([sessionId, item]),
+    onItem: (sessionId, item) => {
+      if (item.kind === "computer_action") items.push([sessionId, item]);
+    },
     newCallId: () => `c${++n}`,
     heartbeatMs: 60_000,
   });

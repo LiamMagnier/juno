@@ -123,7 +123,7 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
                 <th
                   key={column}
                   scope="col"
-                  className="whitespace-nowrap px-3 py-2 font-medium text-foreground/80"
+                  className="whitespace-nowrap px-3 py-2 font-medium text-muted-foreground"
                 >
                   {column}
                 </th>
@@ -132,7 +132,7 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
           </thead>
           <tbody className="divide-y divide-border/45 font-mono text-caption text-foreground">
             {paginatedData.map((row, index) => (
-              <tr key={index} className="transition-colors duration-fast ease-out-soft hover:bg-accent/35 motion-reduce:transition-none">
+              <tr key={index} className="transition-colors duration-fast ease-out-soft hover:bg-accent/35">
                 {table.columns.map((column) => (
                   <td
                     key={column}
@@ -151,7 +151,7 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
                   className="px-3 py-8 text-center font-sans text-caption text-muted-foreground"
                 >
                   <span className="inline-flex flex-col items-center gap-2">
-                    <SearchX className="size-5 text-muted-foreground/70" aria-hidden="true" />
+                    <SearchX className="size-5 text-ink-tertiary" aria-hidden="true" />
                     No matching rows
                   </span>
                 </td>

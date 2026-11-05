@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { workspaceConfigSchema } from "@/lib/projects/workspace-config";
 import { workDefaultsSchema } from "@/lib/work/projects";
+import { CHARACTERISTIC_PATCH_FIELDS } from "@/lib/characteristics";
 
 /*
  * The native mutation union — request shapes only, no server imports, so the
@@ -19,12 +20,18 @@ export const mutationOperationSchema = z.discriminatedUnion("type", [
     kind: z.enum(["chat", "code"]).optional(),
     model: z.string().min(1).max(200).optional(),
     projectId: z.string().min(1).max(200).optional(),
+    // "Memory off for this chat" (src/lib/chat/memory-off.ts), chosen before
+    // the app's first turn: the chat exists before anything is said in it.
+    memoryOff: z.boolean().optional(),
   }).strict(),
   z.object({ type: z.literal("conversation.rename"), entityId: z.string().min(1).max(200), title: z.string().trim().min(1).max(200) }).strict(),
   z.object({ type: z.literal("conversation.update"), entityId: z.string().min(1).max(200), patch: z.object({
     title: z.string().trim().min(1).max(200).optional(), pinned: z.boolean().optional(),
     model: z.string().trim().min(1).max(200).optional(),
     projectId: z.string().min(1).max(200).nullable().optional(), folderId: z.string().min(1).max(200).nullable().optional(),
+    // Saved through the web toggle's own writer (memory-off-store.ts), so
+    // turning it back on covers what was said meanwhile as read here too.
+    memoryOff: z.boolean().optional(),
   }).strict() }).strict(),
   z.object({ type: z.literal("conversation.archive"), entityId: z.string().min(1).max(200), archived: z.boolean().default(true) }).strict(),
   z.object({ type: z.literal("conversation.delete"), entityId: z.string().min(1).max(200) }).strict(),
@@ -77,6 +84,8 @@ export const mutationOperationSchema = z.discriminatedUnion("type", [
     personality: z.string().min(1).max(80).optional(), memoryEnabled: z.boolean().optional(),
     voiceId: z.string().max(200).nullable().optional(), favoriteModels: z.array(z.string().max(200)).max(100).optional(),
     emailBudgetAlerts: z.boolean().optional(), emailWeeklyDigest: z.boolean().optional(),
+    // Tone characteristics, each "less" | "default" | "more" (lib/characteristics).
+    ...CHARACTERISTIC_PATCH_FIELDS,
   }).strict() }).strict(),
 ]);
 

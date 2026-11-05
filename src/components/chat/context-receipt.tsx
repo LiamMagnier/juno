@@ -40,7 +40,7 @@ export function ContextReceiptLine({ receipt }: { receipt: ContextReceipt }) {
     {dropped.length > 0 && <details className="text-left">
       <summary className="ml-auto w-fit cursor-pointer list-none py-1 text-right underline decoration-border underline-offset-2 hover:text-foreground">Why</summary>
       <ul className="space-y-1 pb-1">{dropped.map(token => <li key={`${token.kind}:${token.id}`}>
-        <span className="text-foreground/75">{token.message ?? `${token.label} could not be included.`}</span>
+        <span className="text-muted-foreground">{token.message ?? `${token.label} could not be included.`}</span>
         {token.code === "needs_connection" && token.connect?.href.startsWith("/connections") && <a className="ml-1 text-foreground underline underline-offset-2" href={token.connect.href}>Connect {token.label}</a>}
       </li>)}</ul>
     </details>}

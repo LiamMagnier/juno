@@ -14,5 +14,6 @@ export function agentStarterInput(template: AgentTemplate): CreateAgentInput {
     template: template.id,
     proactive: true,
     notify: "results",
+    executionTarget: "cloud",
   };
 }

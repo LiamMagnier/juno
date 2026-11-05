@@ -1,4 +1,5 @@
 import { canonicalSemanticBody, type SemanticArtifactType } from "@/lib/work/deliverables/semantic";
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -79,7 +80,7 @@ const document = {
 
 const deck = {
   title: "Launch plan",
-  theme: { accent: "#2d49c9", headingFont: "Georgia" },
+  theme: { accent: SCRIPT_COLOR.presence.light, headingFont: "Georgia" },
   master: { footer: "Launch plan · Q4", slideNumbers: true },
   slides: [
     { layout: "title", title: "Launch plan", subtitle: "Q4 2026", notes: "Open with the one number that matters." },

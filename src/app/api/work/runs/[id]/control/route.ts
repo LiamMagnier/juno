@@ -17,6 +17,8 @@ import {
 import { isPermissionPolicy, runCommandKey, startCommandPayload } from "@/lib/work/relay";
 import { serializeCommand, serializeRun } from "@/lib/work/serializers";
 import { runControlSchema } from "@/app/api/work/protocol";
+import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
+import { CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE } from "@/lib/work/executor-presence";
 
 export const runtime = "nodejs";
 
@@ -176,6 +178,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const pausing = parsed.data.action === "pause";
+
+  // Resuming a cloud run puts it back in `queued` for the cloud executor, so
+  // it asks the same question dispatch asks before queueing one. With no
+  // worker alive the honest answer is the refusal dispatch gives, and the run
+  // stays paused with its checkpoint, rather than queued for nobody and later
+  // ended by the expiry sweep.
+  if (!pausing && run.status === "paused" && run.effectiveTarget === "cloud" && !(await cloudWorkAvailable())) {
+    return NextResponse.json(
+      { error: "no_executor_available", message: CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE, status: run.status },
+      { status: 409 }
+    );
+  }
+
   // The condition lives in the WHERE, not in an if above it. Reading the status,
   // deciding, and then writing leaves a window in which the executor moves the
   // run underneath the decision — and the write lands anyway, dragging a
@@ -240,6 +255,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           goal: run.session.goal,
           model: run.effectiveModel,
           permissionPolicy: enforcedPolicy(run.permissionPolicy),
+          // A relaunched Mac rebuilds the run from this. The crew member's
+          // context is not stored here; the claim endpoint adds it, fresh,
+          // when the Mac claims the resume (`serializeClaimedCommand`).
         }),
     appended.lastSeq
   );

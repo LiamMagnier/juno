@@ -14,6 +14,8 @@ export function Construction(props: {
   trajectory?: boolean;
   axis?: boolean;
   animate?: boolean;
+  /** Draw on once, then hold still (no sway, no travel, no frames). */
+  hold?: boolean;
   parallax?: boolean;
   lamp?: boolean;
   zoom?: MotionValue<number>;

@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Plus, Search, type IconComponent } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Collapse } from "@/components/ui/collapse";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
@@ -334,7 +335,7 @@ export function MemoryList({
                     onClick={() => jumpTo(section.id)}
                     aria-current={on ? "true" : undefined}
                     className={cn(
-                      "relative flex h-8 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 text-ui transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+                      "relative flex h-8 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 text-ui hit-44 transition-colors duration-fast ease-out-soft",
                       on ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -464,7 +465,7 @@ export function MemoryList({
                         type="button"
                         onClick={() => toggleSection(section.id)}
                         aria-expanded={open}
-                        className="group/more -mx-3 mt-1 inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground motion-reduce:transition-none"
+                        className="group/more relative -mx-3 mt-1 inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-ui font-medium text-muted-foreground hit-44 transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground"
                       >
                         {open ? (
                           <span>Show fewer</span>
@@ -494,7 +495,7 @@ export function MemoryList({
                     onClick={() => setShowRetired((open) => !open)}
                     aria-expanded={showRetired}
                     aria-controls="memory-retired-list"
-                    className="-mx-3 flex h-9 items-center gap-2 rounded-control px-3 text-left text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground motion-reduce:transition-none"
+                    className="-mx-3 flex h-9 items-center gap-2 rounded-control px-3 text-left coarse:h-11 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground"
                   >
                     <ChevronDown
                       aria-hidden="true"
@@ -556,7 +557,7 @@ function SortSwitch({ value, onChange }: { value: MemorySort; onChange: (sort: M
             aria-checked={on}
             onClick={() => onChange(id)}
             className={cn(
-              "relative h-full flex-1 rounded-sm px-2 text-caption font-medium transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+              "relative h-full flex-1 rounded-sm px-2 text-caption font-medium hit-44 transition-colors duration-fast ease-out-soft",
               on ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -713,7 +714,7 @@ function AddForm({
         void submit();
       }}
     >
-      <textarea
+      <Textarea
         ref={fieldRef}
         value={draft}
         rows={1}
@@ -730,7 +731,7 @@ function AddForm({
         }}
         placeholder={project ? PROJECT_ADD_PLACEHOLDER : ACCOUNT_ADD_PLACEHOLDER}
         aria-label="New memory"
-        className="block w-full resize-none overflow-hidden rounded-field border border-input bg-background px-3 py-2 text-ui text-foreground outline-none transition-colors duration-fast ease-out-soft placeholder:text-muted-foreground focus-visible:border-foreground/60"
+        className="block min-h-0 resize-none overflow-hidden px-3 py-2"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
         <p className="min-w-0 text-caption text-muted-foreground">

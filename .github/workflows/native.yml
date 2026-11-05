@@ -350,14 +350,33 @@ jobs:
   # a signed build and is covered by the release gates on a developer machine —
   # see docs/native/TESTING.md, which explains why an unsigned build tests the
   # failure path.
+  #
+  # Two jobs, not one. Until 2026-10-25 a single "macOS app" job ran the Debug
+  # build, then the Stable build, then the unit tests, under one 40-minute cap.
+  # The Stable build alone is 24–31 minutes (whole-module -O, both slices), so
+  # the job finished at 37m38s on PR run 39143955698 and was cancelled by its
+  # own timeout on main run 39143961783 — Debug 7m28s + Stable 30m42s, then
+  # "Unit tests" cancelled after 27s. The macOS unit tests did not run on main
+  # at all, and the check read "cancelled", not "failed" (ledger P1-4).
+  #
+  #   macos-app         Debug build (strict) + JunoDesktopTests. Observed
+  #                     ~15 minutes (Debug 6–7.5m, tests 6m16s, set-up ~1m).
+  #   macos-app-stable  The Stable build (strict), with the env server bundle it
+  #                     requires. Observed 26–33 minutes including set-up.
+  #
+  # They run in parallel, so the wall-clock gate is the slower of the two
+  # rather than their sum, and each cap leaves more than 10 minutes over the
+  # worst run observed. The unit tests no longer wait behind — or die with —
+  # the slowest build. Total macOS minutes barely move (one more checkout and
+  # XcodeGen install, ~1 minute), which matters at the 10x macOS rate.
   # ---------------------------------------------------------------------------
   macos-app:
     needs: changes
     if: needs.changes.outputs.native == 'true'
     name: macOS app
     runs-on: macos-26
-    # Observed max 17m25s, so 30 would leave under a 2x margin.
-    timeout-minutes: 40
+    # Observed ~15m (Debug + unit tests, see above); 30 leaves ~15m of headroom.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -411,6 +430,62 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Unit tests
+        run: |
+          xcodebuild \
+            -project native/macOS/JunoDesktop/JunoDesktop.xcodeproj \
+            -scheme JunoDesktop \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/desktop-dd" \
+            -only-testing:JunoDesktopTests \
+            CODE_SIGNING_ALLOWED=NO \
+            test
+
+  # ---------------------------------------------------------------------------
+  # The macOS app's Stable (release) configuration: whole-module, optimised,
+  # warnings as errors, carrying the env server sidecar. Split out of
+  # `macos-app` (see the note above it) so the unit tests are not cancelled
+  # behind it. Same runner image, same Xcode gate, same project generation.
+  # ---------------------------------------------------------------------------
+  macos-app-stable:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
+    name: macOS app (Stable build)
+    runs-on: macos-26
+    # Observed 26–33m with set-up (Stable 24m–30m42s); 45 leaves 12m over the
+    # worst run.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Require an Xcode new enough for the deployment floor
+        run: |
+          set -euo pipefail
+          newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$newest/Contents/Developer"
+          # Parsed from a variable, never piped into `head` — see the same step
+          # in `macos-app` for the Broken-pipe failure that caused.
+          version=$(xcodebuild -version)
+          printf '%s\n' "$version"
+          major=$(printf '%s\n' "$version" | sed -n -E '1s/Xcode ([0-9]+).*/\1/p')
+          if [ "$major" -lt "$REQUIRED_XCODE_MAJOR" ]; then
+            echo "::error::JunoDesktop targets macOS $REQUIRED_XCODE_MAJOR and needs Xcode $REQUIRED_XCODE_MAJOR or newer; this runner has Xcode $major."
+            exit 1
+          fi
+
+      - name: Install XcodeGen
+        # `brew update` first, for the same pinned-formula reason as `macos-app`.
+        run: |
+          brew update
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate projects
+        run: ./native/Scripts/generate-projects.sh
+
       # A Stable build must carry the env server bundle: JunoDesktop's "Env
       # server bundle" phase fails it without one, on purpose, so a release
       # can never ship the app without its sidecar. The bundle is gitignored,
@@ -443,18 +518,6 @@ jobs:
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             CODE_SIGNING_ALLOWED=NO \
             build
-
-      - name: Unit tests
-        run: |
-          xcodebuild \
-            -project native/macOS/JunoDesktop/JunoDesktop.xcodeproj \
-            -scheme JunoDesktop \
-            -configuration Debug \
-            -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/desktop-dd" \
-            -only-testing:JunoDesktopTests \
-            CODE_SIGNING_ALLOWED=NO \
-            test
 
   # ---------------------------------------------------------------------------
   # The iPhone app, because the macOS app and the phone app share JunoNativeKit

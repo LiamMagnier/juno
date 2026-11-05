@@ -447,15 +447,16 @@ test("the chat route gates the tool and its prompt section on one flag", () => {
   assert.match(route, /const taskToolOn = chatTaskToolEnabled\(\{/);
   assert.match(route, /workHandoff: input\.workHandoff,/);
   assert.match(route, /taskHandoff: taskToolOn,/);
-  // The task tool, the routine proposal tool, handoff tool, agent config
-  // tools, setup change and the room tools ride one list, each only when its
-  // own gate opened (a tool that did not is null and filtered out); an empty
-  // list is no native tools at all.
+  // The task tool, the routine proposal tool, the skill draft tool (Teach
+  // Juno), handoff tool, agent config tools, setup change and the room tools
+  // ride one list, each only when its own gate opened (a tool that did not is
+  // null and filtered out); an empty list is no native tools at all.
   assert.match(
     route,
-    /const nativeTools = \[\s*taskTool,\s*routineTool,\s*handoffTool,\s*\.\.\.agentConfigTools,\s*setupChangeTool,\s*createRoomTool,\s*askRoomMemberTool,\s*\.\.\.crossTools,\s*\]\.filter\(\s*\(tool\): tool is NativeChatTool => tool !== null\s*\);/
+    /const nativeTools = \[\s*taskTool,\s*routineTool,\s*skillDraftTool,\s*imageTool,\s*handoffTool,\s*\.\.\.agentConfigTools,\s*setupChangeTool,\s*createRoomTool,\s*askRoomMemberTool,\s*\.\.\.crossTools,\s*\]\.filter\(\s*\(tool\): tool is NativeChatTool => tool !== null\s*\);/
   );
   assert.match(route, /const routineTool =\s*routineToolOn && userMessageId\s*\? createProposeRoutineTool\(\{/);
+  assert.match(route, /const skillDraftTool =\s*skillDraftToolOn && userMessageId\s*\? createDraftSkillTool\(\{/);
   assert.match(route, /const taskTool =\s*taskToolOn && !agentContext\?\.paused && userMessageId\s*\? createStartTaskTool\(\{/);
   assert.match(route, /const createRoomTool =\s*agentConfigToolsOn && userMessageId\s*\? createCreateRoomTool\(\{/);
   assert.match(route, /nativeTools: nativeTools\.length > 0 \? nativeTools : undefined,/);
@@ -498,9 +499,17 @@ test("the tool's preflight includes the concurrency cap, so nobody approves a ru
   const dispatch = read("../src/lib/work/dispatch.ts");
   const branch = dispatch.slice(dispatch.indexOf("if (options.preflightOnly) {"));
   const body = branch.slice(0, branch.indexOf("return { status: 200, body: { preflight }"));
-  assert.match(body, /prisma\.workRun\.count\(\{\s*where: \{ userId: user\.id, status: \{ in: \[\.\.\.WORK_LIVE_STATUSES\] \} \},/);
+  // Live runs that hold an executor, i.e. every live status but a parked one;
+  // parked runs have their own bound (src/lib/work/park-resume-rules.ts).
+  assert.match(body, /prisma\.workRun\.count\(\{\s*where: \{ userId: user\.id, status: \{ in: \[\.\.\.WORK_CAPPED_LIVE_STATUSES\] \} \},/);
+  assert.match(dispatch, /import \{ WORK_CAPPED_LIVE_STATUSES \} from "@\/lib\/work\/park-resume-rules";/);
+  assert.match(
+    read("../src/lib/work/park-resume-rules.ts"),
+    /export const WORK_CAPPED_LIVE_STATUSES: readonly WorkLiveStatus\[\] = WORK_LIVE_STATUSES\.filter\(\s*\(status\) => status !== "paused"\s*\);/
+  );
   assert.match(body, /live >= WORK_RUN_CONCURRENCY_CAP/);
   assert.match(body, /error: "run_cap_exceeded"/);
+  assert.match(body, /parked >= maxParkedRunsPerAccount\(\)/);
 });
 
 test("the Work routes stay thin wrappers over the shared dispatch", () => {
@@ -548,7 +557,8 @@ test("the declaration is the registry's start_task entry, so the two cannot drif
 
 test("the approval waits on the turn signal with the per-call card; the timer starts after the yes", () => {
   const source = read("../src/lib/chat/task-tool.ts");
-  assert.match(source, /const onApprovalRequest = opts\?\.onApprovalRequest \?\? ctx\.onApprovalRequest;/);
+  // The route's card and the dispatcher's row both (tests/chat-task-tool-approval.test.ts).
+  assert.match(source, /const onApprovalRequest = composeApprovalCallbacks\(ctx\.onApprovalRequest, opts\?\.onApprovalRequest\);/);
   const authorize = source.indexOf("await store.authorizeExternalAction({");
   const authorized = source.indexOf("opts?.onAuthorized?.();");
   const timer = source.indexOf("const bounded = dispatchSignal(signal, opts?.timeoutMs);");

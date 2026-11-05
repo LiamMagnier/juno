@@ -1,17 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, RotateCcw, ArrowUpRight } from "@/components/ui/icons";
+import { Check, Copy, RotateCcw, ArrowUpRight, SlidersHorizontal } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LiveScope, interpolate, valueToString, type LiveValue } from "@/lib/live-ui/expr";
 import { LIVE_NULL_TEXT, platformFormatter, type LiveFormatter } from "@/lib/live-ui/format";
-import { parseLiveUI, type LiveComponent, type LiveInput, type LiveSpec } from "@/lib/live-ui/spec";
+import { parseLiveUI, settleLiveSpec, type LiveComponent, type LiveInput, type LiveSpec } from "@/lib/live-ui/spec";
 import { LiveInputControl, formatInputValue } from "@/components/chat/live-ui/live-ui-controls";
 import { LiveChart } from "@/components/chat/live-ui/live-ui-chart";
 import { LiveChecklist, LiveExplorer, LiveStops } from "@/components/chat/live-ui/live-ui-parts";
 import { LiveCallout, LiveExercise, LiveQuiz, LiveSteps, LiveTimeline } from "@/components/chat/live-ui/live-ui-learning";
+import { LiveCards, LiveChoices, LiveCompare, LiveFlashcards, LiveRecipe, LiveTabs } from "@/components/chat/live-ui/live-ui-intelligent";
 import { useLiveUIHost } from "@/components/chat/live-ui/host";
 import { useLiveState, type LiveState } from "@/components/chat/live-ui/use-live-state";
+import { useTweenedNumber } from "@/components/chat/live-ui/use-tweened-number";
 import { cn } from "@/lib/utils";
 
 /**
@@ -21,11 +23,13 @@ import { cn } from "@/lib/utils";
  * is stable across stream deltas, so the reader can drag a slider while the
  * rest of the view is still arriving and keep what they set.
  *
- * Chrome: a figure set into the
- * article between two hairlines, no card fill, no shadow. Inside, structure is
- * spacing and type — two weights, the value in the first ink, everything that
- * explains it in the second — and the accent appears twice at most: the
- * slider's range and the first chart series.
+ * Chrome (2026-10 premium pass): a contained card, the way ChatGPT's
+ * interactive answers sit in a reply — a soft raised surface with a 20 px
+ * radius, an "Interactive" eyebrow so the reader knows it can be touched,
+ * and the live accent (`--presence`, scoped as `--live` in live-ui.css) on
+ * the parts that respond: the slider's range, the stepper's value, the first
+ * chart series. Results count to their new value (useTweenedNumber) so a
+ * change reads as movement, not a swap.
  */
 
 const INPUT_TYPES = new Set(["slider", "number", "stepper", "select", "toggle", "date", "input"]);
@@ -46,7 +50,7 @@ export function LiveUIBlock({ source, streaming = false }: { source: string; str
   if (parsed.spec) lastGood.current = parsed.spec;
   const spec = parsed.spec ?? (streaming ? lastGood.current : null);
   // A fence the stream finished is final even if its JSON never closed.
-  const view = React.useMemo(() => (spec && !streaming && spec.streaming ? { ...spec, streaming: false } : spec), [spec, streaming]);
+  const view = React.useMemo(() => (spec && !streaming ? settleLiveSpec(spec) : spec), [spec, streaming]);
 
   const state = useLiveState(view, source, host.messageId);
   const locale = useLocale();
@@ -70,34 +74,36 @@ export function LiveUIBlock({ source, streaming = false }: { source: string; str
   return (
     <section
       className={cn(
-        "juno-visual @container relative my-6 border-y border-border/60 py-5 text-foreground",
+        "juno-visual live-card @container relative my-6 p-5 text-foreground @[28rem]:p-6",
         "motion-safe:animate-rise-in",
       )}
       aria-label={view.title ?? "Interactive view"}
       aria-busy={live || undefined}
       data-live-ui=""
     >
-      {view.title || live || state.dirty ? (
-      <header className="mb-5 flex min-h-8 items-center justify-between gap-3">
-        {view.title ? (
-          <h4 className="min-w-0 font-sans text-body font-medium leading-tight tracking-[-0.01em]">{view.title}</h4>
-        ) : live ? (
-          <Skeleton className="h-4 w-40" />
-        ) : (
-          <span />
-        )}
+      <header className="mb-5 flex min-h-8 items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <span className="live-eyebrow" data-live={live ? "" : undefined}>
+            <SlidersHorizontal className="size-3" aria-hidden />
+            {live ? "Building" : "Interactive"}
+          </span>
+          {view.title ? (
+            <h4 className="min-w-0 font-sans text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">{view.title}</h4>
+          ) : live ? (
+            <Skeleton className="h-5 w-48" />
+          ) : null}
+        </div>
         {state.dirty ? (
           <button
             type="button"
             onClick={state.reset}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control px-2 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-safe:animate-fade-in motion-reduce:transition-none"
+            className="live-chip shrink-0 motion-safe:animate-fade-in"
           >
             <RotateCcw className="size-3.5" aria-hidden />
             Reset
           </button>
         ) : null}
       </header>
-      ) : null}
       <div className="flex min-w-0 flex-col gap-6">
         {empty && live ? <PendingRows /> : null}
         <Components list={view.ui} scope={scope} spec={view} state={state} formatter={formatter} onPrompt={host.onPrompt} />
@@ -182,22 +188,23 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
       const max = scope.evaluate(c.max).value;
       const ratio = typeof v === "number" && typeof max === "number" && max > 0 ? Math.min(1, Math.max(0, v / max)) : 0;
       const shown = typeof v === "number" ? formatter.number(v, c.format ?? "number", { currency: spec.currency }) : LIVE_NULL_TEXT;
+      const label = interpolate(c.label, scope);
       return (
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="text-ui text-muted-foreground">{interpolate(c.label, scope)}</span>
+            <span className="text-ui text-muted-foreground">{label}</span>
             <span className="text-ui font-medium tabular-nums">{shown}</span>
           </div>
           <div
             role="meter"
-            aria-label={c.label}
+            aria-label={label}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(ratio * 100)}
-            className="h-1 overflow-hidden rounded-full bg-foreground/[0.08]"
+            className="h-2 overflow-hidden rounded-full bg-foreground/[0.07]"
           >
             <div
-              className="h-full origin-left rounded-full bg-foreground/70 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
+              className="live-fill h-full origin-left rounded-full transition-transform duration-slow ease-out-soft motion-reduce:transition-none"
               style={{ transform: `scaleX(${ratio})` }}
             />
           </div>
@@ -232,6 +239,18 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
       return <LiveCallout callout={c} interp={(t) => interpolate(t, scope)} />;
     case "timeline":
       return <LiveTimeline timeline={c} interp={(t) => interpolate(t, scope)} />;
+    case "recipe":
+      return <LiveRecipe recipe={c} />;
+    case "choices":
+      return <LiveChoices choices={c} onPrompt={onPrompt} locked={state.picks[c.key]} onLock={(picked) => state.pick(c.key, picked)} />;
+    case "compare":
+      return <LiveCompare compare={c} onPrompt={onPrompt} locked={state.picks[c.key]} onLock={(picked) => state.pick(c.key, picked)} />;
+    case "cards":
+      return <LiveCards cards={c} onPrompt={onPrompt} />;
+    case "tabs":
+      return <LiveTabs tabs={c} render={(list) => <Components list={list} {...props} />} />;
+    case "flashcards":
+      return <LiveFlashcards deck={c} />;
     default:
       if (INPUT_TYPES.has(c.type)) {
         const input = c as LiveInput;
@@ -261,19 +280,23 @@ function Metric({
   currency: string;
 }) {
   const { value } = scope.evaluate(metric.value);
+  const tweened = useTweenedNumber(typeof value === "number" ? value : 0);
+  // Format the glide with the target's shape: a figure that lands whole never
+  // shows cents mid-flight, and one that lands with cents keeps them.
+  const glide = typeof value === "number" && Number.isInteger(value) ? Math.round(tweened) : tweened;
   const text =
     typeof value === "number"
-      ? formatInputValue(value, metric.format, metric.unit, formatter, currency, "metric")
+      ? formatInputValue(glide, metric.format, metric.unit, formatter, currency, "metric", value)
       : value === null || (Array.isArray(value) && value.length === 0)
         ? LIVE_NULL_TEXT
         : valueToString(value);
   return (
-    <div className="flex min-w-0 flex-col gap-1">
+    <div className={cn("live-metric flex min-w-0 flex-col gap-1", metric.emphasis && "live-metric-hero")}>
       {metric.label ? <span className="text-ui text-muted-foreground">{interpolate(metric.label, scope)}</span> : null}
       <span
         className={cn(
-          "min-w-0 break-words font-medium tabular-nums leading-[1.1] tracking-[-0.015em] text-foreground",
-          metric.emphasis ? "text-[2rem] @[28rem]:text-[2.25rem]" : "text-[1.375rem]",
+          "min-w-0 break-words font-semibold tabular-nums leading-[1.1] tracking-[-0.025em] text-foreground",
+          metric.emphasis ? "text-[2.125rem] @[28rem]:text-[2.5rem]" : "text-[1.5rem]",
         )}
       >
         {text}
@@ -290,7 +313,7 @@ function LiveText({ text, tone }: { text: string; tone: "body" | "muted" | "head
     <p
       className={cn(
         "min-w-0 whitespace-pre-line",
-        tone === "heading" ? "text-body font-medium" : tone === "muted" ? "text-ui text-muted-foreground" : "text-ui leading-relaxed text-foreground/90",
+        tone === "heading" ? "text-body font-medium" : tone === "muted" ? "text-ui text-muted-foreground" : "text-ui leading-relaxed text-foreground",
       )}
     >
       {parts.map((p, i) =>
@@ -331,7 +354,16 @@ function LiveTable({
   const lead = (ci: number) => table.rowHeader === true && ci === 0;
   const hi = (ci: number) => table.highlight === ci;
   return (
-    <div className="-mx-1 overflow-x-auto px-1">
+    // A wide table scrolls sideways on a phone, so the scroller is a tab
+    // stop: without one a keyboard cannot reach the columns past the edge
+    // (SC 2.1.1). Named by its columns, as the code block's region is by its
+    // language, so the stop is announced rather than an unlabelled group.
+    <div
+      className="live-table overflow-x-auto"
+      tabIndex={0}
+      role="region"
+      aria-label={table.columns.map((col) => col.label).join(", ")}
+    >
       <table className="w-full min-w-0 border-collapse text-ui">
         <thead>
           <tr>
@@ -341,8 +373,7 @@ function LiveTable({
                 scope="col"
                 style={{ textAlign: numeric[ci] ? "right" : "left" }}
                 className={cn(
-                  "border-b border-border/70 pb-2 align-bottom font-normal text-muted-foreground",
-                  ci > 0 && "pl-4",
+                  "border-b border-border/70 px-3.5 py-2.5 align-bottom text-caption font-medium uppercase tracking-[0.04em] text-muted-foreground",
                   hi(ci) && "font-medium text-foreground",
                 )}
               >
@@ -353,7 +384,7 @@ function LiveTable({
         </thead>
         <tbody>
           {cells.map((r, ri) => (
-            <tr key={ri} className="border-b border-border/40 last:border-b-0">
+            <tr key={ri} className="border-b border-border/40 transition-colors duration-fast last:border-b-0 hover:bg-foreground/[0.025]">
               {r.map((v, ci) => {
                 const Cell = lead(ci) ? "th" : "td";
                 return (
@@ -362,12 +393,11 @@ function LiveTable({
                     scope={lead(ci) ? "row" : undefined}
                     style={{ textAlign: numeric[ci] ? "right" : "left" }}
                     className={cn(
-                      "py-2.5 align-baseline",
+                      "px-3.5 py-2.5 align-baseline",
                       numeric[ci] && "tabular-nums",
-                      ci > 0 && "pl-4",
                       lead(ci) && "pr-2 font-medium text-foreground",
-                      table.rowHeader && !lead(ci) && "leading-relaxed text-foreground/85",
-                      hi(ci) && "bg-foreground/[0.035] text-foreground",
+                      table.rowHeader && !lead(ci) && "leading-relaxed text-foreground",
+                      hi(ci) && "bg-[hsl(var(--live)/0.06)] font-medium text-foreground",
                     )}
                   >
                     {typeof v === "number"
@@ -382,7 +412,7 @@ function LiveTable({
           ))}
         </tbody>
       </table>
-      {rows.length > shown.length ? <p className="pt-2 text-ui text-muted-foreground">Showing the first 100 rows.</p> : null}
+      {rows.length > shown.length ? <p className="px-3.5 py-2 text-ui text-muted-foreground">Showing the first 100 rows.</p> : null}
     </div>
   );
 }
@@ -418,15 +448,16 @@ function LiveButton({
         const text = v === null ? "" : typeof v === "number" ? String(v) : valueToString(v);
         void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => {});
       }}
-      className="inline-flex h-9 w-fit max-w-full items-center gap-2 rounded-control border border-border bg-transparent px-3.5 text-ui text-foreground transition-colors duration-fast ease-out-soft hover:border-foreground/20 hover:bg-accent active:bg-selected disabled:opacity-50 motion-reduce:transition-none coarse:h-11"
+      data-copied={copied ? "" : undefined}
+      className="live-chip live-chip-lg w-fit max-w-full"
     >
       <span className="truncate">{copied ? "Copied" : button.label}</span>
       {prompt !== null ? (
-        <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <ArrowUpRight className="live-chip-arrow size-3.5 shrink-0" aria-hidden />
       ) : copied ? (
-        <Check className="size-3.5 shrink-0" aria-hidden />
+        <Check className="size-3.5 shrink-0 text-[hsl(var(--live))]" aria-hidden />
       ) : (
-        <Copy className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <Copy className="size-3.5 shrink-0" aria-hidden />
       )}
     </button>
   );
@@ -434,8 +465,8 @@ function LiveButton({
 
 function LiveUIFallback({ source, error }: { source: string; error?: string }) {
   return (
-    <div className="my-6 flex flex-col gap-2 border-y border-border/60 py-4">
-      <p className="text-ui text-foreground/85">
+    <div className="live-card my-6 flex flex-col gap-2 p-5">
+      <p className="text-ui text-foreground">
         This interactive view couldn&apos;t be shown{error ? <span className="text-muted-foreground"> ({error})</span> : null}.
       </p>
       <details className="text-ui text-muted-foreground">

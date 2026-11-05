@@ -158,7 +158,7 @@ export function FilePreview({
           aria-hidden="true"
           className={cn(
             "pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 pt-2.5",
-            "font-mono text-micro leading-[1.55] text-foreground/60",
+            "font-mono text-micro leading-[1.55] text-muted-foreground",
             // The excerpt is a fragment of a longer file, so it dissolves rather
             // than stopping — a hard bottom edge reads as "this is the whole
             // file", which for anything worth previewing it is not.

@@ -100,7 +100,7 @@ function StepMark({ state }: { state: PlanStepState }) {
     <span
       className={cn(
         "mt-[2px] grid size-3.5 shrink-0 place-items-center rounded-full border",
-        "transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+        "transition-colors duration-base ease-out-soft",
         state === "done" && "border-primary bg-primary text-primary-foreground",
         state === "failed" && "border-destructive bg-destructive text-destructive-foreground",
         state === "skipped" && "border-border text-muted-foreground",
@@ -169,7 +169,7 @@ export function WorkProgressChecklist({ steps }: { steps: readonly PlanStep[] })
             <span
               className={cn(
                 "min-w-0 transition-colors duration-slow ease-out-soft",
-                step.state === "pending" && "text-foreground/80",
+                step.state === "pending" && "text-muted-foreground",
                 // Struck through and dimmed together. Either alone reads as an
                 // edit; the pair reads as a to-do list.
                 step.state === "done" && "text-muted-foreground line-through decoration-border",

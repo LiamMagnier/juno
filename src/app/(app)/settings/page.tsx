@@ -9,6 +9,7 @@ import { SettingsPane } from "@/components/settings/settings-pane";
 import { resolveSettingsSection, settingsHref } from "@/components/settings/settings-sections";
 import { readReturnPath } from "@/components/settings/settings-modal-lazy";
 import { transition } from "@/lib/motion";
+import { useModalLayer } from "@/components/ui/modal-layer";
 import SettingsLoading from "./loading";
 import { useReducedMotion } from "@/lib/motion-preference";
 
@@ -17,6 +18,11 @@ import { useReducedMotion } from "@/lib/motion-preference";
  * left column — Back to app, search, the grouped sections — and the pane on
  * the ground, covering the app's sidebar rather than sharing the window with
  * it. Esc and ⌘, return to where the reader came from.
+ *
+ * It is a layer over the app shell, not a page beside it, so it is modal like
+ * one (modal-layer.ts): the shell behind is inert (Tab used to walk out into
+ * the hidden sidebar), scroll stays in the window, and focus goes back to the
+ * control that opened Settings when it closes.
  */
 function SettingsPageContent() {
   const router = useRouter();
@@ -25,6 +31,8 @@ function SettingsPageContent() {
   const back = React.useCallback(() => router.push(readReturnPath()), [router]);
   const reduce = useReducedMotion() ?? false;
   const mainRef = React.useRef<HTMLElement>(null);
+  const layerRef = React.useRef<HTMLDivElement>(null);
+  useModalLayer(layerRef, true);
 
   // A new section opens at its top. The pane is remounted per section, but the
   // scroller around it is not, so a switch used to land at whatever depth the
@@ -53,7 +61,11 @@ function SettingsPageContent() {
   }, [back]);
 
   return (
-    <div className="fixed inset-0 z-modal flex flex-col bg-background text-foreground md:flex-row motion-safe:animate-fade-in">
+    <div
+      ref={layerRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-modal flex flex-col overflow-hidden bg-background text-foreground outline-none md:flex-row motion-safe:animate-fade-in"
+    >
       {/* The column settles in from its own edge while the window fades up,
           so opening settings reads as a place arriving, not a page swap. */}
       <motion.aside

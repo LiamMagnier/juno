@@ -68,7 +68,8 @@ export function voiceMemoryInstructions(profile: {
   scope: "account" | "project";
 }): string | null {
   const summary = profile.summary?.trim() ? plain(profile.summary) : "";
-  const notes = profile.recent.map((note) => note.trim()).filter(Boolean);
+  // One line each, as in a typed chat's notes (turn-context-tail.ts).
+  const notes = profile.recent.map((note) => note.replace(/\s+/g, " ").trim()).filter(Boolean);
   if (!summary && notes.length === 0) return null;
 
   const heading =

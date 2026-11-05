@@ -43,11 +43,8 @@ final class JunoColorConsumptionTests: XCTestCase {
     }
 
     func testTheGroundsAreTheWebsGrounds() {
-        #if os(macOS)
-        // The phone keeps its shipped 4% ground; the Mac is the web's charcoal.
         assertResolves(.junoCanvas, to: JunoGeneratedColors.background, "junoCanvas")
         assertResolves(.junoBorder, to: JunoGeneratedColors.border, "junoBorder")
-        #endif
         assertResolves(.junoCard, to: JunoGeneratedColors.card, "junoCard")
         assertResolves(.junoSecondary, to: JunoGeneratedColors.secondary, "junoSecondary")
         assertResolves(.junoHover, to: JunoGeneratedColors.accent, "junoHover")

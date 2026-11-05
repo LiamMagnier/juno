@@ -22,7 +22,7 @@
  *   // on session close: await computer.disposeSession(id)
  *
  */
-import { ALEVR_COMPUTER_TOOL_NAME, type ComputerActionItem, type ComputerCoordinateSpace } from "../contracts/code-v2.js";
+import { ALEVR_COMPUTER_TOOL_NAME, type ComputerActionItem, type ComputerCoordinateSpace, type SystemNoticeItem } from "../contracts/code-v2.js";
 import type { ComputerBridge } from "./computer-bridge.js";
 import {
   COMPUTER_TOOL_RULES,
@@ -66,7 +66,7 @@ export interface ComputerUseHookOptions {
    */
   session(scope: ComputerMcpScope): ComputerToolSession | undefined;
   /** Every call's turn item, for that session's log. */
-  onItem?(sessionId: string, item: ComputerActionItem): void;
+  onItem?(sessionId: string, item: ComputerActionItem | SystemNoticeItem): void;
   /** Whether subagents (depth 1) see the tool too. Default true: the Mac's per-app holds keep them from fighting their parent. */
   subagents?: boolean;
   /** Fresh id per call when the transport has none (MCP tools/call carries no call id). */
@@ -134,6 +134,8 @@ export function registerComputerUseOnAlevrMcp(mcp: AlevrMcpRegistry, options: Co
       // The Mac's hold and grants key on the scoped session, whatever id the resolver reports.
       session: { ...session, id: scope.sessionId },
       onItem: options.onItem ? (item) => options.onItem!(owner, item) : undefined,
+      // The Mac's notices (a run paused because it locked) join the same thread.
+      onNotice: options.onItem ? (notice) => options.onItem!(owner, notice) : undefined,
       now: options.now,
       heartbeatMs: options.heartbeatMs,
     });

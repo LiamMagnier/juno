@@ -138,7 +138,8 @@ const store: LifecycleEntry[] = [
   fact("The user is pairing on the parser today.", "workflows", { expiresAt: new Date("2026-09-20T00:00:00Z") }),
 ];
 
-const shown = () => selectCodingMemories(store, { query: "add a pnpm script and tests", now }).map((m) => m.content);
+const shown = (suppressions: string[] = []) =>
+  selectCodingMemories(store, { query: "add a pnpm script and tests", now, suppressions }).map((m) => m.content);
 
 test("Code sees how the user works and what they are building", () => {
   const facts = shown();
@@ -156,6 +157,23 @@ test("Code never sees who the user is, the people around them, or their plans", 
 
 test("a sensitive fact is kept out of Code even in an allowed category", () => {
   assert.equal(shown().some((fact) => /migraine/i.test(fact)), false);
+});
+
+test("the block-list applies to Code's background on the read side, as for every other reader", () => {
+  // A fact written in the instant before a forget, or by a path that missed
+  // it, is still active in the table; the read gate keeps it off the runner.
+  assert.ok(shown().includes("The user uses pnpm and Vitest."), "precondition");
+  assert.equal(shown(["The user uses pnpm and Vitest"]).includes("The user uses pnpm and Vitest."), false);
+  assert.equal(shown(["Anything about Pantry"]).some((fact) => /Pantry/.test(fact)), false, "an excluded topic too");
+  assert.ok(shown(["Anything about Pantry"]).includes("The user prefers small commits with tests."), "and nothing else");
+});
+
+test("getCodingMemory reads the account's block-list and passes it to the selection", () => {
+  const body = src("src/lib/memory.ts");
+  const fn = body.slice(body.indexOf("export async function getCodingMemory"));
+  const scope = fn.slice(0, fn.indexOf("\n}\n"));
+  assert.match(scope, /getSuppressions\(userId\)/);
+  assert.match(scope, /selectCodingMemories\(rows, \{ query, suppressions \}\)/);
 });
 
 test("project-scoped, retired and expired facts never reach Code", () => {

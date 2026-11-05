@@ -60,42 +60,46 @@ final class JunoMotionMarksTests: XCTestCase {
 
     func testThePacerSpreadsABurstAcrossTheGapThatFollows() {
         var pacer = JunoStreamPacer()
-        // 60 characters land at once; the screen gets them over ~a quarter second,
-        // never all on the first frame.
-        let first = pacer.step(target: 60, dt: 1.0 / 60)
-        XCTAssertLessThan(first, 10)
-        var shown = first
+        // 300 characters land at once; the screen gets them over a few hundred
+        // milliseconds, never all on the first frame.
+        pacer.arrive(length: 300, now: 100)
+        pacer.step(length: 300, dtMs: 16)
+        XCTAssertLessThan(pacer.shown, 120)
         var frames = 1
-        while shown < 60, frames < 120 {
-            shown = pacer.step(target: 60, dt: 1.0 / 60)
+        while pacer.shown < 300, frames < 120 {
+            pacer.arrive(length: 300, now: 100 + Double(frames) * 16)
+            pacer.step(length: 300, dtMs: 16)
             frames += 1
         }
-        XCTAssertEqual(shown, 60)
+        XCTAssertEqual(pacer.shown, 300)
         XCTAssertGreaterThan(frames, 6, "released over several frames")
-        XCTAssertLessThan(frames, 60, "and drained within a second")
+        XCTAssertLessThan(Double(frames) * 16, 1200, "and drained within about a second")
     }
 
     func testThePacerReleasesMonotonicallyAndCatchesUpWhenFarBehind() {
         var pacer = JunoStreamPacer()
         var target = 0
-        var last = 0
+        var last = 0.0
         for frame in 0..<300 {
             if frame % 6 == 0 { target += 25 }  // bursty arrival, ~250 chars/s
-            let shown = pacer.step(target: target, dt: 1.0 / 60)
-            XCTAssertGreaterThanOrEqual(shown, last)
-            XCTAssertLessThanOrEqual(shown, target)
-            last = shown
+            pacer.arrive(length: target, now: Double(frame) * 16)
+            pacer.step(length: target, dtMs: 16)
+            XCTAssertGreaterThanOrEqual(pacer.shown, last)
+            XCTAssertLessThanOrEqual(pacer.shown, Double(target))
+            last = pacer.shown
         }
-        XCTAssertGreaterThan(Double(last), Double(target) * 0.85, "keeps pace with a steady stream")
+        XCTAssertGreaterThan(last, Double(target) * 0.85, "keeps pace with a steady stream")
 
         var behind = JunoStreamPacer()
-        let jumped = behind.step(target: 5_000, dt: 1.0 / 60)
-        XCTAssertGreaterThanOrEqual(jumped, 5_000 - JunoStreamPacer.maxBacklog)
+        behind.arrive(length: 5_000, now: 16)
+        behind.step(length: 5_000, dtMs: 16)
+        XCTAssertEqual(behind.shown, 5_000 - JunoStreamPacer.Constants.jumpKeep)
     }
 
     func testThePacerFollowsReplacedTextDown() {
-        var pacer = JunoStreamPacer(shown: 400)
-        XCTAssertEqual(pacer.step(target: 20, dt: 1.0 / 60), 20)
+        var pacer = JunoStreamPacer(length: 400)
+        pacer.arrive(length: 20, now: 50)
+        XCTAssertLessThanOrEqual(pacer.shown, 20)
     }
 
     // MARK: - Tidy tails

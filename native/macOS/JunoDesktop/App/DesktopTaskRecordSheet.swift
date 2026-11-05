@@ -171,6 +171,14 @@ enum DesktopTaskRecordContent {
             session.flatMap { JunoWorkStatus(rawValue: $0.status) }
         }
     }
+
+    /// Why the run ended, once the task is read: the header's sentence needs
+    /// it so a run that never began is not described as one that may have
+    /// changed something (``ChatWorkVocabulary/sentence(_:actor:terminalReason:)``).
+    var terminalReason: String? {
+        if case .ready(let state) = self { return state.run?.terminalReason }
+        return nil
+    }
 }
 
 /// The sheet itself, drawn from its content alone so a fixture can build it.
@@ -278,7 +286,7 @@ struct DesktopTaskRecordView: View {
     }
 
     private func sentence(_ status: JunoWorkStatus) -> some View {
-        Text(ChatWorkVocabulary.sentence(status))
+        Text(ChatWorkVocabulary.sentence(status, actor: nil, terminalReason: content.terminalReason))
             .junoFont(size: 13, relativeTo: .callout)
             .foregroundStyle(Color.junoForeground)
             .fixedSize(horizontal: false, vertical: true)

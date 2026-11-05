@@ -180,7 +180,7 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
           // The composer's shape (22px, no shadow, the edge raises on focus):
           // telling memory something is a message to Alevr, so it looks like
           // one. 10px inset keeps the 12px send button concentric (22 − 10).
-          "flex items-end gap-2 rounded-composer border border-input bg-background py-2.5 pl-5 pr-2.5 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          "flex items-end gap-2 rounded-composer border border-input bg-background py-2.5 pl-5 pr-2.5 transition-colors duration-fast ease-out-soft",
           !paused && "hover:border-foreground/40 focus-within:border-foreground/60"
         )}
       >
@@ -253,7 +253,7 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
                         field.setSelectionRange(text.length, text.length);
                       });
                     }}
-                    className="inline-flex h-7 items-center rounded-full border border-border/70 px-3 text-caption text-muted-foreground transition-[color,background-color,transform] duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.97] motion-reduce:transition-none"
+                    className="inline-flex h-7 items-center rounded-full border border-border/70 px-3 text-caption text-muted-foreground transition-[color,background-color,transform] duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.97] motion-reduce:transition-[color,background-color]"
                   >
                     {text}
                   </button>

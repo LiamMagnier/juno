@@ -1,0 +1,71 @@
+{
+  "parser": "docx",
+  "parserVersion": "1",
+  "status": "ok",
+  "blocks": [
+    {
+      "path": "word/document.xml",
+      "confidence": 1,
+      "type": "heading",
+      "text": "Meridian follow-up — meeting notes 2026-10-01",
+      "heading": []
+    },
+    {
+      "path": "word/document.xml",
+      "confidence": 1,
+      "type": "heading",
+      "text": "Decisions",
+      "heading": []
+    },
+    {
+      "path": "word/document.xml",
+      "confidence": 1,
+      "type": "paragraph",
+      "text": "The two-week follow-up pilot starts on 2026-10-05.",
+      "heading": [
+        "Decisions"
+      ]
+    },
+    {
+      "path": "word/document.xml",
+      "confidence": 1,
+      "type": "paragraph",
+      "text": "The budget stays at EUR 2,400; no extra spend without the steering group.",
+      "heading": [
+        "Decisions"
+      ]
+    },
+    {
+      "path": "word/document.xml",
+      "confidence": 1,
+      "type": "heading",
+      "text": "Action items",
+      "heading": []
+    },
+    {
+      "path": "word/document.xml",
+      "confidence": 1,
+      "type": "table",
+      "text": "Owner | Action | Due\nMaya Okafor | Define the evaluation metrics | 2026-10-08\nTom Becker | Confirm the EUR 2,400 budget with finance | 2026-10-06\nLéa Martin | Prepare the final review deck | 2026-10-17",
+      "heading": [
+        "Action items"
+      ]
+    },
+    {
+      "path": "word/document.xml",
+      "confidence": 1,
+      "type": "heading",
+      "text": "Open questions",
+      "heading": []
+    },
+    {
+      "path": "word/document.xml",
+      "confidence": 1,
+      "type": "paragraph",
+      "text": "Whether the supplier's 6-hour claim can be checked against raw data.",
+      "heading": [
+        "Open questions"
+      ]
+    }
+  ]
+}

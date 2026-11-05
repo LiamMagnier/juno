@@ -5,7 +5,7 @@ import { USAGE_MULTIPLE } from "@/components/billing/heavy-use-plans";
 import { PLANS } from "@/lib/plans";
 import { planPriceParts, vatNote } from "@/lib/price-display";
 import { getRequestLocale } from "@/lib/i18n-server";
-import { isPlanPurchasable } from "@/lib/stripe";
+import { isPlanPurchasable, purchasablePlans } from "@/lib/stripe";
 import { Reveal } from "./reveal";
 import { Section } from "./section";
 
@@ -33,6 +33,9 @@ const CTA_LABEL: Partial<Record<Plan, string>> = {
 export async function Pricing({ locale: localeOverride }: { locale?: string } = {}) {
   const locale = localeOverride ?? (await getRequestLocale());
   const checkoutOpen = [...PRIMARY, ...HEAVY].some((plan) => plan !== "FREE" && isPlanPurchasable(plan));
+  // The yearly offer is only promised where a yearly price is configured,
+  // the same test /upgrade uses before it shows its Monthly/Yearly switch.
+  const yearlyOpen = purchasablePlans("year").length > 0;
   return (
     <Section
       id="pricing"
@@ -96,9 +99,12 @@ export async function Pricing({ locale: localeOverride }: { locale?: string } = 
         </div>
 
         <div className="mt-6 max-w-prose space-y-2 text-ui leading-relaxed text-muted-foreground">
+          {/* The same terms /upgrade states (its FAQ restates what billing
+              enforces): an upgrade is immediate, a cancellation runs to the
+              end of the period already paid for. */}
           <p>
             {checkoutOpen
-              ? "Pay yearly and get 2 months free. Upgrade, downgrade or cancel any time; changes apply instantly."
+              ? `${yearlyOpen ? "Pay yearly and get 2 months free. " : ""}Upgrade any time and it applies instantly; cancel any time and your plan runs to the end of the period you paid for.`
               : "Checkout opens soon. You can start free today, and everything carries over when you upgrade."}
           </p>
           <p className="text-caption">{vatNote(locale)}</p>

@@ -1,0 +1,145 @@
+/*
+ * Print / Save as PDF for a conversation (conversation-print.tsx, spec §6.15).
+ *
+ * The printable copy is portalled to <body> as `[data-print-document]`, so the
+ * page rule in globals.css hides every other child of <body> while printing:
+ * the sidebar, the composer, the header, toasts. On screen it is never drawn.
+ *
+ * Ink on paper, whatever the theme: a dark theme's near-white text would print
+ * white on white, because browsers drop backgrounds by default. So the copy is
+ * one ink, hairline rules, code and tables that wrap instead of scrolling, and
+ * no controls (a Copy button means nothing on paper).
+ */
+.chat-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 16mm 15mm;
+  }
+
+  .chat-print-root {
+    display: block;
+  }
+
+  .chat-print {
+    color-scheme: light;
+    font-size: 10.5pt;
+    line-height: 1.55;
+  }
+
+  .chat-print,
+  .chat-print * {
+    color: #111 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    border-color: #d4d4d8 !important;
+  }
+
+  .chat-print button {
+    display: none !important;
+  }
+
+  .chat-print-head {
+    border-bottom: 1px solid #d4d4d8;
+    margin-bottom: 6pt;
+    padding-bottom: 8pt;
+  }
+
+  .chat-print-title {
+    font-size: 17pt;
+    font-weight: 600;
+    line-height: 1.25;
+    margin: 0;
+  }
+
+  .chat-print-meta {
+    font-size: 9pt;
+    margin: 3pt 0 0;
+  }
+
+  .chat-print-turn {
+    border-top: 1px solid #e4e4e7;
+    padding: 9pt 0 3pt;
+  }
+
+  .chat-print-turn:first-of-type {
+    border-top: 0;
+  }
+
+  .chat-print-label {
+    break-after: avoid;
+    font-size: 9.5pt;
+    font-weight: 600;
+    margin: 0 0 4pt;
+  }
+
+  .chat-print-quote {
+    border-left: 2px solid #a1a1aa;
+    margin: 0 0 6pt;
+    padding-left: 8pt;
+    white-space: pre-wrap;
+  }
+
+  .chat-print-user {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .chat-print-small {
+    font-size: 9pt;
+    margin: 6pt 0 0;
+  }
+
+  .chat-print-sources {
+    font-size: 9pt;
+    margin: 4pt 0 0;
+    padding-left: 16pt;
+  }
+
+  .chat-print-sources a,
+  .chat-print a {
+    text-decoration: underline;
+    overflow-wrap: anywhere;
+  }
+
+  /* Code and tables wrap on paper: nothing can scroll there. */
+  .chat-print pre,
+  .chat-print code {
+    max-height: none !important;
+    overflow: visible !important;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere;
+  }
+
+  .chat-print pre {
+    border: 1px solid #d4d4d8;
+    border-radius: 4px;
+    padding: 6pt 8pt;
+  }
+
+  .chat-print [data-table-scroll] {
+    overflow: visible !important;
+  }
+
+  .chat-print table {
+    border-collapse: collapse;
+    font-size: 9pt;
+    width: 100%;
+  }
+
+  .chat-print th,
+  .chat-print td {
+    border: 1px solid #d4d4d8;
+    overflow-wrap: anywhere;
+    padding: 3pt 5pt;
+  }
+
+  .chat-print img,
+  .chat-print svg {
+    max-width: 100%;
+  }
+}

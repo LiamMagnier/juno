@@ -11,7 +11,9 @@
  *   - `delete` removes an app, and fails for one it does not have;
  *   - `save` records the list a reboot would resurrect.
  * `failToStart` names apps `startOrReload` fails to create (a stale PM2 slot)
- * and `failToDelete` apps PM2 will not delete.
+ * and `failToDelete` apps PM2 will not delete; `failJlist` makes `jlist` fail.
+ * `jlistBanner` is a line `jlist` prints before the list (PM2 prints such
+ * banners on stdout), and `jlistRaw`, when set, is printed in place of the list.
  */
 
 import fs from "node:fs";
@@ -54,9 +56,33 @@ try {
     case "update":
       break;
     case "jlist":
+      if (state.failJlist) {
+        exitCode = 1;
+        break;
+      }
+      if (typeof state.jlistRaw === "string") {
+        process.stdout.write(state.jlistRaw);
+        break;
+      }
+      if (typeof state.jlistBanner === "string") process.stdout.write(`${state.jlistBanner}\n`);
       process.stdout.write(
-        JSON.stringify(state.running.map((app) => ({ name: app.name, pm2_env: { status: app.status } }))),
+        JSON.stringify(
+          state.running.map((app) => ({
+            name: app.name,
+            pm2_env: {
+              status: app.status,
+              // Optional, for the post-deploy worker report: PM2's restart
+              // count and start time. `restartEachJlist` models a crash loop:
+              // every read finds that many more restarts.
+              ...(app.restarts === undefined ? {} : { restart_time: app.restarts }),
+              ...(app.upSince === undefined ? {} : { pm_uptime: app.upSince }),
+            },
+          })),
+        ),
       );
+      for (const app of state.running) {
+        if (app.restartEachJlist) app.restarts = (app.restarts ?? 0) + app.restartEachJlist;
+      }
       break;
     case "startOrReload":
       for (const name of declaredBy(args[0])) {

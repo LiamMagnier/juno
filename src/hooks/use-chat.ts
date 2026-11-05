@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { readChatStream, type StreamFrameInfo } from "@/lib/chat-stream";
 import { announceResearchStarted } from "@/components/research/research-discovery";
 import { createFrameSequencer } from "@/lib/chat/stream-replay";
+import { TetherLink, browserTetherSignals, staleGuard, tetherView, type TetherView } from "@/lib/net/tether";
 import {
   applyTurnArtifacts,
   serverTranscriptRevision,
@@ -49,6 +50,9 @@ import type {
   TitleSource,
 } from "@/types/chat";
 import { memoryWriteOf } from "@/lib/chat/memory-receipts";
+import { abortableSleep, sendTurn, verifyTurnLanded, type SendSafety } from "@/lib/chat/send-retry";
+import { reportSessionExpired } from "@/lib/chat/session-expired";
+import { promptPlaceholderTitle } from "@/lib/title-ownership";
 
 /**
  * Add an activity event, or update the one already holding its id WHERE IT IS.
@@ -90,6 +94,12 @@ export type ChatMessage = ClientMessage & {
    * and what the "Retry send" affordance on the bubble calls.
    */
   unsent?: boolean;
+  /**
+   * The turn's stream dropped and Tether is bringing it back
+   * (src/lib/net/tether.ts): reconnecting, waiting for network, or parked.
+   * Absent while connected — the bubble says nothing then.
+   */
+  connection?: TetherView;
 };
 
 export type SendResult = {
@@ -158,31 +168,25 @@ const RESUME_MAX_AGE_MS = 2 * 60_000;
 const RESUME_POLL_WINDOW_MS = 6_000;
 
 /*
- * Reconnecting to a generation whose frames the server is logging.
- *
- * The backoff is 1s → 2s → 4s and then every 4s, for three minutes. The window
- * is generous on purpose: the thing on the other end is an answer the user has
- * already paid for, and the alternative to waiting for it is a regenerate that
- * charges them a second time for the same reply. Three minutes covers a train
- * tunnel, a laptop lid, and a server restart; past it the conversation is the
- * source of truth and the answer is either in it or was never written.
+ * Reconnecting to a generation whose frames the server is logging follows
+ * Tether (src/lib/net/tether.ts): jittered backoff, an immediate attempt when
+ * the network returns, the tab comes back or the machine wakes, and no give-up
+ * while the turn is in flight — past the active window the turn parks ("Waiting
+ * for connection") with its seq cursor kept. The thing on the other end is an
+ * answer the user has already paid for; the alternative to waiting for it is a
+ * regenerate that charges them a second time for the same reply.
  */
-const RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000] as const;
-const RECONNECT_WINDOW_MS = 3 * 60_000;
-
-function reconnectDelayMs(attempt: number): number {
-  return RECONNECT_BACKOFF_MS[Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1)];
-}
 
 /**
  * How a reconnect ended.
  *  - `terminal`  the turn's `done`/`error` frame arrived; the transcript is settled.
  *  - `refetch`   the server says the log cannot finish this turn — load the conversation.
  *  - `gone`      404: no log (private, swept, or never written).
- *  - `exhausted` the window ran out with the generation still apparently alive.
- *  - `stale`     the user moved on; this attempt no longer owns the view.
+ *  - `stale`     the user moved on (or pressed Stop); this attempt no longer owns the view.
+ *
+ * There is no "gave up": a turn that cannot reconnect parks and waits.
  */
-type ReconnectOutcome = "terminal" | "refetch" | "gone" | "exhausted" | "stale";
+type ReconnectOutcome = "terminal" | "refetch" | "gone" | "stale";
 
 /** One turn's frame handler, plus what a reconnect needs to know about it. */
 interface StreamApplier {
@@ -219,6 +223,8 @@ const FIRST_PAGE_LIMIT = 60;
 const branchSwitchFailedMessage = "Couldn’t switch to that version.";
 const regenerateFailedMessage = "Couldn’t regenerate that answer.";
 const unsentAfterMessage = "Resend or copy your unsent message first.";
+/** What a turn that is not a new message says when its send came back 401 (the dialog says the rest). */
+const sessionEndedTurnMessage = "Your session ended. Sign in again to continue.";
 
 export type { LoadOlderRequest } from "@/lib/chat/history-client";
 
@@ -252,6 +258,11 @@ interface UseChatOptions {
    * the chat view learns a new chat's id only after this hook has run.
    */
   taskApprovalMode?: () => "conservative" | "balanced" | "permissive" | null;
+  /**
+   * "Memory off for this chat" (src/lib/chat/memory-off.ts), read at send
+   * time for the reason `taskApprovalMode` is a getter.
+   */
+  memoryOff?: () => boolean;
   privateMode?: boolean;
   onMeta?: (meta: { conversationId: string; title: string; titleSource: TitleSource; isNew: boolean }) => void;
   onTitle?: (conversationId: string, title: string, titleSource?: TitleSource) => void;
@@ -275,6 +286,7 @@ interface UseChatOptions {
 export function useChat(opts: UseChatOptions) {
   // Read at send time; held apart so calling it is not a call on `opts`.
   const readTaskApprovalMode = opts.taskApprovalMode;
+  const readMemoryOff = opts.memoryOff;
   const [messages, setMessages] = React.useState<ChatMessage[]>(opts.initialMessages);
   const [history, setHistory] = React.useState<ConversationHistory>(opts.initialHistory ?? COMPLETE_HISTORY);
   const historyRef = React.useRef(history);
@@ -299,6 +311,12 @@ export function useChat(opts: UseChatOptions) {
   /** View detached (new chat / unmount) — abort browser stream without user-stop or error toast. */
   const detachedRef = React.useRef(false);
   const stopFallbackRef = React.useRef<number | null>(null);
+  /**
+   * The turn whose send is waiting to go out again (lib/chat/send-retry.ts),
+   * by its abort controller. Nothing is running on the server for it, so Stop
+   * ends the wait at once instead of waiting on the cancel round trip.
+   */
+  const sendWaitingRef = React.useRef<AbortController | null>(null);
   /*
    * A turn whose stream dropped while the server was still writing it.
    *
@@ -609,6 +627,11 @@ export function useChat(opts: UseChatOptions) {
               // taking the client's guess would 404 on exactly the turns that
               // most need to be resumable.
               if (chunk.generationId) generationId = chunk.generationId;
+              // Stop names the generation by this ref; it must be the server's
+              // id too, or a Stop pressed after meta would cancel nothing.
+              if (chunk.generationId && assistantIdRef.current === assistantTempId) {
+                generationIdRef.current = chunk.generationId;
+              }
               // Only the saved path logs frames. Without this the client would
               // reconnect to an empty log on every private turn.
               resumable = chunk.resumable === true;
@@ -820,6 +843,22 @@ export function useChat(opts: UseChatOptions) {
                         ...(chunk.preservePartial && (m.content || m.reasoning)
                           ? { errorMessage: chunk.message }
                           : { content: chunk.message, errorMessage: chunk.message }),
+                        // Chat wire 1.1: what can be done about it, for the
+                        // error card's "Answer with <model>" (message-item.tsx).
+                        // The offer is kept only where `regenerate` can send
+                        // it as the one-shot model: a saved conversation. With
+                        // no id (a private chat) regenerate re-sends with the
+                        // composer's model, so the button would mislabel.
+                        recovery: chunk.errorClass
+                          ? {
+                              errorClass: chunk.errorClass,
+                              retryable: chunk.retryable,
+                              retryAfterSeconds: chunk.retryAfterSeconds,
+                              ...(convoIdRef.current && !opts.privateMode
+                                ? { suggestedModelId: chunk.suggestedModelId, suggestedModelName: chunk.suggestedModelName }
+                                : {}),
+                            }
+                          : null,
                       }
                     : m
                 )
@@ -884,52 +923,122 @@ export function useChat(opts: UseChatOptions) {
   }, []);
 
   /**
+   * The Tether link of the reconnect in progress, if one is. A press of
+   * Reconnect (or a regenerate on a dropped turn) nudges it rather than
+   * starting a second reader.
+   */
+  const activeLinkRef = React.useRef<TetherLink | null>(null);
+
+  /** Show (or clear) a turn's connection line. */
+  const setTurnConnection = React.useCallback((assistantTempId: string, connection: TetherView | undefined) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== assistantTempId) return m;
+        if (m.connection?.phase === connection?.phase && m.connection?.retryAt === connection?.retryAt) return m;
+        if (!connection) {
+          const rest = { ...m };
+          delete rest.connection;
+          return rest;
+        }
+        return { ...m, connection };
+      })
+    );
+  }, []);
+
+  /**
    * Reattach to a generation's frame log and keep trying until it ends.
    *
    * Each attempt asks for everything after the last seq this client actually
    * applied, so a reconnect that itself drops mid-answer simply resumes from
    * wherever it got to. Frames are fed through the applier that rendered the
    * original stream, which is what makes the overlap harmless.
+   *
+   * When to try is Tether's call (src/lib/net/tether.ts), and it never says
+   * stop: the loop ends on the turn's terminal frame, on the server saying the
+   * log cannot serve it, or on the user moving on.
    */
   const reconnectFromLog = React.useCallback(
     async (args: {
       applier: StreamApplier;
       generationId: string;
+      assistantTempId: string;
       seq: number;
       signal?: AbortSignal;
       immediate?: boolean;
     }): Promise<ReconnectOutcome> => {
-      const deadline = Date.now() + RECONNECT_WINDOW_MS;
-      let attempt = 0;
+      const owns = () =>
+        generationSeqRef.current === args.seq && !detachedRef.current && !stopRequestedRef.current && !args.signal?.aborted;
+      const link = new TetherLink({
+        signals: browserTetherSignals(),
+        onChange: (state) => {
+          if (generationSeqRef.current === args.seq) setTurnConnection(args.assistantTempId, tetherView(state));
+          // Parked: anything that would retry this turn reconnects instead.
+          if (state.phase === "parked") {
+            reconnectRef.current = {
+              generationId: args.generationId,
+              assistantTempId: args.assistantTempId,
+              lastSeq: args.applier.lastSeq,
+            };
+            setCanReconnect(true);
+          } else if (state.phase === "connected" && reconnectRef.current?.assistantTempId === args.assistantTempId) {
+            reconnectRef.current = null;
+            setCanReconnect(false);
+          }
+        },
+      });
+      activeLinkRef.current = link;
+      // A person pressed something, or a chat was just opened: the first
+      // attempt goes now. Otherwise the stream just dropped, and the first
+      // attempt waits out a jittered backoff like everyone else's.
+      if (!args.immediate) link.drop();
       let first = args.immediate === true;
-      while (Date.now() < deadline) {
-        if (!first) await new Promise((resolve) => setTimeout(resolve, reconnectDelayMs(attempt++)));
-        first = false;
-        // The user started another turn, switched chat, or pressed Stop: this
-        // attempt no longer owns the bubble it would write into.
-        if (generationSeqRef.current !== args.seq || detachedRef.current) return "stale";
-        if (stopRequestedRef.current || args.signal?.aborted) return "stale";
-        try {
-          const res = await fetch(
-            `/api/chat/stream/${encodeURIComponent(args.generationId)}?after=${args.applier.lastSeq}`,
-            { signal: args.signal }
-          );
-          // 404 is deliberately every "there is nothing here" at once: an
-          // unknown id, another account's, a private turn (never logged), a
-          // log already swept. None of them are worth retrying.
-          if (res.status === 404) return "gone";
-          if (res.ok && res.body) await readChatStream(res.body, args.applier.apply);
-        } catch {
-          // A reconnect that drops is the ordinary case, not an exception —
-          // it is the reason this is a loop. Try again after the backoff.
+      try {
+        for (;;) {
+          if (!first && !(await link.nextAttempt(args.signal))) return "stale";
+          first = false;
+          // The user started another turn, switched chat, or pressed Stop: this
+          // attempt no longer owns the bubble it would write into.
+          if (!owns()) return "stale";
+          const guard = staleGuard(args.signal);
+          try {
+            const res = await fetch(
+              `/api/chat/stream/${encodeURIComponent(args.generationId)}?after=${args.applier.lastSeq}`,
+              { signal: guard.signal }
+            );
+            // 404 is deliberately every "there is nothing here" at once: an
+            // unknown id, another account's, a private turn (never logged), a
+            // log already swept. None of them are worth retrying.
+            if (res.status === 404) return "gone";
+            if (res.ok && res.body) {
+              const apply = args.applier.apply;
+              const onFrame: typeof apply = (chunk, frame) => {
+                guard.beat();
+                link.connected();
+                apply(chunk, frame);
+              };
+              await readChatStream(res.body, onFrame);
+            }
+          } catch {
+            // A reconnect that drops is the ordinary case, not an exception —
+            // it is the reason this is a loop. A silent socket the stale
+            // guard aborted lands here too.
+          } finally {
+            guard.dispose();
+          }
+          if (!owns()) return "stale";
+          if (args.applier.sawTerminal) return "terminal";
+          if (args.applier.refetch) return "refetch";
+          // Frames flowed and then stopped: a fresh drop. Nothing came: a failed attempt.
+          if (link.state.phase === "connected") link.drop();
+          else link.failed();
         }
-        if (generationSeqRef.current !== args.seq || detachedRef.current) return "stale";
-        if (args.applier.sawTerminal) return "terminal";
-        if (args.applier.refetch) return "refetch";
+      } finally {
+        link.dispose();
+        if (activeLinkRef.current === link) activeLinkRef.current = null;
+        if (generationSeqRef.current === args.seq) setTurnConnection(args.assistantTempId, undefined);
       }
-      return "exhausted";
     },
-    []
+    [setTurnConnection]
   );
 
   /** Reconnect, then settle the transcript on whichever way it ended. */
@@ -947,37 +1056,6 @@ export function useChat(opts: UseChatOptions) {
       if (outcome === "terminal") {
         clearReconnect();
         setStatus((cur) => (cur === "error" ? "error" : "idle"));
-        return outcome;
-      }
-      if (outcome === "exhausted") {
-        // Still apparently alive, just not within the window we are willing to
-        // hold the UI for. Offer the reconnect again rather than a retry: the
-        // answer is (or was) being written, and asking for a new one would
-        // charge for a second copy of it.
-        reconnectRef.current = {
-          generationId: args.generationId,
-          assistantTempId: args.assistantTempId,
-          lastSeq: args.applier.lastSeq,
-        };
-        setCanReconnect(true);
-        setStatus("error");
-        const message =
-          "The connection to this answer dropped. Reconnect to pick it up where it left off — it is still being written, and reconnecting does not use another message.";
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === args.assistantTempId
-              ? {
-                  ...m,
-                  streaming: false,
-                  error: true,
-                  progress: null,
-                  finishReason: "error" as const,
-                  errorMessage: message,
-                  content: m.content || message,
-                }
-              : m
-          )
-        );
         return outcome;
       }
       // `refetch` / `gone`: the log cannot finish this turn. The conversation
@@ -1046,6 +1124,11 @@ export function useChat(opts: UseChatOptions) {
 
   /** Pick up a dropped answer. Never charges: it reads the log, it does not generate. */
   const reconnect = React.useCallback(async () => {
+    // A reconnect already running (parked, or between attempts): try now.
+    if (activeLinkRef.current) {
+      activeLinkRef.current.trigger("manual");
+      return;
+    }
     const target = reconnectRef.current;
     if (!target || !convoIdRef.current) return;
     await attachAndReconnect(target);
@@ -1173,7 +1256,18 @@ export function useChat(opts: UseChatOptions) {
   }, [opts.conversationId]);
 
   const runGeneration = React.useCallback(
-    async (body: Record<string, unknown>, assistantTempId: string, path = "/api/chat") => {
+    async (
+      body: Record<string, unknown>,
+      assistantTempId: string,
+      path = "/api/chat",
+      /**
+       * The user turn this send adds, as the transcript shows it (and the
+       * server stores it); null for a turn that adds none (a regenerate).
+       * Passed in, because the message list the caller just set has not
+       * been committed yet when this starts.
+       */
+      question: string | null = null
+    ) => {
       const controller = new AbortController();
       const generationId = crypto.randomUUID();
       abortRef.current = controller;
@@ -1215,6 +1309,33 @@ export function useChat(opts: UseChatOptions) {
         return true;
       };
 
+      /*
+       * How a repeat of this send is made safe, should the first POST not
+       * reach the server (lib/chat/send-retry.ts). A new saved conversation's
+       * first message carries durable first-submission keys, so the server
+       * answers a repeat with the original outcome; a saved follow-up is sent
+       * again only once the server says it never landed; everything else is
+       * sent again only on a drain, which refuses before reading anything.
+       */
+      const chatSend = path === "/api/chat" && !opts.privateMode && !body.regenerate;
+      const firstSubmission = chatSend && !body.conversationId;
+      const safety: SendSafety = firstSubmission
+        ? "idempotent"
+        : chatSend && typeof body.message === "string"
+          ? "verify"
+          : "drain-only";
+      // The question this send carries, as the transcript shows it — what the
+      // server stores, and what a session that ended gives back.
+      const sentQuestion = body.regenerate ? null : question;
+      /** Verification or a repeat found this turn already on the server. */
+      let landed = false;
+      /**
+       * Every failed attempt so far was a drain, which refuses before reading
+       * the request: a Stop during the wait leaves a turn the server provably
+       * never received, so it is offered as unsent rather than regenerated.
+       */
+      let onlyDrained = true;
+
       try {
         // Let React paint "submitting" / the pending bubbles before a multi-MB
         // JSON.stringify blocks the main thread on long pastes / private history.
@@ -1222,29 +1343,140 @@ export function useChat(opts: UseChatOptions) {
           requestAnimationFrame(() => resolve());
         });
 
-        const res = await fetch(path, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        const conversationAtSend = convoIdRef.current;
+        const knownUserIds = new Set(messagesRef.current.filter((m) => m.role === "USER").map((m) => m.id));
+        const sent = await sendTurn({
+          url: path,
+          // Serialised once: every repeat is byte-identical, which a durable
+          // first submission's receipt requires (its request hash).
           body: JSON.stringify({
             ...body,
             generationId,
+            ...(firstSubmission
+              ? {
+                  clientRequestId: `web-req-${crypto.randomUUID()}`,
+                  clientMessageId: `web-msg-${crypto.randomUUID()}`,
+                }
+              : {}),
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           }),
           signal: controller.signal,
+          safety,
+          verify:
+            safety === "verify" && conversationAtSend
+              ? (signal) =>
+                  verifyTurnLanded({
+                    conversationId: conversationAtSend,
+                    generationId,
+                    content: sentQuestion,
+                    knownUserIds,
+                    // Stop ends a check at once; a server that never answers ends it after a few seconds.
+                    signal,
+                  })
+              : undefined,
+          // "Reconnecting in 4s", then "Reconnecting…": the same calm line a
+          // dropped stream shows (connection-status.tsx), on this turn's bubble.
+          onWaiting: ({ retryAt, failure }) => {
+            if (failure.kind !== "draining") onlyDrained = false;
+            sendWaitingRef.current = controller;
+            if (generationSeqRef.current === seq) setTurnConnection(assistantTempId, { phase: "reconnecting", retryAt });
+          },
+          onRetrying: () => {
+            sendWaitingRef.current = null;
+            if (generationSeqRef.current === seq) setTurnConnection(assistantTempId, { phase: "reconnecting", retryAt: null });
+          },
+          deps: { fetch: (url, init) => fetch(url, init), sleep: abortableSleep, now: Date.now, random: Math.random },
         });
+        if (sendWaitingRef.current === controller) sendWaitingRef.current = null;
+        if (generationSeqRef.current === seq) setTurnConnection(assistantTempId, undefined);
 
-        if (!res.ok || !res.body) {
-          const data = (await res.json().catch(() => ({}))) as {
-            error?: string | { message?: string };
-            message?: string;
-          };
-          // Machine-readable errors (e.g. 402 budget_exceeded) carry the
-          // human sentence in `message`; plain errors keep it in `error`.
-          const nestedMessage = typeof data.error === "object" && data.error ? data.error.message : undefined;
-          const errorText = typeof data.error === "string" ? data.error : undefined;
-          throw new Error(data.message ?? nestedMessage ?? errorText ?? "Something went wrong.");
+        if (sent.kind === "session-expired") {
+          // The session ended: a dialog says so (session-expired-dialog.tsx)
+          // and the words are kept — never the route's 401 text as the answer.
+          const unsentQuestion = sentQuestion !== null;
+          setMessages((prev) =>
+            unsentQuestion
+              ? prev
+                  .filter((m) => m.id !== assistantTempId)
+                  .map((m) => (m.pending && m.role === "USER" ? { ...m, pending: false, unsent: true } : m))
+              : prev.map((m) =>
+                  m.id === assistantTempId
+                    ? {
+                        ...m,
+                        streaming: false,
+                        error: true,
+                        progress: null,
+                        finishReason: "error" as const,
+                        errorMessage: sessionEndedTurnMessage,
+                        content: m.content || sessionEndedTurnMessage,
+                      }
+                    : m
+                )
+          );
+          if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
+          reportSessionExpired({
+            returnTo: `${window.location.pathname}${window.location.search}`,
+            text: unsentQuestion && !opts.privateMode ? sentQuestion : null,
+            conversationId: opts.privateMode ? null : convoIdRef.current,
+            incognito: !!opts.privateMode,
+            withAttachments:
+              (Array.isArray(body.attachmentIds) && body.attachmentIds.length > 0) ||
+              (Array.isArray(body.context) && body.context.length > 0),
+          });
+          return;
+        }
+        if (sent.kind === "failed") throw new Error(sent.message);
+
+        if (sent.kind === "already-submitted" || sent.kind === "landed") {
+          // An earlier attempt of this very send reached the server: its turn
+          // is read from the generation's log (or, failing that, from the
+          // conversation) instead of being asked for a second time.
+          landed = true;
+          const userMessageId = sent.userMessageId;
+          if (sent.kind === "already-submitted" && convoIdRef.current === null) {
+            convoIdRef.current = sent.conversationId;
+            opts.onMeta?.({
+              conversationId: sent.conversationId,
+              title: promptPlaceholderTitle(sentQuestion ?? ""),
+              titleSource: "default",
+              isNew: true,
+            });
+          }
+          if (userMessageId) {
+            setMessages((prev) =>
+              prev.map((m) => (m.pending && m.role === "USER" ? { ...m, id: userMessageId, pending: false } : m))
+            );
+          }
+          const logGenerationId = sent.kind === "already-submitted" ? sent.generationId : generationId;
+          generationIdRef.current = logGenerationId;
+          if (convoIdRef.current) {
+            markPendingGeneration({
+              conversationId: convoIdRef.current,
+              userMessageId,
+              generationId: logGenerationId,
+              startedAt: Date.now(),
+            });
+          }
+          if (sent.kind === "landed" && !sent.running) {
+            // Saved, but nothing is running under this turn's id: the answer
+            // is in the conversation, or will be, or was lost with a process.
+            void recoverDroppedStream(assistantTempId, userMessageId, seq);
+            return;
+          }
+          setStatus("thinking");
+          await driveReconnect({
+            applier,
+            generationId: logGenerationId,
+            assistantTempId,
+            seq,
+            signal: controller.signal,
+            immediate: true,
+          });
+          return;
         }
 
+        const res = sent.response;
+        if (!res.body) throw new Error("Something went wrong.");
         await readChatStream(res.body, applier.apply);
 
         // Stream ended without a done/error frame — reconnect, recover, or
@@ -1277,7 +1509,12 @@ export function useChat(opts: UseChatOptions) {
         // View moved on (new chat) — abort without error toast.
         if (detachedRef.current) return;
         const stopped = stopRequestedRef.current;
-        if (stopped) {
+        if (stopped && sendWaitingRef.current === controller && onlyDrained && sentQuestion !== null) {
+          // Stopped while waiting out a drain: nothing reached the server, so
+          // there is no answer to call stopped. The question stays, unsent.
+          setMessages((prev) => prev.filter((m) => m.id !== assistantTempId));
+          if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
+        } else if (stopped) {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantTempId
@@ -1303,6 +1540,9 @@ export function useChat(opts: UseChatOptions) {
           if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
         }
       } finally {
+        // Ended while waiting to send again (a Stop, or the view moving on).
+        const stoppedInWait = sendWaitingRef.current === controller;
+        if (stoppedInWait) sendWaitingRef.current = null;
         if (stopFallbackRef.current != null) {
           window.clearTimeout(stopFallbackRef.current);
           stopFallbackRef.current = null;
@@ -1320,7 +1560,8 @@ export function useChat(opts: UseChatOptions) {
         // the turn — and there the flag is left off so a retry regenerates
         // rather than risking a duplicate.)
         if (!detachedRef.current) {
-          const orphaned = !applier.metaArrived && !stopRequestedRef.current;
+          const orphaned =
+            !applier.metaArrived && !landed && (!stopRequestedRef.current || (stoppedInWait && onlyDrained && sentQuestion !== null));
           setMessages((prev) =>
             prev.some((m) => m.pending && m.role === "USER")
               ? prev.map((m) =>
@@ -1336,7 +1577,7 @@ export function useChat(opts: UseChatOptions) {
         stopRequestedRef.current = false;
       }
     },
-    [clearReconnect, createStreamApplier, driveReconnect, opts, recoverDroppedStream]
+    [clearReconnect, createStreamApplier, driveReconnect, opts, recoverDroppedStream, setTurnConnection]
   );
 
   const startGeneration = React.useCallback(
@@ -1423,7 +1664,8 @@ export function useChat(opts: UseChatOptions) {
             params: input.mediaParams,
           },
           assistantTempId,
-          "/api/generate"
+          "/api/generate",
+          userMsg.content
         );
         return { accepted: true };
       }
@@ -1469,6 +1711,10 @@ export function useChat(opts: UseChatOptions) {
           // send so a new chat keeps the mode picked before it existed; the
           // server saves it on the conversation.
           taskApprovalMode: opts.privateMode ? undefined : readTaskApprovalMode?.() ?? undefined,
+          // Rides a send only while on, so a brand-new chat is created with
+          // it and its first turn already reads and saves no memory. Turning
+          // it back on is the toggle's own request, never a send's.
+          memoryOff: !opts.privateMode && readMemoryOff?.() ? true : undefined,
           privateMode: opts.privateMode,
           privateHistory: opts.privateMode
             ? [...messages, userMsg]
@@ -1476,7 +1722,9 @@ export function useChat(opts: UseChatOptions) {
                 .map((m) => ({ role: m.role, content: m.content }))
             : undefined,
         },
-        assistantTempId
+        assistantTempId,
+        "/api/chat",
+        userMsg.content
       ).catch((err) => {
         // Keep the SPA alive if stringify/fetch throws on huge pastes.
         console.error("[chat] generation failed to start", err);
@@ -1512,6 +1760,7 @@ export function useChat(opts: UseChatOptions) {
       opts.projectId,
       opts.privateMode,
       readTaskApprovalMode,
+      readMemoryOff,
       messages,
     ]
   );
@@ -1726,7 +1975,8 @@ export function useChat(opts: UseChatOptions) {
           edit: input.edit,
         },
         assistantTempId,
-        "/api/generate"
+        "/api/generate",
+        userMsg.content
       );
       return { accepted: true };
     },
@@ -2117,6 +2367,10 @@ export function useChat(opts: UseChatOptions) {
     const controller = abortRef.current;
     const assistantId = assistantIdRef.current;
     if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
+
+    // Waiting to send again: end the wait now. The cancel below still goes
+    // out, so an earlier attempt that did reach the server stops there too.
+    if (sendWaitingRef.current === controller) controller.abort();
 
     if (generationId) {
       fetch("/api/chat/cancel", {

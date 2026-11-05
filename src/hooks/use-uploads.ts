@@ -4,32 +4,25 @@ import * as React from "react";
 import { toast } from "sonner";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import type { ClientAttachment } from "@/types/chat";
-
-export interface PendingUpload {
-  localId: string;
-  fileName: string;
-  size: number;
-  progress: number; // 0..100
-  status: "uploading" | "done" | "error";
-  attachment?: ClientAttachment;
-  error?: string;
-}
+import { createComposerUploadSession, type ComposerUploadSession, type PendingUpload } from "@/lib/chat/composer-upload-session";
+export type { PendingUpload } from "@/lib/chat/composer-upload-session";
 
 let counter = 0;
 
-export function useUploads(conversationId: string | null) {
-  const [uploads, setUploads] = React.useState<PendingUpload[]>([]);
+export function useUploads(conversationId: string | null, sharedSession?: ComposerUploadSession) {
+  const localSession = React.useRef<ComposerUploadSession | null>(null);
+  if (!localSession.current) localSession.current = createComposerUploadSession();
+  const session = sharedSession ?? localSession.current;
+  const uploads = React.useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
 
-  const update = (localId: string, patch: Partial<PendingUpload>) =>
-    setUploads((prev) => prev.map((u) => (u.localId === localId ? { ...u, ...patch } : u)));
+  const update = React.useCallback((localId: string, patch: Partial<PendingUpload>) => {
+    session.update(localId, patch);
+  }, [session]);
 
   const uploadOne = React.useCallback(
     (file: File, conversationIdValue: string | null) => {
       const localId = `up-${Date.now()}-${counter++}`;
-      setUploads((prev) => [
-        ...prev,
-        { localId, fileName: file.name, size: file.size, progress: 0, status: "uploading" },
-      ]);
+      session.add({ localId, fileName: file.name, size: file.size, progress: 0, status: "uploading" });
 
       const form = new FormData();
       form.append("file", file);
@@ -65,7 +58,7 @@ export function useUploads(conversationId: string | null) {
       };
       xhr.send(form);
     },
-    []
+    [session, update]
   );
 
   const addFiles = React.useCallback(
@@ -81,7 +74,7 @@ export function useUploads(conversationId: string | null) {
   // MAX_ATTACHMENTS so a send can never exceed the server's per-message limit.
   const addAttachments = React.useCallback((attachments: ClientAttachment[]) => {
     if (attachments.length === 0) return;
-    setUploads((prev) => {
+    session.updateUploads((prev) => {
       const existing = new Set(prev.map((u) => u.attachment?.id).filter(Boolean));
       const headroom = Math.max(0, MAX_ATTACHMENTS - prev.length);
       const fresh = attachments.filter((a) => !existing.has(a.id));
@@ -98,13 +91,13 @@ export function useUploads(conversationId: string | null) {
       }
       return next.length ? [...prev, ...next] : prev;
     });
-  }, []);
+  }, [session]);
 
   const remove = React.useCallback((localId: string) => {
-    setUploads((prev) => prev.filter((u) => u.localId !== localId));
-  }, []);
+    session.remove(localId);
+  }, [session]);
 
-  const clear = React.useCallback(() => setUploads([]), []);
+  const clear = React.useCallback(() => session.clear(), [session]);
 
   const readyAttachments = React.useMemo(
     () => uploads.filter((u) => u.status === "done" && u.attachment).map((u) => u.attachment!),

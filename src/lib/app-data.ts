@@ -7,7 +7,17 @@ import { listConversations } from "@/lib/queries";
 import { getQuota, planFromAccount } from "@/lib/usage";
 import { budgetForPlan, checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor, periodCreditMicroUsd } from "@/lib/spend";
 import { effectiveBudget, windowBaseMicroUsd } from "@/lib/spend-ceiling";
-import { isStripeConfigured, isStorageAvailable, isServerTtsConfigured, activeTtsProvider } from "@/lib/env";
+import {
+  isStripeConfigured,
+  isStorageAvailable,
+  isServerTtsConfigured,
+  activeTtsProvider,
+  isArtifactAiEnabled,
+  isChatMemoryOffEnabled,
+  isCloudAttachEnabled,
+  isSharePeopleEnabled,
+  isToneCharacteristicsEnabled,
+} from "@/lib/env";
 import { isAnySttAvailable } from "@/lib/stt";
 import { isEmailEnabled } from "@/lib/email";
 import { purchasablePlans } from "@/lib/stripe";
@@ -21,6 +31,7 @@ import { isOwnerEmail } from "@/lib/owner";
 import { PLANS } from "@/lib/plans";
 import { codeAccessFor } from "@/lib/code-v2/code-access";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
+import { normalizeCharacteristics } from "@/lib/characteristics";
 import { AUTO_LOCALE } from "@/lib/i18n";
 import {
   normalizeBackgroundProviderPolicy,
@@ -151,6 +162,9 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     // Free starts on its own default (GPT-6 Luna) until the account chooses.
     defaultModel: defaultModelFor(plan, settings?.defaultModel),
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
+    // TEXT columns read through the guard: an unknown level shows as Default,
+    // which is also what the prompt builder makes of it.
+    ...normalizeCharacteristics(settings),
     customInstructions: settings?.customInstructions ?? "",
     responseLanguage: settings?.responseLanguage ?? "auto",
     uiLocale: settings?.uiLocale ?? AUTO_LOCALE,
@@ -247,6 +261,12 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       providers: configuredProviders(),
       ...(codeAccess?.allowed ? { codeOpen: true } : {}),
       isOwner: isOwnerEmail(user.email),
+      // Merged before review, off until the owner sets each flag (src/lib/env.ts).
+      sharePeople: isSharePeopleEnabled(),
+      chatMemoryOff: isChatMemoryOffEnabled(),
+      cloudAttach: isCloudAttachEnabled(),
+      toneCharacteristics: isToneCharacteristicsEnabled(),
+      artifactAi: isArtifactAiEnabled(),
     },
   };
 }

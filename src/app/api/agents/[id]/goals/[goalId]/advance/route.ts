@@ -4,7 +4,18 @@ import { requireUser } from "@/lib/code-remote";
 import { rateLimit } from "@/lib/rate-limit";
 import { findAgent } from "@/lib/agents/store";
 import { advanceGoal } from "@/lib/agents/goal-runner";
-import { DEFAULT_GOAL_MAX_RUNS, MAX_GOAL_RUNS_LIMIT, parseBlockers } from "@/lib/agents/goals";
+import type { Prisma } from "@prisma/client";
+import { latestGoalCriteriaCheck } from "@/lib/agents/goal-criteria";
+import {
+  DEFAULT_GOAL_MAX_RUNS,
+  GOAL_UNVERIFIED,
+  MAX_GOAL_RUNS_LIMIT,
+  goalProgress,
+  lastFinishedMilestone,
+  parseBlockers,
+  parseMilestones,
+  reopenUnverifiedGoal,
+} from "@/lib/agents/goals";
 import { serializeGoal } from "@/lib/agents/types";
 
 export const runtime = "nodejs";
@@ -33,7 +44,22 @@ export async function POST(_req: Request, { params }: Params) {
   if (goal.status === "achieved" || goal.status === "dropped") {
     return NextResponse.json({ error: "goal_closed", message: "That goal is closed. Reopen it first." }, { status: 409 });
   }
-  const stoppedAtBound = parseBlockers(goal.blockers).some((b) => b.kind === "run_budget");
+  // Every step ran but its criteria were not shown to be met: "Keep working"
+  // adds one milestone aimed at the gap the check named, and drives it.
+  let reopened: ReturnType<typeof parseMilestones> | null = null;
+  if (goal.status === GOAL_UNVERIFIED) {
+    const milestones = parseMilestones(goal.milestones);
+    const last = lastFinishedMilestone(milestones);
+    const check = last?.sessionId
+      ? await latestGoalCriteriaCheck({ userId: user.id, agentId: agent.id, goalId: goal.id, sessionId: last.sessionId })
+      : null;
+    const next = reopenUnverifiedGoal(milestones, check?.verdict === "not_met" ? check.why : null);
+    if (!next.ok) return NextResponse.json({ error: "goal_full", message: next.message }, { status: 409 });
+    reopened = next.milestones;
+  }
+  // A reopened goal that already used its runs gets another set, like one stopped at its bound.
+  const stoppedAtBound =
+    parseBlockers(goal.blockers).some((b) => b.kind === "run_budget") || (reopened !== null && goal.runsUsed >= goal.maxRuns);
   const maxRuns =
     goal.maxRuns === 0
       ? DEFAULT_GOAL_MAX_RUNS
@@ -47,7 +73,8 @@ export async function POST(_req: Request, { params }: Params) {
     where: { id: goal.id, userId: user.id },
     data: {
       maxRuns,
-      ...(goal.status === "paused" ? { status: "active" } : {}),
+      ...(goal.status === "paused" || reopened ? { status: "active" } : {}),
+      ...(reopened ? { milestones: reopened as unknown as Prisma.InputJsonValue, progress: goalProgress(reopened, "active") } : {}),
       // The person answered whatever it was waiting on by pressing Continue.
       blockers: [],
     },

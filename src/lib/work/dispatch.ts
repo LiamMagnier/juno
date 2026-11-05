@@ -15,6 +15,7 @@ import { serializeRun, serializeSession } from "@/lib/work/serializers";
 import {
   createRun,
   createWorkSession,
+  expireUnclaimedCloudRuns,
   reconcileSessionAttachments,
   recordRunInputsFromGrants,
   WorkSpendAdmissionError,
@@ -38,6 +39,7 @@ import {
   resolveApprovalMode,
   selectTarget,
   type HostCapabilityView,
+  type TargetSelection,
   type WorkCapability,
   type WorkDegradation,
   type WorkPermissionPolicy,
@@ -51,11 +53,17 @@ import {
   type WorkProjectDefaults,
 } from "@/lib/work/projects";
 import { runBudgetForWindow } from "@/lib/work/budget";
+import { pausedAgentRunRefusal } from "@/lib/agents/domain";
+import { scriptedWorkModelFor } from "@/lib/dev/scripted-work-model";
+import { maxParkedRunsPerAccount } from "@/lib/work/park-resume";
+import { WORK_CAPPED_LIVE_STATUSES } from "@/lib/work/park-resume-rules";
 import { checkUsageWindows } from "@/lib/spend";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
 import { inferCapabilities, selectForInferred } from "@/lib/work/inference";
 import { planRunCommand, refusalBody, startCommandPayload } from "@/lib/work/relay";
+import { cloudWorkAvailable, readCloudWorkAvailability, readExecutorPresence } from "@/lib/work/executor-heartbeat";
+import { executorKnownAbsent, executorUnknownRefusal, planDespiteUnknownCloud } from "@/lib/work/executor-presence";
 import { estimateWorkRunCost, type WorkCostEstimate } from "@/lib/work/preflight-cost";
 import {
   effectiveHostState,
@@ -664,6 +672,37 @@ export async function createWorkSessionForUser(
 const WORK_RUN_RATE_LIMIT = 10;
 /** Max simultaneously live runs per user, across every session. */
 const WORK_RUN_CONCURRENCY_CAP = 3;
+
+/*
+ * The concurrency cap counts `WORK_CAPPED_LIVE_STATUSES` (park-resume-rules.ts): every
+ * live run except a parked one, which holds no executor. Parked runs are
+ * bounded on their own instead (`maxParkedRunsPerAccount`,
+ * `WORK_MAX_PARKED_RUNS_PER_ACCOUNT`), so they cannot pile up without limit
+ * either. The "one live run per session" check below still counts them: a
+ * parked task has an attempt in flight.
+ */
+
+/** The refusal for an account holding as many parked runs as it may. */
+function parkedCapBody(parked: number): Record<string, unknown> {
+  return {
+    error: "parked_cap_exceeded",
+    message: `You have ${parked} tasks waiting for you. Answer, resume or cancel one of them before starting another.`,
+  };
+}
+
+/*
+ * The live runs a `WORK_RUN_CONCURRENCY_CAP` check leaves out, both times it
+ * is read in `startWorkRunForUser`: when `deadCloudQueue` says the cloud
+ * executor is known to be absent (a heartbeat read that lapsed, not a failed
+ * read and not the kill switch over a live runner), the cloud runs still
+ * `queued` and unclaimed. Nothing is going to start them, and counting them is
+ * how three dead cloud runs used to refuse a task sent to a Mac that was
+ * online. Subtracted from the live count rather than folded into it as a `NOT`
+ * over three columns, so a nullable `effectiveTarget` cannot drop a row out of
+ * the total under three-valued logic. Every one of them is also in the live
+ * count (`queued` is live).
+ */
+
 /**
  * How many previous failures a retry looks back over when choosing a model.
  *
@@ -674,16 +713,14 @@ const WORK_RUN_CONCURRENCY_CAP = 3;
  */
 const MAX_FAILOVER_HISTORY = 4;
 
-/**
- * Whether cloud Work is accepting runs.
- *
- * A constant because there is one cloud executor and no kill switch in front of
- * it today. It is named and passed to `selectTarget` rather than assumed at the
- * call site so that turning cloud off — a paused executor, a provider outage —
- * is one edit here that produces the honest refusal `selectTarget` already
- * writes, instead of a queue of runs that nothing will ever claim.
+/*
+ * Whether cloud Work is accepting runs is `cloudWorkAvailable()`
+ * (src/lib/work/executor-heartbeat.ts): an executor reported in within the
+ * last two minutes. It used to be a constant `true`, which accepted cloud runs
+ * with no runner alive to claim them; they sat `queued` for ever and filled the
+ * concurrency cap. Passed to `selectTarget`, so no executor produces the
+ * honest refusal it already writes instead of a queue nothing will claim.
  */
-const CLOUD_WORK_AVAILABLE = true;
 
 /*
  * What bounds a run is `runBudgetForWindow` in src/lib/work/budget.ts, fed by
@@ -818,6 +855,14 @@ class NoReachableModelError extends Error {}
  * account's plan admits no model that could run a Work task at all — a 403, and
  * a different sentence.
  */
+/** The catalog model a scripted development run is recorded under: the one asked for, else the first drivable one. */
+function scriptedRunModel(requested: string): RunModel {
+  const asked = resolveModel(requested);
+  const model = asked && workModelOptions([asked]).length > 0 ? asked : workModelOptions(MODEL_LIST, { providers: null })[0];
+  if (!model) throw new NoReachableModelError();
+  return { requested, effective: model.id, degradation: [] };
+}
+
 function resolveRunModel(input: {
   requested: string;
   goal: string;
@@ -962,12 +1007,20 @@ function refused(status: number, body: Record<string, unknown>, preflight: WorkC
  * written, so a caller can put the estimate in front of a person first. Only
  * the chat tool asks for it; the route never does, and a preflight answer is
  * never a response body anybody decodes.
+ *
+ * `unattended` is for a caller acting with nobody watching (the goal runner's
+ * sweep, scripts/agent-reflector.ts). It reads the cloud executor's heartbeat
+ * as three answers (`readCloudWorkAvailability`) instead of failing closed: a
+ * read that failed, where whether a worker is alive decides the run, is
+ * refused with `executorUnknownRefusal()` (`retryLater: true`), never with
+ * "No cloud worker is running", which such a caller would record as a
+ * blocker nobody can act on.
  */
 export async function startWorkRunForUser(
   user: WorkDispatchUser,
   session: WorkSession,
   body: StartWorkRunBody,
-  options: { preflightOnly?: boolean } = {}
+  options: { preflightOnly?: boolean; unattended?: boolean } = {}
 ): Promise<StartWorkRunResponse> {
   // Idempotency is checked before the rate limit and before the cap, so a
   // client retrying a dispatch whose response it never saw gets its run back
@@ -982,6 +1035,20 @@ export async function startWorkRunForUser(
       return { status: 200, body: { run: serializeRun(existing), replay: true }, run: existing, preflight: null };
     }
   }
+
+  // A paused agent starts nothing (AUDIT.md §3 item 8). The chat tools and the
+  // goal runner refused on their own, but Retry, Run again and Continue on a
+  // task card in its thread reached here with nothing in the way. Read fresh:
+  // a pause made after the card was drawn is the one that counts.
+  const paused = pausedAgentRunRefusal(
+    session.agentId
+      ? await prisma.agent.findFirst({
+          where: { id: session.agentId, userId: user.id, deletedAt: null },
+          select: { name: true, status: true },
+        })
+      : null
+  );
+  if (paused) return refused(409, paused);
 
   // The plan gate, on the id this attempt would actually ask for. The session's
   // stored model is checked too, not just the body's: a session drafted while
@@ -1061,6 +1128,19 @@ export async function startWorkRunForUser(
         select: { id: true },
       })) !== null
     : false;
+  // A person is told "no cloud worker" on a failed read (`cloudWorkAvailable`
+  // fails closed, and they can press again). An unattended caller reads the
+  // three-way answer: "unknown" is settled at selection below.
+  const availability = options.unattended ? await readCloudWorkAvailability() : null;
+  const cloudAvailable = availability === null ? await cloudWorkAvailable(now) : availability === "available";
+  // Cloud is closed. Whatever this dispatch targets, runs this account queued
+  // for a cloud worker that is not there must not block it: past the TTL they
+  // are ended here (a no-op unless the executor has been gone that long), and
+  // until then the cap below does not count them while the executor is known
+  // to be absent. Before selection, so a task sent to an online Mac is not
+  // refused "3 runs in progress" by cloud runs nothing is going to claim.
+  const deadCloudQueue = !cloudAvailable && executorKnownAbsent(await readExecutorPresence(now), now);
+  if (!cloudAvailable) await expireUnclaimedCloudRuns({ now, userId: user.id }).catch(() => []);
   const requestedTarget =
     hasAgentComputer && (body.requestedTarget ?? targetOf(session.requestedTarget)) === "automatic"
       ? "cloud"
@@ -1071,21 +1151,31 @@ export async function startWorkRunForUser(
     explicit.length > 0
       ? explicit
       : inferCapabilities(session.goal, { hasAgentComputer }).capabilities;
-  const selection =
+  const selectWith = (cloudAvailable: boolean): TargetSelection =>
     explicit.length > 0
       ? selectTarget({
           requested: requestedTarget,
           required,
           hosts: offers,
-          cloudAvailable: CLOUD_WORK_AVAILABLE,
+          cloudAvailable,
         })
       : selectForInferred({
           requested: requestedTarget,
           inferred: required,
           hosts: offers,
-          cloudAvailable: CLOUD_WORK_AVAILABLE,
+          cloudAvailable,
           hasAgentComputer,
         });
+  // Unattended, with a heartbeat that could not be read: planned both ways, as
+  // the scheduler plans a fire (`planDespiteUnknownCloud`). Where the answers
+  // agree the cloud played no part (a member set to run on an online Mac) and
+  // the run goes ahead; where they differ nothing can be decided on a failed
+  // read, so the caller is told to come back rather than refused.
+  const selection =
+    availability === "unknown"
+      ? planDespiteUnknownCloud<TargetSelection | null>(selectWith, () => null)
+      : selectWith(cloudAvailable);
+  if (!selection) return refused(503, executorUnknownRefusal());
 
   // No executor can serve this. Refusing is the entire reason `selectTarget`
   // returns a null target: a queued run with nothing able to claim it is a
@@ -1137,12 +1227,18 @@ export async function startWorkRunForUser(
 
   let model: RunModel;
   try {
-    model = resolveRunModel({
-      requested: requestedModel,
-      goal: session.goal,
-      plan,
-      spentModels,
-    });
+    // D9 (docs/design/agents-v2/COMPUTERS_2026-10.md): a development run driven
+    // by the scripted Work model needs no provider key. Inert in production and
+    // unless the account is listed (src/lib/dev/scripted-work-model.ts); the
+    // runner's own event says no model was called.
+    model = scriptedWorkModelFor(user)
+      ? scriptedRunModel(requestedModel)
+      : resolveRunModel({
+          requested: requestedModel,
+          goal: session.goal,
+          plan,
+          spentModels,
+        });
   } catch (err) {
     if (err instanceof NoEntitledModelError) {
       return refused(403, {
@@ -1170,9 +1266,15 @@ export async function startWorkRunForUser(
     // below is still what enforces it; this only keeps a caller from asking a
     // person to approve a run the cap would refuse the moment they said yes,
     // which for somebody with three tasks going is the common case, not a race.
-    const live = await prisma.workRun.count({
-      where: { userId: user.id, status: { in: [...WORK_LIVE_STATUSES] } },
-    });
+    const live =
+      (await prisma.workRun.count({
+        where: { userId: user.id, status: { in: [...WORK_CAPPED_LIVE_STATUSES] } },
+      })) -
+      (deadCloudQueue
+        ? await prisma.workRun.count({
+            where: { userId: user.id, status: "queued", claimedBy: null, effectiveTarget: "cloud" },
+          })
+        : 0);
     if (live >= WORK_RUN_CONCURRENCY_CAP) {
       return refused(
         429,
@@ -1183,6 +1285,8 @@ export async function startWorkRunForUser(
         preflight
       );
     }
+    const parked = await prisma.workRun.count({ where: { userId: user.id, status: "paused" } });
+    if (parked >= maxParkedRunsPerAccount()) return refused(429, parkedCapBody(parked), preflight);
     return { status: 200, body: { preflight }, run: null, preflight };
   }
   if (preflight.requiresConfirmation && !body.confirmExpensive) {
@@ -1286,6 +1390,9 @@ export async function startWorkRunForUser(
             goal: session.goal,
             model: model.effective,
             permissionPolicy: mode.policy,
+            // No `agentContext` here: this payload is stored. A crew member's
+            // persona and notes are added when the Mac claims the command
+            // (`serializeClaimedCommand`), so it still opens as that member.
           }),
         }
       : undefined;
@@ -1312,11 +1419,21 @@ export async function startWorkRunForUser(
       `;
       if (!lock?.locked) throw new Error("dispatch_in_flight");
 
-      const live = await tx.workRun.count({
-        where: { userId: user.id, status: { in: [...WORK_LIVE_STATUSES] } },
-      });
+      const live =
+        (await tx.workRun.count({
+          where: { userId: user.id, status: { in: [...WORK_CAPPED_LIVE_STATUSES] } },
+        })) -
+        (deadCloudQueue
+          ? await tx.workRun.count({
+              where: { userId: user.id, status: "queued", claimedBy: null, effectiveTarget: "cloud" },
+            })
+          : 0);
       if (live >= WORK_RUN_CONCURRENCY_CAP) {
         throw Object.assign(new Error("run_cap_exceeded"), { liveCount: live });
+      }
+      const parked = await tx.workRun.count({ where: { userId: user.id, status: "paused" } });
+      if (parked >= maxParkedRunsPerAccount()) {
+        throw Object.assign(new Error("parked_cap_exceeded"), { parkedCount: parked });
       }
 
       // One live run per session. A second attempt started while the first is
@@ -1419,6 +1536,10 @@ export async function startWorkRunForUser(
         },
         preflight
       );
+    }
+    if (err instanceof Error && err.message === "parked_cap_exceeded") {
+      const parked = (err as Error & { parkedCount?: number }).parkedCount ?? maxParkedRunsPerAccount();
+      return refused(429, parkedCapBody(parked), preflight);
     }
     if (err instanceof Error && err.message === "session_already_running") {
       return refused(

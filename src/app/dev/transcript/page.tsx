@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { TranscriptGallery } from "./gallery";
 
 /**
@@ -25,5 +26,9 @@ export default async function TranscriptDevPage({
 }) {
   if (process.env.NODE_ENV === "production") notFound();
   const { only } = await searchParams;
-  return <TranscriptGallery only={typeof only === "string" ? only : undefined} />;
+  return (
+    <PageRoot>
+      <TranscriptGallery only={typeof only === "string" ? only : undefined} />
+    </PageRoot>
+  );
 }

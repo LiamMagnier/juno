@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { resolveModel } from "@/lib/models";
-import { recomputeCostMicroUsd } from "@/lib/pricing";
 import { eurPerUsd } from "@/lib/spend";
 import { JUNO_TOOL_MODEL_PREFIX, isJunoToolSpendModel, usageModelLabel } from "@/lib/tools/metering";
 
@@ -14,9 +12,10 @@ export const runtime = "nodejs";
  * - per-model usage mix (same window)
  * - true lifetime totals from the ApiSpend ledger (tokens, replies, API cost)
  *
- * Cost is the MAX of the stored ledger value and a recompute from tokens ×
- * current rates — so historical under-billed rows (missing reasoning, wrong
- * rates) still show honest spend on the profile.
+ * Cost comes from the ledger. Its token totals cannot reconstruct cache
+ * discounts, batch prices or individual requests' long-context thresholds.
+ * Repricing them at uncached aggregate rates would invent a larger charge;
+ * reading this endpoint must never rewrite historical spend.
  *
  * Source of truth is the ApiSpend ledger — one row per billable model call,
  * never decremented when chats/messages are deleted.
@@ -56,7 +55,6 @@ export async function GET() {
         model: true,
         promptTokens: true,
         completionTokens: true,
-        costMicroUsd: true,
         createdAt: true,
       },
       take: 100_000,
@@ -65,15 +63,13 @@ export async function GET() {
     prisma.apiSpend.findMany({
       where: { userId: user.id },
       select: {
-        id: true,
         model: true,
         kind: true,
         promptTokens: true,
         completionTokens: true,
         costMicroUsd: true,
-        createdAt: true,
       },
-      // Hard cap for pathological accounts; recompute is O(n) in memory.
+      // Hard cap for pathological accounts; aggregation is O(n) in memory.
       take: 200_000,
       orderBy: { createdAt: "desc" },
     }),
@@ -103,11 +99,10 @@ export async function GET() {
     .map(([model, v]) => ({ model, ...v }))
     .sort((a, b) => b.count - a.count || b.tokens - a.tokens);
 
-  // Lifetime: recompute cost from tokens so under-billed ledger rows surface.
+  // Lifetime: preserve the price recorded when each request was settled.
   let lifetimeTokensIn = 0;
   let lifetimeTokensOut = 0;
   let lifetimeCostMicroUsd = 0;
-  let lifetimeStoredCostMicroUsd = 0;
   const byKindMap = new Map<string, { count: number; costMicroUsd: number; tokensIn: number; tokensOut: number }>();
   const byModelMap = new Map<
     string,
@@ -117,15 +112,15 @@ export async function GET() {
   for (const spend of lifetimeSpends) {
     const tokensIn = Math.max(0, spend.promptTokens ?? 0);
     const tokensOut = Math.max(0, spend.completionTokens ?? 0);
-    const stored = Math.max(0, spend.costMicroUsd ?? 0);
-    const recomputed = recomputeCostMicroUsd(spend.model, tokensIn, tokensOut, resolveModel, spend.createdAt);
-    // Prefer the higher of stored vs recomputed — never under-report to the user.
-    const cost = Math.max(stored, recomputed);
+    // ApiSpend stores integer micro-USD. An invalid legacy value contributes
+    // zero to this view, never a guessed charge or a write back to the ledger.
+    const cost = Number.isSafeInteger(spend.costMicroUsd) && spend.costMicroUsd >= 0
+      ? spend.costMicroUsd
+      : 0;
 
     lifetimeTokensIn += tokensIn;
     lifetimeTokensOut += tokensOut;
     lifetimeCostMicroUsd += cost;
-    lifetimeStoredCostMicroUsd += stored;
 
     const kind = spend.kind || "chat";
     const kindRow = byKindMap.get(kind) ?? { count: 0, costMicroUsd: 0, tokensIn: 0, tokensOut: 0 };
@@ -168,29 +163,6 @@ export async function GET() {
     lifetimeSpends.filter((s) => (s.kind || "chat") !== "utility").length -
     lifetimeSpends.filter((s) => (s.kind || "chat") !== "utility" && isJunoToolSpendModel(s.model)).length;
 
-  // Persist repairs so plan budget (which sums costMicroUsd) matches the
-  // honest recompute — fire-and-forget, capped so a huge ledger can't stall.
-  const repairs = lifetimeSpends
-    .map((spend) => {
-      const tokensIn = Math.max(0, spend.promptTokens ?? 0);
-      const tokensOut = Math.max(0, spend.completionTokens ?? 0);
-      const recomputed = recomputeCostMicroUsd(spend.model, tokensIn, tokensOut, resolveModel, spend.createdAt);
-      const stored = Math.max(0, spend.costMicroUsd ?? 0);
-      if (recomputed <= stored) return null;
-      return { id: spend.id, costMicroUsd: recomputed };
-    })
-    .filter((r): r is { id: string; costMicroUsd: number } => r != null)
-    .slice(0, 2_000);
-  if (repairs.length > 0) {
-    void Promise.all(
-      repairs.map((r) =>
-        prisma.apiSpend
-          .update({ where: { id: r.id, userId: user.id }, data: { costMicroUsd: r.costMicroUsd } })
-          .catch(() => null)
-      )
-    ).catch(() => null);
-  }
-
   return NextResponse.json({
     daily,
     models,
@@ -204,8 +176,8 @@ export async function GET() {
       tokensOut: lifetimeTokensOut,
       messages: lifetimeMessages,
       costMicroUsd: lifetimeCostMicroUsd,
-      /** Raw sum of ledger rows before recompute repair (debug / transparency). */
-      storedCostMicroUsd: lifetimeStoredCostMicroUsd,
+      /** Compatibility field: both totals now report settled ledger prices. */
+      storedCostMicroUsd: lifetimeCostMicroUsd,
       modelsTried: byModelMap.size,
       byKind,
       byModel: byModelCost,

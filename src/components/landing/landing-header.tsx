@@ -42,7 +42,7 @@ export function LandingHeader({ children, className }: { children: React.ReactNo
         data-scrolled={scrolled ? "" : undefined}
         className={cn(
           "sticky top-0 z-toolbar border-b border-transparent",
-          "transition-[background-color,border-color] motion-reduce:transition-none duration-base ease-out-soft",
+          "transition-[background-color,border-color] duration-base ease-out-soft",
           "data-[scrolled]:border-border data-[scrolled]:bg-background",
           // Without script the observer never runs, so the bar keeps its
           // material from the start rather than leaving the section links

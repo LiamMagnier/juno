@@ -124,6 +124,8 @@ interface TextDraft {
 
 /** The selection is drawn in presence on the paper, which is white in both themes. */
 const SELECT_BLUE = SCRIPT_COLOR.presence.light;
+/** The custom colour input starts on the palette's Blue pen. */
+const BLUE_PEN = SKETCH_SWATCHES.find((s) => s.name === "Blue")?.value ?? SELECT_BLUE;
 
 interface EditorHandlers {
   keyDown: (e: React.KeyboardEvent) => void;
@@ -865,7 +867,7 @@ function SketchEditor({
             <input
               type="color"
               aria-label="Custom colour"
-              value={customColor ?? (customActive ? color : "#2d49c9")}
+              value={customColor ?? (customActive ? color : BLUE_PEN)}
               onChange={(e) => {
                 setCustomColor(e.target.value);
                 pickColor(e.target.value);

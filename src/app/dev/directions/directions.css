@@ -147,22 +147,9 @@ html.dark[data-direction] .product-switch-thumb {
 .dark [data-direction] ::selection,
 html.dark[data-direction] ::selection { background-color: hsl(var(--brand) / 0.34); }
 
-/* Faces: flat tone, no ground shadow, no catchlight, and still at rest.
-   Presence moves for thinking, working and waiting; an idle face does not
-   breathe. */
-[data-direction] :is(.agent-face__lit, .agent-face__rim) { stop-color: hsl(var(--face-tone)); }
-[data-direction] :is(.agent-face__ground, .agent-face__glint) { display: none; }
-[data-direction] .agent-face:is([data-state="idle"], [data-state="sleeping"]) .agent-face__all { animation: none; }
-[data-direction] .dir-face-offline .agent-face { filter: saturate(0); opacity: 0.55; }
-/* Hover is tonal: a row under the pointer does not lift or squash the face
-   in it. Each selector outranks the one in agent-face.css it answers. */
-[data-direction] :is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible, :active) .agent-face:not([data-state="sleeping"]) .agent-face__rig,
-[data-direction] :is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible, :active) .agent-face .agent-face__rig,
-[data-direction] .agent-face:not([data-state="sleeping"]):is(:hover, :active) .agent-face__rig,
-[data-direction] :is(a, button, [role="link"], [role="button"], [data-face-trigger]):is(:hover, :focus-visible) .agent-face:is([data-state="idle"], [data-state="waiting"], [data-state="done"]) .agent-face__eyes,
-[data-direction] .agent-face:is([data-state="idle"], [data-state="waiting"]):hover .agent-face__eyes {
-  transform: none;
-}
+/* No filter on an offline face: it is drawn paused (fixtures.ts maps offline
+   to `sleeping`), in the dormant paint. A desaturated or faded face reads as
+   a broken image (agent-face.css). */
 
 /* Graphite's switch is ink on and inverts in dark, so its light thumb
    would vanish on a light track: the thumb takes the ink there. */
@@ -307,10 +294,10 @@ html.dark[data-direction="graphite"] [role="switch"][data-state="checked"] span 
 .dir-glyph[data-state="thinking"] .dir-orbit__x { transform: translateX(41.7%); }
 @media (prefers-reduced-motion: no-preference) {
   .dir-glyph[data-state="thinking"] .dir-orbit__x {
-    animation: dir-orbit-x 1.5s cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
+    animation: dir-orbit-x var(--loop-breathe) cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
   }
   .dir-glyph[data-state="thinking"] .dir-orbit__y {
-    animation: dir-orbit-y 1.5s cubic-bezier(0.37, 0, 0.63, 1) -0.75s infinite alternate;
+    animation: dir-orbit-y var(--loop-breathe) cubic-bezier(0.37, 0, 0.63, 1) calc(var(--loop-breathe) / -2) infinite alternate;
   }
 }
 @keyframes dir-orbit-x { from { transform: translateX(-41.7%); } to { transform: translateX(41.7%); } }
@@ -327,10 +314,10 @@ html.dark[data-direction="graphite"] [role="switch"][data-state="checked"] span 
 .dir-glyph[data-state="thinking"] .dir-constellation__point:first-of-type { opacity: 1; }
 @media (prefers-reduced-motion: no-preference) {
   .dir-glyph[data-state="thinking"] .dir-constellation__point {
-    animation: dir-constellation 1.35s var(--ease-in-out) infinite;
+    animation: dir-constellation var(--loop-beat) var(--ease-in-out) infinite;
   }
-  .dir-glyph[data-state="thinking"] .dir-constellation__point:nth-of-type(2) { animation-delay: 0.22s; }
-  .dir-glyph[data-state="thinking"] .dir-constellation__point:nth-of-type(3) { animation-delay: 0.44s; }
+  .dir-glyph[data-state="thinking"] .dir-constellation__point:nth-of-type(2) { animation-delay: var(--dur-base); }
+  .dir-glyph[data-state="thinking"] .dir-constellation__point:nth-of-type(3) { animation-delay: calc(var(--dur-base) * 2); }
 }
 @keyframes dir-constellation {
   0%, 100% { opacity: 0.25; }
@@ -344,7 +331,7 @@ html.dark[data-direction="graphite"] [role="switch"][data-state="checked"] span 
 .dir-meridian__arc { transform-box: view-box; transform-origin: 50% 50%; transform: scaleX(0.9); }
 @media (prefers-reduced-motion: no-preference) {
   .dir-glyph[data-state="thinking"] .dir-meridian__arc {
-    animation: dir-meridian 2.2s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+    animation: dir-meridian var(--loop) cubic-bezier(0.37, 0, 0.63, 1) infinite;
   }
 }
 @keyframes dir-meridian { from { transform: scaleX(1.8); } to { transform: scaleX(-1.8); } }

@@ -120,7 +120,8 @@ and the conversation.
 **Deferred:**
 - group rooms;
 - teach-a-task recording;
-- a credential vault or password-manager fill;
+- a credential vault or password-manager fill (since built, off by default behind
+  `AGENT_VAULT_ENABLED`: see VAULT.md);
 - single-use payment cards;
 - WhatsApp or Telegram access;
 - uploaded or generated avatar images.

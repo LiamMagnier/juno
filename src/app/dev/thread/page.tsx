@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { ThreadScene } from "./thread-scene";
 
 /**
@@ -24,5 +25,9 @@ export default async function ThreadDevPage({
   if (process.env.NODE_ENV === "production") notFound();
   const { scene } = await searchParams;
   const which = scene === "thinking" || scene === "settled" ? scene : "thread";
-  return <ThreadScene scene={which} />;
+  return (
+    <PageRoot>
+      <ThreadScene scene={which} />
+    </PageRoot>
+  );
 }

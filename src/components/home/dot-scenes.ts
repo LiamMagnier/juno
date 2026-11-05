@@ -60,6 +60,12 @@ export interface ConstructionOptions {
   axis: boolean;
   animate: boolean;
   parallax: boolean;
+  /**
+   * Draw on once, then hold still: no sway, a trajectory (if any) that rests
+   * where it arrived, and no frames scheduled once the drawing has settled.
+   * For product surfaces, where a moving drawing would compete with the work.
+   */
+  hold?: boolean;
   /** A live zoom (the hero's scroll), read each frame. */
   zoom?: () => number;
 }
@@ -84,7 +90,8 @@ export class ConstructionScene implements Scene {
     const step = pitch * 0.42;
 
     const swayT = t - (MOTION.delay + MOTION.stagger * COUNT + MOTION.draw * 0.6);
-    const swayIn = animate ? clamp01(swayT / 6) : 0;
+    // Held: the drawing arrives and then rests; only the draw-on moves.
+    const swayIn = animate && !opts.hold ? clamp01(swayT / 6) : 0;
     const sway = MOTION.swayAmp * Math.sin((TAU * Math.max(0, swayT)) / MOTION.swayPeriod) * swayIn * swayIn;
     const yaw = YAW0 + sway + f.pointer.x * 0.06;
     const tilt = TILT + f.pointer.y * 0.05;
@@ -173,8 +180,9 @@ export class ConstructionScene implements Scene {
       const tT0 = MOTION.delay + MOTION.stagger * (TRAJ_RING + 2) + 0.4;
       const tp = ease((t - tT0) / 1.6);
       if (tp > 0) {
-        travelling = animate;
-        const lead = LEAD0 + (animate ? MOTION.travel * Math.max(0, t - tT0) : 0);
+        const moving = animate && !opts.hold;
+        travelling = moving;
+        const lead = LEAD0 + (moving ? MOTION.travel * Math.max(0, t - tT0) : 0);
         const span = MOTION.tail * tp;
         const n = Math.max(8, Math.ceil((span * TAU * radius) / step));
         const soft = radius * 0.6;
@@ -214,6 +222,7 @@ export class ConstructionScene implements Scene {
 
     if (!animate) return Infinity;
     if (busy) return 16;
+    if (opts.hold) return Infinity;
     if (f.pointer.x || f.pointer.y) return MOTION.settledTravelMs;
     return travelling ? MOTION.settledTravelMs : MOTION.settledSwayMs;
   }

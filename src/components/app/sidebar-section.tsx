@@ -20,22 +20,34 @@ import { cn } from "@/lib/utils";
  * unmounted entirely, and a fill flying that far — or vanishing mid-flight
  * because its origin scrolled out of the well — is a projectile, not a
  * correction. Same recipe, same fill, no travel.
+ *
+ * FULL INK BELONGS TO THE SELECTED ROW ALONE. Hover used to raise a row's ink
+ * to `--foreground` as well as filling it, and the two fills are one rung
+ * apart, so with the pointer in the column the row under it and the row you
+ * are on looked the same — two "you are here"s. Hover is the fill now and
+ * nothing else; selection is the deeper fill AND the full ink (31.8% → 10.8%
+ * L in light), which is the step a glance can find.
  */
 export function listRowClass(active: boolean) {
   return active
     ? "sidebar-row-selected text-foreground"
-    : "text-sidebar-foreground hover:bg-sidebar-hover hover:text-foreground";
+    : "text-sidebar-foreground hover:bg-sidebar-hover";
 }
 
 /**
- * What a list row animates: its fill and its ink, on the `fast` rung (120ms).
- * This is a property changing on a row the pointer has just left or landed
- * on, and the two rows do it at once: the one you left gives its fill up over
- * exactly the window the one you chose takes it on, so the state crosses
- * rather than blinking.
+ * What a list row animates: its fill and its ink. The fill lands in 0ms and
+ * leaves over the `fast` rung (spec §4.5 rule 6): the row under the pointer
+ * is lit in the frame the pointer arrives, and the row it left fades back over
+ * 120ms. A transition runs on the timing of the state it is going TO, so
+ * `hover:duration-0` is the instant arrival and the rest state's 120 is the
+ * departure. Both directions used to take 120, which on a quick pass down the
+ * list left two or three rows lit at once, trailing the pointer.
+ *
+ * Colour and fill are Tier A (§4.7): they keep their timing under reduced
+ * motion, so there is no `motion-reduce:` override here.
  */
 export const LIST_ROW_TRANSITION =
-  "transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none";
+  "transition-[background-color,color] duration-fast ease-out-soft hover:duration-0";
 
 export function Section({
   label,
@@ -51,10 +63,12 @@ export function Section({
   action?: React.ReactNode;
 }) {
   return (
-    // `mt-5` ABOVE the heading that owns the break, so the first section sits
-    // on the scroller's own `pt-5` and every later one is separated from the
-    // list it follows by the same 20px.
-    <div className="group/section mt-5 first:mt-0">
+    // `mt-4` ABOVE the heading that owns the break, so the first section sits
+    // on the scroller's own `pt-4` and every later one is separated from the
+    // list it follows by the same 16px. `data-sidebar-section` is where the
+    // well lands when it brings a row of this section into view: on the
+    // heading, not on the row (app-sidebar.tsx, `revealOffset`).
+    <div data-sidebar-section="" className="group/section mt-4 first:mt-0">
       <div className="flex items-center">
         <button
           type="button"
@@ -72,7 +86,7 @@ export function Section({
              on the list, and the row press tone (`active:bg-selected`, a page
              fill) and hover fill made it flash like one more row. Only its
              ink answers the pointer. */
-          className="group/heading flex h-7 min-w-0 flex-1 select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none coarse:h-11"
+          className="group/heading flex h-7 min-w-0 flex-1 select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground coarse:h-11"
         >
           {/* ONE SECTION VOICE: sentence-case sans at the `label` rung (12px,
               weight 500), muted, two steps under the 14px rows. Quiet enough
@@ -87,7 +101,7 @@ export function Section({
           <ChevronDown
             aria-hidden
             className={cn(
-              "size-3 shrink-0 transition-[opacity,transform] duration-base ease-in-out motion-reduce:transition-none",
+              "size-3 shrink-0 transition-[opacity,transform] duration-base ease-in-out motion-reduce:transition-opacity",
               isCollapsed
                 ? "-rotate-90"
                 : "opacity-0 group-hover/section:opacity-100 group-focus-visible/heading:opacity-100 coarse:opacity-100"
@@ -114,7 +128,7 @@ export function Disclosure({ open, children }: { open: boolean; children: React.
     >
       <div
         className={cn(
-          "min-h-0 overflow-hidden transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+          "min-h-0 overflow-hidden transition-opacity duration-base ease-out-soft",
           !open && "opacity-0"
         )}
       >

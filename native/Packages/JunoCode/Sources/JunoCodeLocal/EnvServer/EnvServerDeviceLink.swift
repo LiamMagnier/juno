@@ -91,6 +91,10 @@ public actor EnvServerDeviceLink {
         .sessionOpen, .turnStart, .turnSteer, .turnQueue, .turnInterrupt, .approvalRespond,
         .checkpointRollback, .checkpointDiff, .providerList, .providerProbe, .providerSetup,
         .sessionList, .sessionClose, .agentMessage, .agentInterrupt,
+        // Agents lane (REA backlog 10): a person's Pause, Resume and bounded
+        // Top-up from the web Agents tree; Alevr's backend audits and
+        // rate-limits them before they reach the relay.
+        .agentPause, .agentResume, .agentTopUp,
         // Runtime lane: reject a hunk, resume at reset, a managed runtime's install and sign-in.
         .checkpointApplyPatch, .turnSchedule, .turnUnschedule, .providerInstall, .providerAuth,
         // Cross-conversation lane: another conversation's message, written by
@@ -450,7 +454,8 @@ public actor EnvServerDeviceLink {
             return await isShared(session) ? nil : "Open the session first."
         case .turnStart, .turnSteer, .turnQueue, .turnInterrupt, .approvalRespond, .checkpointRollback,
              .checkpointDiff, .sessionClose, .checkpointApplyPatch, .turnSchedule, .turnUnschedule, .skillsSelect,
-             .sessionSetMode, .queueRemove, .queueEdit, .queueMove, .queuePromote:
+             .sessionSetMode, .queueRemove, .queueEdit, .queueMove, .queuePromote,
+             .agentMessage, .agentInterrupt, .agentPause, .agentResume, .agentTopUp:
             // A session in a shared folder may be answered from the phone's
             // notification without opening it first (and after this app restarts).
             guard case let .string(id)? = object["sessionId"] else { return "A session is required." }

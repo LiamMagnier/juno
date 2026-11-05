@@ -21,10 +21,12 @@ final class JunoTypeLadderTests: XCTestCase {
         let name: String
     }
 
-    /// §8.2 with errata 8 applied: `ui` is ×1.5 and `bodyLarge` ×1.6.
+    /// §8.2 with errata 8 applied: `ui` is ×1.5 and `bodyLarge` ×1.6. P1 (spec
+    /// D16, §3.5) sets page-title at 500, raises `caption` from 11 to 12/1.4 and
+    /// aliases the retired `micro` to it, so no rung is under the 12pt floor.
     private let ladder: [Expected] = [
         Expected(rung: .display(size: 32), generated: JunoGeneratedType.display, size: 32, lineHeight: 1.08, tracking: -0.02, weight: .regular, face: .serif, name: "display"),
-        Expected(rung: .pageTitle, generated: JunoGeneratedType.pageTitle, size: 32, lineHeight: 1.08, tracking: -0.03, weight: .semibold, face: .sans, name: "pageTitle"),
+        Expected(rung: .pageTitle, generated: JunoGeneratedType.pageTitle, size: 32, lineHeight: 1.08, tracking: -0.03, weight: .medium, face: .sans, name: "pageTitle"),
         Expected(rung: .title, generated: JunoGeneratedType.title, size: 22, lineHeight: 1.25, tracking: -0.012, weight: .semibold, face: .sans, name: "title"),
         Expected(rung: .heading, generated: JunoGeneratedType.heading, size: 18, lineHeight: 1.3, tracking: -0.006, weight: .semibold, face: .sans, name: "heading"),
         Expected(rung: .bodyLarge, generated: JunoGeneratedType.bodyLg, size: 17, lineHeight: 1.6, tracking: 0, weight: .regular, face: .sans, name: "bodyLarge"),
@@ -33,8 +35,8 @@ final class JunoTypeLadderTests: XCTestCase {
         Expected(rung: .prose, generated: JunoGeneratedType.reading, size: 16, lineHeight: 1.7, tracking: 0, weight: .regular, face: .sans, name: "prose"),
         Expected(rung: .ui, generated: JunoGeneratedType.ui, size: 13, lineHeight: 1.5, tracking: 0, weight: .regular, face: .sans, name: "ui"),
         Expected(rung: .label, generated: JunoGeneratedType.label, size: 12, lineHeight: 1.4, tracking: 0.01, weight: .medium, face: .sans, name: "label"),
-        Expected(rung: .caption, generated: JunoGeneratedType.caption, size: 11, lineHeight: 1.45, tracking: 0.02, weight: .regular, face: .sans, name: "caption"),
-        Expected(rung: .micro, generated: JunoGeneratedType.micro, size: 10.5, lineHeight: 1.45, tracking: 0.02, weight: .regular, face: .mono, name: "micro"),
+        Expected(rung: .caption, generated: JunoGeneratedType.caption, size: 12, lineHeight: 1.4, tracking: 0, weight: .regular, face: .sans, name: "caption"),
+        Expected(rung: .micro, generated: JunoGeneratedType.micro, size: 12, lineHeight: 1.4, tracking: 0, weight: .regular, face: .mono, name: "micro"),
         Expected(rung: .mono, generated: nil, size: 13, lineHeight: 20.0 / 13.0, tracking: 0, weight: .regular, face: .mono, name: "mono"),
         Expected(rung: .monoSmall, generated: nil, size: 12, lineHeight: 1.5, tracking: 0, weight: .regular, face: .mono, name: "monoSmall"),
     ]

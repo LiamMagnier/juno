@@ -254,14 +254,8 @@ public struct StudioLanding: View {
                     models: workbench.availableModels,
                     modelID: modelID,
                     effort: effort,
-                    selectModel: { id in
-                        modelID = id
-                        if let model = workbench.availableModels.first(where: { $0.modelID == id }),
-                           let refitted = model.refittingEffort(effort)
-                        {
-                            effort = refitted
-                        }
-                    },
+                    // The chip fits the depth to the new model itself.
+                    selectModel: { modelID = $0 },
                     selectEffort: { effort = $0 },
                     isEnabled: !isRemote
                 )

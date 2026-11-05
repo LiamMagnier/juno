@@ -1,0 +1,1141 @@
+{
+  "comment": "Tether reconnect policy vectors (docs/rea/designs/reliability-and-native.md 3.1). Read by tests/tether.test.ts and native JunoCoreTests/TetherTests.swift. Change only together with both implementations.",
+  "constants": {
+    "baseMs": 1000,
+    "capMs": 30000,
+    "floorMs": 250,
+    "activeWindowMs": 180000,
+    "probeMs": 60000,
+    "heartbeatMs": 15000,
+    "staleAfterMs": 30000
+  },
+  "delays": [
+    {
+      "attempt": 0,
+      "unit": 0,
+      "delayMs": 250
+    },
+    {
+      "attempt": 0,
+      "unit": 0.5,
+      "delayMs": 625
+    },
+    {
+      "attempt": 0,
+      "unit": 0.999999,
+      "delayMs": 999
+    },
+    {
+      "attempt": 1,
+      "unit": 0,
+      "delayMs": 250
+    },
+    {
+      "attempt": 1,
+      "unit": 0.5,
+      "delayMs": 1125
+    },
+    {
+      "attempt": 1,
+      "unit": 0.999999,
+      "delayMs": 1999
+    },
+    {
+      "attempt": 2,
+      "unit": 0,
+      "delayMs": 250
+    },
+    {
+      "attempt": 2,
+      "unit": 0.5,
+      "delayMs": 2125
+    },
+    {
+      "attempt": 2,
+      "unit": 0.999999,
+      "delayMs": 3999
+    },
+    {
+      "attempt": 3,
+      "unit": 0,
+      "delayMs": 250
+    },
+    {
+      "attempt": 3,
+      "unit": 0.5,
+      "delayMs": 4125
+    },
+    {
+      "attempt": 3,
+      "unit": 0.999999,
+      "delayMs": 7999
+    },
+    {
+      "attempt": 4,
+      "unit": 0,
+      "delayMs": 250
+    },
+    {
+      "attempt": 4,
+      "unit": 0.5,
+      "delayMs": 8125
+    },
+    {
+      "attempt": 4,
+      "unit": 0.999999,
+      "delayMs": 15999
+    },
+    {
+      "attempt": 5,
+      "unit": 0,
+      "delayMs": 250
+    },
+    {
+      "attempt": 5,
+      "unit": 0.5,
+      "delayMs": 15125
+    },
+    {
+      "attempt": 5,
+      "unit": 0.999999,
+      "delayMs": 29999
+    },
+    {
+      "attempt": 6,
+      "unit": 0,
+      "delayMs": 250
+    },
+    {
+      "attempt": 6,
+      "unit": 0.5,
+      "delayMs": 15125
+    },
+    {
+      "attempt": 6,
+      "unit": 0.999999,
+      "delayMs": 29999
+    },
+    {
+      "attempt": 12,
+      "unit": 0,
+      "delayMs": 250
+    },
+    {
+      "attempt": 12,
+      "unit": 0.5,
+      "delayMs": 15125
+    },
+    {
+      "attempt": 12,
+      "unit": 0.999999,
+      "delayMs": 29999
+    },
+    {
+      "attempt": 64,
+      "unit": 0,
+      "delayMs": 250
+    },
+    {
+      "attempt": 64,
+      "unit": 0.5,
+      "delayMs": 15125
+    },
+    {
+      "attempt": 64,
+      "unit": 0.999999,
+      "delayMs": 29999
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "a drop backs off with jitter, and frames reconnect",
+      "online": true,
+      "steps": [
+        {
+          "at": 0,
+          "event": {
+            "type": "drop"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": 625,
+            "retryInSeconds": 1
+          }
+        },
+        {
+          "at": 625,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 900,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 1,
+            "online": true,
+            "since": 0,
+            "retryAt": 2025,
+            "retryInSeconds": 2
+          }
+        },
+        {
+          "at": 2025,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 1,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 2100,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 1,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 2,
+            "online": true,
+            "since": 0,
+            "retryAt": 6100,
+            "retryInSeconds": 4
+          }
+        },
+        {
+          "at": 6100,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 2,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 6300,
+          "event": {
+            "type": "connected"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "connected",
+            "attempt": 0,
+            "online": true,
+            "since": null,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "the window grows to the cap and no further",
+      "online": true,
+      "steps": [
+        {
+          "at": 0,
+          "event": {
+            "type": "drop"
+          },
+          "unit": 0.999,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": 999,
+            "retryInSeconds": 1
+          }
+        },
+        {
+          "at": 1000,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 1000,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.999,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 1,
+            "online": true,
+            "since": 0,
+            "retryAt": 2998,
+            "retryInSeconds": 2
+          }
+        },
+        {
+          "at": 3000,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 1,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 3000,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.999,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 2,
+            "online": true,
+            "since": 0,
+            "retryAt": 6996,
+            "retryInSeconds": 4
+          }
+        },
+        {
+          "at": 7000,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 2,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 7000,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.999,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 3,
+            "online": true,
+            "since": 0,
+            "retryAt": 14992,
+            "retryInSeconds": 8
+          }
+        },
+        {
+          "at": 15000,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 3,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 15000,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.999,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 4,
+            "online": true,
+            "since": 0,
+            "retryAt": 30984,
+            "retryInSeconds": 16
+          }
+        },
+        {
+          "at": 31000,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 4,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 31000,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.999,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 5,
+            "online": true,
+            "since": 0,
+            "retryAt": 60970,
+            "retryInSeconds": 30
+          }
+        },
+        {
+          "at": 61000,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 5,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 61000,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.999,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 6,
+            "online": true,
+            "since": 0,
+            "retryAt": 90970,
+            "retryInSeconds": 30
+          }
+        }
+      ]
+    },
+    {
+      "name": "a turn still failing after the active window parks, then a trigger resumes it",
+      "online": true,
+      "steps": [
+        {
+          "at": 0,
+          "event": {
+            "type": "drop"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": 250,
+            "retryInSeconds": 1
+          }
+        },
+        {
+          "at": 250,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 179000,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.25,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 1,
+            "online": true,
+            "since": 0,
+            "retryAt": 179687,
+            "retryInSeconds": 1
+          }
+        },
+        {
+          "at": 179500,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 1,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 180000,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.25,
+          "expect": {
+            "phase": "parked",
+            "attempt": 2,
+            "online": true,
+            "since": 0,
+            "retryAt": 240000,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 240000,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "parked",
+            "attempt": 2,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 241000,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.25,
+          "expect": {
+            "phase": "parked",
+            "attempt": 3,
+            "online": true,
+            "since": 0,
+            "retryAt": 301000,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 600000,
+          "event": {
+            "type": "trigger",
+            "reason": "foreground"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 600000,
+            "retryAt": 600000,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 600000,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 600000,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 600400,
+          "event": {
+            "type": "connected"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "connected",
+            "attempt": 0,
+            "online": true,
+            "since": null,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "offline waits for the network instead of counting down, and the network coming back retries at once",
+      "online": true,
+      "steps": [
+        {
+          "at": 0,
+          "event": {
+            "type": "drop"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": 625,
+            "retryInSeconds": 1
+          }
+        },
+        {
+          "at": 100,
+          "event": {
+            "type": "offline"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "waiting",
+            "attempt": 0,
+            "online": false,
+            "since": 0,
+            "retryAt": 60100,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 60100,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "waiting",
+            "attempt": 0,
+            "online": false,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 60200,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "waiting",
+            "attempt": 1,
+            "online": false,
+            "since": 0,
+            "retryAt": 120200,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 900000,
+          "event": {
+            "type": "trigger",
+            "reason": "network"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 900000,
+            "retryAt": 900000,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 900000,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 900000,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 900300,
+          "event": {
+            "type": "connected"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "connected",
+            "attempt": 0,
+            "online": true,
+            "since": null,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "a device that starts offline waits from the first drop",
+      "online": false,
+      "steps": [
+        {
+          "at": 0,
+          "event": {
+            "type": "drop"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "waiting",
+            "attempt": 0,
+            "online": false,
+            "since": 0,
+            "retryAt": 60000,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 5000,
+          "event": {
+            "type": "trigger",
+            "reason": "wake"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": false,
+            "since": 5000,
+            "retryAt": 5000,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 5000,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": false,
+            "since": 5000,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 5100,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "waiting",
+            "attempt": 1,
+            "online": false,
+            "since": 5000,
+            "retryAt": 65100,
+            "retryInSeconds": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "a trigger during an attempt does not start a second one, but resets the backoff",
+      "online": true,
+      "steps": [
+        {
+          "at": 0,
+          "event": {
+            "type": "drop"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": 625,
+            "retryInSeconds": 1
+          }
+        },
+        {
+          "at": 625,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 700,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 1,
+            "online": true,
+            "since": 0,
+            "retryAt": 1825,
+            "retryInSeconds": 2
+          }
+        },
+        {
+          "at": 1825,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 1,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 1900,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 2,
+            "online": true,
+            "since": 0,
+            "retryAt": 4025,
+            "retryInSeconds": 3
+          }
+        },
+        {
+          "at": 4025,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 2,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 4100,
+          "event": {
+            "type": "trigger",
+            "reason": "network"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 4100,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 4500,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 1,
+            "online": true,
+            "since": 4100,
+            "retryAt": 5625,
+            "retryInSeconds": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "going offline mid-attempt lets the attempt fail on its own",
+      "online": true,
+      "steps": [
+        {
+          "at": 0,
+          "event": {
+            "type": "drop"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": 625,
+            "retryInSeconds": 1
+          }
+        },
+        {
+          "at": 625,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 700,
+          "event": {
+            "type": "offline"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": false,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 800,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "waiting",
+            "attempt": 1,
+            "online": false,
+            "since": 0,
+            "retryAt": 60800,
+            "retryInSeconds": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "a stream that reconnects and drops again opens a fresh window",
+      "online": true,
+      "steps": [
+        {
+          "at": 0,
+          "event": {
+            "type": "drop"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": 625,
+            "retryInSeconds": 1
+          }
+        },
+        {
+          "at": 625,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 0,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 700,
+          "event": {
+            "type": "connected"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "connected",
+            "attempt": 0,
+            "online": true,
+            "since": null,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 200000,
+          "event": {
+            "type": "drop"
+          },
+          "unit": 0.5,
+          "expect": {
+            "phase": "reconnecting",
+            "attempt": 0,
+            "online": true,
+            "since": 200000,
+            "retryAt": 200625,
+            "retryInSeconds": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "while connected, triggers and offline change nothing visible",
+      "online": true,
+      "steps": [
+        {
+          "at": 0,
+          "event": {
+            "type": "trigger",
+            "reason": "foreground"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "connected",
+            "attempt": 0,
+            "online": true,
+            "since": null,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 10,
+          "event": {
+            "type": "offline"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "connected",
+            "attempt": 0,
+            "online": false,
+            "since": null,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 20,
+          "event": {
+            "type": "failed"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "connected",
+            "attempt": 0,
+            "online": false,
+            "since": null,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 30,
+          "event": {
+            "type": "attempt"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "connected",
+            "attempt": 0,
+            "online": false,
+            "since": null,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        },
+        {
+          "at": 40,
+          "event": {
+            "type": "trigger",
+            "reason": "network"
+          },
+          "unit": 0,
+          "expect": {
+            "phase": "connected",
+            "attempt": 0,
+            "online": true,
+            "since": null,
+            "retryAt": null,
+            "retryInSeconds": null
+          }
+        }
+      ]
+    }
+  ]
+}

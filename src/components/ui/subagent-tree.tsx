@@ -175,7 +175,7 @@ export function SubagentTree({
                   </div>
 
                   {/* Meta / Details Pill Row */}
-                  <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-micro text-muted-foreground/80">
+                  <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-micro text-muted-foreground">
                     {sub.elapsedTime && (
                       <span className="inline-flex items-center gap-1">
                         <Clock className="size-3" />
@@ -200,7 +200,7 @@ export function SubagentTree({
 
                   {/* Result Summary if available */}
                   {sub.resultSummary && (
-                    <p className="mt-2 rounded-xs bg-secondary/80 px-2 py-1 font-mono text-caption text-foreground/90">
+                    <p className="mt-2 rounded-xs bg-secondary/80 px-2 py-1 font-mono text-caption text-foreground">
                       {sub.resultSummary}
                     </p>
                   )}

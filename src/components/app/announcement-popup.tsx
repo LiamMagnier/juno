@@ -259,6 +259,7 @@ export function AnnouncementDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
+        bare
         // Focus lands on the dialog itself (Radix gives it tabIndex -1), so a
         // screen reader announces the labelled dialog and no button opens
         // wearing a focus ring it was never asked for. Tab reaches the controls.
@@ -269,7 +270,7 @@ export function AnnouncementDialog({
         className={cn(
           // flex, not the primitive's grid: a grid row shrinks the 16:9 media
           // to fit max-h, and the copy then rode up over the frame.
-          "ann flex max-h-[calc(100dvh-2rem)] max-w-[40rem] flex-col gap-0 overflow-y-auto overscroll-contain p-0 sm:p-0"
+          "ann flex max-h-[calc(100dvh-2rem)] max-w-[40rem] flex-col gap-0 overflow-y-auto overscroll-contain"
         )}
       >
         <AnnouncementCard
@@ -280,7 +281,7 @@ export function AnnouncementDialog({
           onDismiss={() => onOpenChange(false)}
         />
         {/* Over the media's corner, on the floating chip, so it stays findable over any frame. */}
-        <DialogCloseButton className="right-3.5 top-3.5 z-20 bg-popover/85 shadow-pop backdrop-blur-sm" />
+        <DialogCloseButton className="right-3.5 top-3.5 z-20 bg-popover shadow-pop" />
       </DialogContent>
     </Dialog>
   );

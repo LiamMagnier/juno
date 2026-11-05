@@ -18,7 +18,7 @@ final class JunoMobileNavigationTests: XCTestCase {
         XCTAssertEqual(
             identifiers,
             [
-                "chat", "search", "code", "work", "agents", "tasks",
+                "chat", "search", "code", "work", "activity", "agents", "tasks",
                 "projects", "library", "artifacts", "connections", "settings",
             ]
         )
@@ -33,7 +33,7 @@ final class JunoMobileNavigationTests: XCTestCase {
     func testTheServerBackedDestinationsAreOffered() {
         let identifiers = Set(JunoMobileSection.allCases.map(\.id))
 
-        for expected in ["code", "work", "agents", "tasks", "connections"] {
+        for expected in ["code", "work", "activity", "agents", "tasks", "connections"] {
             XCTAssertTrue(identifiers.contains(expected), "\(expected) is not navigable")
         }
     }

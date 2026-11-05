@@ -23,8 +23,7 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useApp } from "@/components/app/app-provider";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ShareDialog } from "@/components/share/share-dialog";
 import type { SharedTranscriptEntry } from "@/lib/share-transcript";
 
@@ -202,29 +201,24 @@ export function useCodeSessionActions(): CodeSessionActions {
   const confirming = confirmId ? find(confirmId) : undefined;
   const ui = (
     <>
-      <Dialog open={confirmId !== null} onOpenChange={(open) => !open && !deleting && setConfirmId(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete this session?</DialogTitle>
-            {/* The one sentence that has to be exactly true: the transcript goes;
-                a pushed branch, an open pull request and anything a run changed
-                on a Mac do not, and nothing here could take those back. */}
-            <DialogDescription>
-              {confirming?.title ? <span className="font-medium text-foreground">{confirming.title}</span> : null}
-              {confirming?.title ? " " : null}
-              This permanently removes the transcript. Any branch or pull request a run pushed stays on GitHub, and anything it changed on your Mac stays there.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" disabled={deleting} onClick={() => setConfirmId(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" disabled={deleting} aria-busy={deleting} onClick={() => confirmId && void destroy(confirmId)}>
-              {deleting ? "Deleting…" : "Delete session"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* The one sentence that has to be exactly true: the transcript goes;
+          a pushed branch, an open pull request and anything a run changed
+          on a Mac do not, and nothing here could take those back. */}
+      <ConfirmDialog
+        open={confirmId !== null}
+        onOpenChange={(open) => !open && setConfirmId(null)}
+        busy={deleting}
+        title="Delete this session?"
+        description={
+          <>
+            {confirming?.title ? <span className="font-medium text-foreground">{confirming.title}</span> : null}
+            {confirming?.title ? " " : null}
+            This permanently removes the transcript. Any branch or pull request a run pushed stays on GitHub, and anything it changed on your Mac stays there.
+          </>
+        }
+        confirmLabel="Delete session"
+        onConfirm={() => confirmId && void destroy(confirmId)}
+      />
       {shareId && (
         <ShareDialog
           kind="CHAT"

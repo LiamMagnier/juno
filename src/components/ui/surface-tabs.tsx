@@ -86,7 +86,7 @@ export function SurfaceTabs({
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "relative block whitespace-nowrap rounded-control px-3 py-2 text-ui font-medium",
-                  "transition-colors duration-fast ease-out-soft motion-reduce:transition-none coarse:py-3",
+                  "transition-colors duration-fast ease-out-soft coarse:py-3",
                   // Focus is the global `outline: 2px solid --ring` (globals.css).
                   // WorkNav used to add a second, differently shaped
                   // `ring-2 ring-offset-2` on top of it; two rings on one

@@ -114,7 +114,7 @@
     }
   },
   "current": {
-    "recordedAt": "2026-10-14",
+    "recordedAt": "2026-10-25",
     "results": {
       "lifecycle": {
         "live": {
@@ -122,7 +122,7 @@
           "stale": 0,
           "forgotten": 0,
           "precision": 1,
-          "retrieval": 0.9090909090909091,
+          "retrieval": 0.9545454545454546,
           "leaks": 0,
           "contradictionResolution": 1
         },
@@ -131,7 +131,7 @@
           "stale": 0,
           "forgotten": 0,
           "precision": 1,
-          "retrieval": 0.9090909090909091,
+          "retrieval": 0.9545454545454546,
           "leaks": 0,
           "contradictionResolution": 1
         }
@@ -179,12 +179,12 @@
       },
       "tokens": {
         "questions": 23,
-        "mean": 56.3,
+        "mean": 57.3,
         "p95": 100,
-        "max": 135,
+        "max": 143,
         "budget": 600,
-        "precision": 0.2,
-        "factsMean": 4.3,
+        "precision": 0.204,
+        "factsMean": 4.5,
         "offTopicQuestions": 25,
         "offTopicMean": 22.6,
         "offTopicFactsMean": 2
@@ -196,13 +196,54 @@
         "hitAt1": 6,
         "hitAt5": 6,
         "legacyWindowHitAt5": 1
+      },
+      "personalisation": {
+        "checks": 18,
+        "inappropriate": 0,
+        "sensitiveOffTopic": 0,
+        "revokedTopic": 0,
+        "excludedTopic": 0,
+        "legacyInappropriate": 8,
+        "appropriate": 3,
+        "appropriateUsed": 3,
+        "typed": 1,
+        "typedKept": 1,
+        "typedAmbientOffTopic": 12,
+        "implicit": {
+          "expected": 16,
+          "lexicalUsed": 16,
+          "semanticStandoutUsed": 16,
+          "semanticFlatUsed": 16,
+          "legacyLexicalUsed": 8,
+          "distractorsUsed": 0,
+          "revokedInferredUsed": 0,
+          "revokedTyped": 4,
+          "revokedTypedKept": 4
+        }
+      },
+      "deletion": {
+        "checks": 14,
+        "leaks": 0,
+        "legacyLeaks": 9,
+        "leakDetail": []
+      },
+      "manual": {
+        "cases": 10,
+        "passed": 10,
+        "legacyPassed": 1,
+        "duplicates": 3,
+        "duplicatesLeft": 0,
+        "legacyDuplicatesLeft": 3,
+        "failures": []
       }
     },
     "latency": {
-      "factSelectP50Ms": 2.42,
-      "factSelectP95Ms": 2.92,
-      "recallRankP50Ms": 0.01,
-      "recallRankP95Ms": 0.16
+      "factSelectP50Ms": 5.32,
+      "factSelectP95Ms": 9.07,
+      "factSelectGatedP50Ms": 11.45,
+      "factSelectGatedP95Ms": 17.57,
+      "recallRankP50Ms": 0.02,
+      "recallRankP95Ms": 0.47
     }
   }
 }

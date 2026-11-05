@@ -73,7 +73,7 @@ const FOOTER_LINK =
   "block w-fit rounded-xs py-1 text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground";
 
 const LOGO_LOCKUP =
-  "pressable inline-flex items-center gap-2.5 rounded-control motion-reduce:transition-none motion-reduce:active:scale-100";
+  "pressable inline-flex items-center gap-2.5 rounded-control motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100";
 
 export function SiteHeader({ onLanding = false }: { onLanding?: boolean }) {
   const links = SECTIONS.map(({ id, label }) => ({ href: onLanding ? `#${id}` : `/#${id}`, label }));

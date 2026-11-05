@@ -2,7 +2,7 @@
  * Research engine stage — scheduler: delegations, the lead's round review, worker tool binding, and parallel worker rounds under the per-host gate.
  * Moved verbatim out of createResearchEngine (engine.ts).
  */
-import { isPrivateSourceUrl } from "@/lib/research/private-sources";
+import { isPrivateSourceUrl, privateSafeOpenUrl } from "@/lib/research/private-sources";
 import {
   CHUNK_PREVIEW_CHARS,
   type ReviewRoundInput,
@@ -97,7 +97,7 @@ export function vectorBrief(objective: Pick<ResearchObjective, "vector">): strin
 }
 
 export function createWorkerStage(ctx: EngineContext) {
-  const { deps, store, heartbeatMs, beat, append, fetchPage, markSyndicatedCopies, affordable, affordableCount, writerReserve, applySteering, bill, windowSpent, guardedWebSearch } = ctx;
+  const { deps, store, heartbeatMs, beat, append, fetchPage, markSyndicatedCopies, affordable, affordableCount, writerReserve, applySteering, bill, windowSpent, guardedWebSearch, privateFingerprint } = ctx;
   const initialDelegations = (plan: ResearchPlan, workers: number): ResearchDelegation[] => {
     const objectives = plan.objectives.length ? plan.objectives : buildResearchObjectives("", plan.queries);
     const ranked = [...objectives].sort((a, b) => b.importance - a.importance);
@@ -377,6 +377,26 @@ export function createWorkerStage(ctx: EngineContext) {
           return existing?.snapshot
             ? { result: digestOf(existing, true), stop: await stopAfter() }
             : { result: { ok: false, url, reason: "that private source is not in this run's corpus" }, stop: await stopAfter() };
+        }
+        // DR-01: while the run reads the person's own sources, a URL the model
+        // composed could carry their text to whoever owns the host, and the
+        // fetch alone delivers it. Logged by host only: the path may be the payload.
+        const plan = parsePlan(run.plan);
+        if (plan.sources && plan.sources.enabled.length > 0) {
+          const verdict = privateSafeOpenUrl(url, {
+            known: !!existing,
+            pinned: new Set(plan.pinnedSources.map(canonicalUrl)),
+            fingerprint: await privateFingerprint(run),
+          });
+          if (!verdict.ok) {
+            const host = hostOfUrl(url) || "invalid";
+            await append(run.id, run.userId, [{ kind: "error", payload: { scope: "private_guard", host, reason: verdict.reason, workerId } }]);
+            await tick("open_page", host, startedAt, false);
+            return {
+              result: { ok: false, url, reason: "While this research reads your own sources, open pages from search results or pinned links." },
+              stop: await stopAfter(),
+            };
+          }
         }
         if (existing?.snapshot && existing.snapshot.length >= 2_000) {
           await tick("open_page", url, startedAt, true);

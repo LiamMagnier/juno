@@ -1,18 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import {
   embedMemoryEntries,
   getMemorySummary,
-  getSuppressions,
   listProjectMemorySummaries,
+  refreshSummaries,
   sweepExpiredMemories,
+  writeManualFact,
 } from "@/lib/memory";
-import { guardedMemoryWrite } from "@/lib/memory-suppression";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
-import { factFields } from "@/lib/memory-lifecycle";
-import { MEMORY_ENTRY_SELECT, serializeMemoryEntry } from "@/lib/memory-view";
+import { MEMORY_ENTRY_SELECT, loadProvenanceConversations, serializeMemoryEntry } from "@/lib/memory-view";
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -37,8 +36,9 @@ export async function GET(req: Request) {
     getMemorySummary(user.id),
     listProjectMemorySummaries(user.id),
   ]);
+  const conversations = await loadProvenanceConversations(user.id, memories);
   return NextResponse.json({
-    memories: memories.map(serializeMemoryEntry),
+    memories: memories.map((row) => serializeMemoryEntry(row, conversations)),
     summary: summary
       ? { content: summary.content, updatedAt: summary.updatedAt.toISOString(), entryCount: summary.entryCount }
       : null,
@@ -142,37 +142,21 @@ export async function POST(req: Request) {
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  // Through the door, like every other write. A manual add used to skip the
-  // block-list entirely, so typing back something the user had asked Juno to
-  // forget quietly restored it — and nothing in the UI said the "forget" had
-  // been overruled. The lifecycle fields are computed inside, so a refused
-  // write never classifies or normalises a statement it is not going to store.
-  const outcome = await guardedMemoryWrite({
-    content,
-    kind: "FACT",
-    loadSuppressions: () => getSuppressions(user.id),
-    write: (checked) => {
-      const fields = factFields(checked, { source: "MANUAL" });
-      return prisma.memoryEntry.create({
-        data: {
-          userId: user.id,
-          content: checked,
-          source: "MANUAL",
-          sourceRef: "manual",
-          category: parsed.data.category ?? fields.category,
-          projectId: projectId ?? null,
-          confidence: fields.confidence,
-          normalized: fields.normalized,
-          expiresAt: fields.expiresAt,
-          // Typed now, so said now — what ingestion and the re-judge pass
-          // compare against when something newer or older arrives.
-          observedAt: new Date(),
-          lastVerifiedAt: new Date(),
-        },
-        select: MEMORY_ENTRY_SELECT,
-      });
-    },
-  });
+  // Through the manual write door (writeManualFact): the block-list first, as
+  // every write — a manual add used to skip it, so typing back something the
+  // user had asked Juno to forget quietly restored it — and then the same
+  // lifecycle the extractor runs. Typing "I live in Porto" replaces "lives in
+  // Lisbon" rather than sitting beside it, and typing a fact Juno already knew
+  // confirms that row instead of making a second one.
+  const outcome = await prisma.$transaction((tx) =>
+    writeManualFact(tx, {
+      userId: user.id,
+      content,
+      projectId: projectId ?? null,
+      category: parsed.data.category ?? null,
+      sourceRef: "manual",
+    })
+  );
 
   if (!outcome.ok) {
     if (outcome.reason === "empty") return NextResponse.json({ error: "Invalid input" }, { status: 400 });
@@ -185,7 +169,27 @@ export async function POST(req: Request) {
   // Awaited, not fired-and-forgotten: a serverless process may freeze the
   // moment the response is returned. Failure inside is already swallowed —
   // the fact simply retrieves lexically until it is next restated.
-  await embedMemoryEntries({ userId: user.id, rows: [{ id: outcome.value.id, content: outcome.content }] });
+  if (outcome.needsEmbedding) {
+    await embedMemoryEntries({ userId: user.id, rows: [{ id: outcome.id, content: outcome.content }] });
+  }
+  // What it replaced quotes old beliefs; the summaries of its scope (and the
+  // account's, which a correction in it may contradict) rebuild once the
+  // response has gone. The retirements already bench the old prose now
+  // (summaryPredatesMemoryChange), so nothing waits on the rebuild.
+  if (outcome.replaced.length > 0) {
+    after(() => refreshSummaries(user.id, [projectId ?? null]).then(() => undefined, () => undefined));
+  }
 
-  return NextResponse.json({ memory: serializeMemoryEntry(outcome.value) }, { status: 201 });
+  const row = await prisma.memoryEntry.findFirst({ where: { id: outcome.id, userId: user.id }, select: MEMORY_ENTRY_SELECT });
+  if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(
+    {
+      memory: serializeMemoryEntry(row, await loadProvenanceConversations(user.id, [row])),
+      // created | confirmed | reinstated — the page reloads when it is not a
+      // plain new row, because rows it already shows changed.
+      action: outcome.action,
+      replaced: outcome.replaced,
+    },
+    { status: outcome.action === "created" ? 201 : 200 }
+  );
 }

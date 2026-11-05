@@ -56,6 +56,9 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // `userId_projectId` key still carries userId, so the guard is satisfied by
   // the query it was already making.
   ["ProjectWorkspace", "userId"],
+  // A Work run's shell log on its agent's computer (src/lib/computer/shell-output.ts):
+  // commands and their output, encrypted, read back only by the run's owner.
+  ["ComputerShellOutput", "userId"],
   ["MemoryEntry", "userId"],
   ["MemorySummary", "userId"],
   // One per (person, project). Keyed and filtered on userId like the account
@@ -146,6 +149,11 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // moderation queue, and the cross-user scheduler sweep. Everything else had
   // the userId in hand already and now puts it in the where.
   ["Share", "userId"],
+  // The people a PEOPLE share was sent to. `userId` is the share's OWNER: the
+  // owner lists and removes rows, and the share page's recipient check carries
+  // the owner id of the share it resolved by token (src/lib/share-people.ts),
+  // so no read of this table is ever unscoped.
+  ["ShareRecipient", "userId"],
   // Artifacts own themselves (PRODUCT_REFOUNDATION §10): the chat is a
   // nullable pointer, so the old `conversation: { userId }` join no longer
   // reaches a detached artifact and every read scopes on the artifact's own
@@ -157,6 +165,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // The canvas's unsaved source edits (G12): one person's work in progress,
   // read and written only by that person (src/lib/artifact-canvas-draft.ts).
   ["ArtifactCanvasDraft", "userId"],
+  // What an artifact's own code saved (window.alevr.storage): scoped to the
+  // VIEWER, who on a shared link is not the artifact's owner. An unscoped read
+  // would hand one visitor another's saved data (src/lib/artifact-ai/storage-store.ts).
+  ["ArtifactStorageEntry", "userId"],
   ["ArtifactPublication", "userId"],
   ["ScheduledTask", "userId"],
   ["ModerationFlag", "userId"],
@@ -243,13 +255,28 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // first, spending a code by its hash, uses prismaUnguarded on purpose
   // (src/lib/computer/handoff.ts): the code is the authorization.
   ["AgentComputerHandoff", "userId"],
+  // A computer's metered awake time and its operator audit
+  // (src/lib/computer/store.ts, audit.ts). Every read is one account's week or log.
+  ["AgentComputerUsageInterval", "userId"],
+  ["AgentComputerAudit", "userId"],
+  // A task the person showed an agent on its computer (teach by
+  // demonstration, src/lib/teach/). The encrypted, redacted trace of what they
+  // did; every read and write names the person and the agent.
+  ["AgentDemonstration", "userId"],
+  // Saved site logins an agent's computer may fill (docs/design/agents-v2/VAULT.md).
+  // Every read names the person and the agent (src/lib/computer/vault-store.ts);
+  // the sealed columns are bound to both, so a lookup without the owner opens nothing.
+  ["AgentCredential", "userId"],
   // Rooms (src/lib/agents/rooms.ts): who is in a group chat of agents and the
   // per-message plan of who answers. A room's membership is a statement about
   // one person's agents, so it is guarded like the agents themselves.
   ["AgentRoomMember", "userId"],
   ["AgentRoomTurn", "userId"],
-  // A linked phone number for iMessage (src/lib/channels). The webhook finds
-  // the link by its HMAC through prismaUnguarded, on purpose and only there.
+  // A linked phone number for iMessage (src/lib/channels). The webhook and a
+  // link start find a number by its HMAC through prismaUnguarded, and a link
+  // start clears another account's still-pending claim on the same number; on
+  // purpose and only in src/lib/channels/store.ts. A verified row is never
+  // written across accounts.
   ["ChannelLink", "userId"],
   // Payments (src/lib/payments): an agent's spending limit and the one-time
   // cards it was allowed. The Stripe webhook looks a card up by its provider

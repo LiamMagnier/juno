@@ -82,6 +82,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           state: true,
           error: true,
           pageCount: true,
+          chunkCount: true,
+          embeddingState: true,
           _count: { select: { blocks: true } },
         },
       })
@@ -166,6 +168,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
                 error: document.error,
                 pageCount: document.pageCount,
                 blockCount: document._count.blocks,
+                chunkCount: document.chunkCount,
+                embeddingState: document.embeddingState,
               }
             : null,
         };

@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -29,26 +30,19 @@ export function DeleteSkillDialog({
   onConfirm: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={(next) => (!next && !busy ? onCancel() : undefined)}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>
-            Delete <span className="break-words">“{name}”</span>?
-          </DialogTitle>
-          <DialogDescription>
-            It’s removed from your skills and can’t run again. Chats and tasks that used it keep their history.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onCancel} disabled={busy}>
-            Cancel
-          </Button>
-          <Button variant="destructive" onClick={onConfirm} loading={busy}>
-            Delete
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={(next) => (!next ? onCancel() : undefined)}
+      busy={busy}
+      title={
+        <>
+          Delete <span className="break-words">“{name}”</span>?
+        </>
+      }
+      description="It’s removed from your skills and can’t run again. Chats and tasks that used it keep their history."
+      confirmLabel="Delete"
+      onConfirm={onConfirm}
+    />
   );
 }
 

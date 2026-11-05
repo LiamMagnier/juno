@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { compactTrace, traceTail } from "@/lib/chat/compact-trace";
 import { buildRun, type RunModel, type Step } from "@/components/chat/thought-process-model";
 import { THOUGHT_INLINE_LABEL, ThoughtInline } from "@/components/chat/thought-inline";
-import { shouldDismissSheet } from "@/components/ui/bottom-sheet";
+import { shouldDismiss } from "@/lib/sheet-gesture";
 
 /*
  * G14: reasoning expands inline under the live line (grid rows 0fr → 1fr plus
@@ -126,24 +126,33 @@ test("the strip unfolds in place; the dock and the sheet are one press further",
 
 test("in a sheet the panel dismisses rather than going back, and drags by its header", () => {
   const panel = read("src/components/chat/thought-process-panel.tsx");
-  assert.match(panel, /data-sheet-drag=\{sheet \? "" : undefined\}/);
+  assert.match(panel, /data-sheet-handle=\{sheet \? "" : undefined\}/);
   assert.match(panel, /sheet \? "hidden" : "@\[50rem\]\/split:hidden"/);
   assert.match(panel, /sheet \? "inline-flex" : "hidden @\[50rem\]\/split:inline-flex"/);
 });
 
-test("a released sheet drag dismisses on a fling or a long pull, not on a jitter", () => {
-  assert.equal(shouldDismissSheet(0, 2, 600), false);
-  assert.equal(shouldDismissSheet(-40, 2, 600), false, "an upward drag never dismisses");
-  assert.equal(shouldDismissSheet(10, 2, 600), false, "a fast jitter is not a fling");
-  assert.equal(shouldDismissSheet(40, 0.8, 600), true, "a fling");
-  assert.equal(shouldDismissSheet(150, 0.1, 600), false, "a slow pull short of a third");
-  assert.equal(shouldDismissSheet(210, 0.1, 600), true, "a slow pull past a third");
-  assert.equal(shouldDismissSheet(90, 0.1, 150), true, "a short sheet still needs 80px");
+test("a released sheet drag dismisses on a fling or a long pull, not on a jitter (the one sheet engine)", () => {
+  // BottomSheet is the house bottom sheet now, so its release rule is
+  // sheet-gesture's: 0.5px/ms, or 30% of the sheet's height.
+  const size = 600;
+  assert.equal(shouldDismiss({ offset: 0, size, velocity: 2 }), false);
+  assert.equal(shouldDismiss({ offset: -40, size, velocity: 2 }), false, "an upward drag never dismisses");
+  assert.equal(shouldDismiss({ offset: 40, size, velocity: 0.8 }), true, "a fling");
+  assert.equal(shouldDismiss({ offset: 150, size, velocity: 0.1 }), false, "a slow pull short of the fraction");
+  assert.equal(shouldDismiss({ offset: 190, size, velocity: 0.1 }), true, "a slow pull past the fraction");
 });
 
-test("the bottom sheet's travel reads --motion-shift and exits on the exit rung", () => {
-  const sheet = read("src/components/ui/bottom-sheet.tsx");
-  assert.match(sheet, /translateY\(calc\(100% \* var\(--motion-shift, 1\)\)\)/);
-  assert.match(sheet, /juno-bottom-sheet-out var\(--dur-exit\) var\(--ease-in\)/);
-  assert.match(sheet, /juno-bottom-sheet-in var\(--dur-slow\) var\(--ease-drawer\) backwards/);
+test("the bottom sheet is the house sheet: one grabber, one rise and sink, one gesture, one focus return", () => {
+  // Code, not the doc comment that records what the old engine did.
+  const sheet = read("src/components/ui/bottom-sheet.tsx").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.match(sheet, /<SheetContent\s+side="bottom"/);
+  // No private engine left behind: keyframes, pointer code or a grabber of its own.
+  assert.doesNotMatch(sheet, /@keyframes|onPointerDown|data-sheet-drag|bg-muted-foreground\/35|88dvh/);
+  // The house sheet travels on the shared rise/sink pair, which reads --motion-shift.
+  const css = read("src/components/ui/sheet.css");
+  assert.match(css, /ui-sheet-rise var\(--dur-slow\) var\(--ease-drawer\)/);
+  assert.match(css, /ui-sheet-sink var\(--dur-base\) var\(--ease-in\)/);
+  assert.match(css, /translate3d\(0, calc\(100% \* var\(--motion-shift, 1\)\), 0\)/);
+  const house = read("src/components/ui/sheet.tsx");
+  assert.match(house, /useDialogFocusReturn/);
 });

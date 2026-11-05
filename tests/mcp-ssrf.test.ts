@@ -527,9 +527,15 @@ test("every user MCP request path uses the safe fetcher and re-checks the stored
   // by an optional field a caller rebuilding ActiveConnector can drop (the Work
   // runner does), and a URL that fails today's rules is not dialled even if it
   // was saved earlier.
+  // Checked at open (reported as misconfigured) and again on every dial,
+  // including a cached connector's first call (src/lib/mcp.ts, connectMcpServer).
   assert.match(
     mcp,
-    /const userServer = isUserMcpConnectorId\(c\.id\) \|\| isCustomConnectorId\(c\.id\);\n\s*if \(userServer && userMcpUrlProblem\(c\.mcpUrl\)\) return;/
+    /const userServer = isUserMcpConnectorId\(c\.id\) \|\| isCustomConnectorId\(c\.id\);\n\s*if \(userServer && userMcpUrlProblem\(c\.mcpUrl\)\) \{\n\s*report\(c\.id, "misconfigured"\);\n\s*return null;/
+  );
+  assert.match(
+    mcp,
+    /const userServer = isUserMcpConnectorId\(c\.id\) \|\| isCustomConnectorId\(c\.id\);\n\s*\/\/ Judged again on every dial[^\n]*\n\s*if \(userServer && userMcpUrlProblem\(c\.mcpUrl\)\) return \{ ok: false, failure: "misconfigured", aborted: false \};/
   );
   assert.match(mcp, /\.\.\.\(userServer \? \{ fetch: safeMcpFetch \} : \{\}\)/);
   assert.doesNotMatch(mcp, /c\.custom \? \{ fetch/, "the fetcher is not chosen by the optional `custom` field");

@@ -217,6 +217,7 @@ export const WORK_AUDIT_KINDS = [
   'skill_security_scanned',
   'skill_permission_consent',
   'tier_downgrade_refused',
+  'agent_control',
 ] as const;
 export type WorkAuditKind = (typeof WORK_AUDIT_KINDS)[number];
 
@@ -778,6 +779,7 @@ const AUDIT_KIND_COPY: Record<WorkAuditKind, string> = {
   skill_security_scanned: 'Skill security-scanned',
   skill_permission_consent: 'Skill permissions consented',
   tier_downgrade_refused: 'Lower-tier tool refused',
+  agent_control: 'Agent steered, paused, stopped or topped up',
 };
 
 export function auditKindLabel(kind: WorkAuditKind): string {

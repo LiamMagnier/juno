@@ -32,10 +32,12 @@ export function SaveStatus({ state }: { state: SaveState }) {
   const reduce = useReducedMotion() ?? false;
   // The words slide in a few pixels from the label they sit beside, and the
   // mark lands with a small settle a beat ahead of them: one small event,
-  // read left to right. Under reduced motion both simply fade.
+  // read left to right. Under reduced motion both simply fade. No blur: no
+  // entrance blurs (spec C1, §4.5 rule 2). This one did, out of 2px, and the
+  // lint missed it because the value sat behind a conditional.
   const word = {
-    initial: reduce ? { opacity: 0 } : { opacity: 0, x: -4, filter: "blur(2px)" },
-    animate: { opacity: 1, x: 0, filter: "blur(0px)", transition: transition.base },
+    initial: reduce ? { opacity: 0 } : { opacity: 0, x: -4 },
+    animate: { opacity: 1, x: 0, transition: transition.base },
     exit: { opacity: 0, transition: transition.exit },
   };
   const mark = {

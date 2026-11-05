@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { DocumentsGallery } from "./gallery";
 
 /**
@@ -10,5 +11,9 @@ import { DocumentsGallery } from "./gallery";
  */
 export default function DocumentsDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <DocumentsGallery />;
+  return (
+    <PageRoot>
+      <DocumentsGallery />
+    </PageRoot>
+  );
 }

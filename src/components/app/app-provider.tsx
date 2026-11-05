@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { AlevrBridgeProvider } from "@/components/canvas/sandbox-document-frame";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import type { AppBootstrap, AppUser, ClientFolder, ClientSettings, ClientSpend } from "@/types/app";
@@ -375,5 +376,10 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
     ]
   );
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      {/* `window.alevr` in app previews, only while ARTIFACT_AI_ENABLED is on. */}
+      <AlevrBridgeProvider enabled={bootstrap.features.artifactAi === true}>{children}</AlevrBridgeProvider>
+    </AppContext.Provider>
+  );
 }

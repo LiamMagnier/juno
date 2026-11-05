@@ -23,6 +23,7 @@ import { ComposerPopover, Glyph, LiveMark, MenuList, ModelMark, useIsMac } from 
 import { agentStep, isCandidate, teamHead, LogRow, lineFor } from "./thread";
 import type { WorkspaceModel } from "./types";
 import { XtermView } from "./xterm-view";
+import { AgentsTreePane } from "./agents-tree";
 import { cn } from "@/lib/utils";
 
 export interface DockFocus {
@@ -666,8 +667,10 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
   const selected = agents.find((a) => a.agentId === selectedId);
   const [pick, setPick] = React.useState<string | null>(null);
   const best = model.routing.preset === "best-of-n" || agents.some(isCandidate);
-  if (selected) return <AgentDetail key={selected.agentId} agent={selected} model={model} onBack={() => onSelect(null)} />;
   if (!agents.length) return <div className="cv2-dock-empty">No agents in this session. Choose Team or Best of N under the composer&apos;s options to fan out.</div>;
+  // A team or delegated run: the live tree with its controls (REA backlog 10).
+  if (!best) return <AgentsTreePane model={model} selectedId={selectedId} onSelect={onSelect} modelLabel={(s) => modelLabelFor(s.model, model.instances, s.instanceId)} />;
+  if (selected) return <AgentDetail key={selected.agentId} agent={selected} model={model} onBack={() => onSelect(null)} />;
   const elapsed = Math.max(0, ...agents.map((a) => a.elapsedMs ?? 0));
   const costs = agents.map((a) => a.costUsd).filter((c): c is number => c !== undefined);
   const spent = costs.length ? costs.reduce((a, b) => a + b, 0) : undefined;
@@ -730,39 +733,7 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
       </div>
     );
   }
-  return (
-    <div className="cv2-dock-pane">
-      <div className="cv2-dockbar">
-        <span className="cv2-m">{teamHead(agents)}</span>
-        <span className="cv2-grow" />
-        <span className="cv2-mute cv2-small cv2-tnum">{money ?? (elapsed ? formatDuration(elapsed) : "")}</span>
-      </div>
-      <div className="cv2-dockscroll" style={{ paddingTop: 6 }}>
-        {[...agents.filter((a) => a.status === "running" || a.status === "waiting"), ...agents.filter((a) => a.status !== "running" && a.status !== "waiting")].map((a, index, list) => {
-          const step = agentStep(a);
-          const instance = model.instances.find((x) => x.id === a.model.instanceId);
-          return (
-            <React.Fragment key={a.id}>
-            {(index === 0 || (list[index - 1].status === "running" || list[index - 1].status === "waiting") !== (a.status === "running" || a.status === "waiting")) && <div className="cv2-phase-head">{a.status === "running" || a.status === "waiting" ? "Active" : "Done"}</div>}
-            <button type="button" className="cv2-arow" aria-pressed={selectedId === a.agentId} onClick={() => onSelect(a.agentId)}>
-              <span style={{ minWidth: 0 }}>
-                <span className="l1">
-                  <span className="cv2-trunc">{a.title ?? a.task?.split("\n")[0] ?? a.label ?? "Agent"}</span>
-                  <ModelMark modelId={a.model.model} instance={instance} />
-                  <span className="mdl cv2-trunc">{modelLabelFor(a.model.model, model.instances, a.model.instanceId)}</span>
-                </span>
-                <span className={cn("l2", step.needs && "cv2-sig", a.status === "running" && "cv2-live")} style={{ display: "block" }}>
-                  {step.text}
-                </span>
-              </span>
-              <span className="t">{a.elapsedMs !== undefined ? formatDuration(a.elapsedMs) : ""}</span>
-            </button>
-            </React.Fragment>
-          );
-        })}
-      </div>
-    </div>
-  );
+  return null;
 }
 
 /** Newest state per agent (a subagent may be re-sent as updates). */

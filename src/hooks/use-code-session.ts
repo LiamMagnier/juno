@@ -10,6 +10,7 @@ import type { FeedbackDetail } from "@/lib/feedback-reasons";
 import { COMPLETE_HISTORY, prependOlder } from "@/lib/chat/history-merge";
 import { createOlderHistoryLoader, type LoadOlderRequest } from "@/lib/chat/history-client";
 import { canSteerRun } from "@/lib/code-steer-policy";
+import { TetherLink, browserTetherSignals, tetherView } from "@/lib/net/tether";
 import { CodeTaskTranscript, type CodeActivityRow } from "@/lib/agent-protocol/code-task-transcript";
 
 /*
@@ -258,8 +259,14 @@ type StreamFrame =
   | { type: "done"; task: RemoteTask; message: ClientMessage | null };
 
 const TERMINAL = new Set(["done", "failed", "cancelled"]);
-const RECONNECT_BASE_MS = 1_500;
-const RECONNECT_MAX_MS = 15_000;
+/**
+ * The events route closes its own window every four minutes (STREAM_WINDOW_MS
+ * in the route). A window that ran at least this long and ended cleanly is that
+ * rotation, not a drop: reconnect at once and say nothing. Anything shorter
+ * goes through Tether like any other drop, so a server that closes straight
+ * away cannot spin the loop.
+ */
+const CLEAN_WINDOW_MS = 5_000;
 
 /** Fired when this session's task list meaningfully changes (a task starts, or
  *  reaches a terminal state). The sidebar mounts once in the persistent shell
@@ -699,17 +706,44 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     [opts]
   );
 
-  /** Attach to a task's SSE stream, reconnecting from the seq cursor on drops. */
+  /** Show (or clear) the live bubble's connection line. */
+  const setLiveConnection = React.useCallback((taskId: string, connection: ChatMessage["connection"]) => {
+    const id = liveId(taskId);
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== id) return m;
+        if (m.connection?.phase === connection?.phase && m.connection?.retryAt === connection?.retryAt) return m;
+        if (!connection) {
+          const rest = { ...m };
+          delete rest.connection;
+          return rest;
+        }
+        return { ...m, connection };
+      })
+    );
+  }, []);
+
+  /**
+   * Attach to a task's SSE stream, reconnecting from the seq cursor on drops.
+   *
+   * When to retry is Tether's call (src/lib/net/tether.ts): jittered backoff,
+   * an immediate attempt when the network returns, the tab comes back or the
+   * machine wakes, and no give-up while the run is live — a long outage parks
+   * the bubble on "Waiting for connection" with the cursor kept.
+   */
   const streamTask = React.useCallback(
     async (taskId: string) => {
       const controller = new AbortController();
       abortRef.current?.abort();
       abortRef.current = controller;
-      let attempt = 0;
       let finished = false;
+      const link = new TetherLink({
+        signals: browserTetherSignals(),
+        onChange: (state) => setLiveConnection(taskId, tetherView(state)),
+      });
 
       const handleFrame = (frame: StreamFrame) => {
-        attempt = 0;
+        link.connected();
         if (frame.type === "done") {
           finished = true;
           finishTask(frame.task, frame.message);
@@ -730,31 +764,47 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
         syncLiveBubble(true);
       };
 
-      while (!controller.signal.aborted && !finished) {
-        try {
-          const res = await fetch(`/api/code/tasks/${taskId}/events?afterSeq=${lastSeqRef.current}`, {
-            signal: controller.signal,
-            headers: { Accept: "text/event-stream" },
-          });
-          if (res.status === 404) {
-            // Task deleted underneath the stream — nothing left to follow. The
-            // target is unknown here, so the sentence names neither machine.
-            finishTask({ id: taskId, status: "failed" }, null, "This task no longer exists, so nothing more can be shown.");
-            return;
+      let immediate = true;
+      try {
+        while (!controller.signal.aborted && !finished) {
+          if (!immediate && !(await link.nextAttempt(controller.signal))) return;
+          immediate = false;
+          const openedAt = Date.now();
+          let clean = false;
+          try {
+            const res = await fetch(`/api/code/tasks/${taskId}/events?afterSeq=${lastSeqRef.current}`, {
+              signal: controller.signal,
+              headers: { Accept: "text/event-stream" },
+            });
+            if (res.status === 404) {
+              // Task deleted underneath the stream — nothing left to follow. The
+              // target is unknown here, so the sentence names neither machine.
+              finishTask({ id: taskId, status: "failed" }, null, "This task no longer exists, so nothing more can be shown.");
+              return;
+            }
+            if (res.status === 401) return; // signed out — reconnecting can't help
+            if (!res.ok || !res.body) throw new Error("stream unavailable");
+            await readSseFrames(res.body, handleFrame);
+            clean = true;
+          } catch {
+            if (controller.signal.aborted) return;
           }
-          if (res.status === 401) return; // signed out — reconnecting can't help
-          if (!res.ok || !res.body) throw new Error("stream unavailable");
-          await readSseFrames(res.body, handleFrame);
-        } catch {
-          if (controller.signal.aborted) return;
+          if (finished || controller.signal.aborted) return;
+          if (clean && link.state.phase === "connected" && Date.now() - openedAt >= CLEAN_WINDOW_MS) {
+            // The server rotated its window: pick straight back up from the cursor.
+            immediate = true;
+            continue;
+          }
+          // Frames flowed and then stopped: a fresh drop. Nothing came: a failed attempt.
+          if (link.state.phase === "connected") link.drop();
+          else link.failed();
         }
-        if (finished || controller.signal.aborted) return;
-        // Stream window elapsed or connection dropped — reconnect from cursor.
-        attempt += 1;
-        await new Promise((r) => setTimeout(r, Math.min(RECONNECT_BASE_MS * attempt, RECONNECT_MAX_MS)));
+      } finally {
+        link.dispose();
+        setLiveConnection(taskId, undefined);
       }
     },
-    [applyEvents, finishTask, showLiveBubble, syncLiveBubble]
+    [applyEvents, finishTask, setLiveConnection, showLiveBubble, syncLiveBubble]
   );
 
   const send = React.useCallback(

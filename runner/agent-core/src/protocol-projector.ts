@@ -529,6 +529,7 @@ export function toolKind(name: string): AgentToolKind {
       return 'read';
     case 'write_file':
     case 'edit_file':
+    case 'edit_files':
       return 'edit';
     case 'bash':
       return 'execute';
@@ -568,6 +569,10 @@ export function toolTitle(name: string, input: unknown): string {
       return `Write ${text(p.path)}`;
     case 'edit_file':
       return `Edit ${text(p.path)}`;
+    case 'edit_files': {
+      const files = new Set(Array.isArray(p.operations) ? p.operations.map((op: unknown) => text((op as { path?: unknown } | null)?.path)).filter(Boolean) : []);
+      return files.size > 0 ? `Edit ${files.size} file${files.size === 1 ? '' : 's'}` : 'Edit files';
+    }
     case 'glob':
       return `Glob ${text(p.pattern)}`;
     case 'grep':

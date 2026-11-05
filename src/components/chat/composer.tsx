@@ -10,8 +10,12 @@ import {
   tokensForRemainder,
   tokensForText,
   writeComposerDraft,
+  type ContextDraft,
 } from "@/lib/chat/context-draft";
 import { useThreadDraftSync } from "@/lib/sync/thread-draft-client";
+import { submittedDraftIsCurrent, type ComposerSubmission } from "@/lib/chat/composer-submission";
+import { composerPrimaryFace } from "@/lib/chat/composer-primary-face";
+import { createComposerDraftSession, type ComposerDraftSession } from "@/lib/chat/composer-draft-session";
 import { placeComposerLayer, preferredLayerSide, type LayerPlacement, type LayerSide } from "@/lib/chat/composer-layer-placement";
 import { TIMING } from "@/lib/interaction";
 import type { MentionItem, MentionSearchResult } from "@/lib/mentions/types";
@@ -31,6 +35,7 @@ import {
   TextQuote,
   AtSign,
   Pencil,
+  Cloud,
 } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
 import { useComposerSketch } from "@/components/chat/sketch/use-composer-sketch";
@@ -72,8 +77,10 @@ import type { ResearchEffort } from "@/lib/research/domain";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ModelSelector } from "@/components/chat/model-selector";
-import { ReasoningSlider } from "@/components/chat/reasoning-slider";
+import { ReasoningSlider, type SpeedTier } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
+import { CloudFilePicker } from "@/components/chat/cloud-file-picker";
+import type { CloudFileProvider } from "@/lib/cloud-files/shared";
 import { useFileDrop } from "@/components/library/library-drop-zone";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 /**
@@ -82,6 +89,9 @@ import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
  * `pendingClarification`. `ssr: false` because a pending clarification is
  * client state by construction — the server has never had one to render.
  */
+/** The image model "Create image" opens on next time, on this device. */
+const LAST_IMAGE_MODEL_KEY = "alevr.lastImageModel";
+
 const ComposerClarificationPopover = nextDynamic(
   () =>
     import("@/components/chat/composer-clarification-popover").then(
@@ -91,6 +101,8 @@ const ComposerClarificationPopover = nextDynamic(
 );
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
+import { defaultImageModel } from "@/lib/router/image-route";
+import { isModelLocked } from "@/lib/model-picker";
 import {
   reasoningOptions,
   defaultReasoning,
@@ -103,9 +115,11 @@ import { alevrToolsUsable } from "@/lib/search/alevr/policy";
 import { PLANS, cheapestPlanWith } from "@/lib/plans";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useUploads } from "@/hooks/use-uploads";
+import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { useDictationSupported } from "@/hooks/use-dictation-support";
 import { DictationSwap } from "@/components/ui/dictation-swap";
 import { useApp } from "@/components/app/app-provider";
+import { chatUsesMemory, MEMORY_OFF_COPY } from "@/lib/chat/memory-off";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import {
   COMPOSER_INLINE_SOFT_CHARS,
@@ -147,6 +161,7 @@ import type {
 } from "@/types/chat";
 import { plainReturnSends } from "@/lib/touch-keyboard";
 import { enterIntent, enterKeyOf } from "@/lib/composer-keys";
+import { installInputModality } from "@/lib/input-modality";
 
 /**
  * The chat field's id, so a card in the transcript can put the cursor in it.
@@ -162,6 +177,8 @@ export const CHAT_COMPOSER_FIELD_ID = "juno-composer-textarea";
 interface ComposerProps {
   initialResearch?: boolean;
   conversationId: string | null;
+  /** View-local draft continuity when the landing composer becomes docked. */
+  draftSession?: ComposerDraftSession;
   model: ModelId;
   onModelChange: (m: ModelId) => void;
   onSend: (
@@ -180,6 +197,13 @@ interface ComposerProps {
    * tasks at all; absent, the row is as it was.
    */
   taskModeControl?: React.ReactNode;
+  /**
+   * "Memory off for this chat" (src/lib/chat/memory-off.ts). Given, the +
+   * menu's Memory switch is this chat's: off keeps this chat out of memory and
+   * leaves every other chat alone. Absent (Code, the dev galleries), the
+   * switch is the account's pause, as it always was.
+   */
+  chatMemory?: { off: boolean; onChange: (off: boolean) => void };
   /**
    * A durable run is going on this conversation, and this composer steers it.
    *
@@ -509,6 +533,7 @@ type ArmedMark = {
 function ComposerImpl({
   initialResearch = false,
   conversationId,
+  draftSession: sharedDraftSession,
   model,
   onModelChange,
   onSend,
@@ -518,6 +543,7 @@ function ComposerImpl({
   steering,
   modeControl,
   taskModeControl,
+  chatMemory,
   pendingClarification,
   onSubmitClarification,
   onSkipClarification,
@@ -617,6 +643,56 @@ function ComposerImpl({
     },
     [onModelChange, onReasoningChange, reasoningEffort],
   );
+  /*
+   * ── Create image (G04) ─────────────────────────────────────────────────────
+   *
+   * Image mode IS an image model on the row: everything the composer already
+   * does for one (the aspect, count and quality controls in the tray, the
+   * placeholder, sending through /api/generate with every pipeline gate) is
+   * reused rather than drawn a second time. The + menu's "Create image" turns
+   * it on with the image model used last on this device, else the best one
+   * this account can use (image-route.ts' ranking), and remembers the chat
+   * model it replaced; its mark's ✕, or the row again, puts that model back.
+   * A different image model is picked in the model menu as ever.
+   */
+  const lastChatModelRef = React.useRef<ModelId | null>(null);
+  const imageDefault = React.useMemo(() => {
+    let lastUsed: string | null = null;
+    try {
+      lastUsed = window.localStorage.getItem(LAST_IMAGE_MODEL_KEY);
+    } catch {
+      // Storage refused (private window): fall back to the ranking.
+    }
+    return defaultImageModel(models, quota.plan, lastUsed, isModelLocked);
+    // `model` is read so a model chosen in the menu becomes the next default.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models, quota.plan, model]);
+  const imageModeAvailable = !privateMode && !voiceActive && (modality === "image" || imageDefault !== null);
+  React.useEffect(() => {
+    if (modality !== "image") return;
+    try {
+      window.localStorage.setItem(LAST_IMAGE_MODEL_KEY, model);
+    } catch {
+      // Not remembered; the ranking picks next time.
+    }
+  }, [modality, model]);
+  const exitImageMode = React.useCallback(() => {
+    const back = lastChatModelRef.current;
+    lastChatModelRef.current = null;
+    const fallback = resolveModel(settings.defaultModel);
+    changeModel(back ?? (fallback && fallback.modality === "chat" ? fallback.id : AUTO_MODEL_ID));
+  }, [changeModel, settings.defaultModel]);
+  const toggleImageMode = React.useCallback(() => {
+    if (modality === "image") {
+      exitImageMode();
+      return;
+    }
+    if (!imageDefault) return;
+    if (modality === "chat") lastChatModelRef.current = model;
+    changeModel(imageDefault.id);
+    // Straight back to the field: the next thing is describing the picture.
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+  }, [changeModel, exitImageMode, imageDefault, modality, model]);
   // Web search — gated by plan and by whether this model can search here:
   // its provider's own search, or Alevr Search's tools on any model that
   // takes function tools (BRIEF §15). Private and voice turns run only the
@@ -769,7 +845,20 @@ function ComposerImpl({
               frame === "dock"
               ? "Ask a follow-up"
               : "How can I help you today?"));
-  const [text, setText] = React.useState("");
+  const submissionScope = `${privateMode ? "private" : "saved"}:${conversationId ?? "new"}`;
+  const localDraftSession = React.useMemo(() => createComposerDraftSession(submissionScope), [submissionScope]);
+  const draftSession = sharedDraftSession ?? localDraftSession;
+  const draftSnapshot = React.useSyncExternalStore(draftSession.subscribe, draftSession.getSnapshot, draftSession.getSnapshot);
+  const { text, tokens: contextTokens } = draftSnapshot;
+  const setText = draftSession.setText;
+  const updateContextTokens = draftSession.setTokens;
+  const submissionGuard = draftSession.submissions;
+  const [pendingSubmission, setPendingSubmission] = React.useState<ComposerSubmission | null>(null);
+  const submissionScopeRef = React.useRef(submissionScope);
+  submissionScopeRef.current = submissionScope;
+  const draftSessionRef = React.useRef(draftSession);
+  draftSessionRef.current = draftSession;
+  const submitting = !!pendingSubmission && pendingSubmission.scope === submissionScope && submissionGuard.owns(pendingSubmission);
 
   // Huge pastes stay in `text` for send, but we collapse the textarea DOM so
   // multi-10k curricula don't freeze / blank the tab. Expand to edit inline.
@@ -777,12 +866,23 @@ function ComposerImpl({
   // The user's raw draft as it was when a send got intercepted by a
   // clarification — restored on cancel (originalUserMessage may be the
   // serialized quote block, which must not go back into the textarea).
-  const interceptedDraftRef = React.useRef("");
+  const interceptedDraftRef = React.useRef<{
+    session: ComposerDraftSession;
+    draft: ContextDraft;
+    clearedRevision?: number;
+    retainedRevision?: number;
+    clearResources: () => void;
+  } | null>(null);
   const [clarificationAnswers, setClarificationAnswers] = React.useState<
     PreflightClarificationAnswer[]
   >([]);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
+  // The drive stays named while the dialog closes, so it does not retitle on its way out.
+  const [cloudPicker, setCloudPicker] = React.useState<{ provider: CloudFileProvider; open: boolean }>({
+    provider: "google-drive",
+    open: false,
+  });
   const [projects, setProjects] = React.useState<
     { id: string; name: string; conversationCount: number }[]
   >([]);
@@ -813,7 +913,6 @@ function ComposerImpl({
   const enabledConnectorIdsRef = React.useRef(connectorsEnabled);
   enabledConnectorIdsRef.current = connectorsEnabled;
   const textareaRef = React.useRef<ContextFieldElement>(null);
-  const [contextTokens, setContextTokens] = React.useState<ContextToken[]>([]);
   /*
    * ── The field tier's bookkeeping ──────────────────────────────────────────
    *
@@ -834,13 +933,14 @@ function ComposerImpl({
   /** The composer surface: every layer it opens is placed outside this box. */
   const shellRef = React.useRef<HTMLDivElement>(null);
   /*
-   * Focus from the keyboard draws one ring in the presence ink around the
-   * whole composer; focus from a pointer only darkens its edge (C1). A text
-   * field matches :focus-visible on every focus, so the composer remembers
-   * whether a pointer pressed it just before.
+   * Focus from the keyboard draws one ring around the whole composer; focus
+   * from a pointer only darkens its edge (C1). ComposerShell decides which,
+   * from the live input modality (lib/input-modality.ts), so focus the
+   * composer gives itself (on load, after a send or a closed layer) rings
+   * only when the person is actually using the keyboard, and a press drops
+   * the ring.
    */
-  const pointerFocus = React.useRef(false);
-  const [keyboardFocus, setKeyboardFocus] = React.useState(false);
+  React.useEffect(installInputModality, []);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   /** Which side of the composer its layers open toward: below on the home, above in the dock. */
   const layerSide = preferredLayerSide(frame);
@@ -857,23 +957,23 @@ function ComposerImpl({
    * in incognito, and not while the field is steering a run.
    */
   const draftKey = privateMode || steering?.active ? null : (conversationId ?? "new");
-  const latestDraft = React.useRef({ text: "", tokens: [] as ContextToken[] });
-  latestDraft.current = { text, tokens: contextTokens };
   React.useEffect(() => {
     if (!draftKey) return;
     const stored = readComposerDraft(draftKey);
     const field = textareaRef.current;
     if (stored && field && !field.getDraft().text) field.setDraft(stored);
-  }, [draftKey]);
+  }, [draftKey, draftSession]);
   React.useEffect(() => {
     if (!draftKey) return;
-    const timer = window.setTimeout(() => writeComposerDraft(draftKey, latestDraft.current), TIMING.draftSave);
+    const timer = window.setTimeout(() => writeComposerDraft(draftKey, draftSession.getSnapshot()), TIMING.draftSave);
     return () => window.clearTimeout(timer);
-  }, [draftKey, text, contextTokens]);
+  }, [draftKey, draftSession, text, contextTokens]);
   React.useEffect(() => {
     if (!draftKey) return;
-    return () => writeComposerDraft(draftKey, latestDraft.current);
-  }, [draftKey]);
+    // Cleanup belongs to the session being left. A ref updated by the next
+    // route's render would save that route's words under this route's key.
+    return () => writeComposerDraft(draftKey, draftSession.getSnapshot());
+  }, [draftKey, draftSession]);
   /*
    * The same draft on the user's other devices (docs/code-v2/REMOTE-CONTROL.md
    * §Sync): a saved chat's text goes to the backend debounced and comes back
@@ -888,7 +988,7 @@ function ComposerImpl({
     () => {
       const field = textareaRef.current;
       const editing = !!field && typeof document !== "undefined" && document.activeElement === field;
-      return { text: field?.getDraft().text ?? latestDraft.current.text, editing };
+      return { text: field?.getDraft().text ?? draftSession.getSnapshot().text, editing };
     },
     (remote) => {
       const field = textareaRef.current;
@@ -911,7 +1011,6 @@ function ComposerImpl({
   /** A send that went: the draft it carried is not kept for later, here or on the other devices. */
   const forgetDraft = React.useCallback(() => {
     if (draftKey) forgetStoredDraft(draftKey);
-    latestDraft.current = { text: "", tokens: [] };
     syncedText.current = { key: syncKey, text: "" };
     remoteDraft.cleared();
   }, [draftKey, syncKey, remoteDraft]);
@@ -923,7 +1022,7 @@ function ComposerImpl({
     clear,
     readyAttachments,
     isUploading,
-  } = useUploads(privateMode ? null : conversationId);
+  } = useUploads(privateMode ? null : conversationId, draftSession.uploads);
   // Memoized: a fresh `[]` every private-mode render would churn every hook
   // that lists sendAttachments as a dependency.
   const sendAttachments = React.useMemo(
@@ -931,6 +1030,8 @@ function ComposerImpl({
     [privateMode, readyAttachments],
   );
   const uploading = privateMode ? false : isUploading;
+  const draftResourcesRef = React.useRef({ quote, uploads, research, skillSlug });
+  draftResourcesRef.current = { quote, uploads, research, skillSlug };
   /* Whether the files on the row can actually be read — polled until indexing
      settles, so "Juno could not read this PDF" arrives before the send rather
      than inside the reply to it. */
@@ -1162,7 +1263,7 @@ function ComposerImpl({
     };
     window.addEventListener("juno:composer-seed", seed);
     return () => window.removeEventListener("juno:composer-seed", seed);
-  }, []);
+  }, [setText]);
 
   // A home suggestion that names a thing ("Use GitHub") puts it in the
   // sentence as a token, after whatever is already written, and hands the
@@ -1190,9 +1291,22 @@ function ComposerImpl({
 
   // "Message" on an agent's profile: the one invitation there is to talk.
   React.useEffect(() => {
-    const focus = () => requestAnimationFrame(() => textareaRef.current?.focus());
+    let frame = 0;
+    const focus = () => {
+      cancelAnimationFrame(frame);
+      const from = document.activeElement;
+      frame = requestAnimationFrame(() => {
+        // Arrival focus must not take the caret from a newer interaction
+        // while a lazy overlay or a navigation is still mounting.
+        const current = document.activeElement;
+        if (!current || current === document.body || current === from) textareaRef.current?.focus();
+      });
+    };
     window.addEventListener("juno:composer-focus", focus);
-    return () => window.removeEventListener("juno:composer-focus", focus);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("juno:composer-focus", focus);
+    };
   }, []);
 
   // Files handed over by another surface — the document viewer's "ask about
@@ -1213,9 +1327,8 @@ function ComposerImpl({
     return () => window.removeEventListener("juno:composer-add-files", add);
   }, [addComposerFiles, features.storage, privateMode]);
 
-  // The pre-flight check and a hard send lock disable the textarea, which
-  // silently drops keyboard focus to <body>. Hand it back the moment the
-  // composer re-enables so Enter-to-send flows straight into typing the
+  // A layout handoff or a hard send lock can drop keyboard focus to <body>.
+  // Hand it back when the run settles so Enter-to-send flows into typing the
   // follow-up — but never steal focus from a field the user moved to in
   // the meantime (only reclaim it from <body> or from within the composer).
   const wasBusyRef = React.useRef(false);
@@ -1237,13 +1350,13 @@ function ComposerImpl({
     });
   }, [isBusy, status, dictating, pendingClarification]);
 
-  // Esc stops a running generation from anywhere on the page. The field is
-  // disabled while busy, so this cannot live in its own onKeyDown; it defers
-  // to any nearer layer (a menu, the find bar) that already claimed the key.
+  // Esc stops a running generation from anywhere on the page. It defers to
+  // nearer layers and to IME composition: dismissing a candidate must never
+  // cancel a reply just because that key is still allowed to bubble.
   React.useEffect(() => {
     if (!isBusy || status === "checking" || status === "stopping") return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (e.key !== "Escape" || e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
       if (document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]')) return;
       e.preventDefault();
       onStop();
@@ -1269,14 +1382,9 @@ function ComposerImpl({
 
   React.useEffect(() => {
     setClarificationAnswers([]);
-    // The intercepted draft is preserved in pendingClarification.originalUserMessage;
-    // leaving it in the textarea made submit() treat it as a custom answer that
-    // silently overwrote whichever option the user actually clicked.
-    if (pendingClarification) {
-      setText("");
-      requestAnimationFrame(autoresize);
-    }
-  }, [pendingClarification, autoresize]);
+    // The send receipt clears only its own revision when a clarification
+    // intercepts it. This effect must never erase typing done during preflight.
+  }, [pendingClarification]);
 
   const clarificationOpen = !!pendingClarification;
   /**
@@ -1329,11 +1437,11 @@ function ComposerImpl({
    * the chat hook, which queues it for the moment the reply ends — or
    * refuses it, in which case the draft simply stays where it was.
    */
-  const sendBlocked = sendLocked || uploading || !!quotaReached;
+  const sendBlocked = submitting || sendLocked || uploading || !!quotaReached;
   const canSend = steerMode
     ? // No attachments and no clarification answers: direction is words, and a
       // file cannot be handed to a run that is already reading.
-      text.trim().length > 0 && !sendLocked && !quotaReached
+      text.trim().length > 0 && !submitting && !sendLocked && !quotaReached
     : (text.trim().length > 0 ||
         sendAttachments.length > 0 ||
         clarificationAnswers.length > 0) &&
@@ -1367,16 +1475,19 @@ function ComposerImpl({
 
   // The primary button's faces: checking, stop (when busy), voice (when there
   // is nothing to send and a call is available), or send.
-  const primaryFace: "checking" | "stop" | "send" | "voice" =
-    status === "checking"
-      ? "checking"
-      : steerMode && text.trim().length > 0
-        ? "send"
-        : isBusy || standaloneRun
-          ? "stop"
-          : canSend || !voiceAvailable
-            ? "send"
-            : "voice";
+  // A draft that cannot go yet (a file still uploading, a spent quota) keeps
+  // the send face, disabled, rather than handing the slot to voice
+  // (lib/chat/composer-primary-face.ts).
+  const primaryFace = composerPrimaryFace({
+    checking: status === "checking",
+    steerMode,
+    busy: isBusy,
+    standaloneRun,
+    hasText: text.trim().length > 0,
+    hasOtherDraft: uploading || sendAttachments.length > 0 || clarificationAnswers.length > 0,
+    canSend,
+    voiceAvailable,
+  });
   // The effort control the model popover draws under its panes. Absent when
   // Auto picks the depth or the model has a single tier, so the footer only
   // appears when there is a choice to make — which also retires the empty
@@ -1484,23 +1595,32 @@ function ComposerImpl({
     )
       return;
     if (sendBlocked) return;
+    // Continue, Skip and the primary Send all enter the same guarded path.
+    // Delegating before claiming avoids trying to claim our own ticket twice.
+    if (clarificationOpen && pendingClarification) {
+      await submitClarification(clarificationAnswers);
+      return;
+    }
+    const ticket = submissionGuard.begin({ scope: submissionScope, revision: draftSession.getSnapshot().revision });
+    if (!ticket) return;
+    setPendingSubmission(ticket);
+    const ownsScope = () => submissionGuard.owns(ticket)
+      && draftSessionRef.current === draftSession
+      && submissionScopeRef.current === ticket.scope;
+    const ownsDraft = () => ownsScope()
+      && submittedDraftIsCurrent(ticket, {
+        scope: submissionScopeRef.current,
+        revision: draftSession.getSnapshot().revision,
+      });
     try {
       // Direction into the live run, not a message into the thread. First,
       // because every path below this builds an outgoing chat turn.
       if (steerMode && steering) {
         if (!trimmedDraft) return;
         const accepted = await steering.onSteer(trimmedDraft);
-        if (accepted) {
-          setText("");
+        if (accepted && ownsDraft() && draftSession.clearIfCurrent(ticket.revision)) {
           setDraftExpanded(false);
           requestAnimationFrame(autoresize);
-        }
-        return;
-      }
-      if (clarificationOpen && pendingClarification) {
-        const success = await submitClarification(clarificationAnswers);
-        if (success) {
-          setClarificationAnswers([]);
         }
         return;
       }
@@ -1539,7 +1659,24 @@ function ComposerImpl({
       // slug explicitly rather than through the memo above.
       const skillForSend = typedSkill ? typedSkill.skill.slug : skillArmed ? skillSlug : null;
 
-      interceptedDraftRef.current = draftForSend;
+      const clearSentResources = () => {
+        const current = draftResourcesRef.current;
+        if (current.research === research) setResearch(false);
+        if (current.skillSlug === skillForSend || current.skillSlug === skillSlug) setSkillSlug(null);
+        // Remove each submitted chip, preserving files added for the next
+        // draft without leaving already-sent files armed beside them.
+        const sentIds = new Set(sendAttachments.map((attachment) => attachment.id));
+        for (const upload of uploads) {
+          if (upload.attachment && sentIds.has(upload.attachment.id)) remove(upload.localId);
+        }
+        if (current.quote === quote) onClearQuote?.();
+      };
+      const intercepted: NonNullable<typeof interceptedDraftRef.current> = {
+        session: draftSession,
+        draft: { text: draftForSend, tokens: tokensForRemainder(draft, draftForSend, contextTokens) },
+        clearResources: clearSentResources,
+      };
+      interceptedDraftRef.current = intercepted;
       const outgoing = quote
         ? serializeQuote(quote, draftForSend)
         : draftForSend;
@@ -1562,15 +1699,33 @@ function ComposerImpl({
             }
           : null),
       });
-      if (result && result.accepted === false) return;
-      forgetDraft();
-      setText("");
-      setDraftExpanded(false);
-      setResearch(false); // per-send: research never sticks to the next message
-      setSkillSlug(null); // per-send, for the same reason research is
-      clear();
-      onClearQuote?.();
-      requestAnimationFrame(autoresize);
+      if (result && result.accepted === false) {
+        if (result.clarificationPending && ownsScope()) {
+          if (ownsDraft() && draftSession.clearIfCurrent(ticket.revision)) {
+            intercepted.clearedRevision = draftSession.getSnapshot().revision;
+            requestAnimationFrame(autoresize);
+          } else {
+            // These words were written for a later turn before the question
+            // appeared. Keep them; clicking an option must not consume them
+            // as an implicit clarification answer.
+            intercepted.retainedRevision = draftSession.getSnapshot().revision;
+          }
+        }
+        return;
+      }
+      if (!ownsScope()) return;
+      // A late receipt clears only the text it sent. The session also reaches
+      // the docked field if the home has already unmounted (reduced motion).
+      if (ownsDraft() && draftSession.clearIfCurrent(ticket.revision)) {
+        forgetDraft();
+        setDraftExpanded(false);
+        requestAnimationFrame(autoresize);
+      }
+      // Resource ownership is independent of typing. New words must not keep
+      // already-sent files or one-send modes armed; a newly picked resource
+      // still belongs to the next draft and is preserved.
+      clearSentResources();
+      if (interceptedDraftRef.current === intercepted) interceptedDraftRef.current = null;
     } catch (err) {
       // Never let a large-paste / network failure navigate the SPA away.
       console.error("[composer] send failed", err);
@@ -1579,8 +1734,11 @@ function ComposerImpl({
           ? err.message
           : "Couldn’t send that message. Try again.",
       );
+    } finally {
+      if (submissionGuard.finish(ticket) && draftSessionRef.current === draftSession) setPendingSubmission(null);
     }
   };
+  const submitDraft = useLatestHandler(submit);
 
   // Dictate Mode hand-off: Stop lands the transcript in the textarea for
   // editing; Send merges + submits through the exact same path as typing.
@@ -1590,53 +1748,27 @@ function ComposerImpl({
       // The words land after the draft, which keeps its start, so every token
       // already in it stays on its words (context-draft.ts, `appendToDraft`).
       const draft = appendToDraft({ text, tokens: contextTokens }, transcript);
-      const merged = draft.text;
-      const restore = () => {
-        const field = textareaRef.current;
-        if (field) field.setDraft(draft, { focus: true });
-        else setText(merged);
-      };
-      if (!sendNow || !merged || controlsLocked) {
-        restore();
-        requestAnimationFrame(autoresize);
-        return;
+      // Land the transcript first so a refusal or network failure cannot lose
+      // spoken words. The normal submit path owns deduplication, errors and
+      // revision-aware clearing for typing and dictation alike.
+      const field = textareaRef.current;
+      if (field) field.setDraft(draft, { focus: true });
+      else {
+        setText(draft.text);
+        updateContextTokens(draft.tokens);
       }
-      interceptedDraftRef.current = merged;
-      const outgoing = quote ? serializeQuote(quote, merged) : merged;
-      void (async () => {
-        const connectorsForSend = await resolveSendConnectors(outgoing);
-        const result = await onSend(outgoing, sendAttachments, {
-          ...outgoingOptions,
-          ...(connectorsForSend ? { connectors: connectorsForSend } : null),
-          ...(draft.tokens.length && !quote ? { context: rangesForStoredText(merged, draft.tokens) } : null),
-        });
-        if (result && result.accepted === false) {
-          restore(); // keep the words and their tokens: nothing is lost on a refusal
-          return;
-        }
-        forgetDraft();
-        setText("");
-        setResearch(false); // per-send: research never sticks to the next message
-        setSkillSlug(null);
-        clear();
-        onClearQuote?.();
-        requestAnimationFrame(autoresize);
-      })();
+      requestAnimationFrame(autoresize);
+      if (sendNow && draft.text && !controlsLocked) void submitDraft(draft.text);
     },
     [
       text,
       contextTokens,
       controlsLocked,
-      quote,
-      onSend,
-      sendAttachments,
-      outgoingOptions,
-      clear,
-      onClearQuote,
       autoresize,
       setDictating,
-      resolveSendConnectors,
-      forgetDraft,
+      setText,
+      updateContextTokens,
+      submitDraft,
     ],
   );
 
@@ -2049,7 +2181,7 @@ function ComposerImpl({
   const setDraftText = React.useCallback((next: string) => {
     setText(next);
     if (next.length <= COMPOSER_INLINE_SOFT_CHARS) setDraftExpanded(false);
-  }, []);
+  }, [setText]);
 
   // Load the project list when the normal + menu opens, and also when a
   // brand-new chat already belongs to a project whose name is not loaded yet.
@@ -2208,79 +2340,106 @@ function ComposerImpl({
     }
   }, [creatingProject, onPickProject]);
 
-  const clearComposerDraft = React.useCallback(() => {
-    setText("");
-    clear();
-    setDictating(false);
-    requestAnimationFrame(autoresize);
-  }, [autoresize, clear, setDictating]);
-
-  const submitClarification = React.useCallback(
-    async (answers: PreflightClarificationAnswer[]) => {
-      if (!onSubmitClarification) return false;
-      // Every answer value must respect the server's zod limits (string ≤ 1000,
-      // string[] ≤ 12 × 500) — an oversized "Other" answer would 400 the whole
-      // send and lose the user's input.
-      const clampValue = (
-        v: PreflightClarificationAnswerValue,
-      ): PreflightClarificationAnswerValue =>
-        typeof v === "string"
-          ? v.slice(0, 1000)
-          : Array.isArray(v)
-            ? v.slice(0, 12).map((s) => s.slice(0, 500))
-            : v;
-      const finalAnswers = answers.map((a) =>
-        a.value === undefined ? a : { ...a, value: clampValue(a.value) },
-      );
-      // Text typed in the main textarea while the popover is open still counts,
-      // but as a custom answer for the first UNANSWERED question — it must
-      // never overwrite an option the user clicked or the popover's own
-      // "Other" input. Clamped to the server's 1000-char answer limit.
-      const trimmedText = text.trim().slice(0, 1000);
-      if (trimmedText && pendingClarification) {
-        const target = pendingClarification.result.questions.find(
-          (q) => !finalAnswers.some((a) => a.questionId === q.id),
+  const resolveClarification = React.useCallback(
+    async (answers: PreflightClarificationAnswer[] | null) => {
+      const skipped = answers === null;
+      if (!pendingClarification || sendBlocked || (skipped ? !onSkipClarification : !onSubmitClarification)) return false;
+      const snapshot = draftSession.getSnapshot();
+      const ticket = submissionGuard.begin({ scope: submissionScope, revision: snapshot.revision });
+      if (!ticket) return false;
+      setPendingSubmission(ticket);
+      const intercepted = interceptedDraftRef.current;
+      const retainedDraft = intercepted?.session === draftSession && intercepted.retainedRevision === snapshot.revision;
+      try {
+        // Every answer value must respect the server's zod limits (string ≤ 1000,
+        // string[] ≤ 12 × 500) — an oversized "Other" answer would 400 the whole
+        // send and lose the user's input.
+        const clampValue = (
+          v: PreflightClarificationAnswerValue,
+        ): PreflightClarificationAnswerValue =>
+          typeof v === "string"
+            ? v.slice(0, 1000)
+            : Array.isArray(v)
+              ? v.slice(0, 12).map((s) => s.slice(0, 500))
+              : v;
+        const finalAnswers = (answers ?? []).map((a) =>
+          a.value === undefined ? a : { ...a, value: clampValue(a.value) },
         );
-        finalAnswers.push(
-          target
-            ? {
-                questionId: target.id,
-                question: target.question,
-                source: "else",
-                value: trimmedText,
-              }
-            : {
-                questionId: "additional_context",
-                question: "Additional context",
-                source: "else",
-                value: trimmedText,
-              },
-        );
+        // Text typed in the main textarea while the popover is open still counts,
+        // but as a custom answer for the first UNANSWERED question — it must
+        // never overwrite an option the user clicked or the popover's own
+        // "Other" input. Clamped to the server's 1000-char answer limit.
+        const trimmedText = !skipped && !retainedDraft ? snapshot.text.trim().slice(0, 1000) : "";
+        if (trimmedText) {
+          const target = pendingClarification.result.questions.find(
+            (q) => !finalAnswers.some((a) => a.questionId === q.id),
+          );
+          finalAnswers.push(
+            target
+              ? {
+                  questionId: target.id,
+                  question: target.question,
+                  source: "else",
+                  value: trimmedText,
+                }
+              : {
+                  questionId: "additional_context",
+                  question: "Additional context",
+                  source: "else",
+                  value: trimmedText,
+                },
+          );
+        }
+        const result = skipped ? await onSkipClarification!() : await onSubmitClarification!(finalAnswers);
+        if (result?.accepted === false) return false;
+        if (submissionGuard.owns(ticket) && draftSessionRef.current === draftSession && submissionScopeRef.current === ticket.scope) {
+          // Skip never sends what is in the answer field. Continue clears only
+          // the answer revision it carried, never a later edit or retained draft.
+          if (!skipped && !retainedDraft && draftSession.clearIfCurrent(ticket.revision)) {
+            forgetDraft();
+            setDraftExpanded(false);
+            setDictating(false);
+            requestAnimationFrame(autoresize);
+          }
+          if (intercepted?.session === draftSession) intercepted.clearResources();
+          if (interceptedDraftRef.current === intercepted) interceptedDraftRef.current = null;
+          setClarificationAnswers([]);
+        }
+        return true;
+      } catch (err) {
+        console.error("[composer] clarification failed", err);
+        toast.error(err instanceof Error ? err.message : "Couldn’t send that answer. Try again.");
+        return false;
+      } finally {
+        if (submissionGuard.finish(ticket) && draftSessionRef.current === draftSession) setPendingSubmission(null);
       }
-      const result = await onSubmitClarification(finalAnswers);
-      if (!result || result.accepted !== false) clearComposerDraft();
-      return !result || result.accepted !== false;
     },
-    [clearComposerDraft, onSubmitClarification, pendingClarification, text],
+    [autoresize, draftSession, forgetDraft, onSkipClarification, onSubmitClarification, pendingClarification, sendBlocked, setDictating, submissionGuard, submissionScope],
   );
 
-  const skipClarification = React.useCallback(async () => {
-    if (!onSkipClarification) return false;
-    const result = await onSkipClarification();
-    if (!result || result.accepted !== false) clearComposerDraft();
-    return !result || result.accepted !== false;
-  }, [clearComposerDraft, onSkipClarification]);
+  const submitClarification = React.useCallback((answers: PreflightClarificationAnswer[]) => resolveClarification(answers), [resolveClarification]);
+  const skipClarification = React.useCallback(() => resolveClarification(null), [resolveClarification]);
 
   const cancelClarification = React.useCallback(() => {
     // Closing the popover restores the intercepted draft so nothing is lost —
     // the RAW draft, not originalUserMessage, which may be a serialized quote.
-    if (pendingClarification)
-      setText(
-        interceptedDraftRef.current || pendingClarification.originalUserMessage,
-      );
+    if (submitting) return;
+    const snapshot = draftSession.getSnapshot();
+    const intercepted = interceptedDraftRef.current;
+    if (pendingClarification && intercepted?.session === draftSession && intercepted.clearedRevision === snapshot.revision) {
+      const field = textareaRef.current;
+      if (field) field.setDraft(intercepted.draft);
+      else {
+        updateContextTokens(intercepted.draft.tokens);
+        setText(intercepted.draft.text);
+      }
+    } else if (pendingClarification && !intercepted && !snapshot.text.trim()) {
+      setText(pendingClarification.originalUserMessage);
+    }
+    interceptedDraftRef.current = null;
     onCancelClarification?.();
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [onCancelClarification, pendingClarification]);
+  }, [draftSession, onCancelClarification, pendingClarification, setText, submitting, updateContextTokens]);
 
   const selectedProject = selectedProjectId
     ? (projects.find((p) => p.id === selectedProjectId) ?? null)
@@ -2339,6 +2498,12 @@ function ComposerImpl({
       )
     : connectors;
 
+  // Whether this chat's turns use memory, as the + switch shows it: the
+  // account's memory, narrowed by this chat's own switch when it has one.
+  const memoryOnHere = chatMemory
+    ? chatUsesMemory({ accountMemory: settings.memoryEnabled, chatMemoryOff: chatMemory.off })
+    : settings.memoryEnabled;
+
   // Counts rows that are ON, not rows that exist: while collapsed this is the only
   // thing in the menu saying that e.g. deep research is armed for this message.
   // Each term repeats its row's own gate so a row that isn't rendered can't count.
@@ -2352,7 +2517,7 @@ function ComposerImpl({
     skillArmed ? `the ${armedSkill?.name ?? skillSlug} skill` : null,
     researchArmed ? "research" : null,
     canWebSearch && webSearchEnabled ? "web search" : null,
-    settings.memoryEnabled ? "memory" : null,
+    memoryOnHere ? "memory" : null,
   ].filter((label): label is string => label !== null);
   // Connectors sit in the ADD group, not TOOLS, so they must not inflate the
   // disclosure's count — but they are still armed state the + trigger owes the user.
@@ -2397,6 +2562,20 @@ function ComposerImpl({
           openLabel: `This message is sent under the ${armedSkill?.name ?? skillSlug} skill. Opens the add menu.`,
           removeLabel: "Don’t use this skill for this message",
           remove: () => setSkillSlug(null),
+        }]
+      : []),
+    /* Image mode: what this message makes, and the model making it. Its ✕
+       goes back to the chat model it replaced. */
+    ...(modality === "image" && !voiceActive
+      ? [{
+          id: "image",
+          icon: <ComposerIcons.image className="size-4" />,
+          label: "Create image",
+          detail: resolved?.name,
+          tooltip: <>{`Images made with ${resolved?.name ?? "an image model"}. Pick another one in the model menu.`}</>,
+          openLabel: "Creating images. Opens the add menu.",
+          removeLabel: "Stop creating images",
+          remove: exitImageMode,
         }]
       : []),
     ...(researchArmed
@@ -2600,6 +2779,19 @@ function ComposerImpl({
         }
       : null;
 
+  /** The + menu's "Create image" row: image mode on or off (see `toggleImageMode`). */
+  const imageRow: PlusMenuItem | null =
+    imageModeAvailable
+      ? {
+          kind: "toggle",
+          id: "image",
+          label: "Create image",
+          icon: ComposerIcons.image,
+          checked: modality === "image",
+          onToggle: toggleImageMode,
+        }
+      : null;
+
   /** The + menu's "Mention" row: an "@" at the caret, and the palette opens on it. */
   const mentionRow: PlusMenuItem | null =
     !privateMode && !voiceActive && modality === "chat"
@@ -2627,6 +2819,17 @@ function ComposerImpl({
   const trayHasProject = showTray;
   const trayHasAppsAndSkills = showTray && !mediaParams.caps;
 
+  /*
+   * A drive's row is drawn only while that drive is connected: offering to
+   * pick from an unlinked Google Drive would be a door into a dialog that can
+   * only say "connect it first". `connectors` is the account's live list,
+   * reconciled each time this menu opens.
+   */
+  // And only while the server has the picker on (CLOUD_ATTACH_ENABLED).
+  const cloudAttachOn = features.cloudAttach === true;
+  const driveConnected = cloudAttachOn && connectors.some((connector) => connector.id === "google-drive");
+  const oneDriveConnected = cloudAttachOn && connectors.some((connector) => connector.id === "microsoft-365");
+
   const plusSections: PlusMenuSection[] = voiceActive
     ? [
         [
@@ -2639,6 +2842,7 @@ function ComposerImpl({
             label: voiceCanSeeImages ? "Add photos and files" : "Add files",
             icon: ComposerIcons.attach,
             detail: attachShortcut,
+            keyHint: true,
             disabled: !canAttach,
             note: attachNote,
             onSelect: () => fileInputRef.current?.click(),
@@ -2666,6 +2870,7 @@ function ComposerImpl({
             label: "Add photos and files",
             icon: ComposerIcons.attach,
             detail: attachShortcut,
+            keyHint: true,
             disabled: !canAttach,
             note: attachNote,
             onSelect: () => fileInputRef.current?.click(),
@@ -2691,6 +2896,7 @@ function ComposerImpl({
             label: "Sketch",
             icon: Pencil,
             detail: "/sketch",
+            keyHint: true,
             disabled: !canAttach,
             note: attachNote,
             // After the menu has handed focus back, so the sheet keeps it.
@@ -2705,6 +2911,32 @@ function ComposerImpl({
             note: attachNote,
             onSelect: () => setLibraryOpen(true),
           },
+          ...(driveConnected
+            ? [
+                {
+                  kind: "action" as const,
+                  id: "google-drive",
+                  label: "Add from Google Drive",
+                  icon: Cloud,
+                  disabled: !canAttach,
+                  note: attachNote,
+                  onSelect: () => setCloudPicker({ provider: "google-drive", open: true }),
+                },
+              ]
+            : []),
+          ...(oneDriveConnected
+            ? [
+                {
+                  kind: "action" as const,
+                  id: "onedrive",
+                  label: "Add from OneDrive",
+                  icon: Cloud,
+                  disabled: !canAttach,
+                  note: attachNote,
+                  onSelect: () => setCloudPicker({ provider: "microsoft-365", open: true }),
+                },
+              ]
+            : []),
         ],
         // Name things in the sentence: what "@" and "/" do, taught here so the
         // placeholder never has to be a syntax lesson.
@@ -2712,6 +2944,7 @@ function ComposerImpl({
         // How this message is answered: the Deep Field mode, then the two
         // switches people actually flip (C19).
         [
+          ...(imageRow ? [imageRow] : []),
           ...(researchRow ? [researchRow] : []),
           {
             kind: "toggle",
@@ -2728,8 +2961,25 @@ function ComposerImpl({
             id: "memory",
             label: FEATURE_NAMES.memory.label,
             icon: ComposerIcons.memory,
-            checked: settings.memoryEnabled,
-            onToggle: () => toggleMemory(!settings.memoryEnabled),
+            checked: memoryOnHere,
+            // In a chat the switch is the chat's own (Claude's per-chat memory
+            // switch, in the same tray). Paused for the account, it is still
+            // the way back on, as it always was: the account resumes and this
+            // chat with it, and the word says which switch it is.
+            ...(chatMemory && settings.memoryEnabled
+              ? { ariaLabel: MEMORY_OFF_COPY.composerLabel }
+              : chatMemory
+                ? { description: MEMORY_OFF_COPY.accountPausedDescription }
+                : {}),
+            onToggle: () => {
+              if (!chatMemory) return toggleMemory(!settings.memoryEnabled);
+              if (!settings.memoryEnabled) {
+                toggleMemory(true);
+                if (chatMemory.off) chatMemory.onChange(false);
+                return;
+              }
+              chatMemory.onChange(!chatMemory.off);
+            },
           },
         ],
         // Where this chat sits and what it can reach.
@@ -2770,11 +3020,26 @@ function ComposerImpl({
    * is (composer-menu.tsx, "Where they open"). Only the typed layers (the "/"
    * and @ palettes) still open outside the box, at the caret.
    */
-  /** The effort, in words, only when it is not the model's usual one (C17: "Opus Deep"). */
+  /**
+   * The effort, in words, only when it is not the model's usual one (C17:
+   * "Opus Deep"). Compared AFTER clamping: a stored preference the model has
+   * no tier for (the default "high", Free's "low") is sent as the model's own
+   * default, so the chip must not name that default as if it were a choice.
+   */
+  const effectiveEffort = resolved ? clampReasoningEffort(resolved, reasoningEffort) : null;
   const effortLabel =
-    !isAuto && resolved && effortOptions.length >= 2 && reasoningEffort !== defaultReasoning(resolved)
-      ? effortOptions.find((option) => option.value === clampReasoningEffort(resolved, reasoningEffort))?.label
+    !isAuto && resolved && effortOptions.length >= 2 && effectiveEffort !== defaultReasoning(resolved)
+      ? effortOptions.find((option) => option.value === effectiveEffort)?.label
       : undefined;
+  /**
+   * The paid modes in force, for the chip: what the request will actually
+   * run with (the server applies a tier only where the model has it, and so
+   * does this). They multiply the price of every turn and persist across
+   * chats in the composer prefs, so the chip shows them with the panel shut.
+   */
+  const chipSpeed: SpeedTier =
+    ultraFast && ultraFastRate != null ? "ultra" : fastMode && canFastMode ? "fast" : "off";
+  const chipPro = proMode && canProMode;
 
   /** The field's accessible name (C1). The placeholder is a hint, never the name. */
   const fieldLabel =
@@ -2847,7 +3112,7 @@ function ComposerImpl({
         <div className="mb-2 flex">
           {/* Muted glyph on the caption rung (14px, gap-1.5): the folder is a
               label on the chip, not a state, so it does not take the accent. */}
-          <span className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border bg-card pl-2.5 pr-1 text-caption text-muted-foreground motion-safe:animate-rise-in">
+          <span className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border bg-card pl-2.5 pr-1 font-sans text-label font-normal text-muted-foreground motion-safe:animate-rise-in">
             <AppIcons.projects aria-hidden="true" className="size-3.5" />
             <span>
               {"New chat in "}
@@ -2861,7 +3126,7 @@ function ComposerImpl({
                   type="button"
                   onClick={() => pickProject(null)}
                   aria-label="Remove from project"
-                  className="pressable ml-0.5 grid size-6 place-items-center rounded-full text-muted-foreground/70 hover:bg-accent hover:text-foreground motion-reduce:active:scale-100 coarse:size-8"
+                  className="pressable ml-0.5 grid size-6 place-items-center rounded-full text-ink-tertiary hover:bg-accent hover:text-foreground motion-reduce:active:scale-100 coarse:size-8"
                 >
                   <ActionIcons.dismiss aria-hidden="true" className="size-3" />
                 </button>
@@ -2900,10 +3165,6 @@ function ComposerImpl({
           // The box every layer the composer opens is placed outside of.
           ref={shellRef}
           frame={frame === "landing" ? "home" : "dock"}
-          keyboardFocus={keyboardFocus}
-          onPointerDownCapture={() => {
-            pointerFocus.current = true;
-          }}
           dimmed={controlsLocked && !steerMode}
           className={cn(
             "max-h-[600px]",
@@ -2924,7 +3185,7 @@ function ComposerImpl({
               {modeControl}
               {steerMode && steering?.above}
               {dragging && !privateMode && (
-                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm animate-fade-in">
+                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-card bg-[linear-gradient(hsl(var(--primary)/0.1),hsl(var(--primary)/0.1))] animate-fade-in">
                   <ComposerIcons.files aria-hidden="true" className="size-6 text-primary" />
                   <span className="font-mono text-label text-primary">
                     Drop to attach
@@ -2935,7 +3196,7 @@ function ComposerImpl({
               {pendingClarification && (
                 <ComposerClarificationPopover
                   pending={pendingClarification}
-                  disabled={isBusy && status !== "checking"}
+                  disabled={submitting || (isBusy && status !== "checking")}
                   onSubmit={submitClarification}
                   onSkip={skipClarification}
                   onClose={cancelClarification}
@@ -2993,12 +3254,12 @@ function ComposerImpl({
                       {quote.title}
                     </span>
                     {quoteLocationLabel(quote) && (
-                      <span className="min-w-0 truncate font-mono text-caption text-muted-foreground">
+                      <span className="min-w-0 truncate font-mono text-label font-normal text-muted-foreground">
                         {quoteLocationLabel(quote)}
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 line-clamp-2 break-all font-mono text-caption leading-relaxed text-muted-foreground">
+                  <p className="mt-0.5 line-clamp-2 break-all font-mono text-label font-normal leading-relaxed text-muted-foreground">
                     {quote.text.trim()
                       ? quote.text.replace(/\s+/g, " ").trim().slice(0, 220)
                       : quote.kind === "area"
@@ -3014,7 +3275,7 @@ function ComposerImpl({
                       aria-label="Remove quoted selection"
                       // No transition-* beside `.pressable`: it would replace
                       // the class's list and leave the dip untimed.
-                      className="pressable -mr-1 mt-0.5 shrink-0 rounded-full p-1 text-muted-foreground/70 hover:bg-accent hover:text-foreground motion-reduce:active:scale-100 coarse:p-2"
+                      className="pressable -mr-1 mt-0.5 shrink-0 rounded-full p-1 text-ink-tertiary hover:bg-accent hover:text-foreground motion-reduce:active:scale-100 coarse:p-2"
                     >
                       <ActionIcons.dismiss aria-hidden="true" className="size-3.5" />
                     </button>
@@ -3042,11 +3303,11 @@ function ComposerImpl({
                     <p className="text-ui font-medium">
                       Large paste ready to send
                     </p>
-                    <p className="mt-0.5 font-mono text-caption text-muted-foreground">
+                    <p className="mt-0.5 font-mono text-label font-normal text-muted-foreground">
                       {text.length.toLocaleString()} characters · full text is
                       kept and will be sent · Enter to send
                     </p>
-                    <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words text-caption text-muted-foreground/90">
+                    <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words font-sans text-label font-normal text-muted-foreground">
                       {text.slice(0, 280)}
                       {text.length > 280 ? "…" : ""}
                     </p>
@@ -3111,7 +3372,7 @@ function ComposerImpl({
               features.storage &&
               !privateMode && (
                 <div className="flex items-center justify-between gap-3 px-4 pt-3">
-                  <span className="text-caption text-muted-foreground">
+                  <span className="font-sans text-label font-normal text-muted-foreground">
                     That’s a long one. Attach it as a file to keep the chat
                     tidy?
                   </span>
@@ -3158,7 +3419,7 @@ function ComposerImpl({
                             <ProviderLogo provider={m.provider} className="size-4" />
                           </PaletteIcon>
                           <span className="min-w-0 flex-1 truncate">{m.name}</span>
-                          <span className="shrink-0 text-caption text-muted-foreground">
+                          <span className="shrink-0 font-sans text-label font-normal text-muted-foreground">
                             {PROVIDERS[m.provider].label.split(" · ")[0]}
                           </span>
                           {m.id === model && (
@@ -3200,14 +3461,14 @@ function ComposerImpl({
                               </PaletteIcon>
                               <span className="flex min-w-0 flex-1 items-baseline gap-2">
                                 <span className="max-w-[55%] shrink-0 truncate font-mono text-ui">{item.label}</span>
-                                <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">{item.hint}</span>
+                                <span className="min-w-0 flex-1 truncate font-sans text-label font-normal text-muted-foreground">{item.hint}</span>
                               </span>
                               {(item.note || item.on) && (
                                 // One trailing slot, note then tick, so an armed
                                 // skill keeps its source beside the tick.
                                 <span className="flex shrink-0 items-center gap-1.5">
                                   {item.note && (
-                                    <span className="whitespace-nowrap text-caption text-muted-foreground">{item.note}</span>
+                                    <span className="whitespace-nowrap font-sans text-label font-normal text-muted-foreground">{item.note}</span>
                                   )}
                                   {item.on && <StatusIcons.success aria-hidden className="size-3.5 shrink-0 text-foreground" />}
                                 </span>
@@ -3239,10 +3500,12 @@ function ComposerImpl({
                */
               <div className="relative">
                 <ContextComposerField
+                  key={submissionScope}
                   conversationId={conversationId}
                   privateMode={privateMode}
                   mentionsDisabled={voiceActive || modality !== "chat"}
-                  onTokensChange={setContextTokens}
+                  onTokensChange={updateContextTokens}
+                  initialTokens={contextTokens}
                   anchorRef={shellRef}
                   layerSide={layerSide}
                   onLayerChange={setFieldLayer}
@@ -3254,18 +3517,14 @@ function ComposerImpl({
                   aria-label={fieldLabel}
                   value={text}
                   onChange={(e) => setDraftText(e.target.value)}
-                  onFocus={() => {
-                    setKeyboardFocus(!pointerFocus.current);
-                    pointerFocus.current = false;
-                  }}
-                  onBlur={() => setKeyboardFocus(false)}
                   onScroll={onFieldScroll}
                   onKeyDown={onKeyDown}
                   onPaste={onPaste}
                   // Live through a generation: the draft for the next message is
                   // typed while the reply streams (see `sendBlocked`). Only a hard
-                  // send lock and the pre-flight check take the field away.
-                  disabled={sendLocked || status === "checking"}
+                  // send lock takes the field away. Preflight owns a revision,
+                  // so the next draft can be written while it is checking.
+                  disabled={sendLocked}
                   /*
                    * NO PLACEHOLDER WHILE A MARK IS IN THE LINE: on a phone the
                    * mark and the hint would split one line and the prompt would
@@ -3323,14 +3582,22 @@ function ComposerImpl({
                 <div className={cn("shrink-0", controlsLocked && "pointer-events-none")}>{taskModeControl}</div>
               )}
               {/* The model chip — and, inside its popover, the thinking effort
-                  for that model (`thinkingControl`). One chip for one decision. */}
-              <div className={cn("min-w-0", controlsLocked && "pointer-events-none")}>
+                  for that model (`thinkingControl`). One chip for one decision.
+                  A FLEX slot, not a block: the chip is inline-flex, and a
+                  block parent let it keep its whole label's width while the
+                  slot shrank, so on a 360px phone it spilled under the mic
+                  and taps on its chevron went to Dictate. As a flex item its
+                  own `min-w-0` holds, and its label steps down to fit
+                  (model-chip-label.ts). */}
+              <div className={cn("flex min-w-0", controlsLocked && "pointer-events-none")}>
                 <ModelSelector
                   value={model}
                   onChange={changeModel}
                   disabled={controlsLocked}
                   thinking={thinkingControl}
                   effortLabel={effortLabel}
+                  speed={chipSpeed}
+                  pro={chipPro}
                   inComposer
                 />
               </div>
@@ -3391,12 +3658,15 @@ function ComposerImpl({
                               (steerMode && steering ? steering.stopLabel : "Stop generating")
                           : primaryFace === "voice"
                             ? "Start voice conversation"
-                            : uploading
+                            : submitting
+                              ? "Sending message"
+                              : uploading
                               ? "Send (waiting for the attachment to finish uploading)"
                               : steerMode && steering
                                 ? steering.sendLabel
                                 : "Send message"
                       }
+                      aria-busy={submitting && primaryFace === "send" ? true : undefined}
                     />
                   </TooltipTrigger>
                   <TooltipContent>
@@ -3442,6 +3712,16 @@ function ComposerImpl({
                 existingCount={uploads.length}
               />
             )}
+            {!privateMode && features.storage && (driveConnected || oneDriveConnected) && (
+              <CloudFilePicker
+                provider={cloudPicker.provider}
+                open={cloudPicker.open}
+                onOpenChange={(open) => setCloudPicker((current) => ({ ...current, open }))}
+                onAttach={addComposerAttachments}
+                existingCount={uploads.length}
+                conversationId={conversationId}
+              />
+            )}
             {sketch.dialog}
         </div>
       </DictationSwap>
@@ -3475,7 +3755,7 @@ function ComposerImpl({
           caller whose line is too much for a phone hides it under `sm` and
           the empty inset keeps its height. */}
       {dockFootnote && (
-        <div className="flex min-h-4 select-none items-center justify-center text-center text-caption leading-4 text-muted-foreground sm:min-h-6">
+        <div className="flex min-h-4 select-none items-center justify-center text-center font-sans text-label font-normal leading-4 text-muted-foreground sm:min-h-6">
           {dockFootnote}
         </div>
       )}

@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
@@ -23,7 +24,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  */
 
 const linkClass =
-  "rounded-xs font-medium text-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:underline disabled:pointer-events-none disabled:text-muted-foreground motion-reduce:transition-none";
+  "rounded-xs font-medium text-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:underline disabled:pointer-events-none disabled:text-muted-foreground";
 
 export function MemoryFooter({
   paused,
@@ -32,6 +33,7 @@ export function MemoryFooter({
   onExport,
   onReset,
   onSettings,
+  onTopics,
   project,
   onClearProject,
 }: {
@@ -42,6 +44,8 @@ export function MemoryFooter({
   onExport: () => void;
   onReset: () => void;
   onSettings: () => void;
+  /** Opens "Topics not remembered" — the person's own exclusions. */
+  onTopics?: () => void;
   /** The project the page is showing, when it is showing one. */
   project?: { id: string; name: string } | null;
   onClearProject?: () => void;
@@ -52,7 +56,7 @@ export function MemoryFooter({
         <ShieldCheck className="mt-px size-3.5 shrink-0" aria-hidden="true" />
         <span>
           Incognito chats are never remembered. Sensitive subjects like health or religion are only learned if you
-          allow them.
+          allow them, and topics you exclude are never learned at all.
         </span>
       </p>
       <nav aria-label="Your memory data" className="ml-[1.375rem] mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1">
@@ -60,6 +64,14 @@ export function MemoryFooter({
           Memory settings
         </button>
         <span aria-hidden="true">·</span>
+        {onTopics ? (
+          <>
+            <button type="button" onClick={onTopics} className={linkClass} data-excluded-topics-open="">
+              Topics not remembered
+            </button>
+            <span aria-hidden="true">·</span>
+          </>
+        ) : null}
         <button type="button" onClick={onImport} disabled={paused} className={linkClass}>
           Import
         </button>
@@ -120,7 +132,7 @@ export function ResetDialog({
             Export first
           </Button>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button
@@ -153,32 +165,21 @@ export function ClearProjectDialog({
   onClear: (projectId: string) => Promise<boolean>;
 }) {
   return (
-    <Dialog open={project !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            <span>Clear</span> <span translate="no">{project?.name}</span>
-            <span>?</span>
-          </DialogTitle>
-          <DialogDescription>
-            {`This permanently deletes what ${PRODUCT_NAME} remembers inside this project and its summary. Your account-wide memory, your chats, and other members’ memory stay as they are.`}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            loading={clearing}
-            onClick={async () => {
-              if (project && (await onClear(project.id))) onOpenChange(false);
-            }}
-          >
-            Clear project memory
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={project !== null}
+      onOpenChange={onOpenChange}
+      busy={clearing}
+      title={
+        <>
+          <span>Clear</span> <span translate="no">{project?.name}</span>
+          <span>?</span>
+        </>
+      }
+      description={`This permanently deletes what ${PRODUCT_NAME} remembers inside this project and its summary. Your account-wide memory, your chats, and other members’ memory stay as they are.`}
+      confirmLabel="Clear project memory"
+      onConfirm={async () => {
+        if (project && (await onClear(project.id))) onOpenChange(false);
+      }}
+    />
   );
 }

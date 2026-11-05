@@ -77,5 +77,5 @@ export function RunLabel({ line, motionKey, live, className }: RunLabelProps) {
 function itemClass(live: boolean): string {
   // `leading-6` last: a font-size rung carries its own line height, and the row's height must
   // not change between the reading-size live label and the UI-size summary.
-  return cn("run-label__item", live ? "text-reading text-muted-foreground" : "text-ui font-medium text-foreground/80", "leading-6");
+  return cn("run-label__item", live ? "text-reading text-muted-foreground" : "text-ui font-medium text-muted-foreground", "leading-6");
 }

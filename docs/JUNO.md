@@ -14,6 +14,14 @@ documents the versioned `/api/v1` backend contract that the separate native apps
 consume, because that contract is part of this repo's backend; it does **not**
 document the native clients themselves.
 
+**29 October 2026 audit:** [chatbot, cost, and quality findings](audit-2026-10-29/AUDIT.md),
+[cross-platform control and motion alignment](audit-2026-10-29/DESIGN.md),
+[current competitor research](audit-2026-10-29/COMPETITORS.md), and
+[executed validation](audit-2026-10-29/VALIDATION.md). Chat settlement now reconciles
+internal per-request usage before applying context/tier prices; profile stats
+report settled costs without repricing historical rows. Shared field colors and
+web spring presets follow the generated native design-token contract.
+
 > **Stack:** Next.js 15 (App Router) · TypeScript · Tailwind CSS v3.4 · shadcn/ui ·
 > Prisma 6 + PostgreSQL · NextAuth v5 (Auth.js) · Anthropic SDK + 13
 > OpenAI-compatible providers · Stripe · AWS SDK v3 (S3-compatible storage) · a
@@ -525,6 +533,23 @@ fullscreen, Office export (for Markdown artifacts), and share. It hosts:
   `contentWindow`; the shell accepts a document only from its parent at the app's
   origin. `tests/sandbox-origin*.test.ts` fail if a preview ever inherits the app
   policy again.
+- **`window.alevr`** (`src/lib/artifact-ai/`) — apps that call a model and keep data.
+  An HTML or React preview gets `alevr.complete({ prompt, system?, maxTokens? })`
+  (full text, or streamed through `onText` / `alevr.stream`) and
+  `alevr.storage.get/set/delete/list` (JSON values per artifact **and per viewer**,
+  encrypted at rest; 5 MB a value, 20 MB and 1,000 keys per artifact, 100 MB per
+  viewer). The frame holds no credential: it posts to its parent on a per-frame
+  channel (`src/lib/sandbox/alevr-bridge.ts`), and the parent (`bridge-host.ts`)
+  checks source, channel and shape, then calls `POST /api/artifact-runtime/complete`
+  (NDJSON) or `/storage` with its own session. The routes resolve the artifact as the
+  viewer's own (by id) or through a live share/publication token (only while shared
+  previews run scripts), rate-limit per viewer and per linked artifact, and bill
+  **the viewer, never the owner**: the viewer's background model under their provider
+  policy, `admitMeteredCall` + `reserveSpend` before the call, the stream budget
+  guard during it, one `utility` ledger row per attempt, request-meter role
+  `artifact`. On a shared page the visitor is asked once per page view before the
+  first call; signed-out visitors are pointed to sign-in. The web system prompt
+  teaches the API (`ARTIFACT_AI_RULE`); installed apps have no bridge yet.
 - **`CodeSurface`** — a flat, line-numbered code editor/viewer with theme-aware
   `highlight.js` highlighting.
 
@@ -676,8 +701,11 @@ prefix (so the provider's cached prefix stays byte-identical; the date travels i
 separate second system block). Ordered sections: base identity → clarification /
 reply-intent / inline learning-block grammar (non-voice) → Canvas artifact grammar
 (when canvas on) → **memory** (the `<juno:memory>` save instruction + the consolidated
-summary + recent facts) → project context → personality preset → the user's custom
-instructions (after the preset, so the user always wins) → response language → voice
+summary + recent facts) → project context → personality preset → tone characteristics
+(`src/lib/characteristics.ts`: Warm, Enthusiastic, Headers & lists, Emoji, Concise, each
+Less / Default / More in Settings › Personalization; one line per control moved off
+Default, nothing when all are Default, the visual two dropped in voice) → the user's
+custom instructions (after both, so the user always wins) → response language → voice
 no-markdown rule. A web-search nudge and either the targeted artifact-edit prompt or a
 selection anchor are appended per turn, and — last of all — the block of the skill this
 message was sent under, if there is one (§5.9).
@@ -748,6 +776,19 @@ the model (see §6.3).
   `read_document` (list / outline / read a page range / search) and `inspect_image`
   (crop and magnify a region, or rasterise a PDF page). Both are read-only and can
   only reach files attached to the conversation they run in.
+
+  **Add from Google Drive / OneDrive** (`src/lib/cloud-files/`, picker
+  `cloud-file-picker.tsx`): the + menu draws each row only while that first-party
+  connector (`google-drive`, `microsoft-365`) is connected. The picker lists recent
+  files or searches (`GET /api/connectors/[id]/files`); picked files are fetched
+  server-side with the person's own token (`POST …/files/attach`). Google Docs,
+  Sheets and Slides export as .docx / .xlsx / .pptx, falling back to PDF or text
+  (CSV for a Sheet) when Drive refuses or the export is over the cap; legacy
+  .doc/.xls/.ppt on OneDrive arrive as Graph-converted PDFs. Each file then passes
+  `planAttachmentUpload` and `persistAttachment` (`src/lib/attachment-store.ts`), so
+  the upload gate, the plan's size (never over 32 MB per import), the hourly upload
+  limit, the library quota and on-demand extraction apply exactly as to an upload
+  (`origin: "cloud_import"`). Lockdown and a blocked app refuse the picker too.
 - **Web search** has three modes: native provider search (Anthropic
   `web_search_20250305`, Google grounding, Grok Live Search), **Research**
   (durable plan → parallel investigation rounds → lead review → synthesis → citation
@@ -842,8 +883,11 @@ and the sources, the doc adds the migration plan and the file paths.
 The first saved submission of a new conversation carries `clientRequestId` +
 `clientMessageId` (opaque 8–120 char keys, valid only for a new non-private,
 non-regenerate conversation). A `ChatFirstSubmissionReceipt` binds a SHA-256 hash of
-the generation-affecting envelope to **one** server-generated `generationId`. Recovery
-happens before rate limiting and returns precise 409s:
+the generation-affecting envelope to **one** `generationId`: the caller's when the first
+request sent one (so a Stop pressed while the turn is still in admission, recorded under
+that id, finds it), otherwise a server UUID. The id is not part of the hash, and a repeat
+is answered with the receipt's id. Recovery happens before rate limiting and returns
+precise 409s:
 
 - same request already accepted → **409** `REQUEST_ALREADY_SUBMITTED` (with canonical ids)
 - key reused with a different body → **409** `IDEMPOTENCY_KEY_REUSED`
@@ -916,14 +960,26 @@ research runs for the better part of an hour). A dropped turn is therefore
 offered **Reconnect**, and `regenerate()` intercepts itself into one while a
 reconnectable generation exists: the answer is already paid for.
 
-**Cancelling across processes.** `POST /api/chat/cancel` aborts through the
-in-memory registry first (instant, same process) and also records
-`cancelRequestedAt` on the receipt. A receipt-backed generation polls that flag
-every ~2 s from its stream loop with an id-only select, so a Stop pressed in
-another tab or served by another process still lands. The poll routes the
-result back through `cancelGeneration`, which marks the generation `stopped` —
-that is what makes the terminal state "user stopped" (partial kept, charge
-kept) rather than an error (refunded).
+**Cancelling across processes.** `POST /api/chat/cancel`
+(`chat/stop-generation.ts`) aborts through the in-memory registry first
+(instant, same process, nothing written). Otherwise it records the Stop
+durably — a `generation:cancel:<userId>:<generationId>` row in `RateLimit`
+(idempotent, 10-minute expiry) plus `cancelRequestedAt` on a receipt-backed
+turn's receipt — and every backend process runs one signal pump
+(`chat/generation-signals.ts`) that, while it holds any generation, reads the
+cancel rows and receipt flags of all of them in one query per second. Every
+turn is covered, receipt or not, saved or private, and a Stop pressed before
+the turn registered (a client that names its own generation id) lands as soon
+as it does. The pump routes the result back through `cancelGeneration`, so the
+terminal state is "user stopped" (partial kept, charge kept) rather than an
+error (refunded); the registry records one abort cause and the first one wins,
+so a Stop racing a drain ends one deterministic way. Saved turns also hold a
+live lease (`generation:live:…`, renewed every 5 s, 20 s expiry) so the cancel
+route can say honestly whether a terminal frame is coming (`cancelled`,
+`delivery: local | remote | queued | none`) and the resume route can tail a
+turn that another process is generating instead of calling it over. Proven by
+`tests/chat-cross-process-stop.integration.test.ts`: two Node processes, one
+Postgres, Stop delivered in well under the 3 s budget.
 
 ### 5.9 A skill on a chat turn
 
@@ -2199,12 +2255,36 @@ by `NEXT_PUBLIC_VOICE_RELAY_URL`.
 > **GDPR note:** selecting Qwen sends user audio to Alibaba Cloud (Singapore). Disclose it
 > in the privacy policy and consider a consent notice when a user picks Qwen.
 
+**Tools and connectors in a call.** A chat's call (not incognito) asks `/api/voice/relay-token`
+for `?tools=1` with the chat's switched-on connectors and the caller's time zone; the token
+signs `{"tl":1}`, the conversation once it is shown to be this person's, and the connector ids.
+The relay then asks `GET /api/voice/tools` (callback audience `juno.voice.tools`) for the call's
+tools: the chat's own entitlement table read for this account, project and conversation
+(`chatToolEntitlements`, narrowed in `src/lib/voice-tools.ts` to web and news search, past
+chats, the clock and the calculator) plus the person's connector tools, described by name,
+description and JSON Schema only. Every call the voice model makes runs **on Juno**
+(`POST /api/voice/tools`) through the chat's dispatcher and approval broker, so the relay never
+holds a connector token and a change asks exactly when a typed turn would. The answer streams:
+an `approval` line when the call starts waiting on the person, then a `result` cut for speech.
+The relay shows compact chips and the chat's own approval card (`tool.activity`) and tells the
+model to ask aloud; the person answers on the card, or — for anything short of deleting, paying
+or touching credentials — with a clear spoken yes or no in a turn that began after the card,
+and not over the model's own voice, so an echo of the model saying "yes" never approves
+(`spokenDecision` in `relay/src/tools.ts`). The relay records no answer: it tells the person's
+own signed-in client what it heard (`tool.spoken`), and the client answers the card through the
+chat's decision route (`POST /api/approvals/[id]`, digest-bound) exactly as a tap would, so a
+decision still reaches Juno only from a signed-in person. No execution tool, `start_task` or page
+reading is ever offered to a call. Gemini Live and the OpenAI Realtime and xAI dialects declare
+the tools; GPT-Live, Qwen and MiniMax do not, and the dock says so (`session.ready.tools: 0`).
+Tool calls are rate-limited to 30 a minute per person, and paid searches are billed like a
+chat turn's.
+
 **Voice about a Work task.** `src/components/work/voice/` opens the *same* session against
 one Work task instead of a chat: `buildWorkVoiceBriefing` turns the task's goal, status,
 plan, open questions, pending approvals and latest activity into the `history` array that
 `session.start` already accepts, and `WorkVoiceButton` mounts it. What that can and cannot
 be is set by the relay, not by the UI: providers are built from `seed.instructions` +
-`seed.transcript` and **no tools**, and `RelaySession` holds a user id and a socket and no
+`seed.transcript` and **no tools** (a Work call never asks for them), and `RelaySession` holds a user id and a socket and no
 database handle — so the voice knows exactly what the briefing said and can do nothing to
 the task. It therefore says so on screen while it is open; spoken words reach the task only
 through the thread's own send path, pressed deliberately; and because the relay seeds
@@ -2291,7 +2371,8 @@ A Postgres fixed-window limiter (`RateLimit` table, atomic upsert — safe acros
 instances). IP extraction does **not** trust the left-most `X-Forwarded-For`. Notable
 limits (per-user unless noted): chat 30/60 s, clarify 60/60 s, follow-ups 30/60 s, agent
 proxy 120/60 s, cloud tasks 10/60 s, upload 60/h, generate 30/h, avatar 20/h, import
-10/h, export 5/h, account-delete 3/h, roadmap create 8/h; auth routes are IP + global
+10/h, export 5/h, account-delete 3/h, roadmap create 8/h, artifact AI 30/60 s + 600/day
+(+ 200/day per shared artifact), artifact storage 1200 reads + 300 writes/60 s; auth routes are IP + global
 scoped (register 5/h per IP + 200/h global; password-reset buckets; i18n 4000/h global +
 200/h per IP). Over limit → **429**.
 
@@ -2405,7 +2486,15 @@ pointer**: the public `share/[token]` page (`force-dynamic`, `noindex`) renders 
 content that existed at `snapshotAt`, so later messages/versions stay private. The token
 is 24 random bytes (base64url), the only capability; revocation is a tombstone that 404s
 the page from the next request; creating a share reuses the newest active link for a
-target rather than orphaning snapshots.
+target rather than orphaning snapshots. **Specific people** (`/api/share/people`,
+`/people/[id]`; `src/lib/share-people-core.ts`): the Share dialog's default. The same
+snapshot as a `Share` with `audience: PEOPLE`, whose token opens nothing alone — the page
+shows it only to its owner and to a signed-in account whose *verified* email is on its
+`ShareRecipient` rows (an HMAC lookup; the address is sealed). Recipients get an email,
+read view-only, and are told the same thing whether or not they have an account; the owner
+sees who has access, removes a person, or revokes it like a link. Invitations are bounded
+(20 a request, 50 a share, 40 new addresses an hour and 150 a day per owner, 5 a day to
+any one address).
 
 **Scheduled tasks, retired.** Juno had two answers to "run this for me later" and
 now has one. A `ScheduledTask` was a recurring **prompt** answered by `streamChat`,
@@ -2646,7 +2735,7 @@ current revision + tombstone), `SyncCompaction` (single `global` row, monotonic 
 `MutationReceipt` (idempotency).
 
 **Conversations & messages.** `Settings` (theme/accent/defaultModel/customInstructions/
-responseLanguage/uiLocale/personality/memoryEnabled/memorySensitiveTopics/memoryBackgroundLearning/voiceId/favoriteModels/email opt-ins).
+responseLanguage/uiLocale/personality/tone characteristics `toneWarmth`…`toneConciseness`/memoryEnabled/memorySensitiveTopics/memoryBackgroundLearning/voiceId/favoriteModels/email opt-ins).
 `Folder`. `Conversation` (title + `titleSource`, `model`, `kind` chat|code, `origin`,
 `clientRequestId`, pin/`archivedAt`, `folderId`/`projectId`/`forkedFromId`,
 `activeConnectors`, code-workspace attribution). `Project` (name + `nameSource`,
@@ -2683,8 +2772,9 @@ fields `parentSessionId`/`createsNewSession`/`origin`/`idempotencyKey`, dispatch
 AES-256-GCM ciphertext over a JSON map under the connector keyring, with `envVarNames`
 in the clear so a list can describe it without a decryption key).
 
-**Sharing / tasks / roadmap / prompts.** `Share` (`ShareKind` CHAT|ARTIFACT, token,
-`snapshotAt`, `revokedAt`, views). `ScheduledTask` (`TaskCadence`) + `ScheduledTaskRun`.
+**Sharing / tasks / roadmap / prompts.** `Share` (`ShareKind` CHAT|ARTIFACT,
+`ShareAudience` LINK|PEOPLE, token, `snapshotAt`, `revokedAt`, views) + `ShareRecipient`
+(owner-scoped; `emailHash` HMAC, `email` sealed). `ScheduledTask` (`TaskCadence`) + `ScheduledTaskRun`.
 `FeatureRequest` (`FeatureStatus`, `FeatureCategory`) + `FeatureVote` +
 `FeatureComment` + `FeatureStatusEvent`. `SavedPrompt`.
 
@@ -2780,7 +2870,18 @@ gracefully when absent.
 | Voice relay | `NEXT_PUBLIC_VOICE_RELAY_URL` (build-time gate), `VOICE_RELAY_URL`, `GEMINI_LIVE_API_KEY`, `ALLOWED_ORIGINS`, `RELAY_*` overrides |
 | Cloud Code | `CLOUD_CODE_SECRET`, `GITHUB_DISPATCH_TOKEN`, `CLOUD_CODE_REPO`, `GITHUB_APP_ID`/`GITHUB_APP_PRIVATE_KEY` (§9.3, the runner's narrowed git credential), `GITHUB_APP_WEBHOOK_SECRET` (§9.4 — without it Auto-fix is not offered) |
 | Work browser | `WORK_BROWSER_EXECUTABLE` (a Chromium the worker already has; without a browser on the worker the `browser` tool reports itself unavailable on its first call and the run carries on with `web_fetch`) |
+| iMessage | `CHANNEL_SENDBLUE_API_KEY_ID`, `CHANNEL_SENDBLUE_API_SECRET_KEY`, `CHANNEL_SENDBLUE_FROM_NUMBER`, `CHANNEL_SENDBLUE_WEBHOOK_SECRET`; all four or the feature is off (`docs/design/agents-v2/ENABLE_IMESSAGE.md`) |
 | Agent computers | `AGENT_COMPUTER_PROVIDER` (`"docker"` \| `"fake"` \| `""`; default `""` = disabled), `AGENT_COMPUTER_IMAGE`, `AGENT_COMPUTER_STORAGE_ROOT`, `AGENT_COMPUTER_NETWORK`, `AGENT_COMPUTER_MEMORY_MB`, `AGENT_COMPUTER_CPUS`, `AGENT_COMPUTER_SHM_MB`, `AGENT_COMPUTER_DISK_QUOTA_MB`, `AGENT_COMPUTER_MAX_AWAKE_HOST`, `AGENT_COMPUTER_MAX_AWAKE_USER`, `AGENT_COMPUTER_MIN_FREE_MEM_MB`, `AGENT_COMPUTER_MIN_FREE_DISK_MB`, `AGENT_COMPUTER_REST_MINUTES`, `AGENT_COMPUTER_SLEEP_HOURS`, `AGENT_COMPUTER_COST_USD_PER_MIN` (§9c.9) |
+| Teach by demonstration | `AGENT_TEACH_ENABLED` (exactly `1` turns it on, default off; needs agent computers too). The person shows an agent a task on its computer during a take over and reviews the skill it drafts (docs/design/agents-v2/TEACH.md) |
+| Agents' saved logins | `AGENT_VAULT_ENABLED` (exactly `"1"`; default off). Needs a computer provider. An agent's computer fills a saved login on exactly its own site, asking the first time (docs/design/agents-v2/VAULT.md) |
+| Sharing with specific people | `SHARE_PEOPLE_ENABLED` (exactly `1`; default off). The Share dialog's "Specific people"; off, `POST /api/share/people` answers 404 `not_enabled` and the dialog is the link and publish dialog. Existing people shares stay restricted either way |
+| Memory off for one chat | `CHAT_MEMORY_OFF_ENABLED` (exactly `1`; default off). Off, the switch is not drawn and `PATCH /api/conversations/[id]/memory`, a first send's `memoryOff`, the voice transcript and sync's `memoryOff` set nothing; a chat already kept out stays out |
+| Attach from cloud drives | `CLOUD_ATTACH_ENABLED` (exactly `1`; default off). Add from Google Drive / OneDrive in the composer's +; off, `/api/connectors/[id]/files*` answer 404 |
+| Voice tools | `VOICE_TOOLS_ENABLED` (exactly `1`; default off). Off, the relay token grants no tools and `/api/voice/tools` answers 404 |
+| Tone characteristics | `TONE_CHARACTERISTICS_ENABLED` (exactly `1`; default off). Off, the five controls are not drawn, a settings PATCH ignores them and the prompt carries no tone section |
+| Project knowledge indexer | `KNOWLEDGE_INDEXER_ENABLED` (exactly `1`; default off). The sweep in juno-sweepers that backfills chunks for documents indexed before ingest wrote them and fills vectors under each account's background-provider policy (PRJ-1, `src/lib/knowledge/embed-sweep.ts`). Off, uploads still write chunks and project retrieval is lexical |
+| AI-powered artifacts | `ARTIFACT_AI_ENABLED` (exactly `1`; default off; unfinished). Off, previews carry no `window.alevr`, the prompt never teaches it and `/api/artifact-runtime/*` answer 404 |
+| Agent payment cards | `STRIPE_ISSUING_SECRET_KEY`, `STRIPE_ISSUING_CARDHOLDER_ID`, `STRIPE_ISSUING_WEBHOOK_SECRET` (all three, or payments stay off), `STRIPE_ISSUING_API_VERSION`, `AGENT_PAYMENT_CARD_TTL_MINUTES` (default 30), `AGENT_PAYMENT_MAX_AMOUNT_MINOR` (default 50000), `AGENT_PAYMENTS_TEST_PROVIDER` (`1`, never in production). docs/design/agents-v2/ENABLE_PAYMENTS.md |
 | Cross-subdomain cookies | `COOKIE_DOMAIN` |
 | API rewrite target (UI-on-Vercel setup) | `RENDER_BACKEND_URL` |
 | Benchmarks | `AA_API_KEY` |

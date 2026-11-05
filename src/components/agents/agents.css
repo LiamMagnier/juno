@@ -3,10 +3,44 @@
    authoritative. */
 .agent-thread-bar {
   position: relative;
-  background: hsl(var(--background) / 0.86);
-  backdrop-filter: blur(18px) saturate(1.1);
-  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  /* Opaque, like every product header (spec D15): no backdrop-filter. */
+  background: hsl(var(--background));
   box-shadow: inset 0 -1px 0 hsl(var(--border) / 0.6);
 }
-@supports not (backdrop-filter: blur(1px)) { .agent-thread-bar { background: hsl(var(--background)); } }
 
+
+/* ---------- Orbit crew (orbit-stage.tsx) ----------
+   One tile per agent and nothing drawn round the faces: no card, core, ring
+   or glow. An agent's last activity is said only on hover or focus (its
+   line is kept, so the tile never jumps); without hover it is left out. */
+.orbit-crew { --crew-face: var(--crew-desk-face, 120px); }
+.orbit-crew__when { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft); }
+.orbit-crew__agent:hover .orbit-crew__when,
+.orbit-crew__agent:focus-within .orbit-crew__when { opacity: 1; }
+@media (hover: none) {
+  .orbit-crew__when { display: none; }
+}
+/* On a phone the crew is two columns of 72 px faces, so the first screen
+   holds what needs you and the whole crew. `zoom` scales the layout box with
+   the drawing (the face keeps its size class). */
+@container page (max-width: 39.99rem) {
+  .orbit-crew__face { zoom: var(--crew-phone-zoom, 0.6); }
+  .orbit-crew { --crew-face: var(--crew-phone-face, 72px); }
+}
+/* On touch the tile's menu stays shown (nothing hovers), so it moves off the
+   face's shoulder to the end of the name's line: the tile's top padding, the
+   face, the name's margin, centred on its 24 px line. */
+@media (pointer: coarse) {
+  .orbit-crew .orbit-crew__more { top: calc(2rem + var(--crew-face, 120px) - 4px); }
+}
+/* Arrival: each agent rises into place in turn, once. Opacity and travel only. */
+@media (prefers-reduced-motion: no-preference) {
+  .orbit-crew__agent {
+    animation: orbit-crew-in var(--dur-slow, 320ms) cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(min(var(--i, 0), var(--stagger-max)) * var(--stagger-tile));
+  }
+}
+@keyframes orbit-crew-in {
+  from { opacity: 0; transform: translateY(calc(6px * var(--motion-shift, 1))); }
+  to { opacity: 1; transform: none; }
+}

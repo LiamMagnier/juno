@@ -174,6 +174,10 @@ function useFakeCall(state: { userSpeaking: boolean; awaitingResponse: boolean; 
     memory: false,
     persona: false,
     levelRef,
+    // No real streams in a gallery: the glow reads `levelRef` instead (the
+    // controller grew this field after the stub was written, and
+    // `voiceCallParts` reads it, so leaving it out was a 500).
+    audioStreams: { mic: null, output: null },
     setProvider: noop,
     toggleMute: noop,
     interrupt: noop,

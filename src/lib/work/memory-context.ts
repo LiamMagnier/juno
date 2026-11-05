@@ -54,7 +54,9 @@ export function workMemoryContext(input: WorkMemoryInput): string | null {
   const summary = input.summary?.trim();
   if (summary) parts.push(summary);
 
-  const facts = input.recent.map((fact) => fact.trim()).filter(Boolean);
+  // One line each, as in a chat's notes (turn-context-tail.ts): a fact
+  // holding a newline must not end its bullet and open a section of its own.
+  const facts = input.recent.map((fact) => fact.replace(/\s+/g, " ").trim()).filter(Boolean);
   if (facts.length > 0) {
     parts.push(
       `${summary ? "More recent notes" : "Notes"}:\n${facts.map((fact) => `- ${fact}`).join("\n")}`
@@ -76,8 +78,15 @@ export function workMemoryContext(input: WorkMemoryInput): string | null {
  *
  * `null` — an account with no Settings row yet — reads as enabled, because
  * that is the column's default and what the chat bootstrap already assumes.
- * Only an explicit `false`, the user's own pause, keeps memory out of a run.
+ * Only an explicit `false`, the user's own pause, keeps memory out of a run —
+ * that, or a run started from a chat set to "Memory off for this chat"
+ * (src/lib/chat/memory-off.ts): the task is that chat's work, and a chat kept
+ * out of memory does not get it back by handing its work on. `conversation`
+ * is null for a run no chat started.
  */
-export function workMemoryEnabled(settings: { memoryEnabled: boolean } | null): boolean {
-  return settings?.memoryEnabled !== false;
+export function workMemoryEnabled(
+  settings: { memoryEnabled: boolean } | null,
+  conversation: { memoryOff: boolean } | null = null,
+): boolean {
+  return settings?.memoryEnabled !== false && conversation?.memoryOff !== true;
 }

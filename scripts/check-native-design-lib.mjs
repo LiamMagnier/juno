@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
+import { loadEnforce, matchesAny } from "../eslint-rules/enforce.mjs";
+
 /*
  * THE MACHINERY BEHIND THE FOUR NATIVE DESIGN GATES.
  *
@@ -312,6 +314,23 @@ export function gate({ rule, headline, why, violations, argv = process.argv.slic
       console.log(`    ${count.toString().padStart(4)}  ${name}`);
     }
     return 0;
+  }
+
+  /*
+   * PER-PACKAGE ENFORCEMENT (spec §14). A package that has cleaned its Swift
+   * lists those globs under `native` in its eslint-rules/enforce/<pkg>.json —
+   * the same files that turn the web rules into errors — and from then on any
+   * violation in them fails this gate outright, whatever the ratchet says.
+   * The ratchet still governs everything else.
+   */
+  const enforcedGlobs = loadEnforce(root).native;
+  const enforced = enforcedGlobs.length ? violations.filter((violation) => matchesAny(violation.path, enforcedGlobs)) : [];
+  if (enforced.length > 0) {
+    console.error(`\n  ✗ [${rule}] ${enforced.length} violation(s) in files a package enforces (eslint-rules/enforce/*.json). ${headline}\n`);
+    console.error(`${why}\n`);
+    show(enforced);
+    console.error(`\n  These files are listed as clean, so the ratchet does not apply: fix the lines above.\n`);
+    return 1;
   }
 
   if (!previous) {

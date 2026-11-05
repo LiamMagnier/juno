@@ -275,7 +275,7 @@
 /* Live input levels (voice): the bars follow the analyser, no timer. */
 .ji .jp[data-lv] {
   scale: 1 var(--lv, 1);
-  transition: scale 60ms linear;
+  transition: scale var(--dur-press) linear;
   animation: none !important;
 }
 
@@ -355,7 +355,7 @@
 .ji[data-turned][data-state="active"][data-on="draw"] .jd,
 .ji[data-turned][data-state="active"] .jg-alt .jd,
 .ji[data-on="draw"] .jg-enter .jd {
-  animation: ji-draw 220ms var(--ji-soft) 40ms 1 both;
+  animation: ji-draw 220ms var(--ji-soft) var(--dur-press) 1 both;
 }
 
 /* disabled */

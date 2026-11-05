@@ -4,6 +4,8 @@
  * JunoApp Juno/Features/Voice/Realtime/VoiceRelayProtocol.swift.
  */
 
+import type { ClientActionApproval } from "@/lib/action-approval";
+
 export type VoiceProviderId = "openai" | "gemini" | "qwen" | "minimax" | "xai" | "mock";
 
 /**
@@ -61,6 +63,9 @@ export const VOICE_HISTORY_MAX_TURNS = 20;
 export const VOICE_HISTORY_MAX_TURN_CHARS = 2_000;
 export const VOICE_HISTORY_MAX_TOTAL_CHARS = 12_000;
 
+/** Where one of a call's tool calls stands (relay/src/protocol.ts). */
+export type VoiceToolStatus = "running" | "awaiting_approval" | "succeeded" | "failed" | "denied" | "cancelled";
+
 export type VoiceClientMessage =
   | {
       type: "session.start";
@@ -109,7 +114,35 @@ export type VoiceServerMessage =
       effort?: VoiceReasoningEffort;
       /** Non-fatal note about how the session came up; does not end the call. */
       notice?: string;
+      /**
+       * Present only for a call Juno lent some of the chat's tools to: how
+       * many the connected voice model was given. 0 means this model cannot
+       * use them (GPT-Live, Qwen, MiniMax), and the dock says so.
+       */
+      tools?: number;
     }
+  /**
+   * One tool call's progress, for the call's chips (relay/src/tools.ts).
+   * `approval` is the chat's own ClientActionApproval while the call waits on
+   * the person — the dock shows the chat's card for it — and `spoken` says
+   * whether a spoken yes may answer it. Web only: the apps' decoder carries an
+   * unknown frame type, and they approve from the notification instead.
+   */
+  | {
+      type: "tool.activity";
+      id: string;
+      name: string;
+      label: string;
+      status: VoiceToolStatus;
+      approval?: ClientActionApproval;
+      spoken?: boolean;
+    }
+  /**
+   * The person answered a waiting card aloud. The relay records nothing: this
+   * client answers the card through `/api/approvals/[id]` with the digest it
+   * was shown, exactly as a tap would (src/lib/voice-tool-activity.ts).
+   */
+  | { type: "tool.spoken"; id: string; approvalId: string; decision: "allow_once" | "deny" }
   | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean; turnId?: string }
   | { type: "turn"; speaker: "assistant" | "user"; phase: "start" | "end" }
   | { type: "interrupted" }

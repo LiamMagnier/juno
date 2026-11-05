@@ -329,6 +329,8 @@ struct JunoMobileRootView: View {
         Task { await codeModel?.start(for: session.profile.id) }
         remoteCodeModel?.start(for: session.profile.id)
         codeNotifications.attach(remoteCodeModel)
+        // Live runs on the account, followed while the app is up (REA 8).
+        JunoMobileRunsCoordinator.shared.start(for: session.profile.id)
         Task { await workModel?.start(for: session.profile.id) }
         // Held in a local so the model that is started is the one that was
         // stored, whether it was just made or survived an earlier sign-in.
@@ -394,6 +396,8 @@ struct JunoMobileRootView: View {
         scheduledTaskModel?.stop()
         codeModel?.stop()
         remoteCodeModel?.stop()
+        // The feed closes and every run's Live Activity ends with the account.
+        JunoMobileRunsCoordinator.shared.stop()
         Task { await JunoMobileSpotlight.clear() }
         // Signing out has to close the Work event stream as well as the
         // poll: it is an authenticated connection following a task on a
@@ -453,13 +457,29 @@ struct JunoMobileRootView: View {
             Task { await authModel.retryRestore() }
           }
         }
+        // After an unclean exit: the work is back, and safe mode if the app
+        // keeps closing (§3.3).
+        JunoMobileRecoveryBanner()
         authenticatedContent(session: session)
+      }
+      // What is on screen, for the snapshot an unclean exit restores.
+      .onChange(of: recoveryState, initial: true) { _, _ in
+        JunoMobileCrashRecovery.shared.noteScreen(
+          isCode: selection == .code,
+          conversationID: incognito ? nil : conversationModel?.selectedConversationID
+        )
       }
     case .restoring:
       JunoMobileQuietLoading(.blank)
     case .signedOut, .signingIn, .unavailable:
       JunoMobileSignInView(authModel: authModel)
     }
+  }
+
+  /// The section and conversation on screen, as the recovery snapshot keeps
+  /// them.
+  private var recoveryState: [String?] {
+    [selection.rawValue, incognito ? nil : conversationModel?.selectedConversationID]
   }
 
   /// The shell: one tab bar carrying the three products and search.
@@ -837,6 +857,10 @@ struct JunoMobileRootView: View {
           JunoMobileLiveActivityCoordinator.shared.resolveApproval(requestID: requestID)
         }
       }
+    case let .openRuns(runKey, confirmStop):
+      showingSettings = false
+      show(.code)
+      JunoMobileRunsCoordinator.shared.open(runKey: runKey, confirmStop: confirmStop)
     case .pairRemote(let token):
       JunoMobileRemoteRouting.shared.pairing = .init(token: token)
     case let .openLinkSession(deviceID, sessionID):
@@ -1287,7 +1311,7 @@ struct JunoMobileRootView: View {
     case .chat, .code:
       if sizeClass == .compact { chatPath = [] }
       selection = destination
-    case .projects, .library, .artifacts, .agents, .tasks, .connections, .work, .search:
+    case .projects, .library, .artifacts, .agents, .tasks, .connections, .work, .search, .activity:
       // On the phone every destination but the two products pushes on the
       // one stack, over whichever product is showing.
       if sizeClass == .compact {
@@ -1620,6 +1644,13 @@ struct JunoMobileRootView: View {
       } else {
         unavailable
       }
+    case .activity:
+      JunoMobileActivityView(
+        session: currentSession,
+        requestSender: requestSender,
+        openConversation: openConversation,
+        startChat: { show(.chat) }
+      )
     case .tasks:
       if let scheduledTaskModel {
         JunoMobileTasksView(

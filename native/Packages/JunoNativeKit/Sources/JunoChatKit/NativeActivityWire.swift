@@ -24,10 +24,13 @@ struct NativeActivityWire: Decodable {
     let commentary: CommentaryWire?
     let notice: NoticeWire?
     let fact: FactWire?
+    /// A picture the model made (G04): its own lossy wire, so a card this
+    /// build misreads costs the card and the row still draws.
+    let imageGeneration: NativeImageGenerationWire?
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, title, detail, url, createdAt, seq, round, tool, memoryReceipt, call, segment,
-             commentary, notice, fact
+             commentary, notice, fact, imageGeneration
     }
 
     init(from decoder: any Decoder) throws {
@@ -47,6 +50,7 @@ struct NativeActivityWire: Decodable {
         commentary = try? container.decodeIfPresent(CommentaryWire.self, forKey: .commentary)
         notice = try? container.decodeIfPresent(NoticeWire.self, forKey: .notice)
         fact = try? container.decodeIfPresent(FactWire.self, forKey: .fact)
+        imageGeneration = try? container.decodeIfPresent(NativeImageGenerationWire.self, forKey: .imageGeneration)
     }
 
     func activity(parseDate: (String) -> Date?) -> NativeChatActivity? {
@@ -72,7 +76,8 @@ struct NativeActivityWire: Decodable {
             tool: tool?.detail,
             memory: (memoryReceipt?.elements ?? []).map {
                 NativeMemoryReceipt(id: $0.id, content: $0.content, category: $0.category)
-            }
+            },
+            imageGeneration: imageGeneration?.generation
         )
     }
 

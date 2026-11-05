@@ -12,17 +12,21 @@ import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
 import { useSplitPane } from "@/hooks/use-split-pane";
-import { useRealtimeVoice, type VoiceTurnResult } from "@/hooks/use-realtime-voice";
+// Type only: realtime voice is downloaded when voice is first opened
+// (lazy-realtime-voice.tsx), never with the conversation.
+import type { VoiceTurnResult } from "@/hooks/use-realtime-voice";
+import { useLazyRealtimeVoice } from "@/components/chat/lazy-realtime-voice";
+import { getAudioContext } from "@/lib/audio-context";
 import { useTts } from "@/hooks/use-tts";
 import { useApp } from "@/components/app/app-provider";
 import { focusTranscriptMessage } from "@/lib/chat/transcript-window";
 import { MessageList } from "@/components/chat/message-list";
 import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
+import { createComposerDraftSession } from "@/lib/chat/composer-draft-session";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
 import { HomeStarters } from "@/components/chat/home-starters";
-import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -76,9 +80,25 @@ import { isTerminalStatus } from "@/lib/work/domain";
 import { WORK_SYNC_EVENT } from "@/components/work/work-transport";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { ShareDialog } from "@/components/share/share-dialog";
-import { VoiceCallNotices, voiceCallParts } from "@/components/voice/realtime-voice";
+import { SessionExpiredDialog } from "@/components/chat/session-expired-dialog";
+import { IncognitoLeaveDialog } from "@/components/chat/incognito-leave-dialog";
+import { inAppLeaveHref, incognitoLeaveConfirmOff, incognitoLeaveNeedsConfirm } from "@/components/chat/incognito-leave";
+import {
+  CHAT_EXPORT_EVENT,
+  ConversationMoreMenu,
+  downloadTextFile,
+  isChatExportKind,
+  type ChatExportKind,
+} from "@/components/chat/conversation-export-menu";
+import {
+  conversationExportFileName,
+  conversationExportTurns,
+  conversationMarkdown,
+  type ExportTurn,
+} from "@/components/chat/conversation-export";
+import { ConversationPrint } from "@/components/chat/conversation-print";
 import { resolveModel, type ModelId } from "@/lib/models";
-import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
+import { initialChatModel, mayRedecideInitialModel } from "@/lib/chat/initial-model";
 import { PLANS, cheapestPlanWith } from "@/lib/plans";
 import { parseStreamingArtifact, stripMemoryTags } from "@/lib/message-content";
 import type { LiveArtifactSource } from "@/components/canvas/canvas-panel";
@@ -102,8 +122,11 @@ import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { useCrossMessages } from "@/components/chat/use-cross-messages";
 import { prefersReducedMotion } from "@/lib/motion-preference";
 import { TaskModeChip } from "@/components/chat/task-mode-chip";
-import { MemoryUpdatedNotice } from "@/components/chat/memory-updated-notice";
+import { MemoryOffMark } from "@/components/chat/memory-off-mark";
+import { MemoryUpdatedAnnouncement, MemoryUpdatedNotice } from "@/components/chat/memory-updated-notice";
+import { PHONE_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { useConversationTaskMode } from "@/hooks/use-conversation-task-mode";
+import { useConversationMemory } from "@/hooks/use-conversation-memory";
 import type { ChatTaskMode } from "@/lib/chat/task-approval-mode";
 import { OPEN_ARTIFACT_EVENT, type OpenArtifactDetail } from "@/lib/artifact-events";
 
@@ -210,6 +233,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     setComposerPrefs,
     models,
     spend,
+    features,
   } = useApp();
   const router = useRouter();
   const pathname = usePathname();
@@ -278,20 +302,45 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const createdIdRef = React.useRef<string | null>(null);
   /** The conversation this view created, kept after the URL sync clears `createdIdRef`. */
   const ownedConversationIdRef = React.useRef<string | null>(null);
-  const [model, setModel] = React.useState<ModelId>(
-    () => {
-      // Existing conversations keep their recorded choice and fail honestly if
-      // that provider is unavailable. A brand-new chat must not start on a stale
-      // unconfigured default that the old server path would silently replace.
-      const conversationModel = resolveModel(initialModel)?.id;
-      if (conversationModel) return conversationModel;
-      const defaultModel = resolveModel(settings.defaultModel)?.id;
-      if (defaultModel && (isAutoModelId(defaultModel) || models.some((m) => m.id === defaultModel))) {
-        return defaultModel;
-      }
-      return AUTO_MODEL_ID;
-    }
-  );
+  // Existing conversations keep their recorded choice and fail honestly if
+  // that provider is unavailable. A brand-new chat must not start on a stale
+  // unconfigured default that the old server path would silently replace, nor
+  // on a default the live catalog marks unavailable: that one starts on Auto
+  // with a one-line notice (src/lib/chat/initial-model.ts).
+  const initialChoice = (catalog: typeof models) =>
+    initialChatModel({
+      conversationModelId: resolveModel(initialModel)?.id,
+      defaultModelId: resolveModel(settings.defaultModel)?.id,
+      models: catalog,
+    });
+  const [model, setModelState] = React.useState<ModelId>(() => initialChoice(models).modelId);
+  const [modelNotice, setModelNotice] = React.useState<string | null>(() => initialChoice(models).notice);
+  /** The reader picked a model in this view: from then on nothing here changes it. */
+  const modelChosenRef = React.useRef(false);
+  const setModel = React.useCallback((next: ModelId) => {
+    modelChosenRef.current = true;
+    setModelNotice(null);
+    setModelState(next);
+  }, []);
+  // The bundled catalog at mount carries no availability; the live one does.
+  // Re-decide when it arrives, only for a new chat nobody has touched yet:
+  // once a turn is sent, its model is the conversation's (`chat` is read when
+  // the effect runs, after render).
+  React.useEffect(() => {
+    const untouched = mayRedecideInitialModel({
+      conversationId,
+      initialModel,
+      createdConversationId: createdIdRef.current,
+      ownedConversationId: ownedConversationIdRef.current,
+      messageCount: chat.messages.length,
+      chosen: modelChosenRef.current,
+    });
+    if (!untouched) return;
+    const decision = initialChoice(models);
+    setModelState((current) => (current === decision.modelId ? current : decision.modelId));
+    setModelNotice(decision.notice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-decided on the catalog alone; `initialChoice` reads props fixed for this view, and the message count only gates it
+  }, [models]);
   // Deep-link reasoning (project page → /chat?reasoning=…) must win on the first
   // render so the auto-sent prompt uses it. After the user moves the slider we
   // hand control back to sticky composer prefs.
@@ -326,6 +375,8 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   // replaces an older one with its own timer (memory-updated-notice.tsx).
   const [memoryNotice, setMemoryNotice] = React.useState<{ key: number; write: ClientMemoryWrite | null } | null>(null);
   const dismissMemoryNotice = React.useCallback(() => setMemoryNotice(null), []);
+  /** Phone width: the notice is never drawn over the conversation there. */
+  const phoneWidth = useMediaQuery(PHONE_QUERY);
   const [voiceOpen, setVoiceOpen] = React.useState(false);
   const [voiceSaving, setVoiceSaving] = React.useState(false);
   const [voiceSaveError, setVoiceSaveError] = React.useState<string | null>(null);
@@ -334,7 +385,9 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   voiceSavingRef.current = voiceSaving;
   const voiceTurnSendingRef = React.useRef(voiceTurnSending);
   voiceTurnSendingRef.current = voiceTurnSending;
-  const realtimeVoice = useRealtimeVoice();
+  // The idle stand-in until voice is first opened, then the live call. The
+  // call bar and its notices arrive with it (`voiceUi`).
+  const { voice: realtimeVoice, ui: voiceUi, load: loadVoice, engine: voiceEngine } = useLazyRealtimeVoice();
   const realtimeVoiceRef = React.useRef(realtimeVoice);
   realtimeVoiceRef.current = realtimeVoice;
   const voiceOpenRef = React.useRef(voiceOpen);
@@ -397,6 +450,12 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     });
   }, []);
   const [privateMode, setPrivateMode] = React.useState(false);
+  // One in-memory draft through the landing → dock handoff. A new route or
+  // privacy mode creates a separate session; incognito never uses storage.
+  const composerDraftSession = React.useMemo(
+    () => createComposerDraftSession(`${privateMode ? "private" : "saved"}:${conversationId ?? "new"}`),
+    [conversationId, privateMode],
+  );
   /*
    * The control that switches incognito leaves with the mode it switched: the
    * header toggle unmounts with the title row, and the incognito band's close
@@ -469,6 +528,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   // that holds it follows the conversation id this chat learns from useChat.
   const taskModeRef = React.useRef<ChatTaskMode | null>(null);
   const readTaskMode = React.useCallback(() => taskModeRef.current, []);
+  // "Memory off for this chat" reaches the request, the new chat's sidebar row
+  // and a voice call the same way, for the same reason.
+  const chatMemoryOffRef = React.useRef(false);
+  const readMemoryOff = React.useCallback(() => chatMemoryOffRef.current, []);
 
   const chat = useChat({
     conversationId,
@@ -484,6 +547,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     proMode,
     connectors: enabledConnectors,
     taskApprovalMode: readTaskMode,
+    memoryOff: readMemoryOff,
     privateMode,
     onQuota: setQuota,
     onTitle: (id, title, titleSource) => updateConversation(id, { title, titleSource: titleSource ?? "ai" }),
@@ -509,6 +573,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           folderId: null,
           projectId: activeProjectId ?? null,
           activeConnectors: enabledConnectors,
+          memoryOff: chatMemoryOffRef.current,
           lastMessageAt: new Date().toISOString(),
           createdAt: new Date().toISOString(),
         };
@@ -608,6 +673,44 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     [tasksPossible, taskMode.chosen, taskMode.effective, taskMode.narrowedBy, taskMode.change],
   );
 
+  // "Memory off for this chat" (src/lib/chat/memory-off.ts): the composer's +
+  // and the header's More menu flip it, the header and the dock's footnote
+  // say so. Never in incognito, which keeps out of memory already and writes
+  // no row to keep a switch on.
+  const knownMemoryOff = currentConversationId
+    ? conversations.find((c) => c.id === currentConversationId)?.memoryOff
+    : undefined;
+  // Only while the server lets the switch be set (CHAT_MEMORY_OFF_ENABLED):
+  // off, nothing is read or drawn and the + Memory row is the account's again.
+  const chatMemoryAvailable = features.chatMemoryOff === true && !privateMode;
+  const chatMemorySwitch = useConversationMemory(
+    chatMemoryAvailable ? currentConversationId : null,
+    chatMemoryAvailable,
+    knownMemoryOff,
+    // The id arrived while this view's route names no chat: it made it.
+    conversationId === null,
+  );
+  const chatMemoryOff = chatMemorySwitch.off;
+  const changeChatMemorySwitch = chatMemorySwitch.change;
+  React.useEffect(() => {
+    chatMemoryOffRef.current = chatMemoryOff;
+  }, [chatMemoryOff]);
+  const chatMemory = React.useMemo(
+    () =>
+      !chatMemoryAvailable
+        ? undefined
+        : {
+            off: chatMemoryOff,
+            onChange: (off: boolean) => {
+              changeChatMemorySwitch(off);
+              // The sidebar's row too, so coming back to this chat shows the
+              // switch it was left at before the read answers.
+              if (currentConversationId) updateConversation(currentConversationId, { memoryOff: off });
+            },
+          },
+    [chatMemoryAvailable, chatMemoryOff, changeChatMemorySwitch, currentConversationId, updateConversation],
+  );
+
   // A room: who answers each message, and the bounded follow-up turns the
   // server planned. Null in every other chat (nothing is fetched for them).
   const room = useRoom({
@@ -695,15 +798,6 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   }, [workTasks.sessions, taskWork]);
   const workSteering = composerTask?.steering ?? null;
 
-  // Follow-ups appear only on a settled turn: the stream is idle and the last
-  // message is a non-empty assistant reply. Flipping this false while a new send
-  // is in flight is also what clears the previous turn's suggestions and drives
-  // the refetch (the component keys its effect on `visible`).
-  const followUpsVisible = React.useMemo(() => {
-    if (chat.isBusy || chat.status !== "idle" || privateMode || research.run?.live) return false;
-    const last = chat.messages[chat.messages.length - 1];
-    return !!last && last.role === "ASSISTANT" && !!last.content.trim() && !last.errorMessage;
-  }, [chat.isBusy, chat.status, chat.messages, privateMode, research.run?.live]);
   const latestConversationsRef = React.useRef(conversations);
   const latestMessagesRef = React.useRef(chat.messages);
   const titleDebounceRef = React.useRef<number | null>(null);
@@ -748,6 +842,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           model,
           projectId: activeProjectId,
           connectors: enabledConnectors,
+          ...(chatMemoryOffRef.current ? { memoryOff: true } : {}),
           turns,
         })
       : null;
@@ -863,11 +958,39 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     };
   }, []);
 
+  /*
+   * Leaving an incognito chat that has something in it asks first
+   * (incognito-leave.ts, spec §6.1). Every in-app door goes through
+   * `askBeforeLeavingIncognito`: New chat (the `juno:new-chat` event below),
+   * the band's Leave incognito, the header toggle, and a link click (the
+   * capture listener after `exitPrivateMode`). The doors read the live state
+   * from a ref, so a long-lived listener never decides on an old render's.
+   * `leavingIncognitoRef` is up while a leave runs: ending the chat fires
+   * `juno:new-chat` itself, and that must not ask a second time.
+   */
+  const [leaveIncognito, setLeaveIncognito] = React.useState<{ proceed: () => void } | null>(null);
+  const incognitoGuardRef = React.useRef({ privateMode, hasContent: false });
+  incognitoGuardRef.current = { privateMode, hasContent: chat.messages.length > 0 };
+  const leavingIncognitoRef = React.useRef(false);
+  const askBeforeLeavingIncognito = React.useCallback((proceed: () => void) => {
+    const guard = incognitoGuardRef.current;
+    const ask = incognitoLeaveNeedsConfirm({
+      privateMode: guard.privateMode,
+      hasContent: guard.hasContent,
+      suppressed: incognitoLeaveConfirmOff(),
+    });
+    if (leavingIncognitoRef.current || !ask) {
+      proceed();
+      return;
+    }
+    setLeaveIncognito({ proceed });
+  }, []);
+
   // When the sidebar (or any other UI) fires "juno:new-chat", reset the
   // ChatView even if the URL didn't change (Next.js ignores push to the
   // same route, so the component won't remount on its own).
   React.useEffect(() => {
-    const handler = () => {
+    const reset = () => {
       if (voiceSavingRef.current) voiceSaveDetachedRef.current = true;
       const payload = voiceUnloadPayloadRef.current;
       if (payload && typeof navigator.sendBeacon === "function") {
@@ -897,13 +1020,16 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       setProjectMeta(null);
       setActiveConversationId(null);
     };
+    // A non-empty incognito chat asks before New chat ends it.
+    const handler = () => askBeforeLeavingIncognito(reset);
     window.addEventListener("juno:new-chat", handler);
     return () => window.removeEventListener("juno:new-chat", handler);
     // chat.reset is stable (useCallback with no deps); safe to omit from deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setActiveConversationId]);
+  }, [askBeforeLeavingIncognito, setActiveConversationId]);
 
-  const exitPrivateMode = React.useCallback(() => {
+  /** Ends incognito and goes to `destination` (a new chat unless a link said otherwise). */
+  const exitPrivateMode = React.useCallback((destination: string = "/chat") => {
     setPrivateMode(false);
     setForkedFrom(null);
     chat.reset();
@@ -915,14 +1041,51 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     setComposerQuote(null);
     setFullscreen(false);
     document.documentElement.removeAttribute("data-private-mode");
-    router.push("/chat");
-    window.dispatchEvent(new CustomEvent("juno:new-chat"));
+    router.push(destination);
+    if (destination !== "/chat") return;
+    // This IS the leave, already answered: the reset it fires never asks.
+    // It also restores focus to the privacy control, so the home must not
+    // take it as a New chat press and pull focus back on the next frame.
+    leavingIncognitoRef.current = true;
+    try {
+      window.dispatchEvent(new CustomEvent("juno:new-chat", { detail: { focusComposer: false } }));
+    } finally {
+      leavingIncognitoRef.current = false;
+    }
   }, [chat, router, setActiveConversationId]);
+
+  /*
+   * A link that leaves the page (a sidebar row, the product switch, a link in
+   * an answer) asks too, while a non-empty incognito chat is open. Captured on
+   * the window before the link's own handler and Next's router see the click;
+   * a modified click, a new tab, a download or another site goes through
+   * untouched (`inAppLeaveHref`).
+   */
+  const incognitoHasContent = privateMode && chat.messages.length > 0;
+  React.useEffect(() => {
+    if (!incognitoHasContent) return;
+    const onClick = (event: MouseEvent) => {
+      if (leavingIncognitoRef.current) return;
+      const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!(anchor instanceof HTMLAnchorElement) || anchor.closest("[data-incognito-leave]")) return;
+      const href = inAppLeaveHref(
+        event,
+        { href: anchor.getAttribute("href"), target: anchor.getAttribute("target"), download: anchor.hasAttribute("download") },
+        window.location
+      );
+      if (!href || incognitoLeaveConfirmOff()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setLeaveIncognito({ proceed: () => exitPrivateMode(href) });
+    };
+    window.addEventListener("click", onClick, true);
+    return () => window.removeEventListener("click", onClick, true);
+  }, [exitPrivateMode, incognitoHasContent]);
 
   const togglePrivateMode = React.useCallback(() => {
     if (chat.isBusy || voiceOpen || voiceSaving || voiceSaveError || voiceTurnSending) return;
     if (privateMode) {
-      exitPrivateMode();
+      askBeforeLeavingIncognito(() => exitPrivateMode());
       return;
     }
     const next = true;
@@ -939,7 +1102,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     // Connectors reach third-party servers, so never carry them into incognito.
     setEnabledConnectors([]);
     if (conversationId) router.push("/chat");
-  }, [chat, conversationId, exitPrivateMode, privateMode, router, setActiveConversationId, voiceOpen, voiceSaveError, voiceSaving, voiceTurnSending]);
+  }, [askBeforeLeavingIncognito, chat, conversationId, exitPrivateMode, privateMode, router, setActiveConversationId, voiceOpen, voiceSaveError, voiceSaving, voiceTurnSending]);
 
   // Pick (or clear) the project for this chat. Existing chat → PATCH immediately;
   // brand-new chat → remember it so the first message is created in that project.
@@ -1612,6 +1775,71 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const hasMessages =
     displayMessages.length > 0 || voiceOpen || !!research.run || workTasks.sessions.length > 0;
 
+  /*
+   * Export (spec §6.15): Copy as Markdown, Download Markdown, Print or save as
+   * PDF, from the header's More menu or an answer's More menu (the event).
+   * The whole conversation, so whatever of it is still on the server is read
+   * first; then conversation-export.ts builds what the transcript shows and
+   * nothing it hides. With the transcript already whole there is no wait, so
+   * Copy stays inside the click that asked for it, as clipboards require.
+   */
+  const [printJob, setPrintJob] = React.useState<{ key: number; title: string; turns: ExportTurn[]; exportedAt: Date } | null>(null);
+  const exportChat = React.useCallback(
+    async (kind: ChatExportKind) => {
+      const transcript = chatHistory.hasOlder ? await loadOlderMessages({ all: true }) : chat.messages;
+      if (!transcript) {
+        toast.error("Couldn’t export. The start of this chat didn’t load.");
+        return;
+      }
+      const conversation = currentConversationId ? conversations.find((c) => c.id === currentConversationId) : undefined;
+      const titles = new Map(chat.artifacts.map((artifact) => [artifact.identifier, artifact.title]));
+      const input = {
+        title: conversation?.title?.trim() || (privateMode ? "Incognito chat" : ""),
+        messages: transcript,
+        assistantName: agent && !privateMode ? agent.name : undefined,
+        exportedAt: new Date(),
+        artifactTitle: (identifier: string) => titles.get(identifier),
+      };
+      if (kind === "print") {
+        setPrintJob((previous) => ({
+          key: (previous?.key ?? 0) + 1,
+          title: input.title,
+          turns: conversationExportTurns(input),
+          exportedAt: input.exportedAt,
+        }));
+        return;
+      }
+      const markdown = conversationMarkdown(input);
+      if (kind === "copy") {
+        try {
+          await navigator.clipboard.writeText(markdown);
+          toast.success("Copied the chat as Markdown.");
+        } catch {
+          toast.error("Couldn’t copy. Try Download Markdown instead.");
+        }
+        return;
+      }
+      try {
+        downloadTextFile(conversationExportFileName(input.title, input.exportedAt), markdown);
+      } catch {
+        toast.error("Couldn’t download the chat.");
+      }
+    },
+    [agent, chat.artifacts, chat.messages, chatHistory.hasOlder, conversations, currentConversationId, loadOlderMessages, privateMode]
+  );
+  const exportChatRef = React.useRef(exportChat);
+  React.useEffect(() => {
+    exportChatRef.current = exportChat;
+  }, [exportChat]);
+  React.useEffect(() => {
+    const onExport = (event: Event) => {
+      const kind = (event as CustomEvent<unknown>).detail;
+      if (isChatExportKind(kind)) void exportChatRef.current(kind);
+    };
+    window.addEventListener(CHAT_EXPORT_EVENT, onExport);
+    return () => window.removeEventListener(CHAT_EXPORT_EVENT, onExport);
+  }, []);
+
   /* ─── First-message handoff ────────────────────────────────────────────────
    * The centered empty-state composer and the transcript's bottom dock are two
    * different subtrees, so React swaps them in one commit and the composer
@@ -1838,6 +2066,9 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       if (document.querySelector('[role="dialog"][data-state="open"]')) return;
       e.preventDefault();
       setFindOpen(true);
+      // Repeating the shortcut returns to the existing query as well as
+      // opening Find. This also lets the reader replace it in one keystroke.
+      requestAnimationFrame(() => document.querySelector<HTMLInputElement>("[data-conversation-find-input]")?.select());
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1944,7 +2175,12 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     realtimeVoice.clearTranscript();
     voiceSaveDetachedRef.current = false;
     voiceUnloadPayloadRef.current = null;
-    voiceSessionIdRef.current = crypto.randomUUID();
+    const sessionId = crypto.randomUUID();
+    voiceSessionIdRef.current = sessionId;
+    // Safari lets audio start only inside the click that asked for it, and
+    // the engine may still be downloading: wake the shared context now, as
+    // the hook's own `start` does, rather than after the wait.
+    getAudioContext();
     setVoiceOpen(true);
     const history = chat.messages
       .filter((message) => (message.role === "USER" || message.role === "ASSISTANT") && message.content.trim())
@@ -1952,15 +2188,39 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
         role: message.role === "ASSISTANT" ? ("assistant" as const) : ("user" as const),
         text: message.content,
       }));
-    // What Juno remembers comes along — the same memory a typed turn in this
-    // chat reads (this project's alone, in a project), and none in incognito.
-    // So does the thread: in an agent's, the server makes the call that agent.
-    void realtimeVoice.start(
-      undefined,
-      history,
-      privateMode ? undefined : { memory: { projectId: activeProjectId }, conversationId: currentConversationId ?? null }
-    );
-  }, [activeProjectId, chat.isBusy, chat.messages, chat.pendingClarification, closeArtifact, currentConversationId, privateMode, realtimeVoice, voiceSaveError]);
+    // The live controller, once the engine is here (at once after the first
+    // call). Named as the chat's own `realtimeVoice`: it is the same call.
+    void loadVoice().then((realtimeVoice) => {
+      if (!realtimeVoice) {
+        if (voiceSessionIdRef.current === sessionId) {
+          voiceSessionIdRef.current = null;
+          setVoiceOpen(false);
+          toast.error("Voice couldn’t load. Check your connection and try again.");
+        }
+        return;
+      }
+      // Closed, or a new chat started, while it loaded: nothing to start.
+      if (voiceSessionIdRef.current !== sessionId || !voiceOpenRef.current) return;
+      // What Juno remembers comes along — the same memory a typed turn in this
+      // chat reads (this project's alone, in a project), and none in incognito
+      // or in a chat with memory off for itself (the relay token refuses it
+      // for a saved one as well). So does the thread: in an agent's, the
+      // server makes the call that agent. And so do the chat's tools, with the
+      // apps switched on here: the server decides what the call may use and
+      // runs every call (src/lib/voice-tools.ts).
+      void realtimeVoice.start(
+        undefined,
+        history,
+        privateMode
+          ? undefined
+          : {
+              memory: chatMemoryOffRef.current ? null : { projectId: activeProjectId },
+              conversationId: currentConversationId ?? null,
+              tools: { connectorIds: enabledConnectors },
+            }
+      );
+    });
+  }, [activeProjectId, chat.isBusy, chat.messages, chat.pendingClarification, closeArtifact, currentConversationId, enabledConnectors, loadVoice, privateMode, realtimeVoice, voiceSaveError]);
 
   const closeVoice = React.useCallback(() => {
     if (voiceSavingRef.current) return;
@@ -1987,6 +2247,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       model,
       projectId: activeProjectId,
       connectors: enabledConnectors,
+      ...(chatMemoryOffRef.current ? { memoryOff: true } : {}),
       turns: finalized.map((line) => ({
         role: line.role === "assistant" ? "ASSISTANT" : "USER",
         content: line.text,
@@ -2070,6 +2331,18 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     voiceUnloadPayloadRef.current = null;
     setVoiceSaveError(null);
   }, [realtimeVoice]);
+
+  // A new chat whose default model is unavailable starts on Auto and says so
+  // here, in one line, until the reader picks a model or sends.
+  const modelNoticeLine = modelNotice ? (
+    <p
+      role="status"
+      aria-live="polite"
+      className="mx-auto mb-2 w-[calc(100%-1rem)] max-w-2xl rounded-field border border-border/70 bg-popover px-3 py-2 text-ui text-muted-foreground shadow-soft sm:w-full"
+    >
+      {modelNotice}
+    </p>
+  ) : null;
 
   const voiceSaveNotice = voiceSaving || voiceSaveError ? (
     <div
@@ -2156,15 +2429,19 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
         <p className="py-1">This branch isn’t saved. It continues from the fork point with full context.</p>
       ) : privateMode ? (
         <p className="py-1">Incognito chats are not saved or added to memory.</p>
+      ) : chatMemoryOff ? (
+        // Shown at every width: below md there is no header band for the mark.
+        <p className="py-1">Memory is off for this chat. Nothing in it is used from memory or saved to it.</p>
       ) : (
         <p className="hidden sm:block">{`${PRODUCT_NAME} can make mistakes. Check important info.`}</p>
       ),
-    [forkedFrom, privateMode],
+    [forkedFrom, privateMode, chatMemoryOff],
   );
 
   const composer = (
     <Composer
       conversationId={conversationId}
+      draftSession={composerDraftSession}
       // Armed only when there is NO prompt to auto-send. `?q=…&research=1`
       // goes out through chat.send with `deepResearch` set (the effect below),
       // never through the composer's own submit — so the composer's
@@ -2175,6 +2452,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       onModelChange={setModel}
       onSend={onComposerSend}
       taskModeControl={taskModeControl}
+      chatMemory={chatMemory}
       modeControl={researchSteering?.accepting ? (
         <GuideModeSwitch mode={researchGuideMode} onModeChange={setResearchGuideMode} disabled={research.busy || research.disconnected || research.failed} className="mb-2" />
       ) : undefined}
@@ -2244,7 +2522,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       onSubmitClarification={onSubmitClarification}
       onSkipClarification={onSkipClarification}
       onCancelClarification={chat.cancelPendingClarification}
-      voiceCall={voiceOpen ? voiceCallParts({ voice: realtimeVoice, onClose: closeVoice, speakerName: agent?.name }) : undefined}
+      voiceCall={voiceOpen && voiceUi ? voiceUi.voiceCallParts({ voice: realtimeVoice, onClose: closeVoice, speakerName: agent?.name }) : undefined}
       onOpenVoiceMode={!privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? (planAllowsVoice ? onOpenVoice : nudgeVoiceUpgrade) : undefined}
       quotaReached={quotaReached}
       freeAllowanceUsed={freeAllowanceUsed}
@@ -2312,6 +2590,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
         (sidePanelOpen || thoughtOpenId) && "hidden"
       )}
     >
+      {/* "Memory off for this chat", said quietly in the cluster that holds
+          its switch (the More menu). First, as a fact about the chat rather
+          than something in it. */}
+      {!privateMode && chatMemoryOff && <MemoryOffMark />}
       {/* What this chat made, and what it used — see session-outputs.tsx. It
           leads the cluster because it is about the conversation itself, while
           Share and incognito are about who else can see it. Hidden in private
@@ -2337,7 +2619,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               size="lg"
               aria-label="Share chat"
               onClick={() => setShareOpen(true)}
-              className="text-foreground/75"
+              className="text-muted-foreground"
             >
               {/* The page-header rung (size-5), matching the private-chat
                   toggle beside it; 18px is the sidebar's destination rung. */}
@@ -2353,6 +2635,12 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           conversationId={currentConversationId}
           title={conversations.find((c) => c.id === currentConversationId)?.title ?? undefined}
         />
+      )}
+      {/* The conversation's own menu: Export (Copy as Markdown, Download,
+          Print). Before the incognito toggle, so the toggle keeps its place
+          at the edge whether or not the chat has anything in it yet. */}
+      {!privateMode && currentConversationId && hasMessages && (
+        <ConversationMoreMenu onExport={(kind) => void exportChat(kind)} memory={chatMemory} />
       )}
       <PrivateChatToggle
         active={privateMode}
@@ -2447,11 +2735,11 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                 <>
                   <Link
                     href={`/projects/${projectMeta.id}`}
-                    className="shell-title min-w-0 max-w-[16rem] shrink truncate text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
+                    className="shell-title min-w-0 max-w-[16rem] shrink truncate text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
                   >
                     {projectMeta.name}
                   </Link>
-                  <span aria-hidden className="shell-title shrink-0 text-muted-foreground/45">/</span>
+                  <span aria-hidden className="shell-title shrink-0 text-ink-tertiary">/</span>
                 </>
               )}
               <h1 className="shell-title min-w-0 flex-1 text-foreground">
@@ -2486,12 +2774,18 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           </div>
         )}
 
-        {memoryNotice && (
+        {memoryNotice && !phoneWidth && (
           <div className="flex justify-center px-4 pt-2">
             {/* Names what was saved and offers View, Edit and Undo; owns its
                 own timer, so a second update never inherits the first's. */}
             <MemoryUpdatedNotice key={memoryNotice.key} write={memoryNotice.write} onDismiss={dismissMemoryNotice} />
           </div>
+        )}
+        {/* A phone never gets it over the conversation: the answer's own
+            chip says it, so only a screen reader is told (the unnamed write,
+            which has no chip, is drawn above the composer instead). */}
+        {memoryNotice && phoneWidth && memoryNotice.write && (
+          <MemoryUpdatedAnnouncement key={memoryNotice.key} write={memoryNotice.write} onDismiss={dismissMemoryNotice} />
         )}
 
         {/* Incognito header — grid-rows collapse keeps height animation smooth. */}
@@ -2506,7 +2800,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           )}
         >
           <div className={cn("min-h-0 overflow-hidden", !privateMode && "pointer-events-none")}>
-            <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/60 px-4 text-ui text-foreground/80 sm:px-5">
+            <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/60 px-4 text-ui text-muted-foreground sm:px-5">
               {forkedFrom ? (
                 <div className="inline-flex min-w-0 items-center gap-2 font-medium">
                   <GitFork className="size-4 shrink-0 text-primary" />
@@ -2522,7 +2816,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                   {/* The private-chat toggle's own mark in its ON cut, so the
                       header and the control that set it name one state with
                       one drawing. It was a hand-drawn ghost on a 48 grid. */}
-                  <EyeOff weight="fill" className="size-4 text-foreground/70" />
+                  <EyeOff weight="fill" className="size-4 text-muted-foreground" />
                   Incognito chat
                 </div>
               )}
@@ -2533,13 +2827,13 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      exitPrivateMode();
+                      askBeforeLeavingIncognito(() => exitPrivateMode());
                     }}
                     // `.pressable` carries the tonal hover's timing and the dip
                     // on --dur-press; the stray `active:scale-95` ran the press
                     // at the colour's 120ms, to a deeper scale than any other
                     // control in the header.
-                    className="pressable pointer-events-auto relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground coarse:size-11 motion-reduce:transition-none motion-reduce:active:scale-100"
+                    className="pressable pointer-events-auto relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:size-11 motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
                     aria-label={forkedFrom ? "Discard branch" : "Leave incognito"}
                   >
                     <ActionIcons.dismiss className="size-4" />
@@ -2554,11 +2848,15 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
         {/* Main column — settles into a quiet framed card in incognito. */}
         <div
           className={cn(
-            // `motion-reduce:transition-none`: this animates margin and
-            // border-radius, i.e. it reflows the whole transcript column over
-            // `duration-slow`, and it had no escape for a reader who asked the
-            // OS for less motion.
-            "flex min-h-0 flex-1 flex-col overflow-hidden transition-[margin,border-radius,border-color,background-color,box-shadow] duration-slow ease-out-soft motion-reduce:transition-none",
+            // The frame fades in; its inset does not travel. This used to
+            // transition `margin` and `border-radius`, which re-laid-out the
+            // whole transcript column on every frame for 360ms: the windowed
+            // transcript re-measured, the composer's width crept, and long
+            // answers re-wrapped line by line (D27: only transform, opacity,
+            // clip-path and grid rows animate). Now the inset lands in one
+            // frame and the card's fill, edge and shadow cross-fade over it.
+            // Those are Tier A, so they fade under reduced motion too.
+            "flex min-h-0 flex-1 flex-col overflow-hidden transition-[border-color,background-color,box-shadow] duration-slow ease-out-soft",
             privateMode
               // `bg-card`, not `bg-card/50` — half a 6.5% fill over black is
               // ~3.3%, so the "quiet framed card" incognito settles into was a
@@ -2588,7 +2886,14 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             // Message view
             <div className="flex min-h-0 flex-1 flex-col relative h-full">
               {findOpen && (
-                <ConversationFind messages={displayMessages} onSearch={loadWholeTranscript} onClose={() => setFindOpen(false)} />
+                <ConversationFind
+                  key={conversationId ?? "new"}
+                  messages={displayMessages}
+                  onSearch={loadWholeTranscript}
+                  onClose={() => setFindOpen(false)}
+                  loadingHistory={chat.loadingOlder}
+                  hasOlderHistory={chatHistory.hasOlder}
+                />
               )}
               <AgentThreadContext.Provider value={agentThreadIdentity}>
               <LiveUIHostProvider value={liveUIHost}>
@@ -2695,20 +3000,6 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                 canSend={!chat.isBusy && !voiceSaving && !voiceSaveError && !voiceTurnSending}
                 {...answerSelection}
               />
-              {currentConversationId && !privateMode && (
-                // Same width cap, centring and gutter as the composer's root
-                // (composer.tsx) — otherwise these sit inside the composer's
-                // edge while it is centred under them, and the two never line
-                // up. Both now take `.page-gutter`, so "the same" is a shared
-                // declaration rather than two copies of one number.
-                <div className="page-gutter mx-auto w-full transcript-column shrink-0 pb-2">
-                  <FollowUpSuggestions
-                    conversationId={currentConversationId}
-                    onPick={(t) => void sendFromComposer(t, [])}
-                    visible={followUpsVisible}
-                  />
-                </div>
-              )}
               <div
                 ref={dockComposerRef}
                 className={cn(
@@ -2721,8 +3012,13 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     <AgentComputerPip agent={agent} onOpen={() => setAgentTab("computer")} />
                   </div>
                 ) : null}
-                {voiceOpen && <VoiceCallNotices voice={realtimeVoice} />}
+                {voiceOpen && voiceUi && <voiceUi.VoiceCallNotices voice={realtimeVoice} />}
                 {voiceSaveNotice}
+                {memoryNotice && phoneWidth && !memoryNotice.write && (
+                  <div className="mb-2 flex justify-center px-2">
+                    <MemoryUpdatedNotice key={memoryNotice.key} write={null} onDismiss={dismissMemoryNotice} />
+                  </div>
+                )}
                 {composer}
               </div>
             </div>
@@ -2789,8 +3085,9 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     className="chat-home__composer relative isolate w-full"
                   >
                     {!agent ? <HomeField visible={!privateMode && !chat.pendingClarification} calm={startersShown} /> : null}
-                    {voiceOpen && <VoiceCallNotices voice={realtimeVoice} />}
+                    {voiceOpen && voiceUi && <voiceUi.VoiceCallNotices voice={realtimeVoice} />}
                     {voiceSaveNotice}
+                    {modelNoticeLine}
                     {composer}
                   </div>
                   {/* The third track balances the first, so the composer sits
@@ -2855,7 +3152,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                 "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
               : // Leaving: absolute, so the chat reflows underneath while the
                 // exit plays — the same recipe the canvas beside it uses.
-                "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
+                "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out motion-safe:slide-out-to-right-4 fill-mode-forwards",
             thought.resizing && "select-none"
           )}
         >
@@ -2875,7 +3172,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                 page colour, over the page, i.e. a handle whose only visible part
                 was its 1px border. It floats above two panels, so it takes the
                 floating rung. */}
-            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
               <GripVertical className="size-3.5" />
             </span>
           </button>
@@ -2909,7 +3206,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             canvas.resizing && "select-none transition-none",
             openArtifact
               ? !canvas.resizing && "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
-              : "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
+              : "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out motion-safe:slide-out-to-right-4 fill-mode-forwards",
             openArtifact && !fullscreen && "@[50rem]/split:relative"
           )}
         >
@@ -2929,7 +3226,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               // pointer the same way when both are open side by side.
               className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
             >
-              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
                 <GripVertical className="size-3.5" />
               </span>
             </button>
@@ -2957,7 +3254,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             canvas.resizing && "select-none transition-none",
             openDocument
               ? !canvas.resizing && "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
-              : "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
+              : "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out motion-safe:slide-out-to-right-4 fill-mode-forwards",
             openDocument && !fullscreen && "@[50rem]/split:relative"
           )}
         >
@@ -2969,7 +3266,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               title="Drag to resize. Arrow keys adjust, Home resets."
               className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
             >
-              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
                 <GripVertical className="size-3.5" />
               </span>
             </button>
@@ -3005,7 +3302,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             title="Drag to resize. Arrow keys adjust, Home resets."
             className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
           >
-            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
               <GripVertical className="size-3.5" />
             </span>
           </button>
@@ -3025,6 +3322,37 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
 
       {currentConversationId && (
         <ShareDialog kind="CHAT" conversationId={currentConversationId} open={shareOpen} onOpenChange={setShareOpen} />
+      )}
+      {/* A send that came back 401, and the unsent words handed back after sign-in. */}
+      <SessionExpiredDialog />
+      {/* Realtime voice, mounted once it is first opened and kept for the
+          conversation's life (lazy-realtime-voice.tsx). Renders nothing. */}
+      {voiceEngine}
+      {/* "End this incognito chat?" (incognito-leave.ts). */}
+      <IncognitoLeaveDialog
+        open={leaveIncognito !== null}
+        onKeep={() => setLeaveIncognito(null)}
+        onEnd={() => {
+          const proceed = leaveIncognito?.proceed;
+          setLeaveIncognito(null);
+          if (!proceed) return;
+          leavingIncognitoRef.current = true;
+          try {
+            proceed();
+          } finally {
+            leavingIncognitoRef.current = false;
+          }
+        }}
+      />
+      {/* Print or save as PDF: mounted while the print dialog is up. */}
+      {printJob && (
+        <ConversationPrint
+          key={printJob.key}
+          title={printJob.title}
+          turns={printJob.turns}
+          exportedAt={printJob.exportedAt}
+          onDone={() => setPrintJob(null)}
+        />
       )}
 
     </div>

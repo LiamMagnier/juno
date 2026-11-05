@@ -76,6 +76,7 @@ import { PLANS } from "@/lib/plans";
 import { checkBudget, checkUsageWindows } from "@/lib/spend";
 import { admissionVerdict } from "@/lib/metering/unit-prices";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
+import { pausedAgentRunRefusal } from "@/lib/agents/domain";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/lib/untrusted-content";
@@ -131,6 +132,10 @@ import { maxFusedSearchFeeMicroUsd, meteredWebSearch } from "@/lib/web-search";
 import { effectiveHostState } from "@/app/api/work/protocol";
 import { scheduleRunKindOf } from "@/lib/work/code-routine";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { readCloudWorkAvailability } from "@/lib/work/executor-heartbeat";
+import { plannerCloudAvailability } from "@/lib/work/executor-presence";
+import { installWorkerProcessGuard, registerWorkerDrain } from "@/lib/worker-process";
+import { LOOP_STALE_AFTER_MS, workerLoops } from "@/lib/worker-watchdog-rules";
 
 /**
  * How often to look for triggers whose next poll is due.
@@ -156,12 +161,18 @@ const MAX_TRIGGERS_PER_TICK = 10;
  */
 const POLL_LOCK_MS = 3 * 60_000;
 
-/**
- * Whether cloud Work is accepting runs. Matches the constant the scheduler and
- * the run-dispatch route hold, and for the same reason: turning cloud off should
- * produce an honest refusal rather than a queue nothing will ever claim.
+/*
+ * Whether cloud Work is accepting runs is the executor heartbeat
+ * (`readCloudWorkAvailability()`, src/lib/work/executor-heartbeat.ts), read
+ * per fire: with no runner alive the planner holds or skips the fire with an
+ * honest outcome instead of queueing a run nothing will claim. It used to be a
+ * constant `true` here, as in the dispatcher. `WORK_CLOUD_AVAILABLE=0` is the
+ * kill switch for a paused executor or a provider outage.
+ *
+ * A heartbeat read that failed is "unknown", and the planner then holds an
+ * event it would turn on (`wait`: the cursor does not move past it) rather
+ * than skipping it as executor_unavailable while a runner may be alive.
  */
-const CLOUD_WORK_AVAILABLE = true;
 
 /**
  * How many recently-started runs are read back to fill `recentEventKeys`.
@@ -978,6 +989,37 @@ async function offer(
     return "settled";
   }
 
+  const idempotencyKey = triggerRunIdempotencyKey(
+    trigger.id,
+    verdict.eventKey,
+    context.now,
+    trigger.dedupeWindowSec
+  );
+
+  // A paused agent's routine does not fire, whatever arrived: the person can
+  // switch a routine back on in Automations while its agent stays paused, and
+  // `enabled` is all the sweep tests. The scheduler's rule and sentence
+  // (`pausedAgentRunRefusal`), read fresh, and recorded as every other skip
+  // here is: a marker run under this event's key, the event settled.
+  const pausedAgent = pausedAgentRunRefusal(
+    schedule.session.agentId
+      ? await prisma.agent.findFirst({
+          where: { id: schedule.session.agentId, userId: schedule.userId, deletedAt: null },
+          select: { name: true, status: true },
+        })
+      : null
+  );
+  if (pausedAgent) {
+    await recordMarkerRun({
+      schedule,
+      idempotencyKey,
+      reason: "superseded",
+      explanation: pausedAgent.message,
+    });
+    log("skipped", { triggerId: trigger.id, cause: "agent_paused", why: pausedAgent.message });
+    return "settled";
+  }
+
   const runConfig = parseScheduleRunConfig(schedule.runConfig);
   const [inFlightForSchedule, inFlightForUser] = await Promise.all([
     prisma.workRun.count({
@@ -1015,16 +1057,12 @@ async function offer(
     userConcurrencyCap: DEFAULT_USER_CONCURRENCY_CAP,
     hosts: views,
     requiredCapabilities: runConfig.requiredCapabilities,
-    cloudAvailable: CLOUD_WORK_AVAILABLE,
+    // The executor heartbeat: with no runner alive a cloud fire is held by the
+    // planner rather than queued for nobody, and with a read that failed
+    // ("unknown") the event is held rather than consumed.
+    cloudAvailable: plannerCloudAvailability(await readCloudWorkAvailability()),
     remainingBudgetMicroUsd: limits.remainingMicroUsd,
   });
-
-  const idempotencyKey = triggerRunIdempotencyKey(
-    trigger.id,
-    verdict.eventKey,
-    context.now,
-    trigger.dedupeWindowSec
-  );
 
   if (decision.outcome === "wait") {
     log("held", {
@@ -1370,6 +1408,17 @@ async function tick(): Promise<void> {
 async function main(): Promise<void> {
   log("started", { poller: POLLER_ID, tickMs: TICK_MS });
 
+  // As the scheduler does: rejections logged, an uncaught exception drains
+  // and exits non-zero (src/lib/worker-process.ts), and every finished tick
+  // is a beat the process's watchdog reads (src/lib/worker-watchdog.ts).
+  installWorkerProcessGuard();
+  let inTick: Promise<void> | null = null;
+  registerWorkerDrain("work-trigger-poller", async () => {
+    stopping = true;
+    await inTick?.catch(() => undefined);
+  });
+  workerLoops.register("work-trigger-poller", LOOP_STALE_AFTER_MS["work-trigger-poller"]);
+
   const shutdown = (signal: string) => {
     if (stopping) return;
     stopping = true;
@@ -1380,17 +1429,30 @@ async function main(): Promise<void> {
 
   while (!stopping) {
     try {
-      await tick();
+      inTick = tick();
+      await inTick;
     } catch (error) {
       // One bad tick must not end the poller: the next one may well succeed, and
       // a poller that exits on a transient database error takes every event
       // trigger in the deployment with it.
       log("tick failed", { error: String(error) });
+    } finally {
+      inTick = null;
+      workerLoops.beat("work-trigger-poller");
     }
     await new Promise((resolve) => setTimeout(resolve, TICK_MS));
   }
 
   log("stopped");
+}
+
+/**
+ * Starts the poller's loop in this process: what juno-sweepers calls
+ * (scripts/sweepers.ts). Importing this file starts nothing (see the line at
+ * the bottom).
+ */
+export function startTriggerPoller(): Promise<void> {
+  return main();
 }
 
 export { readSource as readTriggerSource, tick as triggerPollerTick, offer as offerTriggerEvent, loadSchedule as loadTriggerSchedule };

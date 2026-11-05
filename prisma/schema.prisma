@@ -110,9 +110,11 @@ model User {
   batchJobs                   BatchJob[]
   moderationFlags             ModerationFlag[]
   shares                      Share[]
+  shareRecipients             ShareRecipient[]
   artifacts                   Artifact[]
   artifactDrafts              ArtifactDraft[]
   artifactCanvasDrafts        ArtifactCanvasDraft[]
+  artifactStorageEntries      ArtifactStorageEntry[]
   artifactPublications        ArtifactPublication[]
   scheduledTasks              ScheduledTask[]
   voiceTranscriptSessions     VoiceTranscriptSession[]
@@ -179,6 +181,11 @@ model User {
   agentEvents                 AgentEvent[]
   agentComputers              AgentComputer[]
   agentComputerHandoffs       AgentComputerHandoff[]
+  agentComputerUsage          AgentComputerUsageInterval[]
+  agentComputerAudits         AgentComputerAudit[]
+  computerShellOutputs        ComputerShellOutput[]
+  agentDemonstrations         AgentDemonstration[]
+  agentCredentials            AgentCredential[]
   agentSetupChanges           AgentSetupChange[]
   agentRoomMembers            AgentRoomMember[]
   agentRoomTurns              AgentRoomTurn[]
@@ -538,6 +545,16 @@ model Settings {
   // "concise", "socratic"…). Layered UNDER customInstructions so a user's own
   // instructions always win.
   personality                String   @default("default")
+  // Tone characteristics (src/lib/characteristics.ts): "less" | "default" |
+  // "more" each, layered on the personality and under customInstructions.
+  // One column apiece so a client's patch writes one without reading the
+  // rest; TEXT so a new level is a rollback-safe change, and an unknown value
+  // reads as "default", which puts nothing in the prompt.
+  toneWarmth                 String   @default("default")
+  toneEnthusiasm             String   @default("default")
+  toneFormatting             String   @default("default")
+  toneEmoji                  String   @default("default")
+  toneConciseness            String   @default("default")
   memoryEnabled              Boolean  @default(true)
   // Sensitive topics this account has opted INTO remembering — health,
   // ethnicity, religion, politics, sexuality, finances (see
@@ -706,6 +723,11 @@ model Conversation {
   // the chat composer; a project's or an agent's stricter mode still wins at
   // dispatch (src/lib/chat/task-approval-mode.ts).
   taskApprovalMode  String?
+  // "Memory off for this chat" (src/lib/chat/memory-off.ts): its turns read no
+  // memory and save or forget nothing, and the background reader skips it.
+  // Narrows the account's memoryEnabled; it can never turn memory on. Set from
+  // the chat's menu or the composer's +, and on the first send of a new chat.
+  memoryOff         Boolean   @default(false)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lastMessageAt     DateTime  @default(now())
@@ -1013,8 +1035,11 @@ model ChatFirstSubmissionReceipt {
   completedAt        DateTime?
   leaseExpiresAt     DateTime?
   // Set by POST /api/chat/cancel. The in-memory registry is the fast path; this
-  // is what lets a cancel from another process or tab reach the stream loop,
-  // which polls it every ~2s (src/app/api/chat/route.ts).
+  // is what lets a cancel from another process or tab reach the turn: each
+  // process's generation-signal pump reads it, with the cancel signals of every
+  // generation that process holds, in one query about once a second
+  // (pendingCancels in src/lib/chat/generation-signals-store.ts,
+  // GENERATION_CANCEL_POLL_MS in src/lib/chat/generation-signals.ts).
   cancelRequestedAt  DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1079,7 +1104,7 @@ model Attachment {
    */
   version         Int            @default(1)
   /**
-   * upload | library_clone | replacement | restore
+   * upload | library_clone | replacement | restore | cloud_import
    */
   origin          String         @default("upload")
   /**
@@ -1484,6 +1509,7 @@ model Artifact {
   shares       Share[]
   draft        ArtifactDraft?
   canvasDrafts ArtifactCanvasDraft[]
+  storage      ArtifactStorageEntry[]
   proposals    ArtifactProposal[]
   publications ArtifactPublication[]
 
@@ -1567,6 +1593,29 @@ model ArtifactCanvasDraft {
 
   @@id([artifactId, userId])
   @@index([userId, updatedAt])
+}
+
+/// What an artifact's own code keeps, for one viewer (`window.alevr.storage`,
+/// src/lib/artifact-ai/storage.ts). Scoped per artifact AND per viewer: on a
+/// shared or published link each signed-in visitor has a store of their own
+/// that the owner never reads. `value` is encryptField() ciphertext of the
+/// value's JSON text; `bytes` is the plaintext UTF-8 size of key + value, the
+/// figure the caps are counted in (20 MB per artifact, 100 MB per viewer).
+/// Never synced, shared, exported with the artifact or shown to the model.
+model ArtifactStorageEntry {
+  artifactId String
+  userId     String
+  key        String
+  value      String   @db.Text
+  bytes      Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([artifactId, userId, key])
+  @@index([userId])
 }
 
 /// Juno's work that is not (yet) a version: a model re-emit held back because
@@ -2482,6 +2531,14 @@ enum ShareKind {
   ARTIFACT
 }
 
+/// Who can open a share. LINK: anyone holding its token (the public page).
+/// PEOPLE: only a signed-in account whose verified email is on the share's
+/// `recipients`, and its owner; the token alone opens nothing.
+enum ShareAudience {
+  LINK
+  PEOPLE
+}
+
 model Share {
   id             String    @id @default(cuid())
   token          String    @unique // long random URL slug (not the cuid)
@@ -2511,16 +2568,52 @@ model Share {
   /// person's messages and the final answers, secrets redacted on the server,
   /// encrypted at rest (encryptJsonField). Null for every ordinary chat link.
   transcript     Json?
+  /// LINK for every share made before people sharing, and for every link
+  /// since. A PEOPLE share is never served by its token alone: the public
+  /// lookup skips it, and src/lib/share-people.ts checks the viewer against
+  /// `recipients` (the rules are src/lib/share-people-core.ts).
+  audience       ShareAudience @default(LINK)
   createdAt      DateTime  @default(now())
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  artifact     Artifact?     @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation?    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  artifact     Artifact?        @relation(fields: [artifactId], references: [id], onDelete: Cascade)
   reports      ShareReport[]
+  recipients   ShareRecipient[]
 
   @@index([userId, createdAt])
   @@index([conversationId])
   @@index([artifactId])
+}
+
+/// One person a PEOPLE share was sent to, by email (src/lib/share-people-core.ts).
+///
+/// `userId` is the SHARE'S OWNER, not the recipient: the owner adds, lists and
+/// removes rows, and every read is scoped to them. The recipient is matched by
+/// `emailHash`, an HMAC (`domainMac`) of the normalized address, against the
+/// verified email of whoever is signed in. Nothing here points at a recipient's
+/// account, so adding an address never looks one up and never says whether it
+/// has one. `email` is the address itself, encrypted (`encryptField`), read
+/// only to list it back to the owner and to send the invitation.
+///
+/// Removing a person deletes the row; revoking the share leaves the rows on the
+/// tombstoned share, where they open nothing.
+model ShareRecipient {
+  id        String    @id @default(cuid())
+  shareId   String
+  userId    String
+  emailHash String
+  email     String
+  /// When the invitation email went out; null when mail is off or the
+  /// per-address limit held it back (the person is still added).
+  invitedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  share Share @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shareId, emailHash])
+  @@index([userId, createdAt])
 }
 
 /// Thumbs up or down on an answer in a Code session whose transcript lives on
@@ -3399,6 +3492,7 @@ model WorkRun {
   io        WorkRunIO[]
   commands  WorkCommand[]
   toolRuns  ToolRun[]
+  computerShellOutputs ComputerShellOutput[]
 
   @@unique([sessionId, attempt])
   @@unique([userId, idempotencyKey])
@@ -4314,6 +4408,18 @@ model KnowledgeDocument {
   createdAt      DateTime  @default(now())
   indexedAt      DateTime?
   updatedAt      DateTime  @updatedAt
+  /// pending | embedding | embedded | lexical_only. Chunks are written at
+  /// ingest with no vectors; the embedding sweep fills them off the upload
+  /// path, under the account's background-provider policy (PRJ-1).
+  embeddingState     String    @default("pending")
+  embeddingModel     String?
+  /// The policy's denial reason when the document stays lexical-only.
+  embeddingReason    String?
+  /// Lease for the sweep that is embedding this document.
+  embeddingClaimedAt DateTime?
+  /// What "Indexed" means on a project file: retrieval has chunks to rank.
+  chunkCount         Int       @default(0)
+  tokenCount         Int       @default(0)
 
   user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   project Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -4325,6 +4431,8 @@ model KnowledgeDocument {
   @@index([userId, state, createdAt])
   @@index([userId, projectId])
   @@index([userId, deletedAt])
+  @@index([userId, embeddingState])
+  @@index([userId, attachmentId])
 }
 
 model KnowledgeBlock {
@@ -4380,6 +4488,8 @@ model KnowledgeChunk {
   /// deliberately instead of silently mixing two vector spaces.
   embedding      Float[]   @default([])
   embeddingModel String?
+  /// sha256 of the embedding input, so an unchanged chunk reuses its vector.
+  textHash       String?
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
 
@@ -4389,6 +4499,7 @@ model KnowledgeChunk {
   @@index([documentId, ordinal])
   @@index([userId, embeddingModel])
   @@index([documentId, deletedAt])
+  @@index([documentId, textHash])
 }
 
 model KnowledgeIndexJob {
@@ -4678,6 +4789,16 @@ model Agent {
   memoryAccess String @default("profile")
   /// The starting point it was hired from. Copy and defaults only.
   template  String?
+  /// cloud | mac. Where its tasks, routines and goal steps run. Mac work goes
+  /// through the Work relay to the person's own Mac and is refused, never
+  /// moved to the cloud, when that Mac is offline. Set by the person only.
+  executionTarget String  @default("cloud")
+  /// The Mac (WorkHost id) a `mac` agent prefers. Null: any Mac switched on
+  /// for Work. Re-checked against the account at every dispatch.
+  preferredHostId String?
+  /// off | ask | allowed. Whether its Work runs may use its computer, and whether the
+  /// first use asks the person. Set by the person (panel, chat card), never by the agent.
+  computerPolicy  String  @default("ask")
 
   /// needs_you | results | all. Which notifications this agent sends.
   notify            String    @default("results")
@@ -4704,6 +4825,8 @@ model Agent {
   events       AgentEvent[]
   computer     AgentComputer?
   setupChanges AgentSetupChange[]
+  demonstrations AgentDemonstration[]
+  credentials  AgentCredential[]
 
   @@index([userId, deletedAt, sortOrder])
 }
@@ -4804,6 +4927,11 @@ model AgentNote {
   content String @db.Text
   /// user | agent | reflection
   source  String @default("user")
+  /// kept | pending. A note an agent saved during one of its tasks waits as
+  /// `pending` when its "What it may remember" setting asks the person to
+  /// review it (src/lib/agents/run-notes.ts). Nothing reads a pending note
+  /// (its turns, its tasks, reflection) until the person keeps it.
+  status  String @default("kept")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4874,6 +5002,9 @@ model AgentComputer {
   /// ran and another after was overlapped by a takeover, even one that began
   /// and ended inside the call, and its result is discarded.
   takeoverEpoch     Int       @default(0)
+  /// The last time the sweep reached this computer through its provider. Metering of an
+  /// awake computer stops here while its host is unreachable. Written by the sweep.
+  lastContactAt     DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -4881,6 +5012,130 @@ model AgentComputer {
 
   @@index([userId, status])
   @@index([status, lastActiveAt])
+}
+
+/// A task the person showed an agent once on its computer, recorded during a
+/// take over as a semantic trace (docs/design/agents-v2/TEACH.md). Off unless
+/// AGENT_TEACH_ENABLED=1. `trace` is encryptField() of the redacted trace JSON
+/// (navigations, element descriptions, typed text with every secret replaced by
+/// a placeholder before it leaves the page); `shots` is encryptField() of at
+/// most eight low-resolution JPEGs. Nothing here is a skill: the person turns
+/// it into one through the Teach page's review and Save.
+model AgentDemonstration {
+  id        String    @id @default(cuid())
+  userId    String
+  agentId   String
+  /// recording | recorded | discarded
+  status    String    @default("recording")
+  /// Why recording stopped: stopped | handed_back | time_cap | step_cap | interrupted | error
+  endReason String?
+  stepCount Int       @default(0)
+  trace     String?   @db.Text
+  shots     String?   @db.Text
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, agentId, createdAt])
+}
+
+/// One metered awake interval of an agent's computer, counted against the
+/// account's weekly allowance (src/lib/computer/store.ts). Idempotent per
+/// (agentId, startedAt), like the spend key. No foreign key to Agent: usage
+/// must survive an agent's deletion within the week.
+model AgentComputerUsageInterval {
+  id        String   @id @default(cuid())
+  userId    String
+  agentId   String
+  startedAt DateTime
+  seconds   Int
+  /// Monday 00:00 UTC of the week `startedAt` falls in.
+  weekStart DateTime
+  runId     String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, startedAt])
+  @@index([userId, weekStart])
+}
+
+/// Streamed `computer_shell` output, for the read-only terminal pane
+/// (COMPUTERS_2026-10.md S5.1, writer: src/lib/computer/shell-output.ts). Each
+/// call writes a `command` row first and an `exit` row last; `text` is
+/// encryptSecret() of at most 16 KB of plaintext. The model's own result is
+/// unchanged and still lands in the run; this is only what the person watches.
+model ComputerShellOutput {
+  id        String   @id @default(cuid())
+  userId    String
+  agentId   String
+  runId     String
+  callId    String
+  seq       Int
+  /// command | stdout | stderr | exit
+  stream    String
+  /// encryptSecret(text); at most 16 KB of plaintext per row
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+  run       WorkRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, callId, seq])
+  @@index([userId, agentId, createdAt])
+}
+
+/// A site login saved for one agent, filled into its computer's browser by
+/// `computer_fill_login` (docs/design/agents-v2/VAULT.md). Owned by the
+/// person AND the agent: every read names both, and the ciphertexts are bound
+/// to both and to the row (encryptSecretBound, src/lib/computer/vault-store.ts),
+/// so a value copied to another row, agent or account does not open.
+model AgentCredential {
+  id             String    @id @default(cuid())
+  userId         String
+  agentId        String
+  /// The person's name for it, shown on the approval card and to the model.
+  label          String
+  /// scheme://host[:port], normalized (vault-policy.ts). Filled only when the
+  /// browser's top-level origin is exactly this.
+  origin         String
+  /// encryptSecretBound(username)
+  usernameSealed String    @db.Text
+  /// encryptSecretBound(password)
+  passwordSealed String    @db.Text
+  /// encryptSecretBound(base32 TOTP secret), or null without two-step codes
+  totpSealed     String?   @db.Text
+  /// When the person first approved a fill of this login. Null asks again.
+  approvedAt     DateTime?
+  lastUsedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent          Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, label])
+  @@index([userId, agentId])
+}
+
+/// Operator audit for computers. Identifiers and verdicts only (writer:
+/// src/lib/computer/audit.ts): never a path, a command, a container id, an
+/// address, a password or a token.
+model AgentComputerAudit {
+  id        String   @id @default(cuid())
+  userId    String
+  agentId   String
+  /// enabled | disabled | reset | policy_changed | started | woke | slept | … (audit.ts)
+  kind      String
+  detail    Json     @default("{}")
+  /// web | app | runner | sweep | chat | system
+  actor     String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([agentId, createdAt])
+  @@index([kind, createdAt])
 }
 
 /// A one-time link that opens an agent's computer in a web view (the apps'

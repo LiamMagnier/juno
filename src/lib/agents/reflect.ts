@@ -105,8 +105,10 @@ export async function reflectAgent(
       orderBy: { createdAt: "asc" },
       take: 10,
     }),
+    // Kept notes only: one waiting for the person's review is not yet
+    // something the agent knows (src/lib/agents/note-review.ts).
     prisma.agentNote.findMany({
-      where: { userId: user.id, agentId: agent.id, deletedAt: null },
+      where: { userId: user.id, agentId: agent.id, deletedAt: null, status: "kept" },
       orderBy: { createdAt: "desc" },
       take: 20,
       select: { content: true },

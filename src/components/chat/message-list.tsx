@@ -113,7 +113,7 @@ interface MessageListProps {
 /** "Mira asked Scout to check the pricing": an annotation, not a card. */
 function RoomHandoffLine({ text }: { text: string }) {
   return (
-    <p className="mb-2 font-mono text-caption text-muted-foreground motion-safe:animate-fade-in">
+    <p className="mb-2 font-mono text-label font-normal text-muted-foreground motion-safe:animate-fade-in">
       {text}
     </p>
   );
@@ -144,7 +144,14 @@ function MeasuredTurn({ message, observe, children }: {
   const ref = React.useRef<HTMLDivElement>(null);
   const key = message.renderKey ?? message.id;
   React.useLayoutEffect(() => ref.current ? observe(ref.current, key) : undefined, [observe, key]);
-  return <div ref={ref} data-message-id={message.id} data-transcript-key={key} className="pb-6">{children}</div>;
+  // Space pairs a question with its reply: a short step from a question down
+  // to its answer, a longer one from an answer to the next question, so a
+  // long thread scans as turns rather than as evenly spaced blocks. On a
+  // coarse pointer the question's own 44px actions sit under it at rest, so
+  // the answer's step grows to keep the pair reading as one. Heights are
+  // measured (observeRow), so windowing, the rail and the answer bed follow
+  // without knowing the rule.
+  return <div ref={ref} data-message-id={message.id} data-transcript-key={key} className={message.role === "USER" ? "pb-1" : "pb-8 coarse:pb-12"}>{children}</div>;
 }
 
 // The chat's turn actions arrive as new functions on every streamed token
@@ -368,8 +375,12 @@ export function MessageList(props: MessageListProps) {
         // The same column as the composer, and now literally the same gutter
         // as every other surface in the product (`.page-gutter`, globals.css):
         // bubbles' outer edges and the composer's edges are one line.
+        // `pb-12`: at the end of the scroll range the newest answer's toolbar
+        // clears the 72px bottom fade (its row's own pb-8 plus these 48px);
+        // text still fades under the composer while the reader is scrolled up.
+        // The answer bed measures from this same box, so the pin holds.
         className={cn(
-          "page-gutter mx-auto w-full transcript-column pt-6",
+          "page-gutter mx-auto w-full transcript-column pt-6 pb-12",
           !entered && "motion-safe:animate-rise-in",
         )}
       >
@@ -431,6 +442,14 @@ export function MessageList(props: MessageListProps) {
           {runsByMessage.get(-1)}
           <div />
         </div>
+        {/*
+          The answer bed (reading-first follow, use-transcript-window.ts):
+          reserved space under a just-sent question, sized so the end of the
+          scroll range is the question pinned near the top. The hook writes
+          its height before paint; React never sets it, so a re-render cannot
+          snap it back. Outside the log, so it is never content.
+        */}
+        <div ref={transcript.bedRef} aria-hidden data-answer-bed="" className="pointer-events-none" />
       </div>
 
       {hasRail && (
@@ -484,7 +503,7 @@ export function MessageList(props: MessageListProps) {
               // replaced the centring translate, so the button arrived 18px
               // right of centre and jumped back when the entrance ended.
               "absolute inset-x-0 bottom-4 z-10 mx-auto flex size-9 items-center justify-center rounded-full border bg-popover text-muted-foreground shadow-float transition-[transform,opacity,color,background-color] duration-base ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] active:duration-press coarse:size-11",
-              "motion-reduce:transition-none motion-reduce:active:scale-100",
+              "motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
               atBottom
                 ? "pointer-events-none translate-y-2 opacity-0"
                 : "opacity-100 motion-safe:animate-rise-in"

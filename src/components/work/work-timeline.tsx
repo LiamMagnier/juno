@@ -1097,7 +1097,7 @@ function ActivityBatch({
       >
         <ChevronRight
           className={cn(
-            "size-3 shrink-0 translate-y-px text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground motion-reduce:transition-none",
+            "size-3 shrink-0 translate-y-px text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground motion-reduce:transition-[color]",
             open && "rotate-90"
           )}
           aria-hidden="true"
@@ -1649,7 +1649,9 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
     case "paused":
       return { title: "Paused", detail: str(payload, "reason"), tone: "quiet", icon: PauseCircle };
     case "resumed":
-      return { title: "Resumed", detail: null, tone: "quiet", icon: PlayCircle };
+      // "After a server restart." when the next runner continued a run set
+      // aside for one (src/lib/work/restart-resume-rules.ts); nothing otherwise.
+      return { title: "Resumed", detail: str(payload, "detail"), tone: "quiet", icon: PlayCircle };
     case "validation_result": {
       // `satisfied` is the runtime's word and `ok` is the shorter one a host
       // might write. Neither being present means the check ran and said nothing

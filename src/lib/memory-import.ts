@@ -28,7 +28,7 @@ import {
   type LifecycleEntry,
 } from "@/lib/memory-lifecycle";
 import { findSuppression } from "@/lib/memory-suppression";
-import { normalizeSensitiveTopics, sensitiveTopicOf, type SensitiveTopic } from "@/lib/memory-sensitive";
+import { looksLikeSecret, normalizeSensitiveTopics, sensitiveTopicOf, type SensitiveTopic } from "@/lib/memory-sensitive";
 import type { MemoryCategory } from "@/lib/memory-categories";
 
 /**
@@ -171,25 +171,12 @@ function cleanFact(item: string): string | null {
 // Secrets
 // ---------------------------------------------------------------------------
 
-/** A secret noun followed by the value itself: "password is …", "API key: …". */
-const SECRET_VALUE =
-  /\b(?:passwords?|passcodes?|passphrases?|pins?|pin codes?|api[ _-]?keys?|secret keys?|client secrets?|(?:access|auth|bearer|api|refresh) tokens?|private keys?|seed phrases?|recovery (?:codes?|phrases?)|cvv|cvc|security codes?|ssn|social security numbers?|card numbers?|credit card numbers?|iban|account numbers?|routing numbers?)\b\s*(?:is|was|are|:|=)\s*\S+/i;
-/** Credential-shaped strings, whatever sentence they sit in. */
-const SECRET_SHAPE =
-  /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bxox[abposr]-[A-Za-z0-9-]{10,}|\bAKIA[0-9A-Z]{16}\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
-
-/**
- * Whether a candidate carries a secret VALUE — not merely mentions one.
- *
- * Juno's extractor and memory editor are both told never to store passwords
- * or keys; an import is one more way in, and a pasted list is exactly where
- * one turns up ("The user's Wi-Fi password is …"), so it is held to the same
- * rule. The test is for the value, deliberately: "prefers passkeys over
- * passwords" is a preference and imports fine; "password is hunter2" does not.
+/*
+ * The secret screen lives beside the sensitive gate (memory-sensitive.ts), so
+ * the automatic write path can apply it without importing this module, which
+ * imports the lifecycle. Re-exported here for the import route and its review.
  */
-export function looksLikeSecret(content: string): boolean {
-  return SECRET_VALUE.test(content) || SECRET_SHAPE.test(content);
-}
+export { looksLikeSecret };
 
 // ---------------------------------------------------------------------------
 // The review

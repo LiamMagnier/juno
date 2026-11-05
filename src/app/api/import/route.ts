@@ -9,6 +9,7 @@ import { encryptMessageText } from "@/lib/message-crypto";
 import { encryptJsonField, encryptField } from "@/lib/field-crypto";
 import { getSuppressions } from "@/lib/memory";
 import { guardedMemoryWrite } from "@/lib/memory-suppression";
+import { importedSourceRef } from "@/lib/memory-provenance";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { buildImportObjectKey, deleteObject, putObject } from "@/lib/storage";
@@ -26,6 +27,7 @@ import {
   HistoryImportError,
 } from "@/lib/history-import";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { CHARACTERISTIC_KEYS, CHARACTERISTIC_LEVELS } from "@/lib/characteristics";
 import { writeRestoredBranches } from "@/lib/chat/branches";
 import { restoreImportedBranches } from "@/lib/chat/branch-model";
 
@@ -519,6 +521,11 @@ export async function POST(req: Request) {
           ]) {
             if (typeof raw[key] === "string") update[key] = raw[key];
           }
+          // Tone characteristics only as one of their levels, never free text.
+          for (const key of CHARACTERISTIC_KEYS) {
+            const level = enumValue(raw[key], CHARACTERISTIC_LEVELS);
+            if (level) update[key] = level;
+          }
           for (const key of ["memoryEnabled", "emailBudgetAlerts", "emailWeeklyDigest", "lockdownMode", "spendCapDisabled"]) {
             if (typeof raw[key] === "boolean") update[key] = raw[key];
           }
@@ -775,7 +782,11 @@ export async function POST(req: Request) {
             projectId: stringValue(rawMemory.projectId, 200)
               ? sourceIdToProjectId.get(stringValue(rawMemory.projectId, 200)!) ?? null
               : null,
-            sourceRef: stringValue(rawMemory.sourceRef, 500),
+            // A chat-learned fact names the chat by id, and the chats were
+            // just given this account's ids: the exporting account's id would
+            // name nothing here, and the provenance would call it a chat that
+            // is gone. Word sources ("manual", "edit", …) pass through.
+            sourceRef: importedSourceRef(stringValue(rawMemory.sourceRef, 500), sourceIdToConversationId),
             sourceMessageId: stringValue(rawMemory.sourceMessageId, 200)
               ? sourceIdToMessageId.get(stringValue(rawMemory.sourceMessageId, 200)!) ?? null
               : null,

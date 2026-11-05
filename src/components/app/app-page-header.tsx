@@ -73,11 +73,17 @@ import { PageBackdrop } from "@/components/app/page-backdrop";
  *
  * What is left is a page that opens with its name. That is the whole of it.
  *
- * ON A PHONE IT IS COMPACT (G54). Under the page's 40rem step a three-line
- * lede and a 28px tail pushed the first project, the first file, below the
- * fold at 390px. There the lede keeps to its one line (the docblock's own
- * rule for it; the full sentence stays in the DOM for a screen reader) and
- * the header gives the page body 20px, not 28. Wider, nothing changes.
+ * ON A PHONE IT IS COMPACT (G54), AND NEVER CUT. Under the page's 40rem step
+ * the header gives the page body 20px, not 28. The lede used to be clamped
+ * to one line there, which ended every page's introduction mid-sentence and
+ * sometimes mid-word ("…the files you gave it, newe…"): the space cost of
+ * showing the lede with the look of a broken one. It wraps now, as finished
+ * text. It is not hidden instead, because some pages put state in it ("Paused.
+ * Nothing new will start…", a Mac's version and last-seen time).
+ *
+ * THE BACKDROP IS WIDE-ONLY. Under 40rem there is no room for the drawing to
+ * sit clear of the text: its dotted orbits ran between the letters of the
+ * lede and around the page's button. Decoration never sits behind words.
  */
 export function AppPageHeader({
   eyebrow,
@@ -116,7 +122,13 @@ export function AppPageHeader({
     // carries layout. The alpha came from a light-theme habit and now compounds
     // with a token that already dropped five points for the black ground.
     <header className={cn("mb-5 @[40rem]/page:mb-8", backdrop && "relative isolate", className)}>
-      {backdrop && <PageBackdrop />}
+      {/* `contents` above 40rem, so the drawing stays positioned against the
+          header exactly as before; not drawn at all below it. */}
+      {backdrop && (
+        <div className="hidden @[40rem]/page:contents">
+          <PageBackdrop />
+        </div>
+      )}
       {/* The whole row is conditional now, and so is each half of it. A page
           with neither a parent nor a section opens on its name — no leading
           row, and no 28px of empty chrome where one used to be. */}
@@ -153,7 +165,7 @@ export function AppPageHeader({
             row wider than that line (Admin's four tabs) scrolls inside its own track. */}
         {actions && <div className="ed-rise flex max-w-full shrink-0 items-center gap-1.5 @[40rem]/page:mt-1.5" style={{ ["--i" as string]: 2 }}>{actions}</div>}
       </div>
-      {lede && <p className="ed-rise mt-2 line-clamp-1 max-w-prose text-pretty text-body text-muted-foreground @[40rem]/page:line-clamp-none" style={{ ["--i" as string]: 1 }}>{lede}</p>}
+      {lede && <p className="ed-rise mt-2 max-w-prose text-pretty text-body text-muted-foreground" style={{ ["--i" as string]: 1 }}>{lede}</p>}
     </header>
   );
 }
@@ -181,6 +193,7 @@ export function AppPageHeaderSkeleton({
   headingWidth = "w-56",
   lede = true,
   ledeLines = 1,
+  phoneLedeLines = 2,
   actions = false,
   className,
 }: {
@@ -209,14 +222,38 @@ export function AppPageHeaderSkeleton({
    * out of.
    */
   ledeLines?: 1 | 2;
-  actions?: boolean;
+  /**
+   * How many lines the lede takes on a phone, below the 40rem page width,
+   * where it wraps as a paragraph rather than following `ledeLines`. Two
+   * covers nearly every page at 390px; a long lede (Projects: "A topic's
+   * chats, instructions and files, kept together. Nest folders…") takes
+   * three, and a two-bar placeholder there let the page drop 24px when it
+   * arrived.
+   */
+  phoneLedeLines?: 2 | 3;
+  /**
+   * `"button"` when the page's action is a default Button on the heading's
+   * line (Projects' "New project", Library's "Upload"). On a touch screen that
+   * button is 44px beside a 30px heading, so the real lede starts under the
+   * button, and the placeholder puts it there too: lede under the heading row,
+   * as the header draws it. `true` is a placeholder beside the header that
+   * leaves the lede under the heading alone, for an action no taller than
+   * the heading (Compare's 16px note).
+   */
+  actions?: boolean | "button";
   /** Pass `mb-0` where the page frame supplies its own gap between blocks. */
   className?: string;
 }) {
+  const ledeBars = lede ? <SkeletonLede ledeLines={ledeLines} phoneLedeLines={phoneLedeLines} /> : null;
   return (
     // aria-hidden, because the AppPage around it already carries
     // role="status" with a label: the region speaks once, not twice.
-    <div className={cn("mb-6 border-b border-border pb-5", className)} aria-hidden="true">
+    //
+    // THE SAME BOX AS THE HEADER IT STANDS IN FOR: `AppPageHeader`'s own
+    // bottom margin and nothing else. This drew a hairline and `mb-6 pb-5`
+    // under a header that has neither, so every page opened from the sidebar
+    // showed a rule that then vanished and content that jumped ~13px up.
+    <div className={cn("mb-5 @[40rem]/page:mb-8", className)} aria-hidden="true">
       {nav && (
         <div className="mb-3 flex items-center gap-2">
           {/* The back control is a `size="icon-sm"` Button: 32px, 40 on coarse.
@@ -230,28 +267,56 @@ export function AppPageHeaderSkeleton({
           </span>
         </div>
       )}
+      {/* With a button action, the header's own two rows: the heading with
+          the button beside it, then the lede under both (see `actions`).
+          Otherwise the lede stays in the heading's column. */}
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-0 flex-1">
           <Skeleton className={cn("h-[1.08em] max-w-full text-page-title", headingWidth)} />
-          {lede &&
-            // One line is one `text-body` line box: 15px × 1.6 = 24px = h-6.
-            // Two lines have to total the same 48px the real paragraph does, so
-            // they are 21 + 6 (space-y-1.5) + 21 — a visible gap between the
-            // bars, and the arithmetic still lands on the paragraph's height.
-            // The second bar is short, the way a last line of prose is.
-            // On a phone the real lede keeps to one line (see AppPageHeader),
-            // so the two-line placeholder is one 24px bar there.
-            (ledeLines > 1 ? (
-              <div className="mt-2 max-w-prose space-y-1.5">
-                <Skeleton className="h-6 w-full rounded-xs @[40rem]/page:h-[21px]" />
-                <Skeleton className="hidden h-[21px] w-2/3 rounded-xs @[40rem]/page:block" />
-              </div>
-            ) : (
-              <Skeleton className="mt-2 h-6 w-full max-w-prose rounded-xs" />
-            ))}
+          {actions !== "button" && ledeBars}
         </div>
-        {actions && <Skeleton className="h-9 w-32 shrink-0" />}
+        {/* A button is the real one's box: 36px, 44 on touch, set 6px down
+            beside the heading from 40rem, as the actions cluster is. */}
+        {actions && (
+          <Skeleton className={cn("h-9 w-32 shrink-0", actions === "button" && "coarse:h-11 @[40rem]/page:mt-1.5")} />
+        )}
       </div>
+      {actions === "button" && ledeBars}
+    </div>
+  );
+}
+
+/**
+ * The lede's bars.
+ *
+ * One line is one `text-body` line box: 15px × 1.6 = 24px = h-6. Two lines
+ * have to total the same 48px the real paragraph does, so they are 21 + 6
+ * (space-y-1.5) + 21 — a visible gap between the bars, and the arithmetic
+ * still lands on the paragraph's height. The second bar is short, the way a
+ * last line of prose is. On a phone the real lede wraps (see AppPageHeader),
+ * and at 390px nearly every page's sentence takes two lines, so the
+ * placeholder is two bars there whatever `ledeLines` says, or three for a
+ * page that passes `phoneLedeLines={3}`: 20 + 6 + 20 + 6 + 20 is the
+ * paragraph's 72px.
+ */
+function SkeletonLede({ ledeLines, phoneLedeLines }: { ledeLines: 1 | 2; phoneLedeLines: 2 | 3 }) {
+  return (
+    <div className="mt-2 max-w-prose space-y-1.5">
+      <Skeleton
+        className={cn(
+          "w-full rounded-xs",
+          phoneLedeLines === 3 ? "h-5" : "h-[21px]",
+          ledeLines === 1 ? "@[40rem]/page:h-6" : "@[40rem]/page:h-[21px]"
+        )}
+      />
+      <Skeleton
+        className={cn(
+          "rounded-xs @[40rem]/page:w-2/3",
+          phoneLedeLines === 3 ? "h-5 w-full" : "h-[21px] w-2/3",
+          ledeLines === 1 ? "@[40rem]/page:hidden" : "@[40rem]/page:h-[21px]"
+        )}
+      />
+      {phoneLedeLines === 3 && <Skeleton className="h-5 w-1/2 rounded-xs @[40rem]/page:hidden" />}
     </div>
   );
 }

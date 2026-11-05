@@ -20,6 +20,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { evidenceKey, type EvidenceCell, type EvidenceTable } from "@/lib/router/evidence";
 import { isTaskClass, type TaskClass } from "@/lib/router/task-class";
+import type { CompletionState } from "@/lib/router/telemetry-rules";
+import type { TurnOutcomeCount } from "@/lib/router/failure-alert-rules";
 
 export const ROUTING_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const ROUTING_ROW_TTL_MS = 180 * 24 * 60 * 60 * 1000;
@@ -27,8 +29,6 @@ export const ROUTING_ROW_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 export const ROUTING_EVIDENCE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 const EVIDENCE_CACHE_MS = 5 * 60 * 1000;
 const PRUNE_EVERY_MS = 24 * 60 * 60 * 1000;
-
-export type CompletionState = "completed" | "partial" | "failed" | "stopped";
 
 export interface RoutingOutcomeInput {
   messageId: string | null;
@@ -49,12 +49,13 @@ export interface RoutingOutcomeInput {
   expectedMicroUsd: number | null;
 }
 
-/** Map a turn's finish reason onto the four states the router learns from. */
-export function completionStateFor(finishReason: string | null | undefined, persistedPartial: boolean): CompletionState {
-  if (finishReason === "user_stopped") return "stopped";
-  if (finishReason === "stop" || finishReason === "tool_calls" || !finishReason) return persistedPartial ? "partial" : "completed";
-  return persistedPartial ? "partial" : "failed";
-}
+export {
+  completionStateFor,
+  endingSaysNothingAboutModel,
+  outcomeTimings,
+  type CompletionState,
+  type PlatformEnding,
+} from "@/lib/router/telemetry-rules";
 
 export async function recordRoutingOutcome(input: RoutingOutcomeInput): Promise<void> {
   try {
@@ -120,6 +121,7 @@ interface AggregateRow {
   taskClass: string;
   n: bigint;
   successes: bigint;
+  errors: bigint;
   toolRoundsSum: bigint | null;
   retriesSum: bigint | null;
   latencyMsSum: bigint | null;
@@ -129,8 +131,9 @@ interface AggregateRow {
 }
 
 /**
- * The aggregate, straight from SQL. Success is computed with the same rule as
- * `outcomeSucceeded` (pinned by tests/router-telemetry.integration.test.ts).
+ * The aggregate, straight from SQL. Success, errors and the completed-only
+ * latency use the same rules as `outcomeSucceeded`, `outcomeErrored` and
+ * `aggregateOutcomes` (pinned by tests/router-telemetry.integration.test.ts).
  */
 export async function aggregateRoutingEvidence(since: Date): Promise<Map<string, EvidenceCell>> {
   const rows = await prisma.$queryRaw<AggregateRow[]>(Prisma.sql`
@@ -140,10 +143,11 @@ export async function aggregateRoutingEvidence(since: Date): Promise<Map<string,
         WHERE "completionState" = 'completed' AND NOT "userRegenerated" AND NOT "userSwitchedModel"
           AND NOT "userEdited" AND ("feedback" IS NULL OR "feedback" <> 'DOWN')
       ) AS successes,
+      COUNT(*) FILTER (WHERE "completionState" IN ('failed', 'partial')) AS errors,
       SUM("toolRounds") AS "toolRoundsSum",
       SUM("retryCount") AS "retriesSum",
-      SUM("latencyMs") AS "latencyMsSum",
-      COUNT("latencyMs") AS "latencyN",
+      SUM("latencyMs") FILTER (WHERE "completionState" = 'completed') AS "latencyMsSum",
+      COUNT("latencyMs") FILTER (WHERE "completionState" = 'completed') AS "latencyN",
       SUM("costMicroUsd") AS "costSum",
       COUNT("costMicroUsd") AS "costN"
     FROM "RoutingOutcome"
@@ -160,6 +164,7 @@ export async function aggregateRoutingEvidence(since: Date): Promise<Map<string,
       taskClass: r.taskClass,
       n: Number(r.n),
       successes: Number(r.successes),
+      errors: Number(r.errors),
       toolRoundsSum: Number(r.toolRoundsSum ?? 0),
       retriesSum: Number(r.retriesSum ?? 0),
       latencyMsSum: Number(r.latencyMsSum ?? 0),
@@ -169,6 +174,44 @@ export async function aggregateRoutingEvidence(since: Date): Promise<Map<string,
     });
   }
   return table;
+}
+
+interface OutcomeCountRow {
+  modelId: string;
+  provider: string;
+  total: bigint;
+  failedError: bigint;
+  failedNetwork: bigint;
+}
+
+/**
+ * Turns per model since `since`, with the failed ones by fault class: the
+ * chat failure-rate alert's durable source (src/lib/router/failure-alert.ts).
+ * "Failed" is a row that ended `failed` or `partial` with the finish reason
+ * `error` or `network_error` (failure-alert-rules.ts says why). Content-free
+ * like every read here. Throws on a database error; the caller decides.
+ */
+export async function countRecentTurnOutcomes(since: Date): Promise<TurnOutcomeCount[]> {
+  const rows = await prisma.$queryRaw<OutcomeCountRow[]>(Prisma.sql`
+    SELECT "modelId", "provider",
+      COUNT(*) AS total,
+      COUNT(*) FILTER (
+        WHERE "completionState" IN ('failed', 'partial') AND "finishReason" = 'error'
+      ) AS "failedError",
+      COUNT(*) FILTER (
+        WHERE "completionState" IN ('failed', 'partial') AND "finishReason" = 'network_error'
+      ) AS "failedNetwork"
+    FROM "RoutingOutcome"
+    -- Zone-less UTC column, compared as such (see aggregateRoutingEvidence).
+    WHERE "createdAt" >= ${since.toISOString()}::timestamp
+    GROUP BY "modelId", "provider"
+  `);
+  return rows.map((row) => ({
+    modelId: row.modelId,
+    provider: row.provider,
+    total: Number(row.total),
+    failed: { error: Number(row.failedError), network_error: Number(row.failedNetwork) },
+  }));
 }
 
 let cache: { at: number; table: EvidenceTable } | null = null;

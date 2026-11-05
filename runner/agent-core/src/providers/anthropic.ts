@@ -12,6 +12,10 @@ import type {
 import type { ChatMessage } from '../types.js';
 
 const MODELS: Record<string, ModelCapabilities> = {
+  // Current lineup (platform.claude.com models overview, read 2026-10-18).
+  'claude-opus-5-5': caps({ maxContext: 1_000_000 }),
+  'claude-sonnet-5-5': caps({ maxContext: 1_000_000 }),
+  'claude-haiku-5-5': caps({ maxContext: 1_000_000 }),
   'claude-sonnet-5': caps({ maxContext: 200_000 }),
   'claude-opus-4-8': caps({ maxContext: 200_000 }),
   'claude-haiku-4-5-20251001': caps({ maxContext: 200_000, computerUse: false }),
@@ -168,7 +172,7 @@ export type BoundAnthropicThinkingParam =
   | (Extract<import('./thinking.js').AnthropicThinkingParam, { type: 'adaptive' | 'enabled' }> & {
       block_binding: { prefix_mismatch_behavior: 'drop_block' };
     })
-  | Extract<import('./thinking.js').AnthropicThinkingParam, { type: 'disabled' }>;
+  | Extract<import('./thinking.js').AnthropicThinkingParam, { type: 'disabled' | 'between_tools' }>;
 
 /**
  * Ported from BackendCodeModelClient.swift (`bindingTolerant`).

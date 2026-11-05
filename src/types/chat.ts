@@ -4,6 +4,8 @@ import type { ArtifactType } from "@/lib/message-content";
 import type { ChatOrigin } from "@/lib/chat-origin";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ClientRoutineProposal } from "@/lib/work/routine-proposal";
+import type { ClientSkillDraft } from "@/lib/skills/teach";
+import type { ClientImageGeneration } from "@/lib/media/image-generation";
 import type { ContextReceipt, ContextToken } from "@/lib/chat/context-tokens";
 import type { ClientFeature } from "@/lib/chat/client-features";
 import type {
@@ -109,6 +111,12 @@ export interface ClientMessage {
   approvals?: ClientActionApproval[];
   finishReason?: ChatFinishReason | null;
   errorMessage?: string | null;
+  /**
+   * Client-transient: what the error frame said can be done about this failed
+   * turn (`ChatErrorRecovery`), copied on by use-chat. The error card offers
+   * "Answer with <model>" from it. The server never sends it on a message.
+   */
+  recovery?: ChatErrorRecovery | null;
   /** Client-transient: live /api/generate progress (set by use-chat while a generation runs; never persisted). */
   progress?: {
     modality: "image" | "video" | "audio";
@@ -152,6 +160,30 @@ export interface ClientMessage {
    * routed by hand and for turns written before Auto Router 2.0.
    */
   routing?: RoutingReceipt | null;
+  /**
+   * What this turn actually ran with, as the server applied it. Sent on
+   * PRIVATE turns, where the frame is the only record. The side-by-side
+   * comparison reads it to show each pane's real effort, search and cost basis
+   * instead of the ones it asked for. Absent on saved turns and from older
+   * servers, which means "not reported", never "off".
+   */
+  applied?: ClientAppliedConditions;
+}
+
+/** The conditions a private turn ran under (see `ClientMessage.applied`). */
+export interface ClientAppliedConditions {
+  /** The effort sent to the provider. Null when none was sent: Instant, or a model with no effort control. */
+  reasoningEffort: ReasoningEffort | null;
+  /** Provider web search was offered to the model on this turn. */
+  webSearch: boolean;
+  /**
+   * Where `promptTokens`, `completionTokens` and `costUsd` come from.
+   * "reported": the provider's own usage report, priced at list rates.
+   * "estimated": at least one count was filled in from text length
+   * (characters / 4) because the provider reported none, or less than was
+   * streamed.
+   */
+  usageBasis: "reported" | "estimated";
 }
 
 export interface ClientSource {
@@ -434,6 +466,19 @@ export interface ClientActivityEvent {
    */
   routineProposal?: ClientRoutineProposal;
   /**
+   * A skill the person taught in this conversation, drafted for them to review
+   * (`draft_skill`, src/lib/chat/skill-draft-tool.ts). Nothing exists until
+   * they save it on the Teach page; the card reads whether they did by key.
+   */
+  skillDraft?: ClientSkillDraft;
+  /**
+   * A picture the chat model made (`generate_image`, src/lib/chat/image-tool.ts):
+   * generating, then done with the files or failed with the cause. The row is
+   * re-sent with the same id as the call moves, and the files are also the
+   * answer's attachments once it is saved.
+   */
+  imageGeneration?: ClientImageGeneration;
+  /**
    * What became of each context token the message named (the files, apps,
    * projects, crew members, skills, chats and artifacts), on the turn's
    * "Using what you mentioned" row: applied or dropped, how, why, and for an
@@ -564,6 +609,8 @@ export interface ClientConversation {
   folderId: string | null;
   projectId: string | null;
   activeConnectors: string[];
+  /** "Memory off for this chat" (src/lib/chat/memory-off.ts): its turns neither read nor add to memory. */
+  memoryOff?: boolean;
   /** When set, the chat is archived: hidden from Recent but still readable and searchable. */
   archivedAt?: string | null;
   lastMessageAt: string;
@@ -599,6 +646,54 @@ export interface ClientLocalToolCall {
   tool: string;
   /** The checked arguments: only the keys the tool declares. */
   args: Record<string, string | number | boolean>;
+}
+
+/**
+ * What kind of provider failure ended a turn: `ProviderErrorClass`
+ * (src/lib/provider-error.ts), spelled out here so the wire type does not
+ * import the classifier, except that its `auth` and `billing` arrive as one
+ * class, `account` (`wireErrorClass`). Both are the deployment's own provider
+ * account, and neither the reader nor anyone reading the stream is told which
+ * (or that the platform ran out of credit); the operator's log and alert keep
+ * the precise class.
+ */
+export type ChatErrorClass =
+  | "account"
+  | "rate_limit"
+  | "context"
+  | "content_filter"
+  | "invalid_request"
+  | "capacity"
+  | "not_found"
+  | "network"
+  | "unknown";
+
+/**
+ * The machine-readable half of an `error` frame (chat wire 1.1, additive):
+ * set only when the turn failed at its provider — never for a Stop, a stall,
+ * a drain, a canvas conflict or an internal error, which carry only
+ * `message`. A client that predates 1.1 ignores all of it.
+ */
+export interface ChatErrorRecovery {
+  /** The provider failure's class. */
+  errorClass?: ChatErrorClass;
+  /** Whether the same request could plausibly work if tried again shortly. */
+  retryable?: boolean;
+  /** How long the provider asked to wait, in whole seconds, when it said. */
+  retryAfterSeconds?: number;
+  /**
+   * One model to offer as "Answer with <model>": the cheapest eligible model
+   * on a different, healthy lab whose training terms the platform's data-use
+   * record clears — neither the model row nor its provider's API terms allow
+   * training, the terms are verified, and a tier-dependent lab's paid tier is
+   * attested — and, after an Auto turn, inside the account's Auto data
+   * boundary (src/lib/chat/turn/failure-recovery.ts,
+   * `suggestAlternativeModel`). Only an offer — the server never sends the
+   * turn there itself; clicking it is the reader's explicit choice.
+   */
+  suggestedModelId?: string;
+  /** Its display name, so a client without the catalog can label the button. */
+  suggestedModelName?: string;
 }
 
 export type StreamChunk =
@@ -702,6 +797,16 @@ export type StreamChunk =
       generationId?: string;
       receiptState?: "failed";
       failureCode?: string;
+      /** Chat wire 1.1 (additive): see `ChatErrorRecovery.errorClass`. */
+      errorClass?: ChatErrorClass;
+      /** Chat wire 1.1 (additive): see `ChatErrorRecovery.retryable`. */
+      retryable?: boolean;
+      /** Chat wire 1.1 (additive): see `ChatErrorRecovery.retryAfterSeconds`. */
+      retryAfterSeconds?: number;
+      /** Chat wire 1.1 (additive): see `ChatErrorRecovery.suggestedModelId`. */
+      suggestedModelId?: string;
+      /** Chat wire 1.1 (additive): see `ChatErrorRecovery.suggestedModelName`. */
+      suggestedModelName?: string;
     }
   // Heartbeat: keeps bytes flowing through proxies while a model thinks
   // silently (hidden reasoning) — the client simply ignores it.
@@ -728,6 +833,8 @@ export interface ChatRequestBody {
   workHandoff?: boolean;
   /** How often a task the model starts stops to ask (see `taskApprovalMode` in request.ts). */
   taskApprovalMode?: "conservative" | "balanced" | "permissive";
+  /** "Memory off for this chat", saved as the turn is accepted (see `memoryOff` in request.ts). */
+  memoryOff?: boolean;
   /** Mac only: the folder this chat works in, by display name (see `localFolder` in request.ts). */
   localFolder?: { name: string; access: "read" | "read_write" };
   /** Durable creation surface for a newly saved conversation. */

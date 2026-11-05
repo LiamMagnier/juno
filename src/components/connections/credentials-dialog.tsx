@@ -72,7 +72,7 @@ function HelpSteps() {
             href="https://account.apple.com"
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-0.5 text-foreground/85 underline decoration-border underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground"
+            className="inline-flex items-center gap-0.5 text-foreground underline decoration-border underline-offset-2 transition-colors duration-fast ease-out-soft"
           >
             account.apple.com
             <ActionIcons.external className="size-3" />

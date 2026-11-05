@@ -21,8 +21,14 @@ export async function resolveCrossConversation(input: {
   conversationId: string;
   crossTrigger: { linkId: string; fromRef: string } | null;
   crossLinkIds: string[];
+  /**
+   * False when the applied skill keeps the turn to what it lists
+   * (`skillKeepsUnlistedSurfaces`): the tools and their prompt section are
+   * left out together. The messages it handles are still marked answered.
+   */
+  skillPermits?: boolean;
 }): Promise<CrossTurn> {
-  const enabled = await chatConversationEnabled(input.userId, input.conversationId);
+  const enabled = input.skillPermits !== false && (await chatConversationEnabled(input.userId, input.conversationId));
   return { enabled, trigger: input.crossTrigger, linkIds: input.crossLinkIds };
 }
 

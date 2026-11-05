@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { cn } from "@/lib/utils";
+import { fieldChoiceClass, fieldFrameClass, fieldHeightClass } from "@/components/ui/field-recipe";
 
 export interface ChoiceOption<T extends string> {
   value: T;
@@ -21,12 +22,17 @@ export interface ChoiceOption<T extends string> {
 }
 
 /**
- * The trigger's look is SelectTrigger's recipe, restated because the two sit
- * in the same column of rows and have to read as one control: the inset
- * field, the input hairline, the field radius, the touch height.
+ * Settings' one dropdown trigger. ChoiceMenu, ModelTrigger and SelectTrigger
+ * sit in the same column of rows and share the actual field recipe. Keeping
+ * a second copy of its colors/focus states made one setting silently drift
+ * every time the shared fields were refined.
  */
-export const choiceTriggerClass =
-  "surface-inset group flex h-9 w-full min-w-0 items-center justify-between gap-2 whitespace-nowrap rounded-field border border-input px-3.5 text-left text-ui transition-[color,border-color] duration-base ease-out-soft hover:border-foreground/60 focus-visible:border-foreground/70 disabled:cursor-not-allowed disabled:opacity-50 coarse:h-11";
+export const choiceTriggerClass = cn(
+  fieldFrameClass,
+  fieldHeightClass,
+  fieldChoiceClass,
+  "group flex min-w-0 items-center justify-between gap-2 whitespace-nowrap px-3.5 text-left",
+);
 
 /**
  * One choice from a short list whose options need a sentence each to tell
@@ -68,7 +74,7 @@ export function ChoiceMenu<T extends string>({
           <span className="min-w-0 truncate">{current?.label}</span>
           {/* The same A-to-B rotate the Select chevron makes. */}
           <ChevronDown
-            className="size-4 shrink-0 opacity-60 transition-transform duration-base ease-in-out motion-reduce:transition-none group-data-[state=open]:rotate-180"
+            className="size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-in-out motion-reduce:transition-none group-data-[state=open]:rotate-180"
             aria-hidden="true"
           />
         </button>

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Markdown } from "@/components/chat/markdown";
 import type { ClientWorkEvent, ClientWorkRun, ClientWorkSession } from "@/lib/work/serializers";
-import { readEvent, str } from "@/components/work/work-payload";
+import { deriveTurns, type Turn } from "@/components/work/work-turns";
 import {
   WorkThreadComposer,
   type WorkComposerMode,
@@ -46,59 +46,9 @@ export type { WorkComposerMode };
  */
 const NO_EVENTS: readonly ClientWorkEvent[] = [];
 
-interface Turn {
-  id: string;
-  role: "you" | "juno";
-  text: string;
-  /** True for a turn the user volunteered rather than one that answered a question. */
-  unprompted: boolean;
-}
-
-/**
- * The readable conversation, pulled out of the event stream.
- *
- * Only three kinds carry prose a person addressed to another: what Juno said,
- * what it asked, and what the user typed. Everything else in the stream is
- * machinery and belongs in the timeline, where it can be skimmed rather than
- * read.
- *
- * The last of those three arrives under two kinds. `question_answered` is an
- * answer to something Juno asked; `user_message` is an instruction the user
- * offered unprompted, which the executor folds into the run before its next
- * step. Both are the user's words and both belong in this column; only the label
- * differs.
- *
- * A `question_answered` row carrying `steering: true` and no id is the same
- * instruction written before the vocabulary had a kind for it. Those rows are in
- * the log and an older Mac or phone still writes them, so they are read as what
- * they are rather than shown as answers to a question nobody asked.
- */
-export function deriveTurns(events: readonly ClientWorkEvent[]): Turn[] {
-  const turns: Turn[] = [];
-  for (const event of events) {
-    if (event.visibility !== "user") continue;
-    const payload = readEvent(event);
-    if (event.kind === "assistant_message") {
-      const text = str(payload, "text", "message");
-      if (text) turns.push({ id: event.id, role: "juno", text, unprompted: false });
-    }
-    if (event.kind === "question_asked") {
-      const text = str(payload, "question", "text");
-      if (text) turns.push({ id: event.id, role: "juno", text, unprompted: false });
-    }
-    if (event.kind === "question_answered") {
-      const text = str(payload, "text", "answer");
-      if (text) {
-        turns.push({ id: event.id, role: "you", text, unprompted: payload.steering === true });
-      }
-    }
-    if (event.kind === "user_message") {
-      const text = str(payload, "text");
-      if (text) turns.push({ id: event.id, role: "you", text, unprompted: true });
-    }
-  }
-  return turns;
-}
+// The readable turns live in work-turns.ts (no React, no voice), so the chat's
+// run panel can read them without this component's composer and voice.
+export { deriveTurns };
 
 export function WorkConversation({
   session,

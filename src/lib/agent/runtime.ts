@@ -16,6 +16,8 @@ import { readDocumentTool } from "@/lib/agent/document";
 import { inspectImageTool } from "@/lib/agent/image";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { composeApprovalCallbacks } from "@/lib/tools/approval";
+import { internalToolErrorText } from "@/lib/tools/dispatch.prompt";
+import { mcpConnectTimeoutMs } from "@/lib/tools/connector-tools";
 import {
   portableSchemaProblem,
   type ChatToolset,
@@ -300,22 +302,33 @@ export class UnifiedAgentRegistry {
 
       return result;
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      
+      // Juno's own code threw: a bug or an infrastructure fault. Its message
+      // (a database error, an internal path) stays in the server log. The
+      // summary is the model's result text and the panel's, and the receipt's
+      // text is what a replay of this call hands the model, so both get a
+      // sentence instead, as `executeSpec` and the dispatcher do.
+      console.error("[agent] a registry tool threw", {
+        tool: tool.id,
+        callId,
+        error: err instanceof Error ? err.name : typeof err,
+        message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+      });
+      const text = internalToolErrorText(tool.riskClass !== "read_only");
+
       if (receiptId) {
         const { completeExternalAction } = await import("@/lib/action-approval-store");
         await completeExternalAction({
           userId: context.userId,
           receiptId,
           ok: false,
-          result: errorMsg,
+          result: "The tool failed with an internal error.",
         });
       }
 
       return {
         success: false,
-        error: errorMsg,
-        summary: `Execution of ${tool.name} failed: ${errorMsg}`,
+        error: text,
+        summary: text,
         durationMs: Date.now() - startTime,
       };
     }
@@ -424,7 +437,7 @@ export class UnifiedAgentRegistry {
   }
 }
 
-import type { ActiveConnector, McpFunctionTool, McpToolsetContext, ToolExecution } from "@/lib/mcp";
+import type { ActiveConnector, McpFunctionTool, McpToolsetContext, OpenMcpToolsetOptions, ToolExecution } from "@/lib/mcp";
 
 /**
  * Open a unified toolset containing both Native Unified Agent Tools (Python, Browser, Computer)
@@ -441,6 +454,12 @@ export async function openUnifiedAgentToolset(
      * behind the same broker (`executeSpec`).
      */
     specs?: readonly ToolSpec[];
+    /**
+     * Once per connector as it opens: "ready", or why it was dropped for this
+     * turn (too slow, unreachable, signed out). The chat route turns a drop
+     * into a quiet warning row.
+     */
+    onConnectorStatus?: OpenMcpToolsetOptions["onConnectorStatus"];
   }
 ): Promise<ChatToolset> {
   const mcpContext: McpToolsetContext = {
@@ -456,8 +475,18 @@ export async function openUnifiedAgentToolset(
   // `server-only` and pulls in the whole connector stack; a plain chat turn
   // has no reason to pay for it, and a test of the empty toolset must be
   // able to run without a server runtime.
+  //
+  // Bounded (SPEC §3.4 item 1): each server gets `MCP_CONNECT_TIMEOUT_MS`
+  // (5 s) to connect and list its tools or is dropped for the turn, a recent
+  // tool list is reused rather than re-listed, and the turn's signal (Stop)
+  // cancels whatever is still opening.
   const baseMcpToolset = activeConnectors.length > 0
-    ? await (await import("@/lib/mcp")).openMcpToolset(activeConnectors, mcpContext)
+    ? await (await import("@/lib/mcp")).openMcpToolset(activeConnectors, mcpContext, {
+        connectTimeoutMs: mcpConnectTimeoutMs(),
+        cacheTools: true,
+        signal: context.abortSignal,
+        onConnectorStatus: options?.onConnectorStatus,
+      })
     : {
         tools: [],
         labelFor: (n: string) => n,

@@ -80,6 +80,8 @@ interface LiveSession {
   generation?: number;
   /** Resolves each time a turn ends (subagent waiters). */
   idleWaiters: (() => void)[];
+  /** The running turn was started by a timer, not a person (a resume at the usage reset). */
+  unattendedTurn?: boolean;
 }
 
 export interface SessionManagerOptions {
@@ -100,8 +102,18 @@ export function stricterMode(a: RuntimeMode, b: RuntimeMode): RuntimeMode {
   return MODE_ORDER.indexOf(a) <= MODE_ORDER.indexOf(b) ? a : b;
 }
 
+/** How many agent-control request ids the env server remembers (a retry after a relay timeout lands well inside it). */
+const CONTROL_REPLY_MEMORY = 512;
+
 export class SessionManager {
   #live = new Map<string, LiveSession>();
+  /**
+   * A person's agent controls by request id (agents lane, REA backlog 10):
+   * the hosted relay can time out on an answer that did arrive, and the
+   * retry must not steer twice or top up twice. A repeated id gets the first
+   * call's answer; a call that failed is forgotten, so a retry runs again.
+   */
+  #controlReplies = new Map<string, Promise<unknown>>();
   readonly sessionsDir: string;
   readonly checkpoints: GitCheckpoints;
   readonly #o: SessionManagerOptions;
@@ -111,6 +123,8 @@ export class SessionManager {
   #closed = new Set<(sessionId: string) => void | Promise<void>>();
   /** Armed resume-at-reset timers, by session. */
   #scheduleTimers = new Map<string, { id: string; timer: NodeJS.Timeout }>();
+  /** Queued entries a timer put there: the turn they start has nobody watching. */
+  #unattendedEntries = new Set<string>();
   #engineTools: ((sessionId: string) => unknown[]) | undefined;
 
   constructor(options: SessionManagerOptions) {
@@ -244,18 +258,75 @@ export class SessionManager {
     return out.slice(0, params.limit ?? 200);
   }
 
-  async messageAgent(sessionId: string, agentId: string, text: string): Promise<{ accepted: boolean; message?: string }> {
+  async messageAgent(sessionId: string, agentId: string, text: string, requestId?: string): Promise<{ accepted: boolean; message?: string }> {
     const live = this.#get(sessionId);
     if (!live.provider?.messageAgent) throw new WireError("unsupported", "This provider does not support messaging individual agents.");
     if (!agentId || !text.trim() || text.length > 100_000) throw new WireError("bad_request", "An agent and a nonempty message are required.");
-    return live.provider.messageAgent(agentId, text);
+    const provider = live.provider;
+    return this.#once("agent.message", sessionId, requestId, () => provider.messageAgent!(agentId, text));
   }
 
-  async interruptAgent(sessionId: string, agentId: string): Promise<void> {
+  async interruptAgent(sessionId: string, agentId: string, requestId?: string): Promise<void> {
     const live = this.#get(sessionId);
     if (!live.provider?.interruptAgent) throw new WireError("unsupported", "This provider does not support stopping individual agents.");
     if (!agentId.trim()) throw new WireError("bad_request", "An agent is required.");
-    await live.provider.interruptAgent(agentId);
+    const provider = live.provider;
+    await this.#once("agent.interrupt", sessionId, requestId, () => provider.interruptAgent!(agentId));
+  }
+
+  /** A person's Pause: one agent, or every agent when `agentId` is absent. Cooperative, between steps. */
+  async pauseAgent(params: ClientCommandParams["agent.pause"]): Promise<ClientCommandResults["agent.pause"]> {
+    const live = this.#get(params.sessionId);
+    if (!live.provider?.pauseAgent) throw new WireError("unsupported", "This provider does not support pausing agents.");
+    const agentId = this.#agentIdOf(params.agentId);
+    const provider = live.provider;
+    return this.#once("agent.pause", params.sessionId, params.requestId, () => provider.pauseAgent!(agentId));
+  }
+
+  async resumeAgent(params: ClientCommandParams["agent.resume"]): Promise<ClientCommandResults["agent.resume"]> {
+    const live = this.#get(params.sessionId);
+    if (!live.provider?.resumeAgent) throw new WireError("unsupported", "This provider does not support resuming agents.");
+    const agentId = this.#agentIdOf(params.agentId);
+    const provider = live.provider;
+    return this.#once("agent.resume", params.sessionId, params.requestId, () => provider.resumeAgent!(agentId));
+  }
+
+  /** A person's bounded top-up. The shape is checked here; the engine enforces the amounts. */
+  async topUpAgent(params: ClientCommandParams["agent.topUp"]): Promise<ClientCommandResults["agent.topUp"]> {
+    const live = this.#get(params.sessionId);
+    if (!live.provider?.topUpAgent) throw new WireError("unsupported", "This provider does not support raising an agent's budget.");
+    const agentId = this.#agentIdOf(params.agentId);
+    const { tokens, usd } = params;
+    if (tokens !== undefined && (!Number.isInteger(tokens) || tokens <= 0 || tokens > 10_000_000)) throw new WireError("bad_request", "Tokens must be a whole positive number.");
+    if (usd !== undefined && (typeof usd !== "number" || !Number.isFinite(usd) || usd <= 0 || usd > 1_000)) throw new WireError("bad_request", "Dollars must be a positive amount.");
+    if (tokens === undefined && usd === undefined) throw new WireError("bad_request", "Say how much to add.");
+    const provider = live.provider;
+    return this.#once("agent.topUp", params.sessionId, params.requestId, () =>
+      provider.topUpAgent!(agentId, { ...(tokens === undefined ? {} : { tokens }), ...(usd === undefined ? {} : { usd }) }),
+    );
+  }
+
+  #agentIdOf(agentId: string | undefined): string | undefined {
+    if (agentId === undefined) return undefined;
+    if (typeof agentId !== "string" || !agentId.trim() || agentId.length > 200) throw new WireError("bad_request", "That agent id is not valid.");
+    return agentId;
+  }
+
+  #once<T>(kind: string, sessionId: string, requestId: string | undefined, run: () => Promise<T>): Promise<T> {
+    if (requestId === undefined) return run();
+    if (typeof requestId !== "string" || !requestId || requestId.length > 200) throw new WireError("bad_request", "That request id is not valid.");
+    const key = `${kind}\u0000${sessionId}\u0000${requestId}`;
+    const prior = this.#controlReplies.get(key);
+    if (prior) return prior as Promise<T>;
+    const reply = run();
+    this.#controlReplies.set(key, reply);
+    reply.catch(() => this.#controlReplies.delete(key));
+    while (this.#controlReplies.size > CONTROL_REPLY_MEMORY) {
+      const oldest = this.#controlReplies.keys().next().value;
+      if (oldest === undefined) break;
+      this.#controlReplies.delete(oldest);
+    }
+    return reply;
   }
 
   /**
@@ -360,8 +431,22 @@ export class SessionManager {
   }
 
   queue(params: ClientCommandParams["turn.queue"]): ClientCommandResults["turn.queue"] {
+    return this.#enqueue(params, false);
+  }
+
+  /**
+   * Whether the session's running turn has nobody watching it: a resume a
+   * timer started. Computer use on the Mac then refuses take-over and skips
+   * (and records) whatever would need the person's approval.
+   */
+  isUnattended(sessionId: string): boolean {
+    return this.#live.get(sessionId)?.unattendedTurn === true;
+  }
+
+  #enqueue(params: ClientCommandParams["turn.queue"], unattended: boolean): ClientCommandResults["turn.queue"] {
     const live = this.#get(params.sessionId);
     const entry: QueuedInput = { id: newId("q"), input: params.input, queuedAt: nowIso() };
+    if (unattended) this.#unattendedEntries.add(entry.id);
     const queue = [...live.log.snapshot.queue, entry];
     live.log.emit({ type: "queue.updated", queue });
     if (!live.active) this.#drainQueue(live);
@@ -631,7 +716,7 @@ export class SessionManager {
     this.#notice(sessionId, "info", "The usage window reset, so the paused turn is starting again.", "resume_at_reset");
     // Through the queue: if a turn is somehow running it waits its turn, and a still-limited
     // provider leaves the message queued with a notice instead of losing it.
-    this.queue({ sessionId, input: schedule.input ?? { text: RESUME_TEXT } });
+    this.#enqueue({ sessionId, input: schedule.input ?? { text: RESUME_TEXT } }, true);
   }
 
   #clearSchedule(live: LiveSession): void {
@@ -995,6 +1080,9 @@ export class SessionManager {
         /* listener errors never break the session */
       }
     }
+    // After the listeners, so they can still tell whether the turn that ended
+    // had anybody watching.
+    live.unattendedTurn = false;
     if (result.outcome === "completed") this.#drainQueue(live);
     if (!live.active) {
       for (const w of live.idleWaiters.splice(0)) w();
@@ -1008,6 +1096,7 @@ export class SessionManager {
     const [next, ...rest] = queue;
     live.log.emit({ type: "queue.updated", queue: rest });
     const meta = live.log.meta;
+    const unattended = this.#unattendedEntries.delete(next.id);
     try {
       this.startTurn({
         sessionId: live.log.id,
@@ -1017,7 +1106,9 @@ export class SessionManager {
         runtimeMode: meta.runtimeMode,
         interactionMode: meta.interactionMode,
       });
+      if (unattended && live.active) live.unattendedTurn = true;
     } catch (error) {
+      if (unattended) this.#unattendedEntries.add(next.id);
       // Put it back; the user decides what to do once the provider is ready again.
       live.log.emit({ type: "queue.updated", queue: [next, ...rest] });
       this.#notice(live.log.id, "warning", `The queued message is waiting: ${describeError(error)}`, "queue_blocked");

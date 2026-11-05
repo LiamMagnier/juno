@@ -9,6 +9,7 @@
 import { providerApiKey } from "@/lib/providers";
 import { ttsProviderOrder } from "@/lib/tts-order";
 import type { TtsProvider } from "@/lib/voices";
+import { arePaymentsConfigured, paymentsConfig } from "@/lib/payments/config";
 
 function required(name: string): string {
   const v = process.env[name];
@@ -197,6 +198,28 @@ export const env = {
     elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID,
   },
 
+  // iMessage (optional — off unless all four CHANNEL_SENDBLUE_* are set).
+  // Getters so a test can set and clear them after import. The API key pair
+  // signs every send; the webhook secret is what Sendblue sends verbatim in
+  // `sb-signing-secret` on each inbound message (src/lib/channels/sendblue.ts).
+  channels: {
+    sendblue: {
+      get apiKeyId(): string {
+        return (process.env.CHANNEL_SENDBLUE_API_KEY_ID ?? "").trim();
+      },
+      get apiSecretKey(): string {
+        return (process.env.CHANNEL_SENDBLUE_API_SECRET_KEY ?? "").trim();
+      },
+      /** The Sendblue line texts come from and go to, E.164 ("+14155550100"). */
+      get fromNumber(): string {
+        return (process.env.CHANNEL_SENDBLUE_FROM_NUMBER ?? "").trim();
+      },
+      get webhookSecret(): string {
+        return (process.env.CHANNEL_SENDBLUE_WEBHOOK_SECRET ?? "").trim();
+      },
+    },
+  },
+
   // Agent computers (optional — disabled unless AGENT_COMPUTER_PROVIDER / COMPUTER_PROVIDER is set)
   agentComputer: {
     get provider(): string {
@@ -288,9 +311,71 @@ export const env = {
       }
       return positiveNumber(process.env.AGENT_COMPUTER_SLEEP_HOURS, 0.5);
     },
-    /** Days asleep before a computer, its sign-ins and its files are destroyed. */
-    get retentionDays(): number {
-      return positiveNumber(process.env.COMPUTER_RETENTION_DAYS, 30);
+    // No retention getter here: deleting computers by age is an owner decision
+    // behind a switch of its own, parsed only in src/lib/computer/retention.ts
+    // (COMPUTERS_2026-10.md D14). `COMPUTER_RETENTION_DAYS` is never honoured.
+    /**
+     * Who gets a computer once a provider is set: `allowlist` (the default:
+     * only AGENT_COMPUTER_ALLOWLIST), `plans` (every plan that includes one) or
+     * `off`. Parsed, with its fallback, in src/lib/computer/access.ts.
+     */
+    get rollout(): string {
+      return (process.env.AGENT_COMPUTER_ROLLOUT ?? "").trim();
+    },
+    /** Comma-separated user ids or verified emails (AGENT_COMPUTER_ALLOWLIST). Empty exposes nobody. */
+    get allowlist(): string {
+      return (process.env.AGENT_COMPUTER_ALLOWLIST ?? "").trim();
+    },
+    /** Past this age the image is reported stale at every wake (audit `image_stale`); nothing is refused. */
+    get maxImageAgeDays(): number {
+      return positiveNumber(process.env.AGENT_COMPUTER_MAX_IMAGE_AGE_DAYS, 14);
+    },
+    /**
+     * A separate computer host (COMPUTER_PROVIDER=remote,
+     * deploy/computer-host/README.md): its `https://` origin. `http://` is
+     * accepted only to 127.0.0.1, ::1 or localhost outside production;
+     * anything else keeps the provider off (src/lib/computer/remote.ts).
+     */
+    get hostUrl(): string {
+      return (process.env.COMPUTER_HOST_URL ?? "").trim();
+    },
+    /** The host's bearer token, as its setup.sh generates it (64 hex or 43+ base64url characters). */
+    get hostToken(): string {
+      return (process.env.COMPUTER_HOST_TOKEN ?? "").trim();
+    },
+    /** Per-request timeout to the host; an exec adds its own command limit. */
+    get hostTimeoutMs(): number {
+      return Math.floor(positiveNumber(process.env.COMPUTER_HOST_TIMEOUT_MS, 30_000));
+    },
+    /** 1: refuse to wake a computer whose Chromium runs without its own sandbox (owner decision 8). */
+    get requireBrowserSandbox(): boolean {
+      return (process.env.AGENT_COMPUTER_REQUIRE_BROWSER_SANDBOX ?? "").trim() === "1";
+    },
+    /**
+     * The largest file a person can put into the computer's ~/work/inbox
+     * (AGENT_COMPUTER_UPLOAD_MAX_MB, owner to confirm). Never above 25: the
+     * computer host takes request bodies up to 30 MB, and a file goes there
+     * whole.
+     */
+    get uploadMaxMb(): number {
+      return Math.min(25, positiveNumber(process.env.AGENT_COMPUTER_UPLOAD_MAX_MB, 25));
+    },
+    /**
+     * Streamed shell output kept per `computer_shell` call for the terminal
+     * pane, in KB (AGENT_COMPUTER_SHELL_LOG_KB_PER_CALL, owner to confirm).
+     * Between 16 and 4096; the model's own result keeps its 20,000-character
+     * cap per stream whatever this is.
+     */
+    get shellLogKbPerCall(): number {
+      return Math.max(16, Math.min(4096, Math.floor(positiveNumber(process.env.AGENT_COMPUTER_SHELL_LOG_KB_PER_CALL, 512))));
+    },
+    /**
+     * Server-only: the relay the computer view uses, read before the voice
+     * relay variables (src/lib/computer/live-view.ts), and added to the CSP's
+     * connect-src. Lets a demo relay serve the computer view without moving voice.
+     */
+    get viewRelayUrl(): string {
+      return (process.env.COMPUTER_VIEW_RELAY_URL ?? "").trim();
     },
     get costUsdPerMin(): number {
       if (process.env.COMPUTER_COST_MICRO_USD_PER_SECOND) {
@@ -301,8 +386,134 @@ export const env = {
     },
   },
 
+  /**
+   * Teach by demonstration (docs/design/agents-v2/TEACH.md): the person shows
+   * an agent a task on its computer and it drafts a skill from the recording.
+   * Off unless AGENT_TEACH_ENABLED is exactly `1`, and then only where agent
+   * computers are on too (`isAgentTeachConfigured`).
+   */
+  agentTeach: {
+    get enabled(): boolean {
+      return (process.env.AGENT_TEACH_ENABLED ?? "").trim() === "1";
+    },
+  },
+
+  // The agents' credential vault (docs/design/agents-v2/VAULT.md). Off unless
+  // AGENT_VAULT_ENABLED is exactly "1", and only ever on beside a computer
+  // provider: a saved login is filled into an agent computer's browser only.
+  agentVault: {
+    get enabled(): boolean {
+      return (process.env.AGENT_VAULT_ENABLED ?? "").trim() === "1";
+    },
+  },
+
+  /*
+   * Features merged before their review (integration PR 2026-10-31). Each is
+   * off unless its variable is exactly "1": its routes refuse, its prompt
+   * text is left out and its controls are not drawn, so merging it changes
+   * nothing a person can see until the owner turns it on.
+   */
+  /** Share a chat or artifact with specific people by email (src/lib/share-people-core.ts). SHARE_PEOPLE_ENABLED. */
+  sharePeople: {
+    get enabled(): boolean {
+      return (process.env.SHARE_PEOPLE_ENABLED ?? "").trim() === "1";
+    },
+  },
+  /**
+   * The project knowledge embedding sweep (scripts/knowledge-indexer.ts,
+   * PRJ-1): backfills chunks for documents indexed before ingest wrote them
+   * and fills vectors under each account's background-provider policy,
+   * spending on that account. Off until it has run against a real database;
+   * ingest writes chunks either way, so lexical project retrieval works
+   * without it. KNOWLEDGE_INDEXER_ENABLED.
+   */
+  knowledgeIndexer: {
+    get enabled(): boolean {
+      return (process.env.KNOWLEDGE_INDEXER_ENABLED ?? "").trim() === "1";
+    },
+  },
+  /** "Memory off for this chat" (src/lib/chat/memory-off.ts): the switch can be set. CHAT_MEMORY_OFF_ENABLED. */
+  chatMemoryOff: {
+    get enabled(): boolean {
+      return (process.env.CHAT_MEMORY_OFF_ENABLED ?? "").trim() === "1";
+    },
+  },
+  /** Attach from Google Drive / OneDrive in the composer (src/lib/cloud-files). CLOUD_ATTACH_ENABLED. */
+  cloudAttach: {
+    get enabled(): boolean {
+      return (process.env.CLOUD_ATTACH_ENABLED ?? "").trim() === "1";
+    },
+  },
+  /** The chat's tools and connectors during a voice call (src/lib/voice-tools.ts). VOICE_TOOLS_ENABLED. */
+  voiceTools: {
+    get enabled(): boolean {
+      return (process.env.VOICE_TOOLS_ENABLED ?? "").trim() === "1";
+    },
+  },
+  /** Tone characteristics in Personalization (src/lib/characteristics.ts). TONE_CHARACTERISTICS_ENABLED. */
+  toneCharacteristics: {
+    get enabled(): boolean {
+      return (process.env.TONE_CHARACTERISTICS_ENABLED ?? "").trim() === "1";
+    },
+  },
+  /** AI-powered artifacts: `window.alevr.complete` and `.storage` (src/lib/artifact-ai). ARTIFACT_AI_ENABLED. */
+  artifactAi: {
+    get enabled(): boolean {
+      return (process.env.ARTIFACT_AI_ENABLED ?? "").trim() === "1";
+    },
+  },
+
+  // Agent payments (src/lib/payments, docs/design/agents-v2/ENABLE_PAYMENTS.md):
+  // one-time cards an agent asks for. Off unless all three STRIPE_ISSUING_*
+  // values are set (or, outside production only, the test provider is asked
+  // for by name). Parsed in src/lib/payments/config.ts.
+  agentPayments: {
+    get config() {
+      return paymentsConfig(process.env);
+    },
+    get stripeIssuingSecretKey(): string {
+      return (process.env.STRIPE_ISSUING_SECRET_KEY ?? "").trim();
+    },
+    get stripeIssuingCardholderId(): string {
+      return (process.env.STRIPE_ISSUING_CARDHOLDER_ID ?? "").trim();
+    },
+    get stripeIssuingWebhookSecret(): string {
+      return (process.env.STRIPE_ISSUING_WEBHOOK_SECRET ?? "").trim();
+    },
+    get stripeIssuingApiVersion(): string {
+      return paymentsConfig(process.env).stripe?.apiVersion ?? "";
+    },
+    get cardTtlMinutes(): number {
+      return paymentsConfig(process.env).cardTtlMinutes;
+    },
+    get maxPaymentMinor(): number {
+      return paymentsConfig(process.env).maxPaymentMinor;
+    },
+  },
+
   isProd: process.env.NODE_ENV === "production",
 };
+
+/**
+ * Whether teach by demonstration may be offered: the switch is on and a
+ * computer provider is set. The provider's own availability (the image on the
+ * host) is still checked where a recording starts.
+ */
+export function isAgentTeachConfigured(): boolean {
+  return env.agentTeach.enabled && env.agentComputer.provider.length > 0 && env.agentComputer.provider.toLowerCase() !== "off";
+}
+
+/**
+ * Whether agents may keep saved logins (docs/design/agents-v2/VAULT.md): the
+ * switch is on AND a computer provider is named. The routes and the runner
+ * also require the provider to resolve (src/lib/computer/vault-store.ts).
+ */
+export function isAgentVaultConfigured(): boolean {
+  if (!env.agentVault.enabled) return false;
+  const provider = env.agentComputer.provider.trim().toLowerCase();
+  if (provider === "docker" || provider === "remote") return true;
+  return provider === "fake" && process.env.NODE_ENV !== "production";
+}
 
 export function isStorageConfigured(): boolean {
   const s = env.s3;
@@ -335,6 +546,17 @@ export function isGoogleConfigured(): boolean {
   return Boolean(env.googleClientId && env.googleClientSecret);
 }
 
+/**
+ * Messaging agents from iMessage (src/lib/channels). All four Sendblue values
+ * or nothing: without the webhook secret an inbound text could not be
+ * authenticated, and without the key pair nothing could be sent back, so a
+ * partial setup is off rather than half on.
+ */
+export function isIMessageConfigured(): boolean {
+  const s = env.channels.sendblue;
+  return Boolean(s.apiKeyId && s.apiSecretKey && s.fromNumber && s.webhookSecret);
+}
+
 export function isComposioConfigured(): boolean {
   return Boolean(env.connectors.composio.apiKey);
 }
@@ -363,4 +585,43 @@ export function isServerTtsConfigured(): boolean {
 /** The provider read-aloud uses when nothing fails — what the voice picker lists. */
 export function activeTtsProvider(): TtsProvider | null {
   return serverTtsOrder()[0] ?? null;
+}
+
+/** Agent payment cards: Stripe Issuing fully configured, or the dev-only test provider asked for. */
+export function isAgentPaymentsConfigured(): boolean {
+  return arePaymentsConfigured(process.env);
+}
+
+/** Sharing with specific people may be created (SHARE_PEOPLE_ENABLED=1). Existing people shares stay restricted either way. */
+export function isSharePeopleEnabled(): boolean {
+  return env.sharePeople.enabled;
+}
+
+/**
+ * "Memory off for this chat" may be switched (CHAT_MEMORY_OFF_ENABLED=1). A
+ * chat already saved with memory off keeps memory out either way: the switch
+ * only ever narrows, so turning the flag off never lets memory back in.
+ */
+export function isChatMemoryOffEnabled(): boolean {
+  return env.chatMemoryOff.enabled;
+}
+
+/** The composer's Add from Google Drive / OneDrive and its routes (CLOUD_ATTACH_ENABLED=1). */
+export function isCloudAttachEnabled(): boolean {
+  return env.cloudAttach.enabled;
+}
+
+/** A voice call may be lent the chat's tools (VOICE_TOOLS_ENABLED=1). */
+export function isVoiceToolsEnabled(): boolean {
+  return env.voiceTools.enabled;
+}
+
+/** The five tone characteristics are drawn, saved and read into the prompt (TONE_CHARACTERISTICS_ENABLED=1). */
+export function isToneCharacteristicsEnabled(): boolean {
+  return env.toneCharacteristics.enabled;
+}
+
+/** Artifacts get `window.alevr` (model calls and per-viewer storage), and the prompt teaches it (ARTIFACT_AI_ENABLED=1). */
+export function isArtifactAiEnabled(): boolean {
+  return env.artifactAi.enabled;
 }

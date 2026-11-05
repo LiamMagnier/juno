@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { SkillsGallery } from "./gallery";
 import { isSkillsGalleryView } from "./views";
 
@@ -17,5 +18,9 @@ export default async function SkillsDevPage({
 }) {
   if (process.env.NODE_ENV === "production") notFound();
   const { view } = await searchParams;
-  return <SkillsGallery view={isSkillsGalleryView(view) ? view : "library"} />;
+  return (
+    <PageRoot>
+      <SkillsGallery view={isSkillsGalleryView(view) ? view : "library"} />
+    </PageRoot>
+  );
 }

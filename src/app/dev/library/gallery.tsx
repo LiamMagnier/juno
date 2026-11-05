@@ -9,6 +9,9 @@ import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { LibraryBrowserSkeleton, LibraryGrid, LibraryList } from "@/components/library/library-browser";
 import { LibraryDropOverlay, useFileDrop } from "@/components/library/library-drop-zone";
 import { LibraryStorageCaption, LibraryToolbar } from "@/components/library/library-toolbar";
+import { LibraryRowHead, UploadRow, UploadTile } from "@/components/library/library-items";
+import { LibraryQuickLook } from "@/components/library/library-quick-look";
+import { oversizeMessage } from "@/components/library/use-library-uploads";
 import type {
   LibraryItem,
   LibraryKind,
@@ -212,7 +215,7 @@ const UPLOADS: LibraryUpload[] = [
     kind: "FILE",
     progress: 0,
     status: "failed",
-    error: "This file is larger than your plan allows.",
+    error: oversizeMessage(212_000_000, 50 * 1024 * 1024),
     retryable: false,
   },
   {
@@ -222,9 +225,28 @@ const UPLOADS: LibraryUpload[] = [
     kind: "FILE",
     progress: 0,
     status: "failed",
-    error: "Couldn’t reach Juno. Check your connection.",
+    error: "Couldn’t reach Alevr. Check your connection.",
     retryable: true,
   },
+];
+
+/** Files for the preview dialog: a picture, the site's own llms.txt, and a kind with no preview. */
+const PREVIEW_ITEMS: LibraryItem[] = [
+  ITEMS[0],
+  {
+    ...base,
+    // A real same-origin text file: the CSP's connect-src is 'self', so a
+    // data: URL cannot be fetched, and the preview reads files with fetch.
+    id: "fx-p1",
+    kind: "FILE",
+    fileName: "llms.txt",
+    mimeType: "text/plain",
+    size: 1_687,
+    url: "/llms.txt",
+    createdAt: ago(1),
+    conversationId: "c-5",
+  },
+  ITEMS[6],
 ];
 
 export const STORAGE = { usedBytes: 1_240_000_000, quotaBytes: 10_737_418_240, remainingBytes: 9_497_418_240 };
@@ -284,6 +306,51 @@ function useFixtureLibrary({
       ),
     onDismissUpload: (localId: string) => setUploads((previous) => previous.filter((upload) => upload.localId !== localId)),
   };
+}
+
+/** The Library home's own upload tile and row (library-items.tsx), in every state, at the home's grid. */
+function HomeUploads() {
+  const [uploads, setUploads] = React.useState(UPLOADS);
+  const retry = (localId: string) =>
+    setUploads((previous) => previous.map((upload) => (upload.localId === localId ? { ...upload, status: "uploading", progress: 8, error: undefined } : upload)));
+  const dismiss = (localId: string) => setUploads((previous) => previous.filter((upload) => upload.localId !== localId));
+  return (
+    <Section
+      title="Library home: uploads"
+      note="In flight: the progress line and Cancel. Saving: no Cancel, the file lands anyway. Failed: the reason in words in the well, and the verbs on the meta line."
+    >
+      <ul className="grid grid-cols-2 gap-3 @[40rem]/page:grid-cols-3 @[40rem]/page:gap-4 @[56rem]/page:grid-cols-4">
+        {uploads.map((upload) => (
+          <li key={upload.localId} className="min-w-0">
+            <UploadTile upload={upload} onRetry={() => retry(upload.localId)} onDismiss={() => dismiss(upload.localId)} />
+          </li>
+        ))}
+      </ul>
+      <div role="table" aria-label="Uploads" className="-mx-2.5 mt-8 flex flex-col">
+        <LibraryRowHead />
+        {uploads.map((upload) => (
+          <UploadRow key={upload.localId} upload={upload} onRetry={() => retry(upload.localId)} onDismiss={() => dismiss(upload.localId)} />
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+/** Opens the preview dialog on fixture files; the text one is /llms.txt, so nothing needs a signed-in account. */
+function PreviewLauncher() {
+  const [item, setItem] = React.useState<LibraryItem | null>(null);
+  return (
+    <Section title="Preview" note="A plain click on an uploaded file opens this; a modified or middle click keeps the old new-tab link.">
+      <div className="flex flex-wrap gap-2">
+        {PREVIEW_ITEMS.map((entry) => (
+          <Button key={entry.id} variant="secondary" size="sm" onClick={() => setItem(entry)} className="max-w-full">
+            <span className="truncate">{entry.fileName}</span>
+          </Button>
+        ))}
+      </div>
+      <LibraryQuickLook item={item} onOpenChange={(open) => !open && setItem(null)} />
+    </Section>
+  );
 }
 
 /**
@@ -380,10 +447,16 @@ export function LibraryGallery() {
           </div>
         </Section>
 
+        <HomeUploads />
+
+        <PreviewLauncher />
+
         <Section title="Drop overlay" note="Shown while files are held over the page. It tracks which elements the drag is inside, so crossing between rows does not blink it.">
-          <div className="relative h-[26rem] overflow-hidden">
+          {/* `isolate`: this overlay is pinned open, and its z-popper must not
+              climb over the preview dialog opened from the section above. */}
+          <div className="relative isolate h-[26rem] overflow-hidden">
             <LibraryList {...library} uploads={[]} />
-            <LibraryDropOverlay open />
+            <LibraryDropOverlay open limitMb={50} />
           </div>
           <LiveDropZone />
         </Section>
@@ -392,7 +465,7 @@ export function LibraryGallery() {
           <EmptyState
             icon={AppIcons.library}
             title="No files yet"
-            description="Upload files here, or drop them anywhere on this page. Files you share in chats are kept here too."
+            description="Upload files here, or drop them anywhere on this page, up to 50 MB each. Files you share in chats are kept here too."
             action={
               <>
                 <Button size="sm">

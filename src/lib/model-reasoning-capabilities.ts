@@ -1,3 +1,4 @@
+import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
 import type { ReasoningCaps, ReasoningTier } from "@/lib/model-metrics";
 import { reasoningCaps } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
@@ -83,9 +84,13 @@ function wireContract(model: ModelInfo, caps: ReasoningCaps) {
   // Grok are served through Responses now, whatever `api` says.
   const adapter = providerAdapterFor(model);
   const responses = adapter === "openai-responses" || adapter === "xai-responses";
+  // GLM-5.2: the on/off `thinking` object AND the effort enum on one request.
+  const zhipuBoth = model.provider === "zhipu" && caps.tiers.length > 0 && caps.canDisable;
   return {
     controlType: caps.onOff ? "on_off" as const : caps.tiers.length ? "enum" as const : "automatic" as const,
-    parameter: objectToggle
+    parameter: zhipuBoth
+      ? "thinking.type + reasoning_effort"
+      : objectToggle
       ? "thinking.type"
       : caps.tiers.length || caps.canDisable
         ? responses ? "reasoning.effort" : "reasoning_effort"
@@ -105,8 +110,18 @@ export function reasoningCapabilityForModel(model: ModelInfo): ModelReasoningCap
   const tierMapping: ModelReasoningCapability["tierMapping"] = Object.fromEntries(
     caps.tiers.map((tier) => [tier, providerValue(tier)]),
   );
-  if (caps.canDisable) tierMapping.instant = wire.parameter === "thinking.type" ? "disabled" : false;
-  if (caps.onOff) tierMapping.thinking = wire.parameter === "thinking.type" ? "enabled" : true;
+  // The spelling each provider actually takes for off and for on (the request
+  // builders' own choices; tests/model-effort-wire.test.ts holds them to it).
+  const objectWire = wire.parameter?.startsWith("thinking.type") ?? false;
+  if (caps.canDisable) {
+    tierMapping.instant =
+      model.provider === "anthropic"
+        ? buildAnthropicThinkingBits(model.providerModel, 1024).thinking?.type ?? "omitted"
+        : objectWire || model.provider === "deepseek"
+          ? "disabled"
+          : wire.parameter?.includes("reasoning") ? "none" : false;
+  }
+  if (caps.onOff) tierMapping.thinking = objectWire ? (model.provider === "minimax" ? "adaptive" : "enabled") : wire.parameter?.includes("reasoning") ? "high" : true;
   return {
     canonicalId: model.id,
     provider: model.provider,
@@ -123,7 +138,7 @@ export function reasoningCapabilityForModel(model: ModelInfo): ModelReasoningCap
     tierMapping,
     apiSurface: wire.apiSurface,
     officialDocs: OFFICIAL_REASONING_DOCS[model.provider] ?? "",
-    verifiedAt: "2026-08-21",
+    verifiedAt: "2026-10-18",
     method: LIVE_PROBED.has(model.provider) ? "both" : "official_docs",
   };
 }

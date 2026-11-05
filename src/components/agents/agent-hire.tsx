@@ -152,7 +152,8 @@ export function AgentHire({
 
   const form = (
     <form onSubmit={submit} className={embedded ? "@container space-y-8" : "@container"}>
-        <div className="grid grid-cols-1 gap-8 @[52rem]:grid-cols-[minmax(0,1fr)_16rem]">
+        {/* The preview's column holds the face and its one-row state switcher (19rem). */}
+        <div className="grid grid-cols-1 gap-8 @[52rem]:grid-cols-[minmax(0,1fr)_19rem]">
           <div className="min-w-0 space-y-10">
             <Step n={1} title="What should it take on?">
               <ul className="overflow-hidden rounded-card border border-border bg-card" role="radiogroup" aria-label="Starting point">
@@ -175,7 +176,8 @@ export function AgentHire({
                       <AgentFace avatar={option.avatar} size="sm" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-ui font-medium text-foreground">{option.label}</span>
-                        <span className="mt-0.5 block truncate text-caption text-muted-foreground">{option.promise}</span>
+                        {/* Two lines: the safety clause at the end of a promise is what it is there to say. */}
+                        <span className="mt-0.5 line-clamp-2 text-caption text-muted-foreground">{option.promise}</span>
                       </span>
                     </button>
                   </li>
@@ -312,9 +314,16 @@ export function AgentHire({
 
           <aside className={embedded ? "" : "order-first @[52rem]:order-none"}>
             <div className={embedded ? "" : "@[52rem]:sticky @[52rem]:top-6"}>
-              <FacePreview avatar={avatar} name={trimmedName} />
-              <p className="mt-4 text-center text-body font-medium text-foreground">{trimmedName || "New agent"}</p>
-              {role.trim() ? <p className="text-center text-ui text-muted-foreground">{role.trim()}</p> : null}
+              <FacePreview
+                avatar={avatar}
+                name={trimmedName}
+                caption={
+                  <>
+                    <p className="font-serif text-body-lg leading-6 tracking-[-0.012em] text-foreground [font-optical-sizing:auto]">{trimmedName || "New agent"}</p>
+                    {role.trim() ? <p className="text-ui text-muted-foreground">{role.trim()}</p> : null}
+                  </>
+                }
+              />
             </div>
           </aside>
         </div>

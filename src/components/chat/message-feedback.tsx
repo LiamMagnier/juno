@@ -281,7 +281,7 @@ export function FeedbackReasonForm({
           </Pressable>
         ))}
       </div>
-      <label htmlFor={noteId} className="mt-3 block text-caption text-muted-foreground">
+      <label htmlFor={noteId} className="mt-3 block font-sans text-label font-normal text-muted-foreground">
         Anything else? (optional)
       </label>
       <Textarea

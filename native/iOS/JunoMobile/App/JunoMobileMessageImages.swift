@@ -395,3 +395,61 @@ private struct JunoMobileZoomableImage: View {
     lastOffset = .zero
   }
 }
+
+// MARK: - Images made in chat
+
+/// The shared string table's words (`Shell.xcstrings`, table "Shell"), read by
+/// key — the contract's keys, which the generator writes with format
+/// specifiers in place of `{model}` and `{plan}`.
+enum JunoMobileShellStrings {
+  static func text(_ key: String) -> String {
+    String(localized: String.LocalizationValue(key), table: "Shell")
+  }
+
+  static func text(_ key: String, _ arguments: String...) -> String {
+    String(format: text(key), arguments: arguments)
+  }
+}
+
+/// An image card's words (G04), in the reader's language. Which sentence a
+/// failure gets is decided in JunoChatKit
+/// (``NativeImageGeneration/failureSentence``); this only says it.
+enum JunoMobileImageGenerationCopy {
+  static func copy(for generation: NativeImageGeneration) -> NativeImageGenerationCopy {
+    NativeImageGenerationCopy(
+      caption: generation.caption.map(Self.caption),
+      saved: JunoMobileShellStrings.text("image.savedToLibrary"),
+      failedTitle: JunoMobileShellStrings.text("image.failedTitle"),
+      failureSentence: generation.failureSentence.map(Self.sentence) ?? ""
+    )
+  }
+
+  static func caption(_ caption: NativeImageGeneration.Caption) -> String {
+    switch caption {
+    case .autoPicked(let model): JunoMobileShellStrings.text("image.autoPicked", model)
+    case .madeWith(let model): JunoMobileShellStrings.text("image.madeWith", model)
+    }
+  }
+
+  static func sentence(_ sentence: NativeImageGeneration.FailureSentence) -> String {
+    let shell = JunoMobileShellStrings.self
+    switch sentence {
+    case .noModel: return shell.text("image.failureNoModel")
+    case .notConfigured(let model): return shell.text("image.failureNotConfigured", model)
+    case .unavailable(let model): return shell.text("image.failureUnavailable", model)
+    case .plan(let model, let plan): return shell.text("image.failurePlan", model, plan)
+    case .budget: return shell.text("image.failureBudget")
+    case .rateLimited: return shell.text("image.failureRateLimited")
+    case .quota: return shell.text("image.failureQuota")
+    case .policy: return shell.text("image.failurePolicy")
+    case .workspace: return shell.text("image.failureWorkspace")
+    case .edit(let model): return shell.text("image.failureEdit", model)
+    case .reference: return shell.text("image.failureReference")
+    case .libraryFull: return shell.text("image.failureLibraryFull")
+    case .tooMany: return shell.text("image.failureTooMany")
+    case .notRequested: return shell.text("image.failureNotRequested")
+    case .provider(let model): return shell.text("image.failureProvider", model)
+    case .message(let text): return text
+    }
+  }
+}

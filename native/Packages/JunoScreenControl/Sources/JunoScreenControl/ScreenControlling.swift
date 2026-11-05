@@ -197,19 +197,23 @@ public struct ScreenPresenceState: Hashable, Sendable {
     /// The target window's frame, for the outline glow, when known.
     public var targetWindowFrame: ScreenRect?
     public var displayFrame: ScreenRect?
+    /// Paused because the Mac is locked, not because the reader took over.
+    public var lockedPause: Bool
 
     public init(
         holder: ScreenControlHolder? = nil,
         mode: ScreenControlMode = .background,
         paused: Bool = false,
         targetWindowFrame: ScreenRect? = nil,
-        displayFrame: ScreenRect? = nil
+        displayFrame: ScreenRect? = nil,
+        lockedPause: Bool = false
     ) {
         self.holder = holder
         self.mode = mode
         self.paused = paused
         self.targetWindowFrame = targetWindowFrame
         self.displayFrame = displayFrame
+        self.lockedPause = lockedPause
     }
 
     public static let idle = ScreenPresenceState()
@@ -219,6 +223,7 @@ public struct ScreenPresenceState: Hashable, Sendable {
     public var caption: String? {
         guard let holder else { return nil }
         let app = holder.appName.map { "\(ScreenControlBrand.productName) is using \($0)" } ?? "\(ScreenControlBrand.productName) is using apps"
+        if lockedPause { return "Paused: your Mac is locked" }
         return paused ? "You took over · \(ScreenControlBrand.productName) is waiting" : app + " · Esc to stop"
     }
 }
@@ -264,6 +269,21 @@ public enum ScreenPresenceLayout {
     }
 }
 #endif
+
+/// A step an unattended run did not take because it needed someone's say-so.
+public struct ScreenSkippedStep: Hashable, Sendable {
+    /// What the step would have done: "Click the “Send” button in Mail".
+    public var summary: String
+    /// Why it was skipped, in a sentence.
+    public var reason: String
+    public var at: Date
+
+    public init(summary: String, reason: String, at: Date) {
+        self.summary = summary
+        self.reason = reason
+        self.at = at
+    }
+}
 
 /// The agent-facing surface of screen control, keyed by session id.
 ///
@@ -312,6 +332,15 @@ public protocol ScreenControlling: Sendable {
     /// Drops what a prepared action holds — its bound frame — when it will
     /// never be performed: the reader denied it, or the approval failed.
     func discard(sessionID: String, preparedID: String) async
+    /// The reader's "whole display" tick on an open take-over card, set by
+    /// the card before Allow. No tool reaches it.
+    func setTakeoverScope(sessionID: String, wholeDisplay: Bool) async
+    /// Whether nobody is watching this session's run (scheduled, resumed
+    /// after a usage reset): the tools then skip what would ask.
+    func isUnattended(sessionID: String) async -> Bool
+    /// Records a step an unattended run skipped instead of asking, for the
+    /// run's report and the step rows.
+    func recordSkipped(sessionID: String, summary: String, reason: String) async
 }
 
 public extension ScreenControlling {

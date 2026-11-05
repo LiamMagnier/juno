@@ -87,7 +87,7 @@ export function Token({
       onClick={onClick}
     >
       {markLayoutId ? (
-        <motion.span layoutId={markLayoutId} className="inline-flex" transition={{ duration: 0.24, ease: [0.2, 0, 0, 1] }}>
+        <motion.span layoutId={markLayoutId} className="inline-flex" transition={{ duration: 0.22, ease: [0.2, 0, 0, 1] }}>
           <TokMark tok={tok} />
         </motion.span>
       ) : (
@@ -287,7 +287,7 @@ export function AtPalette({
               return (
                 <div key={it.key} className="pc-opt" role="option" aria-selected={isActive} data-active={isActive ? "" : undefined}>
                   {markLayoutPrefix ? (
-                    <motion.span layoutId={`${markLayoutPrefix}-${it.key}`} className="inline-flex" transition={{ duration: 0.24, ease: [0.2, 0, 0, 1] }}>
+                    <motion.span layoutId={`${markLayoutPrefix}-${it.key}`} className="inline-flex" transition={{ duration: 0.22, ease: [0.2, 0, 0, 1] }}>
                       <TokMark tok={it.tok} size={18} />
                     </motion.span>
                   ) : (

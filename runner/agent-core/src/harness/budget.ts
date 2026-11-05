@@ -31,7 +31,8 @@ export class BudgetLedger {
   private notified = false;
 
   constructor(
-    readonly limits: RunBudget = {},
+    // Not readonly: a person can raise it mid-run (`raise`, a budget top-up).
+    public limits: RunBudget = {},
     parent?: BudgetLedger,
   ) {
     this.parent = parent;
@@ -93,6 +94,31 @@ export class BudgetLedger {
       if (this.stopReason !== undefined) this.notify(this.stopReason);
     }
     return this.exhausted;
+  }
+
+  /**
+   * A person raised this ledger's limits (a budget top-up). Only a limit the
+   * ledger already has grows: a top-up never turns an uncapped dimension into
+   * a capped one. When the new limits clear the line this ledger crossed, it
+   * is live again and its listeners will hear the next exhaustion; a limit an
+   * enclosing ledger hit still stops it (`exhausted` reads the parent too).
+   */
+  raise(add: RunBudget): BudgetSnapshot {
+    const next: RunBudget = { ...this.limits };
+    if (add.maxTokens !== undefined && add.maxTokens > 0 && next.maxTokens !== undefined) next.maxTokens += add.maxTokens;
+    if (add.maxUsd !== undefined && add.maxUsd > 0 && next.maxUsd !== undefined) {
+      next.maxUsd = Math.round((next.maxUsd + add.maxUsd) * 1_000_000) / 1_000_000;
+    }
+    this.limits = next;
+    if (this.stopReason !== undefined) {
+      const tokensUnder = next.maxTokens === undefined || this.tokens < next.maxTokens;
+      const usdUnder = next.maxUsd === undefined || this.costUsd < next.maxUsd;
+      if (tokensUnder && usdUnder) {
+        this.stopReason = undefined;
+        this.notified = false;
+      }
+    }
+    return this.snapshot();
   }
 
   snapshot(): BudgetSnapshot {

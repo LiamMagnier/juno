@@ -29,11 +29,27 @@
  *                  many of the injected facts the question needed (precision),
  *                  and what an off-topic message ("what is 17 × 23?") is
  *                  handed — which should be next to nothing.
- *   latency        fact selection over a 2,000-fact account; session recall
- *                  ranking over a synthetic 20,000-message account.
+ *   latency        fact selection over a 2,000-fact account, with and without
+ *                  the read gates (block-list, sensitive switches); session
+ *                  recall ranking over a synthetic 20,000-message account.
  *   recall         session recall quality: does a question about an old
  *                  conversation find the right message (hit@1 / hit@5), and
  *                  what the 50-conversation scan window it replaces found.
+ *   personalisation  inappropriate personalisation (§10.3): inferred sensitive
+ *                  facts handed to unrelated messages, inferred facts on a
+ *                  topic the person switched off, facts on a topic they
+ *                  excluded — all must be 0 — and, so the gates are not simply
+ *                  refusing, sensitive facts used when the message is about
+ *                  them, including when it does not name them (a typed
+ *                  allergy for a recipe), lexically and with semantic evidence.
+ *                  Typed sensitive facts riding along off-topic are reported
+ *                  beside, not counted: the person put them there.
+ *   deletion       what a forget, a topic exclusion, a delete or a revoked
+ *                  topic leaves behind: retrieved, relearned, quoted in
+ *                  another row, said by a summary or fed to a summariser.
+ *                  Must be 0; the rules before 2026-10-25 are measured beside.
+ *   manual         the person's own hand: a typed correction replaces what it
+ *                  contradicts (and only that), a typed duplicate is one row.
  *
  * Offline and exact: no model, no database, no network. The database half of
  * session recall is measured by scripts/recall-bench.ts against Postgres.
@@ -54,6 +70,15 @@ import {
 import { MEMORY_BENCH_SCENARIOS } from "@/lib/memory-bench-scenarios";
 import {
   BENIGN_NEAR_MISSES,
+  MANUAL_CORRECTION_CASES,
+  MANUAL_DUPLICATE_CASES,
+  IMPLICIT_RELEVANCE_FACTS,
+  IMPLICIT_RELEVANCE_QUERIES,
+  PERSONALISATION_EXCLUDED_QUERIES,
+  PERSONALISATION_EXCLUSIONS,
+  PERSONALISATION_FACTS,
+  PERSONALISATION_OFF_TOPIC,
+  PERSONALISATION_RELEVANT,
   CORRECTION_CASES,
   DUPLICATE_PAIRS,
   SCOPE_FACTS,
@@ -65,17 +90,25 @@ import {
 import {
   DEFAULT_MEMORY_TOKEN_BUDGET,
   classifyFact,
+  consolidationMayUse,
+  factsCoveredByForget,
   normalizeFact,
+  planDeletionEffects,
   planDuplicateMerges,
+  planFactIngestion,
+  planRewriteEffects,
+  scrubSummaryForSuppressions,
   planTimelineReconciliation,
   selectMemoriesForContext,
   summaryPredatesForget,
   summaryPredatesMemoryChange,
   summaryRebuildDecision,
   type LifecycleEntry,
+  type SemanticEvidence,
 } from "@/lib/memory-lifecycle";
 import { readerMayUse, type MemoryReader } from "@/lib/memory-scope";
-import { sensitiveTopicOf } from "@/lib/memory-sensitive";
+import { SENSITIVE_TOPICS, sensitiveTopicOf } from "@/lib/memory-sensitive";
+import { proseCoveredBySuppression } from "@/lib/memory-suppression";
 import {
   parseRecallQuery,
   rankRecallCandidates,
@@ -134,7 +167,18 @@ export interface SuiteResult {
     offTopicMean: number;
     offTopicFactsMean: number;
   };
-  latency: { factSelectP50Ms: number; factSelectP95Ms: number; recallRankP50Ms: number; recallRankP95Ms: number };
+  latency: {
+    factSelectP50Ms: number;
+    factSelectP95Ms: number;
+    /**
+     * The same selection with the read gates a chat turn applies: a 20-entry
+     * block-list (3 of them topics) and the sensitive switches, all off.
+     */
+    factSelectGatedP50Ms: number;
+    factSelectGatedP95Ms: number;
+    recallRankP50Ms: number;
+    recallRankP95Ms: number;
+  };
   recall: {
     messages: number;
     conversations: number;
@@ -143,6 +187,66 @@ export interface SuiteResult {
     hitAt1: number;
     hitAt5: number;
     legacyWindowHitAt5: number;
+  };
+  personalisation: {
+    checks: number;
+    /** Must be 0: the sum of the three kinds below. */
+    inappropriate: number;
+    sensitiveOffTopic: number;
+    revokedTopic: number;
+    excludedTopic: number;
+    /** The same checks under the rules before 2026-10-25 (no read gates, sensitive facts ambient). */
+    legacyInappropriate: number;
+    /** Sensitive facts the message was about, topic allowed: used / asked. */
+    appropriate: number;
+    appropriateUsed: number;
+    /** Facts the person typed on a topic they later switched off: still used / asked. */
+    typed: number;
+    typedKept: number;
+    /**
+     * Typed sensitive facts that rode along with an off-topic message inside
+     * the ambient allowance. Not counted as inappropriate: the person put them
+     * there, and a typed allergy has to reach a recipe the lexical gate cannot
+     * connect it to. Reported so the cost of that rule stays visible.
+     */
+    typedAmbientOffTopic: number;
+    /**
+     * Sensitive facts a request makes relevant without naming them (a typed
+     * peanut allergy for "suggest a dinner recipe", inferred diabetes for
+     * "plan my meals this week"): dietary facts handed to food requests, in
+     * three settings — lexical only (no embedder, or it failed), semantic
+     * evidence in which the fact stands out (a working embedder), and
+     * semantic evidence in which nothing stands out (a weak one). The vectors
+     * are synthetic and say only what each setting assumes.
+     */
+    implicit: {
+      /** Dietary facts × food requests, per setting. */
+      expected: number;
+      lexicalUsed: number;
+      semanticStandoutUsed: number;
+      semanticFlatUsed: number;
+      /** The lexical checks under the rules before 2026-10-25 (everything ambient). */
+      legacyLexicalUsed: number;
+      /** Sensitive facts that have nothing to do with food, handed to a food request, over every setting. Must be 0. */
+      distractorsUsed: number;
+      /** Health switched off: inferred health facts still handed over (must be 0)… */
+      revokedInferredUsed: number;
+      /** …and typed ones kept, over the asks. */
+      revokedTyped: number;
+      revokedTypedKept: number;
+    };
+  };
+  deletion: { checks: number; leaks: number; legacyLeaks: number; leakDetail: string[] };
+  manual: {
+    cases: number;
+    passed: number;
+    /** The same cases under the old manual add: append a row, settle nothing. */
+    legacyPassed: number;
+    duplicates: number;
+    /** Typed duplicates that left two believed rows saying the same thing. */
+    duplicatesLeft: number;
+    legacyDuplicatesLeft: number;
+    failures: string[];
   };
 }
 
@@ -539,6 +643,400 @@ async function tokensSection(): Promise<SuiteResult["tokens"]> {
 }
 
 // ---------------------------------------------------------------------------
+// Inappropriate personalisation, deletion, manual corrections (brief §10.3)
+// ---------------------------------------------------------------------------
+
+const EVAL_NOW = new Date("2026-09-01T00:00:00Z");
+
+function storedEntry(
+  id: string,
+  content: string,
+  source: "AUTO" | "MANUAL",
+  extra: Partial<LifecycleEntry> = {}
+): LifecycleEntry {
+  const { category, confidence } = classifyFact(content, { source });
+  const said = new Date(EVAL_NOW.getTime() - 30 * 86_400_000);
+  return {
+    id,
+    content,
+    normalized: normalizeFact(content),
+    category,
+    projectId: null,
+    source,
+    kind: "FACT",
+    confidence,
+    status: "active",
+    expiresAt: null,
+    createdAt: said,
+    observedAt: said,
+    ...extra,
+  };
+}
+
+/** Retire what a block-list statement covers — what forgetStatements does to the rows. */
+function forgetInStore(entries: LifecycleEntry[], statement: string): void {
+  for (const id of factsCoveredByForget(statement, entries)) {
+    const entry = entries.find((row) => row.id === id);
+    if (entry) entry.status = "suppressed";
+  }
+}
+
+function personalisationSection(): SuiteResult["personalisation"] {
+  const allTopics = ["health", "religion", "sexuality", "finances"];
+  // Health and religion switched off later; the rest still on.
+  const afterRevoke = ["sexuality", "finances"];
+  const topicOf = new Map(PERSONALISATION_FACTS.map((f) => [f.id, f.topic ?? null]));
+  const typedIds = new Set(PERSONALISATION_FACTS.filter((f) => f.source === "MANUAL").map((f) => f.id));
+  const excludedIds = new Set(PERSONALISATION_FACTS.filter((f) => f.excluded).map((f) => f.id));
+
+  const run = (gated: boolean) => {
+    const entries = PERSONALISATION_FACTS.map((f) =>
+      storedEntry(f.id, f.content, f.source, f.id === "insulin-typed" ? { confidence: 0.9 } : {})
+    );
+    // The exclusions as the product applies them: a forget (facts retired) and
+    // the block-list passed to retrieval. Before topics existed the same rows
+    // were statements that matched none of these facts, so nothing happened.
+    if (gated) for (const statement of PERSONALISATION_EXCLUSIONS) forgetInStore(entries, statement);
+    const select = (query: string, allowed: readonly string[]) =>
+      selectMemoriesForContext(entries, {
+        query,
+        now: EVAL_NOW,
+        budgetTokens: DEFAULT_MEMORY_TOKEN_BUDGET,
+        ...(gated
+          ? { suppressions: PERSONALISATION_EXCLUSIONS, allowedSensitiveTopics: allowed }
+          : { legacySensitiveAmbient: true }),
+      }).selected.map((m) => m.id);
+
+    let checks = 0;
+    let sensitiveOffTopic = 0;
+    let typedAmbientOffTopic = 0;
+    let revokedTopic = 0;
+    let excludedTopic = 0;
+    for (const allowed of [allTopics, afterRevoke]) {
+      for (const query of PERSONALISATION_OFF_TOPIC) {
+        const ids = select(query, allowed);
+        checks++;
+        // An INFERRED sensitive fact off-topic is inappropriate; a typed one
+        // rides along by design and is reported on its own.
+        sensitiveOffTopic += ids.filter((id) => topicOf.get(id) && !typedIds.has(id)).length;
+        typedAmbientOffTopic += ids.filter((id) => topicOf.get(id) && typedIds.has(id)).length;
+        excludedTopic += ids.filter((id) => excludedIds.has(id)).length;
+      }
+    }
+    for (const probe of PERSONALISATION_RELEVANT) {
+      if (afterRevoke.includes(probe.topic)) continue;
+      const ids = select(probe.query, afterRevoke);
+      checks++;
+      revokedTopic += ids.filter((id) => topicOf.get(id) === probe.topic && !typedIds.has(id)).length;
+    }
+    for (const query of PERSONALISATION_EXCLUDED_QUERIES) {
+      for (const allowed of [allTopics, afterRevoke]) {
+        checks++;
+        excludedTopic += select(query, allowed).filter((id) => excludedIds.has(id)).length;
+      }
+    }
+    let appropriateUsed = 0;
+    for (const probe of PERSONALISATION_RELEVANT) if (select(probe.query, allTopics).includes(probe.expect)) appropriateUsed++;
+    const typedKept = select("When should I take my insulin before meals?", afterRevoke).includes("insulin-typed") ? 1 : 0;
+    return { checks, sensitiveOffTopic, typedAmbientOffTopic, revokedTopic, excludedTopic, appropriateUsed, typedKept };
+  };
+
+  const now = run(true);
+  const legacy = run(false);
+  return {
+    checks: now.checks,
+    inappropriate: now.sensitiveOffTopic + now.revokedTopic + now.excludedTopic,
+    sensitiveOffTopic: now.sensitiveOffTopic,
+    revokedTopic: now.revokedTopic,
+    excludedTopic: now.excludedTopic,
+    legacyInappropriate: legacy.sensitiveOffTopic + legacy.revokedTopic + legacy.excludedTopic,
+    appropriate: PERSONALISATION_RELEVANT.length,
+    appropriateUsed: now.appropriateUsed,
+    typed: 1,
+    typedKept: now.typedKept,
+    typedAmbientOffTopic: now.typedAmbientOffTopic,
+    implicit: implicitRelevance(),
+  };
+}
+
+/** See SuiteResult["personalisation"]["implicit"]. */
+function implicitRelevance(): SuiteResult["personalisation"]["implicit"] {
+  const allTopics = ["health", "religion", "sexuality", "finances"];
+  const healthOff = ["religion", "sexuality", "finances"];
+  const entries = IMPLICIT_RELEVANCE_FACTS.map((f) => storedEntry(f.id, f.content, f.source));
+  const dietary = new Set(IMPLICIT_RELEVANCE_FACTS.filter((f) => f.dietary).map((f) => f.id));
+  const distractors = new Set(IMPLICIT_RELEVANCE_FACTS.filter((f) => f.topic && !f.dietary).map((f) => f.id));
+  const fact = (id: string) => IMPLICIT_RELEVANCE_FACTS.find((f) => f.id === id)!;
+
+  // A working embedder puts a food request near the dietary facts and far
+  // from the rest; a weak one puts everything at the same distance. Synthetic
+  // on purpose: each says exactly what its setting assumes and nothing more.
+  const standout: SemanticEvidence = {
+    queryVector: [1, 0],
+    vectors: new Map(entries.map((e) => [e.id, dietary.has(e.id) ? [0.9, 0.1] : [0.2, 0.98]])),
+  };
+  const flat: SemanticEvidence = { queryVector: [1, 0], vectors: new Map(entries.map((e) => [e.id, [0.6, 0.8]])) };
+
+  const select = (query: string, opts: { semantic?: SemanticEvidence; allowed?: readonly string[]; legacy?: boolean }) =>
+    selectMemoriesForContext(entries, {
+      query,
+      now: EVAL_NOW,
+      budgetTokens: DEFAULT_MEMORY_TOKEN_BUDGET,
+      ...(opts.semantic ? { semantic: opts.semantic } : {}),
+      ...(opts.legacy ? { legacySensitiveAmbient: true } : { suppressions: [], allowedSensitiveTopics: opts.allowed ?? allTopics }),
+    }).selected.map((m) => m.id);
+
+  let lexicalUsed = 0;
+  let semanticStandoutUsed = 0;
+  let semanticFlatUsed = 0;
+  let legacyLexicalUsed = 0;
+  let distractorsUsed = 0;
+  let revokedInferredUsed = 0;
+  let revokedTyped = 0;
+  let revokedTypedKept = 0;
+  const countDietary = (ids: string[]) => ids.filter((id) => dietary.has(id)).length;
+  const countDistractors = (ids: string[]) => ids.filter((id) => distractors.has(id)).length;
+  for (const query of IMPLICIT_RELEVANCE_QUERIES) {
+    const lexical = select(query, {});
+    const semantic = select(query, { semantic: standout });
+    const weak = select(query, { semantic: flat });
+    lexicalUsed += countDietary(lexical);
+    semanticStandoutUsed += countDietary(semantic);
+    semanticFlatUsed += countDietary(weak);
+    legacyLexicalUsed += countDietary(select(query, { legacy: true }));
+    distractorsUsed += countDistractors(lexical) + countDistractors(semantic) + countDistractors(weak);
+
+    // Health switched off: what Juno inferred about it is not used, whatever
+    // the request; what the person typed about it still is.
+    const revoked = select(query, { allowed: healthOff });
+    for (const id of dietary) {
+      const f = fact(id);
+      if (f.topic !== "health") continue;
+      if (f.source === "AUTO") revokedInferredUsed += revoked.includes(id) ? 1 : 0;
+      else {
+        revokedTyped++;
+        revokedTypedKept += revoked.includes(id) ? 1 : 0;
+      }
+    }
+  }
+  return {
+    expected: dietary.size * IMPLICIT_RELEVANCE_QUERIES.length,
+    lexicalUsed,
+    semanticStandoutUsed,
+    semanticFlatUsed,
+    legacyLexicalUsed,
+    distractorsUsed,
+    revokedInferredUsed,
+    revokedTyped,
+    revokedTypedKept,
+  };
+}
+
+function deletionSection(): SuiteResult["deletion"] {
+  let checks = 0;
+  let leaks = 0;
+  let legacyLeaks = 0;
+  const leakDetail: string[] = [];
+  const check = (name: string, leakedNow: boolean, leakedBefore: boolean) => {
+    checks++;
+    if (leakedNow) {
+      leaks++;
+      leakDetail.push(name);
+    }
+    if (leakedBefore) legacyLeaks++;
+  };
+  const ids = (entries: LifecycleEntry[], query: string, suppressions: readonly string[], allowed?: readonly string[]) =>
+    selectMemoriesForContext(entries, {
+      query,
+      now: EVAL_NOW,
+      suppressions,
+      ...(allowed ? { allowedSensitiveTopics: allowed } : {}),
+    }).selected.map((m) => m.id);
+  const relearned = (content: string, suppressions: readonly string[], entries: LifecycleEntry[]) =>
+    planFactIngestion({ content, source: "AUTO" }, { entries, suppressions, now: EVAL_NOW, allowedSensitiveTopics: [] }).action !== "skip";
+  /** The rule before topics: containment of the statement, both ways, nothing else. */
+  const legacyCovers = (content: string, statement: string) => {
+    const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const c = norm(content);
+    const n = norm(statement);
+    return n.length > 0 && (c.includes(n) || n.includes(c));
+  };
+
+  // A — forget one statement.
+  {
+    const entries = [
+      storedEntry("acme", "The user works at Acme as a designer.", "AUTO"),
+      storedEntry("porto", "The user lives in Porto.", "AUTO"),
+    ];
+    const statement = "The user works at Acme";
+    forgetInStore(entries, statement);
+    check("forget: retrieved", ids(entries, "Where do I work? Acme designer", [statement]).includes("acme"), false);
+    check("forget: relearned", relearned("The user works at Acme as a designer.", [statement], entries), false);
+    const prose = "## Work context\nThe user works at Acme as a designer. They live in Porto.";
+    check(
+      "forget: said by a summary",
+      /Acme/.test(scrubSummaryForSuppressions(prose, [statement])),
+      /Acme/.test(prose)
+    );
+  }
+
+  // B — exclude a topic.
+  {
+    const statement = "Anything about my divorce";
+    const facts = [
+      storedEntry("d1", "The user is going through a divorce.", "AUTO"),
+      storedEntry("d2", "The user's divorce lawyer is called Ana.", "AUTO"),
+      storedEntry("p", "The user lives in Porto.", "AUTO"),
+    ];
+    forgetInStore(facts, statement);
+    const legacyRetired = facts.filter((f) => legacyCovers(f.content, statement)).length;
+    const query = "What do you remember about my divorce and my lawyer Ana?";
+    const now = ids(facts, query, [statement]);
+    for (const id of ["d1", "d2"]) check(`topic: ${id} retrieved`, now.includes(id), legacyRetired === 0);
+    check(
+      "topic: new fact relearned",
+      relearned("The user divorced their husband in 2025.", [statement], facts),
+      !legacyCovers("The user divorced their husband in 2025.", statement)
+    );
+    const prose = "## Personal context\nThe user lives in Porto. They are going through a divorce.";
+    check("topic: said by a summary", /divorce/.test(scrubSummaryForSuppressions(prose, [statement])), true);
+    const digest = "Talked through the divorce settlement options";
+    check("topic: fed to a summariser as a digest", !proseCoveredBySuppression(digest, [statement]), !legacyCovers(digest, statement));
+  }
+
+  // C — delete a fact another row was merged into.
+  {
+    const keep = storedEntry("keep", "The user prefers short answers with code examples.", "MANUAL");
+    const stored = storedEntry("merged", "The user prefers short answers with examples.", "AUTO");
+    const [merge] = planDuplicateMerges([keep, stored]);
+    const merged = { ...stored, status: "superseded", supersededById: keep.id, reason: merge?.reason ?? null };
+    const effects = planDeletionEffects([{ id: keep.id, content: keep.content }], [merged]);
+    const after = effects.find((e) => e.id === merged.id);
+    const reasonAfter = after ? after.reason : merged.reason;
+    check("delete: quoted in another row's reason", !!reasonAfter?.includes(keep.content), !!merged.reason?.includes(keep.content));
+    check("delete: pointed at by another row", !(after?.clearSupersededBy ?? false), false);
+  }
+
+  // D — switch a sensitive topic off.
+  {
+    const entries = [storedEntry("dia", "The user has type 1 diabetes.", "AUTO"), storedEntry("p", "The user lives in Porto.", "AUTO")];
+    check("revoked: retrieved", ids(entries, "snacks for my diabetes before a run", [], []).includes("dia"), true);
+    check("revoked: fed to a summariser", consolidationMayUse(entries[0], [], []), true);
+  }
+
+  // E — delete a fact that had replaced another: the older belief is not believed again.
+  {
+    const lisbon = storedEntry("lisbon", "The user lives in Lisbon.", "AUTO", { status: "superseded", supersededById: "porto" });
+    const effects = planDeletionEffects([{ id: "porto", content: "The user lives in Porto." }], [lisbon]);
+    check("delete: older belief resurrected", effects.some((e) => e.id === "lisbon" && e.reason.includes("Porto")), false);
+    check("delete: dangling pointer", !effects.some((e) => e.id === "lisbon" && e.clearSupersededBy), false);
+  }
+
+  return { checks, leaks, legacyLeaks, leakDetail };
+}
+
+/** writeManualFact over an in-memory store, write for write. */
+function manualWriteInStore(entries: LifecycleEntry[], content: string, projectId: string | null, now: Date, seq: { n: number }) {
+  const plan = planFactIngestion(
+    { content, source: "MANUAL", projectId, observedAt: now },
+    { entries, suppressions: [], now, allowedSensitiveTopics: SENSITIVE_TOPICS }
+  );
+  if (plan.action === "skip") return;
+  const retire = (id: string, byId: string) => {
+    const entry = entries.find((row) => row.id === id);
+    if (entry && entry.id !== byId && entry.status === "active") {
+      entry.status = "superseded";
+      entry.supersededById = byId;
+    }
+  };
+  let id: string;
+  if (plan.action === "refresh") {
+    const known = entries.find((row) => row.id === plan.entryId)!;
+    if (plan.revive || plan.reinstate) {
+      known.status = "active";
+      known.supersededById = null;
+    }
+    known.source = "MANUAL";
+    known.observedAt = now;
+    id = known.id;
+  } else {
+    seq.n += 1;
+    id = `typed-${seq.n}`;
+    entries.push({
+      id,
+      content: plan.content,
+      normalized: plan.normalized,
+      category: plan.category,
+      projectId,
+      source: "MANUAL",
+      kind: "FACT",
+      confidence: plan.confidence,
+      status: plan.status,
+      expiresAt: plan.expiresAt,
+      createdAt: now,
+      observedAt: plan.observedAt,
+      supersededById: plan.supersededById ?? null,
+    });
+  }
+  if (plan.supersedes) retire(plan.supersedes.entryId, id);
+  for (const resolved of plan.resolves ?? []) retire(resolved.entryId, id);
+  if (entries.find((row) => row.id === id)?.status === "active") {
+    for (const effect of planRewriteEffects({ id, content, projectId }, entries, { now })) retire(effect.entryId, id);
+  }
+}
+
+function manualSection(): SuiteResult["manual"] {
+  const now = EVAL_NOW;
+  const failures: string[] = [];
+  let passed = 0;
+  let legacyPassed = 0;
+  for (const testCase of MANUAL_CORRECTION_CASES) {
+    const build = () =>
+      testCase.stored.map((row, i) =>
+        storedEntry(`s${i}`, row.content, row.source, {
+          projectId: row.projectId ?? null,
+          status: row.status ?? "active",
+          ...(row.source === "MANUAL" ? { confidence: 0.9 } : {}),
+          observedAt: new Date(now.getTime() - (40 - i) * 86_400_000),
+        })
+      );
+    const judge = (entries: LifecycleEntry[]) => {
+      const believed = entries.filter((entry) => believes(entry, now));
+      const holds = (fact: string) => believed.some((entry) => normalizeFact(entry.content) === normalizeFact(fact));
+      return testCase.believed.every(holds) && !testCase.notBelieved.some(holds);
+    };
+    const entries = build();
+    manualWriteInStore(entries, testCase.typed, testCase.projectId ?? null, now, { n: 0 });
+    if (judge(entries)) passed++;
+    else failures.push(testCase.id);
+    const legacy = build();
+    const { category, confidence } = classifyFact(testCase.typed, { source: "MANUAL" });
+    legacy.push({ ...storedEntry("typed", testCase.typed, "MANUAL"), category, confidence, createdAt: now, observedAt: now });
+    if (judge(legacy)) legacyPassed++;
+  }
+  let duplicatesLeft = 0;
+  let legacyDuplicatesLeft = 0;
+  for (const dup of MANUAL_DUPLICATE_CASES) {
+    const count = (entries: LifecycleEntry[]) =>
+      entries.filter((entry) => believes(entry, now) && normalizeFact(entry.content) === normalizeFact(dup.typed)).length;
+    const entries = [storedEntry("d", dup.stored, "AUTO")];
+    manualWriteInStore(entries, dup.typed, null, now, { n: 0 });
+    if (count(entries) !== 1) duplicatesLeft++;
+    const legacy = [storedEntry("d", dup.stored, "AUTO"), storedEntry("t", dup.typed, "MANUAL")];
+    if (count(legacy) !== 1) legacyDuplicatesLeft++;
+  }
+  return {
+    cases: MANUAL_CORRECTION_CASES.length,
+    passed,
+    legacyPassed,
+    duplicates: MANUAL_DUPLICATE_CASES.length,
+    duplicatesLeft,
+    legacyDuplicatesLeft,
+    failures,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Synthetic session-recall corpus
 // ---------------------------------------------------------------------------
 
@@ -735,6 +1233,27 @@ function recallAndLatencySection(opts: SuiteOptions): { recall: SuiteResult["rec
     selectMemoriesForContext(facts, { query: `${TOPICS[q % TOPICS.length]} plan`, projectId: q % 3 === 0 ? "p1" : null, now });
     selectTimes.push(performance.now() - t0);
   }
+  // And with the read gates every chat turn applies: the account's block-list
+  // (forgotten statements and excluded topics) and its sensitive switches.
+  // Without this line the gates' cost was never measured.
+  const blockList = [
+    ...Array.from({ length: 17 }, (_, i) => `The user works at Company${i}`),
+    "Anything about my divorce",
+    "Anything about my health",
+    "Anything about my side business",
+  ];
+  const gatedTimes: number[] = [];
+  for (let q = 0; q < 200; q++) {
+    const t0 = performance.now();
+    selectMemoriesForContext(facts, {
+      query: `${TOPICS[q % TOPICS.length]} plan`,
+      projectId: q % 3 === 0 ? "p1" : null,
+      now,
+      suppressions: blockList,
+      allowedSensitiveTopics: [],
+    });
+    gatedTimes.push(performance.now() - t0);
+  }
 
   return {
     recall: {
@@ -748,6 +1267,8 @@ function recallAndLatencySection(opts: SuiteOptions): { recall: SuiteResult["rec
     latency: {
       factSelectP50Ms: round(quantile(selectTimes, 0.5), 2),
       factSelectP95Ms: round(quantile(selectTimes, 0.95), 2),
+      factSelectGatedP50Ms: round(quantile(gatedTimes, 0.5), 2),
+      factSelectGatedP95Ms: round(quantile(gatedTimes, 0.95), 2),
       recallRankP50Ms: round(quantile(rankTimes, 0.5), 2),
       recallRankP95Ms: round(quantile(rankTimes, 0.95), 2),
     },
@@ -767,6 +1288,9 @@ export async function runMemorySuite(opts: SuiteOptions = {}): Promise<SuiteResu
     tokens: await tokensSection(),
     latency,
     recall,
+    personalisation: personalisationSection(),
+    deletion: deletionSection(),
+    manual: manualSection(),
   };
 }
 

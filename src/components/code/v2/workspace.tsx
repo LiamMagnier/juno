@@ -37,6 +37,7 @@ import { ConnectionsHint, NewAgentsBadge, newAgentIds } from "./workspace-notice
 import type { MessageMatch } from "@/lib/code-v2/palette-search";
 import { usePaletteMessageSearch } from "./use-palette-search";
 import { lastPrompt } from "@/lib/code-v2/answer-actions";
+import { DURATION } from "@/lib/design/tokens.generated";
 import { cachedCodePrefs, useCodePrefs } from "./use-code-prefs";
 
 const WIDTH_KEY = "alevr.code.dockWidth";
@@ -99,9 +100,9 @@ type ExitProps = { state: "open" | "closed"; onAnimationEnd: (event: React.Anima
 
 const exitOf = (p: ReturnType<typeof usePresence>): ExitProps => ({ state: p.closing ? "closed" : "open", onAnimationEnd: p.onAnimationEnd });
 
-/** Upper bounds for the exits in code-v2.css (0.65 x --dur-mid / --dur-wide); the animation's end normally unmounts first. */
-const EXIT_MID_MS = 160;
-const EXIT_WIDE_MS = 220;
+/** Upper bounds for the exits in code-v2.css (--cv2-exit-mid / --cv2-exit-wide: the fast and exit rungs); the animation's end normally unmounts first. */
+const EXIT_MID_MS = DURATION.exit;
+const EXIT_WIDE_MS = DURATION.base;
 
 function Palette({
   onClose,

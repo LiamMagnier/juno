@@ -23,6 +23,7 @@ import { ThinkingMark, type ThinkingPhase } from "@/components/brand/thinking-ma
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/juno-icons";
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 import { cn } from "@/lib/utils";
 
 /* V3 specimen plates: explicit values so light and dark sit side by side whatever the page theme. */
@@ -189,7 +190,7 @@ function FidelityCheck() {
           {/* eslint-disable-next-line @next/next/no-img-element -- the raw source pixels are the point */}
           <img src={raster.src} alt="The selected Continuum raster" className="absolute inset-0 size-full" />
           <svg viewBox={`0 0 ${W} ${W}`} className="absolute inset-0 size-full" aria-hidden="true">
-            <g fill="#2d49c9" fillOpacity={0.5} transform={`translate(${origin[0]} ${origin[1]}) scale(${unitPx})`}>
+            <g fill={SCRIPT_COLOR.presence.light} fillOpacity={0.5} transform={`translate(${origin[0]} ${origin[1]}) scale(${unitPx})`}>
               {CONTINUUM_MASTER_PATHS.map((p) => (
                 <path key={p.id} d={p.d} />
               ))}
@@ -215,7 +216,7 @@ function Construction({ tone }: { tone: PlateTone }) {
   const p = PLATE[tone];
   const b = CONTINUUM_BOUNDS;
   const pad = 30;
-  const presence = tone === "light" ? "#2d49c9" : "#97a6e6";
+  const presence = SCRIPT_COLOR.presence[tone === "light" ? "light" : "dark"];
   return (
     <Plate tone={tone} label="Nodes only at tips (diamonds) and extrema (circles), axis-aligned handles at every extremum, the aperture circle (r 24) at the origin, one path width (48) as clear space">
       <svg viewBox={`${b.x - pad} ${b.y - pad} ${b.width + 2 * pad} ${b.height + 2 * pad}`} className="mx-auto block w-full max-w-[720px]" role="img" aria-label="Continuum construction">

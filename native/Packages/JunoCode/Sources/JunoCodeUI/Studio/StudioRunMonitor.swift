@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import JunoCodeCore
+import JunoScreenControl
 import UserNotifications
 
 // MARK: - What a notification says (pure)
@@ -595,6 +596,28 @@ public final class StudioRunMonitor: NSObject, UNUserNotificationCenterDelegate 
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound])
+    }
+
+    // MARK: Screen lock
+
+    /// The Mac locked, or was unlocked, while a run had the screen (REA lock
+    /// policy). Posted whatever is in view: nobody is looking at a locked
+    /// Mac, and the unlock replaces the lock's banner. The phone hears of a
+    /// connected agent's pause through the device link.
+    public func screenLockChanged(_ notice: ScreenLockNotice) {
+        sink.post(Self.screenLockNotification(notice), sound: notice.locked && preferences.notificationSound)
+    }
+
+    public static func screenLockNotification(_ notice: ScreenLockNotice) -> CodeNotification {
+        var info = [CodeNotificationKey.category: CodeNotificationCategory.needsYou.rawValue]
+        if notice.kind == .codeSession { info[CodeNotificationKey.sessionID] = notice.sessionID }
+        return CodeNotification(
+            identifier: "juno.code.screen-lock.\(notice.sessionID)",
+            category: .needsYou,
+            title: notice.headline,
+            body: notice.sentence,
+            userInfo: info
+        )
     }
 
     // MARK: Keep awake

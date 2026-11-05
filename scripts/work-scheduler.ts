@@ -63,11 +63,14 @@ import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget, checkUsageWindows } from "@/lib/spend";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
+import { recordAgentEvent } from "@/lib/agents/store";
+import { pausedAgentRunRefusal } from "@/lib/agents/domain";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import {
   WorkSpendAdmissionError,
   createRun,
   expireParkedRoutineRuns,
+  expireUnclaimedCloudRuns,
   createWorkSession,
   appendEvents,
   finishRun,
@@ -104,6 +107,10 @@ import { LIVE_CODE_TASK_STATUSES, scheduleRunKindOf } from "@/lib/work/code-rout
 import { startCodeRoutineRun } from "@/lib/work/code-dispatch";
 import { effectiveHostState } from "@/app/api/work/protocol";
 import { Prisma, type Plan } from "@prisma/client";
+import { readCloudWorkAvailability } from "@/lib/work/executor-heartbeat";
+import { plannerCloudAvailability } from "@/lib/work/executor-presence";
+import { installWorkerProcessGuard, registerWorkerDrain } from "@/lib/worker-process";
+import { LOOP_STALE_AFTER_MS, workerLoops } from "@/lib/worker-watchdog-rules";
 
 /** How often to look for due schedules. Well under the shortest cadence a user
  *  can express (`hourly`), and short enough that `MISSED_RUN_GRACE_MS` is never
@@ -441,16 +448,19 @@ async function sweepMigrations(): Promise<void> {
 // Dispatch
 // ---------------------------------------------------------------------------
 
-/**
- * Whether cloud Work is accepting runs.
+/*
+ * Whether cloud Work is accepting runs is the executor heartbeat
+ * (`readCloudWorkAvailability()`, src/lib/work/executor-heartbeat.ts), read
+ * per fire: with no runner alive the planner holds or skips the fire with an
+ * honest outcome instead of queueing a run nothing will claim. It used to be a
+ * constant `true` here, as in the dispatcher. `WORK_CLOUD_AVAILABLE=0` is the
+ * kill switch for a paused executor or a provider outage.
  *
- * Named and passed to the planner rather than assumed, so turning cloud off — a
- * paused executor, a provider outage — is one edit here that produces the
- * honest `host_offline` outcome, instead of a growing queue of runs that
- * nothing will ever claim. Matches the constant the run-dispatch route holds
- * for the same reason.
+ * Three answers, not the boolean a person's dispatch gets: a heartbeat read
+ * that failed is "unknown", and the planner then leaves a fire it would turn
+ * on owed (`delayed`, `nextRunAt` untouched) instead of skipping it as
+ * executor_unavailable while a runner may be alive.
  */
-const CLOUD_WORK_AVAILABLE = true;
 
 /**
  * Takes the dispatch lease on one schedule.
@@ -679,6 +689,62 @@ async function dispatchOne(
     return;
   }
 
+  /**
+   * The next fire, taken across every trigger rather than from the one that
+   * owned this fire.
+   *
+   * The planner reasons about a single spec, which is right for enumerating a
+   * backlog and wrong for the column: a schedule that fires daily at 08:00 AND
+   * every Monday at 17:00 has one `nextRunAt`, and writing the daily trigger's
+   * answer into it would drop every Monday evening.
+   */
+  const advanced = (): Date | null => nextFireForTriggers(triggers, schedule.timezone, now);
+
+  /**
+   * A paused agent's routine does not fire.
+   *
+   * Pausing an agent switches its routines off (`updateAgentForUser`), but the
+   * person can switch one back on from Automations while the agent is still
+   * paused, and `enabled` is all the sweep and the claim test. Asked here, once
+   * the fire is known to be owed and before anything is planned, read or
+   * started, with the dispatcher's own rule and sentence
+   * (`pausedAgentRunRefusal`), read fresh: a resume made a second ago counts.
+   * Recorded as every other skip is — advanced past the fire, the lease
+   * released, a marker run in the routine's history — so a routine that has not
+   * run all week says why. `superseded`, as a fire the person's own missed-run
+   * policy dropped: the person paused the agent, and nothing here needs them.
+   */
+  const pausedAgent = pausedAgentRunRefusal(
+    schedule.session.agentId
+      ? await prisma.agent.findFirst({
+          where: { id: schedule.session.agentId, userId: schedule.userId, deletedAt: null },
+          select: { name: true, status: true },
+        })
+      : null
+  );
+  if (pausedAgent) {
+    await prisma.workSchedule.updateMany({
+      where: { id: schedule.id, userId: schedule.userId },
+      data: { nextRunAt: advanced(), lockedUntil: null },
+    });
+    await recordMarkerRun({
+      scheduleId: schedule.id,
+      sessionId: schedule.sessionId,
+      userId: schedule.userId,
+      fireAt: dueAt,
+      requestedTarget: schedule.target,
+      reason: "superseded",
+      explanation: pausedAgent.message,
+    });
+    log("skipped", {
+      scheduleId: schedule.id,
+      cause: "agent_paused",
+      agentId: schedule.session.agentId,
+      why: pausedAgent.message,
+    });
+    return;
+  }
+
   const runKind = scheduleRunKindOf(schedule.runKind);
   if (runKind === null) {
     // A routine whose kind this build has never heard of, which means a newer
@@ -779,20 +845,13 @@ async function dispatchOne(
     // run. Carrying them into `selectTarget` would make every target fail to
     // satisfy them and turn the routine into one that never runs anywhere.
     requiredCapabilities: isCode ? [] : runConfig.requiredCapabilities,
-    cloudAvailable: CLOUD_WORK_AVAILABLE,
+    // A Code routine runs on the Code runner, not the Work executor, so only a
+    // Work routine also needs the Work executor's heartbeat to be fresh. Read
+    // fresh per fire on the wall clock (never cached as absent after a failed
+    // read), and "unknown" when the read fails.
+    cloudAvailable: isCode || plannerCloudAvailability(await readCloudWorkAvailability()),
     remainingBudgetMicroUsd: limits.remainingMicroUsd,
   });
-
-  /**
-   * The next fire, taken across every trigger rather than from the one that
-   * owned this fire.
-   *
-   * The planner reasons about a single spec, which is right for enumerating a
-   * backlog and wrong for the column: a schedule that fires daily at 08:00 AND
-   * every Monday at 17:00 has one `nextRunAt`, and writing the daily trigger's
-   * answer into it would drop every Monday evening.
-   */
-  const advanced = (): Date | null => nextFireForTriggers(triggers, schedule.timezone, now);
 
   switch (decision.outcome) {
     case "dispatch": {
@@ -1018,18 +1077,38 @@ async function dispatchOne(
       // `host_offline` when that is what happened, so the run lands in a status
       // `statusNeedsAttention` reports — waking the Mac or moving the work to
       // cloud is the user's decision, and it never gets made if the row reads
-      // "cancelled". A fire the user's own missed-run policy told the schedule
-      // to drop is `superseded`: the schedule moved past it deliberately, and
-      // nothing about that needs anybody.
+      // "cancelled". `executor_unavailable` when the routine runs in the cloud
+      // and no cloud worker was running: no Mac was involved, and recording it
+      // as `host_offline` would tell the person to wake one. A fire the user's
+      // own missed-run policy told the schedule to drop is `superseded`: the
+      // schedule moved past it deliberately, and nothing about that needs
+      // anybody.
+      const unreachable = decision.cause === "host_offline" || decision.cause === "executor_unavailable";
+      const markerReason =
+        decision.cause === "executor_unavailable" ? "executor_unavailable"
+        : decision.cause === "host_offline" ? "host_offline"
+        : "superseded";
       await recordMarkerRun({
         scheduleId: schedule.id,
         sessionId: schedule.sessionId,
         userId: schedule.userId,
         fireAt: dueAt,
         requestedTarget: schedule.target,
-        reason: decision.cause === "host_offline" ? "host_offline" : "superseded",
+        reason: markerReason,
         explanation: decision.explanation,
       });
+      // A crew member's routine that could not reach its Mac (or the cloud)
+      // says so on the member's page too: it never falls back to another
+      // machine, so the person has to hear about it somewhere they look.
+      if (unreachable && schedule.session.agentId) {
+        await recordAgentEvent({
+          userId: schedule.userId,
+          agentId: schedule.session.agentId,
+          kind: "task_refused",
+          title: `${schedule.name} did not run: ${decision.explanation}`.slice(0, 200),
+          detail: { scheduleId: schedule.id, reason: markerReason },
+        }).catch(() => undefined);
+      }
       log("skipped", {
         scheduleId: schedule.id,
         cause: decision.cause,
@@ -1084,6 +1163,9 @@ async function dispatchOne(
  */
 const PARKED_SWEEP_MS = 5 * 60_000;
 let nextParkedSweepAt = 0;
+/** Cloud runs queued with no executor alive; see `expireUnclaimedCloudRuns`. */
+const UNCLAIMED_SWEEP_MS = 60_000;
+let nextUnclaimedSweepAt = 0;
 
 async function findDueSchedules(now: Date, limit: number) {
   return prismaUnguarded.workSchedule.findMany({
@@ -1119,6 +1201,20 @@ async function tick(): Promise<void> {
       return [] as string[];
     });
     if (expired.length) log("expired parked routine runs", { count: expired.length });
+  }
+
+  // Here rather than in the runner for the reason the checkpoint sweep gives:
+  // these rows exist because the runner is not running. A no-op unless the
+  // executor's last heartbeat is over QUEUED_CLOUD_RUN_TTL_MS old, read
+  // directly (no cache, no WORK_CLOUD_AVAILABLE override, a failed read in
+  // this process's small pool ends nothing).
+  if (now.getTime() >= nextUnclaimedSweepAt) {
+    nextUnclaimedSweepAt = now.getTime() + UNCLAIMED_SWEEP_MS;
+    const expired = await expireUnclaimedCloudRuns({ now }).catch((error: unknown) => {
+      log("unclaimed-run sweep failed", { error: error instanceof Error ? error.message : String(error) });
+      return [] as string[];
+    });
+    if (expired.length) log("expired queued cloud runs with no executor", { count: expired.length });
   }
 
   if (now.getTime() >= nextCheckpointSweepAt) {
@@ -1190,6 +1286,19 @@ async function tick(): Promise<void> {
 async function main(): Promise<void> {
   log("started", { scheduler: SCHEDULER_ID, tickMs: TICK_MS });
 
+  // An unhandled rejection is logged and the loop keeps going; an uncaught
+  // exception stops it after the tick in hand and exits non-zero for PM2
+  // (src/lib/worker-process.ts). Inside juno-sweepers the first loop to start
+  // installed the handlers; this registers the drain. Every finished tick is
+  // a beat the process's watchdog reads (src/lib/worker-watchdog.ts).
+  installWorkerProcessGuard();
+  let inTick: Promise<void> | null = null;
+  registerWorkerDrain("work-scheduler", async () => {
+    stopping = true;
+    await inTick?.catch(() => undefined);
+  });
+  workerLoops.register("work-scheduler", LOOP_STALE_AFTER_MS["work-scheduler"]);
+
   const shutdown = (signal: string) => {
     if (stopping) return;
     stopping = true;
@@ -1200,17 +1309,31 @@ async function main(): Promise<void> {
 
   while (!stopping) {
     try {
-      await tick();
+      inTick = tick();
+      await inTick;
     } catch (error) {
       // One bad tick must not end the scheduler: the next one may well succeed,
       // and a scheduler that exits on a transient database error takes every
       // schedule in the deployment with it.
       log("tick failed", { error: String(error) });
+    } finally {
+      inTick = null;
+      workerLoops.beat("work-scheduler");
     }
     await new Promise((resolve) => setTimeout(resolve, TICK_MS));
   }
 
   log("stopped");
+}
+
+/**
+ * Starts the scheduler's loop in this process. What juno-sweepers calls
+ * (scripts/sweepers.ts): importing this file starts nothing, because the line
+ * at the bottom runs `main` only when this file is the script node was asked
+ * to run, and inside juno-sweepers it never is.
+ */
+export function startWorkScheduler(): Promise<void> {
+  return main();
 }
 
 export { tick as schedulerTick, dispatchOne as dispatchSchedule, findDueSchedules };

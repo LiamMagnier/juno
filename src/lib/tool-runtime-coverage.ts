@@ -151,7 +151,7 @@ function defaultMatrixCell(surface: CoverageSurface, runtime: CoverageRuntime): 
   if (surface === "voice_realtime") {
     return cell("unsupported", "not_applicable", {
       evidence: "relay/tests/voice-tool-limit.test.ts",
-      note: "The relay has no tool calls; every call says it cannot run code and that it can be done in the chat.",
+      note: "A realtime call is never given an execution tool (src/lib/voice-tools.ts), only the chat's search, clock and connector tools; every call says it cannot run code and that it can be done in the chat.",
     });
   }
   switch (runtime) {

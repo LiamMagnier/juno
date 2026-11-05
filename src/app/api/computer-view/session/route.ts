@@ -4,6 +4,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { findAgent, recordAgentEvent } from "@/lib/agents/store";
 import { exchangeComputerHandoffTicket } from "@/lib/computer/handoff";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
+import { ComputerAccessError, computerErrorBody } from "@/lib/computer/errors";
 import { AsleepComputerError, openComputerViewSession } from "@/lib/computer/store";
 
 export const runtime = "nodejs";
@@ -52,8 +53,11 @@ export async function POST(req: Request) {
   }
 
   try {
+    // Access (provider, rollout, plan, host, allowance) is checked again here:
+    // a link minted before the account lost it opens nothing.
     const session = await openComputerViewSession(grant.userId, grant.agentId, grant.mode, {
       deviceSessionId: grant.deviceSessionId,
+      agentName: agent.name,
     });
     if (session.kind !== "direct") throw new Error("unexpected handoff");
     if (grant.mode === "control") {
@@ -66,12 +70,22 @@ export async function POST(req: Request) {
       });
     }
     return NextResponse.json(
-      { mode: session.mode, relayUrl: session.relayUrl, token: session.token, password: session.password },
+      {
+        mode: session.mode,
+        relayUrl: session.relayUrl,
+        token: session.token,
+        password: session.password,
+        ...(session.freeze ? { freeze: session.freeze } : {}),
+      },
       { headers: HEADERS }
     );
   } catch (err) {
     if (err instanceof AsleepComputerError) {
       return NextResponse.json({ error: "asleep", message: "The computer is asleep. Wake it from the app." }, { status: 409, headers: HEADERS });
+    }
+    if (err instanceof ComputerAccessError) {
+      const { status, body } = computerErrorBody(err);
+      return NextResponse.json(body, { status, headers: HEADERS });
     }
     return NextResponse.json({ error: "view_failed", message: "Unable to open the computer." }, { status: 409, headers: HEADERS });
   }

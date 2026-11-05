@@ -21,53 +21,109 @@ import "server-only";
 import type { Agent, AgentGoal, Prisma } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { recordAgentEvent, startAgentTask, type AgentActor } from "@/lib/agents/store";
+import { agentWorkTarget } from "@/lib/agents/domain";
+import { WORK_TARGETS, type WorkTarget } from "@/lib/work/domain";
+import { isRetryLaterRefusal } from "@/lib/work/executor-presence";
+import { PARKED_GOAL_STEP_EXPIRED_DETAIL } from "@/lib/work/store";
+import { latestGoalCriteriaCheck, notifyGoalOutcome } from "@/lib/agents/goal-criteria";
 import {
   GOAL_ACTING_EVENT_KINDS,
   GOAL_ADVANCE_LEASE_MS,
+  GOAL_UNVERIFIED,
   goalProgress,
+  lastFinishedMilestone,
+  planGoalCompletion,
+  type GoalCriteriaCheck,
   markMilestoneDone,
   parseBlockers,
   parseCriteria,
   parseMilestones,
   planGoalStep,
-  type GoalBlocker,
+  planStepNotStarted,
+  withBlocker,
   type GoalStep,
+  type GoalStepNotStarted,
   type GoalTaskView,
   type GoalView,
 } from "@/lib/agents/goals";
 
-export type StartStepResult =
-  | { ok: true; sessionId: string }
-  | { ok: false; message: string; needsConfirmation?: boolean };
+/** A session's stored target, read back; anything unknown is `cloud`. */
+function targetOfSession(value: string): WorkTarget {
+  return (WORK_TARGETS as readonly string[]).includes(value) ? (value as WorkTarget) : "cloud";
+}
+
+export type StartStepResult = { ok: true; sessionId: string } | ({ ok: false } & GoalStepNotStarted);
 
 export interface GoalRunnerDeps {
   /** Starts the step's task as the agent; idempotent on `idempotencyKey`. */
   startStep(input: { user: AgentActor; agent: Agent; title: string; prompt: string; idempotencyKey: string }): Promise<StartStepResult>;
   /** A new attempt of an interrupted step's task; idempotent on `idempotencyKey`. */
-  retryStep(input: { user: AgentActor; sessionId: string; idempotencyKey: string }): Promise<{ ok: true } | { ok: false; message: string }>;
+  retryStep(input: { user: AgentActor; sessionId: string; idempotencyKey: string }): Promise<{ ok: true } | ({ ok: false } & GoalStepNotStarted)>;
+  /**
+   * The criteria verdict the final step's run recorded. Defaults to the
+   * agent's log (`latestGoalCriteriaCheck`); null means none was recorded.
+   */
+  readCriteriaCheck?(input: { userId: string; agentId: string; goalId: string; sessionId: string }): Promise<GoalCriteriaCheck | null>;
+  /** Tells the person the goal finished. Defaults to `notifyGoalOutcome`. */
+  notifyOutcome?(input: Parameters<typeof notifyGoalOutcome>[0]): Promise<void>;
 }
 
-export const defaultGoalRunnerDeps: GoalRunnerDeps = {
-  async startStep({ user, agent, title, prompt, idempotencyKey }) {
-    const outcome = await startAgentTask(user, agent, { title, goal: prompt, idempotencyKey });
-    if (outcome.kind === "started") return { ok: true, sessionId: outcome.sessionId };
-    if (outcome.kind === "confirm") {
-      const dollars = (outcome.estimatedCostMicroUsd / 1_000_000).toFixed(2);
-      return { ok: false, needsConfirmation: true, message: `The next step is estimated at about $${dollars}. Start it from the goal to confirm.` };
-    }
-    const message = typeof outcome.body.message === "string" ? outcome.body.message : "The next step could not start.";
-    return { ok: false, message };
-  },
-  async retryStep({ user, sessionId, idempotencyKey }) {
-    const [dispatch, protocol] = await Promise.all([import("@/lib/work/dispatch"), import("@/app/api/work/protocol")]);
-    const session = await prisma.workSession.findFirst({ where: { id: sessionId, userId: user.id, deletedAt: null } });
-    if (!session) return { ok: false, message: "That step's task no longer exists." };
-    const body = protocol.startRunSchema.parse({ origin: "retry", requestedTarget: "cloud", idempotencyKey });
-    const started = await dispatch.startWorkRunForUser(user, session, body);
-    if (!started.run) return { ok: false, message: typeof started.body.message === "string" ? started.body.message : "The retry could not start." };
-    return { ok: true };
-  },
-};
+/** `retryLater` when dispatch said "try again later" (`isRetryLaterRefusal`), not "no". */
+function notStarted(body: Record<string, unknown>, fallback: string): { ok: false } & GoalStepNotStarted {
+  const message = typeof body.message === "string" ? body.message : fallback;
+  return isRetryLaterRefusal(body) ? { ok: false, message, retryLater: true } : { ok: false, message };
+}
+
+/**
+ * The deps that start real tasks.
+ *
+ * `unattended` is the sweep's (scripts/agent-reflector.ts): nobody is
+ * watching, so dispatch reads the cloud heartbeat as three answers and a read
+ * that failed comes back as `retryLater`, which leaves the goal's blockers
+ * alone (`planStepNotStarted`). A person's press on the goal goes through the
+ * interactive path and is told plainly, as any dispatch they make is.
+ */
+export function goalRunnerDeps(options: { unattended: boolean }): GoalRunnerDeps {
+  const { unattended } = options;
+  return {
+    async startStep({ user, agent, title, prompt, idempotencyKey }) {
+      const outcome = await startAgentTask(user, agent, { title, goal: prompt, idempotencyKey, unattended });
+      if (outcome.kind === "started") return { ok: true, sessionId: outcome.sessionId };
+      if (outcome.kind === "confirm") {
+        const dollars = (outcome.estimatedCostMicroUsd / 1_000_000).toFixed(2);
+        return { ok: false, needsConfirmation: true, message: `The next step is estimated at about $${dollars}. Start it from the goal to confirm.` };
+      }
+      return notStarted(outcome.body, "The next step could not start.");
+    },
+    async retryStep({ user, sessionId, idempotencyKey }) {
+      const [dispatch, protocol] = await Promise.all([import("@/lib/work/dispatch"), import("@/app/api/work/protocol")]);
+      const session = await prisma.workSession.findFirst({ where: { id: sessionId, userId: user.id, deletedAt: null } });
+      if (!session) return { ok: false, message: "That step's task no longer exists." };
+      // The agent's setting as it stands now, so a member moved to the Mac retries
+      // there; a Mac that is offline refuses, and the refusal becomes a blocker.
+      const agent = session.agentId
+        ? await prisma.agent.findFirst({
+            where: { id: session.agentId, userId: user.id },
+            select: { executionTarget: true },
+          })
+        : null;
+      const body = protocol.startRunSchema.parse({
+        origin: "retry",
+        requestedTarget: agent ? agentWorkTarget(agent.executionTarget) : targetOfSession(session.requestedTarget),
+        idempotencyKey,
+      });
+      const started = await dispatch.startWorkRunForUser(user, session, body, { unattended });
+      if (!started.run) return notStarted(started.body, "The retry could not start.");
+      return { ok: true };
+    },
+  };
+}
+
+/** A person's press (the goal's advance route). */
+export const defaultGoalRunnerDeps: GoalRunnerDeps = goalRunnerDeps({ unattended: false });
+
+/** The sweep's: a heartbeat that could not be read is "later", never a blocker. */
+export const unattendedGoalRunnerDeps: GoalRunnerDeps = goalRunnerDeps({ unattended: true });
 
 export type AdvanceGoalOutcome =
   | { kind: "busy" }
@@ -85,7 +141,10 @@ async function readTasks(userId: string, goalId: string): Promise<{ tasks: GoalT
       goalStepKey: true,
       status: true,
       createdAt: true,
-      runs: { select: { id: true, attempt: true, costMicroUsd: true }, orderBy: { attempt: "desc" } },
+      runs: {
+        select: { id: true, attempt: true, costMicroUsd: true, status: true, pauseReason: true, terminalDetail: true },
+        orderBy: { attempt: "desc" },
+      },
     },
     orderBy: { createdAt: "asc" },
     take: 100,
@@ -111,6 +170,10 @@ async function readTasks(userId: string, goalId: string): Promise<{ tasks: GoalT
       acted: current ? acted.has(current.id) : false,
       costMicroUsd: current?.costMicroUsd ?? 0,
       createdAt: session.createdAt,
+      // Parked or paused, and by whom; and whether the run ended because it
+      // waited out its answer (src/lib/work/store.ts `expireParkedGoalSteps`).
+      pauseReason: current?.status === "paused" ? current.pauseReason : null,
+      waitedOut: current?.status === "interrupted" && current.terminalDetail === PARKED_GOAL_STEP_EXPIRED_DETAIL,
     };
   });
   return { tasks, spent };
@@ -132,10 +195,6 @@ function view(goal: AgentGoal, spent: number): GoalView {
     dueAt: goal.dueAt,
     cadence: goal.cadence,
   };
-}
-
-function withBlocker(existing: unknown, blocker: GoalBlocker): GoalBlocker[] {
-  return [blocker, ...parseBlockers(existing).filter((b) => b.kind !== blocker.kind)].slice(0, 4);
 }
 
 /**
@@ -167,6 +226,8 @@ export async function advanceGoal(input: {
     return exists ? { kind: "busy" } : { kind: "missing" };
   }
   const applied: GoalStep["kind"][] = [];
+  const readCriteriaCheck = deps.readCriteriaCheck ?? latestGoalCriteriaCheck;
+  const notifyOutcome = deps.notifyOutcome ?? notifyGoalOutcome;
   try {
     for (let i = 0; i < MAX_STEPS_PER_ADVANCE; i++) {
       const goal = await prisma.agentGoal.findFirst({ where: { id: input.goalId, userId } });
@@ -186,6 +247,7 @@ export async function advanceGoal(input: {
       applied.push(step.kind);
       const data: Prisma.AgentGoalUpdateManyMutationInput = { spentMicroUsd: spent, lastAdvancedAt: now, nextAction: step.nextAction };
       let again = false;
+      let completed: { status: "achieved" | typeof GOAL_UNVERIFIED; nextAction: string } | null = null;
 
       switch (step.kind) {
         case "idle":
@@ -200,12 +262,30 @@ export async function advanceGoal(input: {
           again = true;
           break;
         }
-        case "achieved":
-          data.status = "achieved";
+        case "achieved": {
+          // Every milestone ran. Met only if the final step's run checked the
+          // success criteria and the check passed (src/lib/agents/goal-criteria.ts);
+          // anything else is `unverified` for the person, never a silent pass.
+          const last = lastFinishedMilestone(parseMilestones(goal.milestones));
+          const check = last?.sessionId
+            ? await readCriteriaCheck({ userId, agentId: agent.id, goalId: goal.id, sessionId: last.sessionId })
+            : null;
+          const completion = planGoalCompletion({ title: goal.title, check });
+          data.status = completion.status;
           data.progress = 100;
           data.blockers = [];
-          await recordAgentEvent({ userId, agentId: agent.id, kind: "goal_achieved", title: `Met the goal: ${goal.title}`, detail: { goalId: goal.id } });
+          data.nextAction = completion.nextAction;
+          await recordAgentEvent({
+            userId,
+            agentId: agent.id,
+            kind: completion.event.kind,
+            title: completion.event.title,
+            sessionId: last?.sessionId ?? null,
+            detail: { goalId: goal.id, verdict: check?.verdict ?? "unchecked" },
+          });
+          completed = { status: completion.status, nextAction: completion.nextAction };
           break;
+        }
         case "ask": {
           const known = parseBlockers(goal.blockers).some((b) => b.kind === step.blocker.kind && b.text === step.blocker.text);
           data.blockers = withBlocker(goal.blockers, step.blocker) as unknown as Prisma.InputJsonValue;
@@ -222,8 +302,15 @@ export async function advanceGoal(input: {
             data.blockers = [];
             await recordAgentEvent({ userId, agentId: agent.id, kind: "goal_step", title: step.nextAction, sessionId: step.sessionId, detail: { goalId: goal.id, stepKey: step.stepKey, attempt: step.attempt } });
           } else {
-            data.blockers = withBlocker(goal.blockers, { kind: "needs_decision", text: result.message, at: now.toISOString() }) as unknown as Prisma.InputJsonValue;
-            data.nextAction = "Waiting for you: the retry could not start";
+            const planned = planStepNotStarted({ step: "retry", result, blockers: goal.blockers, now });
+            if (planned.blockers) data.blockers = planned.blockers as unknown as Prisma.InputJsonValue;
+            data.nextAction = planned.nextAction;
+            // Refused (its Mac offline, no cloud worker): said on the member's
+            // page once, never retried somewhere else. A heartbeat that could
+            // not be read is neither, and is simply tried again next time.
+            if (planned.recordRefusal) {
+              await recordAgentEvent({ userId, agentId: agent.id, kind: "task_refused", title: result.message.slice(0, 200), sessionId: step.sessionId, detail: { goalId: goal.id, stepKey: step.stepKey } });
+            }
           }
           break;
         }
@@ -246,15 +333,23 @@ export async function advanceGoal(input: {
             data.blockers = [];
             await recordAgentEvent({ userId, agentId: agent.id, kind: "goal_step", title: `Started "${step.stepTitle}" for ${goal.title}`, sessionId: result.sessionId, detail: { goalId: goal.id, stepKey: step.stepKey } });
           } else {
-            const blocker: GoalBlocker = { kind: "needs_decision", text: result.message, at: now.toISOString() };
-            data.blockers = withBlocker(goal.blockers, blocker) as unknown as Prisma.InputJsonValue;
-            data.nextAction = result.needsConfirmation ? "Waiting for your OK to spend on the next step" : "Waiting for you: the next step could not start";
+            const planned = planStepNotStarted({ step: "start", result, blockers: goal.blockers, now });
+            if (planned.blockers) data.blockers = planned.blockers as unknown as Prisma.InputJsonValue;
+            data.nextAction = planned.nextAction;
+            if (planned.recordRefusal) {
+              await recordAgentEvent({ userId, agentId: agent.id, kind: "task_refused", title: result.message.slice(0, 200), detail: { goalId: goal.id, stepKey: step.stepKey } });
+            }
           }
           break;
         }
       }
       const wrote = await prisma.agentGoal.updateMany({ where: { id: goal.id, userId, advanceLeaseUntil: lease }, data });
       if (wrote.count !== 1) return { kind: "busy" };
+      if (completed) {
+        // After the write, so the person is told only what the goal now says.
+        // A notification that cannot be sent never undoes the outcome.
+        await notifyOutcome({ userId, agent, goal: { id: goal.id, title: goal.title }, ...completed }).catch(() => undefined);
+      }
       if (!again) break;
     }
   } finally {
@@ -274,7 +369,7 @@ export const GOAL_SWEEP_PER_ACCOUNT = 3;
  * The sweep: active, driven goals (`maxRuns > 0`) of active agents, oldest advance first, bounded per tick and per account.
  * Called from the agent reflector's loop (scripts/agent-reflector.ts).
  */
-export async function sweepGoals(now = new Date(), deps?: GoalRunnerDeps): Promise<{ advanced: number }> {
+export async function sweepGoals(now = new Date(), deps: GoalRunnerDeps = unattendedGoalRunnerDeps): Promise<{ advanced: number }> {
   // Cross-account read, said out loud (see reflect-sweep.ts); every write goes
   // through advanceGoal with the owner's id.
   const candidates = await prismaUnguarded.agentGoal.findMany({

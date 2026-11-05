@@ -40,8 +40,13 @@ test.describe("Regenerate with a switched model", () => {
     await page.getByRole("button", { name: "Regenerate" }).click();
     await page.getByRole("menuitem", { name: "Switch model" }).hover();
 
+    // Wait for the submenu itself and read only its rows: counted straight
+    // after the hover, the list could still be the parent menu's (Try again,
+    // More concise…), every one of which carries an icon.
+    const menus = page.getByRole("menu");
+    await expect(menus).toHaveCount(2, { timeout: 10_000 });
     // The current model carries the check mark; any other entry is a switch.
-    const options = page.locator('[role="menu"] [role="menuitem"]');
+    const options = menus.last().getByRole("menuitem");
     const count = await options.count();
     expect(count).toBeGreaterThan(1);
     let switched = false;

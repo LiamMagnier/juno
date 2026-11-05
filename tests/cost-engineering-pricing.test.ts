@@ -31,6 +31,9 @@ test("DeepSeek cache hits bill at DeepSeek's published 2% / 3.3%", () => {
 
 test("Kimi cache hits follow Moonshot's per-model column", () => {
   assert.ok(Math.abs(ratio("kimi-k3") - 0.1) < 1e-9);
+  // K3.1 Pro $0.20 on $2; Highspeed the same $0.20 on $4.
+  assert.ok(Math.abs(ratio("kimi-k3.1-pro") - 0.1) < 1e-9);
+  assert.ok(Math.abs(tokenRate(model("kimi-k3.1-pro-highspeed")).cacheRead - 0.2) < 1e-9);
   assert.ok(Math.abs(ratio("kimi-k2.7-code") - 0.2) < 1e-9);
   assert.ok(Math.abs(tokenRate(model("kimi-k2.6")).cacheRead - 0.16) < 0.001);
 });

@@ -10,19 +10,24 @@ import { executionEntitlements } from "@/lib/tools/entitlements";
 import { openGrantedProviders, providerAvailability, toolProviders } from "@/lib/tools/providers";
 import type { ToolTurn } from "@/lib/tools/types";
 import { codeExecutionNote } from "@/lib/chat/prompt-sections";
-import { narrowRuntimeToolsForSkill } from "@/lib/chat/skills";
+import { narrowRuntimeToolsForSkill, skillKeepsUnlistedSurfaces } from "@/lib/chat/skills";
 import { createStartTaskTool } from "@/lib/chat/task-tool";
 import { createProposeRoutineTool, routineProposalActivity } from "@/lib/chat/routine-tool";
+import { createDraftSkillTool, skillDraftActivity } from "@/lib/chat/skill-draft-tool";
+import { createGenerateImageTool } from "@/lib/chat/image-tool";
 import { createHandoffTool } from "@/lib/chat/handoff-tool";
 import { createAgentConfigTools } from "@/lib/chat/agent-config-tools";
 import { createSetupChangeTool } from "@/lib/chat/setup-change-tool";
 import { createAskRoomMemberTool, createCreateRoomTool } from "@/lib/chat/room-tools";
 import { createCrossConversationTools } from "@/lib/chat/cross-conversation-tools";
+import { createPaymentTools } from "@/lib/chat/payment-tools";
+import { arePaymentsConfigured } from "@/lib/payments/config";
 import type { CrossTurn } from "./cross";
-import { isAgentComputerConfigured } from "@/lib/computer/provider";
+import { computerAccessFor } from "@/lib/computer/access";
 import { createLocalFolderTools } from "@/lib/chat/local-folder-tools";
 import type { LocalFolderGrant } from "@/lib/chat/local-folder";
 import { agentApprovalMode } from "@/lib/agents/domain";
+import { agentHiringGate } from "@/lib/agents/plan-gate";
 import { parseChatTaskMode } from "@/lib/chat/task-approval-mode";
 import type { RoomTurnSetup } from "@/lib/agents/room-store";
 import type { WorkspaceConfig } from "@/lib/projects/workspace-config";
@@ -162,7 +167,14 @@ export async function buildNativeTools({
   conversationId,
   conversation,
   userMessageId,
-  approvals: { taskToolOn, routineToolOn = false, agentConfigToolsOn, agentContext },
+  approvals: {
+    taskToolOn,
+    routineToolOn = false,
+    imageToolOn = false,
+    skillDraftToolOn = false,
+    agentConfigToolsOn,
+    agentContext,
+  },
   appliedSkill,
   conversationModelId,
   requestedEffort,
@@ -180,6 +192,10 @@ export async function buildNativeTools({
   preflightVisibleContent,
   crossConversation,
   localFolder = null,
+  plan,
+  generatedAttachmentIds,
+  onImageModel,
+  liveTaint,
 }: {
   user: TurnUser;
   input: ChatRequestBody;
@@ -187,7 +203,7 @@ export async function buildNativeTools({
   conversation: { projectId: string | null; taskApprovalMode?: string | null };
   userMessageId: string | null;
   approvals: Pick<TurnApprovals, "taskToolOn" | "agentConfigToolsOn" | "agentContext"> &
-    Partial<Pick<TurnApprovals, "routineToolOn">>;
+    Partial<Pick<TurnApprovals, "routineToolOn" | "imageToolOn" | "skillDraftToolOn">>;
   appliedSkill: TurnSkill["appliedSkill"];
   conversationModelId: string;
   requestedEffort: ReasoningEffort | undefined;
@@ -206,6 +222,17 @@ export async function buildNativeTools({
   crossConversation?: CrossTurn | null;
   /** The Mac folder this turn works in (`resolveApprovals`), or null. */
   localFolder?: LocalFolderGrant | null;
+  /** The account's plan, for the image tool's model choice. */
+  plan?: Plan;
+  /** Filled with every attachment `generate_image` made, for linking to the answer. */
+  generatedAttachmentIds?: string[];
+  /** The image model that made a picture, for Auto's receipt. */
+  onImageModel?: (model: { id: string; name: string; auto: boolean }) => void;
+  /**
+   * The turn's taint as it stands when a tool is called (`turnTaintReader`),
+   * when the turn keeps one. Read by `draft_skill` only.
+   */
+  liveTaint?: () => { untrusted: boolean; hostile?: boolean };
 }): Promise<NativeChatTool[]> {
   let taskAnnounced = false;
   const taskTool =
@@ -231,6 +258,8 @@ export async function buildNativeTools({
                 id: agentContext.agent.id,
                 approvalMode: agentApprovalMode(agentContext.agent.approvalMode),
                 status: agentContext.agent.status,
+                executionTarget: agentContext.agent.executionTarget,
+                preferredHostId: agentContext.agent.preferredHostId,
               }
             : null,
           // The composer's mode for this chat: what this request carried, else
@@ -300,8 +329,14 @@ export async function buildNativeTools({
               agentChange: change,
             });
           },
-          // Off, no declaration mentions a computer (PRODUCT_REFOUNDATION §7).
-          computerConfigured: await isAgentComputerConfigured().catch(() => false),
+          // Off, or not open to this account (rollout, plan, host), no
+          // declaration mentions a computer (PRODUCT_REFOUNDATION §7,
+          // docs/design/agents-v2/COMPUTERS_2026-10.md §S1.4).
+          ...(await computerAccessFor(user.id)
+            .then((access) => ({ computerConfigured: access.ok, computerAccessMessage: access.ok ? null : access.message }))
+            .catch(() => ({ computerConfigured: false, computerAccessMessage: null }))),
+          // A plan without agents: create_agent says so before any approval card.
+          ...(plan ? { hiringRefusal: agentHiringGate(plan).message } : {}),
         })
       : [];
   // Setup by conversation (src/lib/chat/setup-change-tool.ts): only in a
@@ -326,6 +361,25 @@ export async function buildNativeTools({
           },
         })
       : null;
+  // One-time payment cards (src/lib/chat/payment-tools.ts): only in a crew
+  // member's own thread (never a room's turn), on the configuration tools'
+  // gate, and only when this server has a payment provider. Every payment
+  // still waits on its own approval card.
+  const paymentTools =
+    agentConfigToolsOn && userMessageId && agentContext && !agentContext.paused && !roomSetup && arePaymentsConfigured(process.env)
+      ? createPaymentTools({
+          user,
+          conversation: { id: conversationId, projectId: conversation.projectId },
+          agent: { id: agentContext.agent.id, name: agentContext.agent.name },
+          userMessageId,
+          untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+          generationId,
+          onApprovalRequest: requestApproval,
+          onReceipt: (title) => {
+            sendActivity({ kind: "tool", title });
+          },
+        })
+      : [];
   // Rooms (src/lib/agents/rooms.ts). `create_room` rides the same gate as
   // the configuration tools; `ask_room_member` is offered only to a room's
   // answering member, and the store holds the cap and the loop guard.
@@ -340,7 +394,11 @@ export async function buildNativeTools({
         })
       : null;
   const askRoomMemberTool =
-    roomSetup && roomMessageId && agentContext && !agentContext.paused && roomMayAsk(roomSetup, roomMessageId)
+    roomSetup &&
+    roomMessageId &&
+    agentContext &&
+    !agentContext.paused &&
+    roomMayAsk(roomSetup, roomMessageId, skillKeepsUnlistedSurfaces(appliedSkill))
       ? createAskRoomMemberTool({
           user,
           conversationId,
@@ -391,9 +449,47 @@ export async function buildNativeTools({
           },
         })
       : null;
+  // A skill the person is teaching, drafted for them to review
+  // (src/lib/chat/skill-draft-tool.ts). It creates nothing: the card under the
+  // reply opens the Teach page, whose Save is the only write. `untrustedNow`
+  // reads the turn's live taint (Alevr Search's page reads mark it, hostile
+  // included), so a draft asked for after a hostile page is refused.
+  const skillDraftTool =
+    skillDraftToolOn && userMessageId
+      ? createDraftSkillTool({
+          user,
+          userMessageId,
+          conversationId,
+          activeConnectors: activeConnectors.map((connector) => ({ id: connector.id, label: connector.label })),
+          untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+          ...(liveTaint ? { untrustedNow: liveTaint } : {}),
+          onDraft: (draft) => {
+            sendActivity(skillDraftActivity(draft));
+          },
+        })
+      : null;
+  // Pictures in chat (src/lib/chat/image-tool.ts): one activity row per call,
+  // re-sent in place as it moves; the files are linked to the answer on save.
+  const imageTool =
+    imageToolOn && userMessageId && plan
+      ? createGenerateImageTool({
+          user: { id: user.id, email: user.email },
+          conversation: { id: conversationId, projectId: conversation.projectId },
+          plan,
+          userRequest: clarificationVisibleContent ?? preflightVisibleContent ?? input.message?.trim() ?? "",
+          turnAttachmentIds: [...(input.attachmentIds ?? []), ...contextAttachmentIds],
+          untrustedContent: untrustedContentInTurn,
+          sendActivity: (event) => sendActivity(event),
+          resendActivity: (entry) => send({ type: "activity", event: entry }),
+          generatedAttachmentIds: generatedAttachmentIds ?? [],
+          onImageModel,
+        })
+      : null;
   const nativeTools = [
     taskTool,
     routineTool,
+    skillDraftTool,
+    imageTool,
     handoffTool,
     ...agentConfigTools,
     setupChangeTool,
@@ -403,5 +499,7 @@ export async function buildNativeTools({
   ].filter(
     (tool): tool is NativeChatTool => tool !== null
   );
-  return folderTools.length > 0 ? [...folderTools, ...nativeTools] : nativeTools;
+  // The payment tools follow the rest (each is already gated above).
+  const withPayments = paymentTools.length > 0 ? [...nativeTools, ...paymentTools] : nativeTools;
+  return folderTools.length > 0 ? [...folderTools, ...withPayments] : withPayments;
 }

@@ -157,7 +157,7 @@ final class CodeV2LogicTests: XCTestCase {
         draft.setCandidateCount(4)
         XCTAssertEqual(draft.label, "Best of 4")
         XCTAssertEqual(draft.routing.workers?.count, 4)
-        XCTAssertEqual(draft.routing.budget?.maxUsd, CodeV2RoleDraft.defaultBudgetUsd)
+        XCTAssertNil(draft.routing.budget, "no fixed per-run cap by default")
 
         let back = CodeV2RoleDraft(routing: draft.routing)
         XCTAssertEqual(back.preset, .bestOfN)

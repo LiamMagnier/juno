@@ -478,10 +478,10 @@
    Once per arrival; reduced motion lands everything in place. */
 @media (prefers-reduced-motion: no-preference) {
   .chat-home .chat-home__title {
-    animation: chat-home-rise 900ms var(--alv-ease, cubic-bezier(0.16, 1, 0.3, 1)) 60ms both;
+    animation: chat-home-rise var(--dur-emphasis) var(--alv-ease, cubic-bezier(0.16, 1, 0.3, 1)) var(--dur-press) both;
   }
   .chat-home .composer-tray {
-    animation: chat-home-tray 900ms var(--alv-ease, cubic-bezier(0.16, 1, 0.3, 1)) 260ms both;
+    animation: chat-home-tray var(--dur-emphasis) var(--alv-ease, cubic-bezier(0.16, 1, 0.3, 1)) var(--dur-base) both;
   }
 }
 @keyframes chat-home-rise {
@@ -499,6 +499,31 @@
 @media (max-width: 1200px) {
   .chat-home {
     grid-template-columns: minmax(0, 660px);
+  }
+}
+/* A short laptop window (1280×640, 1366×680, 1024×600). The two outer tracks
+   are equal (1fr each), so each is as tall as the greeting's cell needs, and
+   that cell also holds incognito's taller header for the cross-fade: at 640
+   the empty home scrolled 47px at rest, and Write's fourth prompt ended below
+   the fold with nothing to hint at it. The breathing room above the greeting
+   and under the starters shrinks, and the open list sits closer and tighter
+   (home-starters.css), so the rest state fits and the list ends on screen.
+   The composer stays at the true centre. */
+@media (max-height: 700px) and (min-width: 761px) {
+  .chat-home__greet {
+    padding-top: 12px;
+    margin-bottom: 24px;
+  }
+  .chat-home__suggest {
+    padding-bottom: 24px;
+  }
+  /* The field is a 640px box centred on the composer: on a window shorter
+     than that its lower half hung past the panel's floor as scrollable
+     overflow (masked, but still counted), so the home scrolled under a
+     wheel with nothing to show. No taller than the panel: the drawing keeps
+     its scale (it follows the width) and loses only what was off screen. */
+  .chat-home__field {
+    height: min(640px, calc(100dvh - 24px));
   }
 }
 /* Phone: the composer stays within the thumb's reach at the foot of the
@@ -710,7 +735,7 @@
 }
 @media (pointer: coarse) {
   .composer-tray {
-    border-radius: 0 0 calc(22px + var(--tray-pad)) calc(22px + var(--tray-pad));
+    border-radius: 0 0 calc(26px + var(--tray-pad)) calc(26px + var(--tray-pad));
   }
   .composer-tray__item {
     height: 44px;
@@ -721,7 +746,7 @@
     border-radius: 22px;
   }
   .composer-tray--top {
-    border-radius: calc(22px + var(--tray-pad)) calc(22px + var(--tray-pad)) 0 0;
+    border-radius: calc(26px + var(--tray-pad)) calc(26px + var(--tray-pad)) 0 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -741,6 +766,29 @@
   .composer-tray__item--end {
     display: none;
   }
+}
+/* A 320 phone: Project, Apps and Skills no longer fit as words, and the
+   Project word was cut to "Pr…". It steps down to its icon (its accessible
+   name and tooltip keep the word), the way the media row's control does. */
+@media (max-width: 339px) {
+  .composer-tray__project-word {
+    display: none;
+  }
+  .composer-tray__item--project-row {
+    padding-inline: 10px 8px;
+    gap: 4px;
+  }
+}
+/* Wider than that, the word is measured (composer-tray.tsx,
+   useWholeProjectWord): at 340 to 356px it was still cut to "Proj…", and the
+   apps' marks (to 375px with three) or a translation move that line, so the row says when the word
+   would be cut and the control takes the same step down at any width. */
+.composer-tray__row[data-tight] .composer-tray__project-word {
+  display: none;
+}
+.composer-tray__row[data-tight] .composer-tray__item--project-row {
+  padding-inline: 10px 8px;
+  gap: 4px;
 }
 
 /* ——————————————————————————— The composer's menus ——————————————————————————— */
@@ -780,15 +828,15 @@
 .cmenu.cmenu[data-side="left"] { --cm-dy: 0px; --cm-dx: 6px; }
 
 .cmenu.cmenu[data-state="open"] {
-  animation: cmenu-in 240ms var(--cm-ease) both;
+  animation: cmenu-in var(--dur-base) var(--cm-ease) both;
 }
 .cmenu.cmenu[data-state="closed"] {
-  animation: cmenu-out 130ms cubic-bezier(0.4, 0, 1, 1) both;
+  animation: cmenu-out var(--dur-fast) cubic-bezier(0.4, 0, 1, 1) both;
 }
 /* The contents settle a beat behind the shell, so the menu reads as a box
    that opens, then fills, rather than one flat image scaling up. */
 .cmenu.cmenu[data-state="open"] > :not(.cmenu-glide) {
-  animation: cmenu-fill 220ms var(--cm-ease) 40ms both;
+  animation: cmenu-fill 220ms var(--cm-ease) var(--dur-press) both;
 }
 @keyframes cmenu-in {
   0% {
@@ -862,9 +910,9 @@
   pointer-events: none;
   opacity: 0;
   transition:
-    transform 200ms var(--cm-ease),
-    width 200ms var(--cm-ease),
-    height 200ms var(--cm-ease),
+    transform var(--dur-base) var(--cm-ease),
+    width var(--dur-base) var(--cm-ease),
+    height var(--dur-base) var(--cm-ease),
     opacity var(--dur-fast) var(--ease-out-soft);
 }
 .dark .cmenu-glide {
@@ -1005,10 +1053,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .cmenu.cmenu[data-state="open"] {
-    animation: cmenu-fade 140ms linear both;
+    animation: cmenu-fade var(--dur-exit) linear both;
   }
   .cmenu.cmenu[data-state="closed"] {
-    animation: cmenu-fade 100ms linear reverse both;
+    animation: cmenu-fade var(--dur-fast) linear reverse both;
   }
   .cmenu.cmenu[data-state="open"] > :not(.cmenu-glide) {
     animation: none;
@@ -1047,3 +1095,4 @@
 .cmenu-empty__action:hover {
   text-decoration-color: currentColor;
 }
+

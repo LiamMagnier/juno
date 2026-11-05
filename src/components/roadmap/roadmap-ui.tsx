@@ -72,7 +72,7 @@ export function VoteButton({
         // pointer (ICONS_AND_MOTION §2.2).
         // relative z-10 keeps the vote target above RequestCard's stretched link
         // overlay — without it the overlay swallows every click on the arrow.
-        "pressable group/vote relative z-10 flex shrink-0 flex-col items-center justify-center rounded-control border motion-reduce:transition-none motion-reduce:active:scale-100",
+        "pressable group/vote relative z-10 flex shrink-0 flex-col items-center justify-center rounded-control border motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
         size === "md" ? "w-12 gap-0.5 py-1.5" : "w-10 gap-0 py-1",
         voted
           ? "border-primary/50 bg-primary/10 text-primary"

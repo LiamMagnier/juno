@@ -30,6 +30,7 @@ export async function createAgentTransaction(tx: Prisma.TransactionClient, userI
     reasoningEffort: input.reasoningEffort ?? null, approvalMode: input.approvalMode,
     connectorIds, projectId, proactive: input.proactive, notify: input.notify,
     template: input.template ?? null, sortOrder: count,
+    executionTarget: input.executionTarget ?? "cloud", preferredHostId: input.preferredHostId ?? null,
   } });
   const conversation = await tx.conversation.create({ data: {
     userId, clientRequestId, agentId: id, title: agent.name, titleSource: "manual",

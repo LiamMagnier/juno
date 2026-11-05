@@ -94,6 +94,22 @@ final class JunoWorkVocabularyTests: XCTestCase {
         }
     }
 
+    /// A queued cloud run that expired unclaimed lands in `interrupted`, but it
+    /// never began. Its header says so rather than warning that it "may
+    /// already have changed something" above a detail that says nothing was
+    /// done — and the reason only ever applies to the status it lands in.
+    func testAnExpiredRunThatNeverStartedSaysNothingWasDone() {
+        XCTAssertEqual(
+            JunoWorkVocabulary.endingSentence(status: .interrupted, terminalReason: "executor_unavailable"),
+            "This never started: no cloud worker was running to pick it up. Nothing was done."
+        )
+        XCTAssertNil(JunoWorkVocabulary.endingSentence(status: .interrupted, terminalReason: "interrupted"))
+        XCTAssertNil(JunoWorkVocabulary.endingSentence(status: .interrupted, terminalReason: nil))
+        XCTAssertNil(JunoWorkVocabulary.endingSentence(status: .interrupted, terminalReason: "  "))
+        XCTAssertNil(JunoWorkVocabulary.endingSentence(status: .queued, terminalReason: "executor_unavailable"))
+        XCTAssertNil(JunoWorkVocabulary.endingSentence(status: .completed, terminalReason: "executor_unavailable"))
+    }
+
     func testEveryArtifactKindHasANounAndAGlyph() {
         for kind in JunoWorkArtifactKind.allCases {
             XCTAssertFalse(

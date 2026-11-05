@@ -184,7 +184,7 @@ export function TaskCard({ answered: answeredProp, planOpen: planOpenProp = fals
           </p>
           <button type="button" className="in-disclosure" aria-expanded={planOpen} onClick={() => setPlanOpen((o) => !o)}>
             Plan
-            <ChevronDown size={12} motion="none" style={{ transform: planOpen ? "rotate(180deg)" : undefined, transition: "transform 180ms cubic-bezier(0.2,0.8,0.2,1)" }} />
+            <ChevronDown size={12} motion="none" style={{ transform: planOpen ? "rotate(180deg)" : undefined, transition: "transform 160ms cubic-bezier(0.2,0.8,0.2,1)" }} />
           </button>
         </div>
         <AnimatePresence initial={false}>

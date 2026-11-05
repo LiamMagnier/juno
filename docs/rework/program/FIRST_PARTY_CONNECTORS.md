@@ -13,6 +13,10 @@ The six dedicated connectors use the existing Connections page and shared MCP di
 
 All sends and posts pass the shared approval broker and tool audit. Provider writes are never retried after an ambiguous failure. Redirects cannot carry provider authorization to another host. File download redirects use the public-DNS-pinned SSRF-safe fetch without provider headers. Responses and input sizes are bounded.
 
+## Attach from the composer
+
+When Google Drive or Microsoft 365 is connected, the composer's + menu offers "Add from Google Drive" / "Add from OneDrive". The picker (`GET /api/connectors/{id}/files`, recent files or `?q=` search) and the import (`POST /api/connectors/{id}/files/attach`) use the same scopes (`drive.readonly`, `Files.Read.All`) and the same adapter as the tools; no new registration or consent is needed. Imports are exported where needed (Docs/Sheets/Slides to Office, then PDF/text; legacy Office on OneDrive to PDF), capped at the plan's upload size and 32 MB, and stored through the upload pipeline. Lockdown and blocked connectors refuse the picker. See `docs/JUNO.md` §5.6.
+
 ## Incremental sync
 
 `POST /api/connectors/{id}/sync` accepts `{ "stream": "primary" }` (a Slack channel ID for Slack, a calendar ID for Google Calendar). Each request consumes one bounded page and returns `inserted`, `more` and `reset`. Initial snapshots establish a quiet baseline. Gmail uses history IDs, Drive uses change tokens, Calendar uses sync tokens, Graph uses delta links, and Slack retains decimal timestamp strings across pagination. Expired provider cursors return a reset indication; an expired history window cannot be recovered as a complete event history.

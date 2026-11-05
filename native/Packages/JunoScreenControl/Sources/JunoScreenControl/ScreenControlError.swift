@@ -38,6 +38,13 @@ public enum ScreenControlError: Error, Hashable, Sendable, LocalizedError {
     case driverFailed(String)
     /// A batch stopped at an earlier failure. The exact text is Anthropic's.
     case notExecuted
+    /// The Mac locked, or its login session went to the background, while
+    /// the run was going: it is paused until the reader unlocks it.
+    case screenLocked
+    /// Nobody is watching this run, and the request needs someone who is.
+    case unattendedRefused(String)
+    /// An unattended run passed the time it was given.
+    case unattendedDeadline
 
     public static let notExecutedText = "Not executed: an earlier computer action in this turn failed."
 
@@ -91,11 +98,17 @@ public enum ScreenControlError: Error, Hashable, Sendable, LocalizedError {
             "The action could not be sent: \(message)"
         case .notExecuted:
             Self.notExecutedText
+        case .screenLocked:
+            "The Mac is locked, so screen control is paused. \(ScreenControlBrand.productName) never unlocks a Mac or types its password. Wait until the reader unlocks it, then take a new screenshot."
+        case let .unattendedRefused(sentence):
+            sentence
+        case .unattendedDeadline:
+            "This unattended run has used the time it was given for screen control. Stop using the computer and report what is done and what is left."
         }
     }
 
     /// Whether the turn should end here rather than let the model retry.
     public var endsTurn: Bool {
-        self == .stoppedByReader
+        self == .stoppedByReader || self == .unattendedDeadline
     }
 }

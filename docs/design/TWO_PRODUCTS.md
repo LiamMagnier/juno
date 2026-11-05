@@ -87,7 +87,8 @@ Connections) or settings.
 **Chat sidebar.** Brand row · Chat|Code pill · New chat · Search · Library ·
 Projects · Artifacts · Design · More (Assistants, Skills, Automations, then
 Archived chats) · then the folds: **Needs you** (when non-empty), Pinned
-projects, Pinned chats, Recent · and one account row (Settings, the apps and
+projects, Recent (pinned chats first, each with its pin: owner decision
+2026-10-26, INTERACTION_SPEC S11) · and one account row (Settings, the apps and
 sign out live in its menu). Connections is in Settings > Connectors and the
 composer's `+`; the Macs Permissions listed are in Settings > Devices. The Code
 sidebar is the same shape: Artifacts · Customize · Pull requests · More

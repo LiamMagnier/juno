@@ -134,7 +134,9 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {/* `text-body`, matching the task row's title — see the note there. */}
-          <span className="min-w-0 truncate text-body font-medium leading-snug text-foreground">
+          {/* Wraps rather than ellipsizing: a long Mac name ("Liam’s Mac
+              Studio in the upstairs office") takes a line of its own. */}
+          <span className="min-w-0 break-words text-body font-medium leading-snug text-foreground">
             {host.displayName}
           </span>
           <WorkHostStatePill host={host} />
@@ -143,13 +145,28 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
               the same thing would make the second one look like a second fact. */}
           {!revoked && !host.enabled && <WorkTag>Work off</WorkTag>}
         </span>
-        <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
+        <span className="mt-1 block text-pretty text-ui leading-relaxed text-muted-foreground">
           {revokedAt !== null
             ? `Revoked ${workTimeAgo(revokedAt)}. It cannot claim anything.`
             : (workload ?? "Nothing running on it right now.")}
         </span>
-        <span className="mt-1.5 block truncate font-mono text-micro tabular-nums text-muted-foreground">
-          {host.platform}{` · ${PRODUCT_NAME} `}{host.appVersion} · last seen {workTimeAgo(host.lastSeenAt)}
+        {/* Facts that wrap whole, never cut: one `truncate` line ended at
+            "macOS 27.2 · Alevr 3.4.0 · last see…" on a phone. Each fact leads
+            with its own "·" and the line is pulled one separator's width left
+            under a clip, so whichever fact starts a line has its "·" in the
+            clipped strip: a separator only ever sits between two facts. */}
+        <span className="mt-1.5 block overflow-hidden font-mono text-micro tabular-nums text-muted-foreground">
+          {/* 3ch: the " · " the line used to set, in the mono's own advance. */}
+          <span className="-ml-[3ch] flex flex-wrap">
+            {[host.platform, `${PRODUCT_NAME} ${host.appVersion}`, `last seen ${workTimeAgo(host.lastSeenAt)}`].map((fact) => (
+              <span key={fact} className="whitespace-nowrap">
+                <span aria-hidden="true" className="inline-block w-[3ch] text-center">
+                  ·
+                </span>
+                {fact}{" "}
+              </span>
+            ))}
+          </span>
         </span>
       </span>
       <ChevronRight className={workRowChevronClass} aria-hidden="true" />

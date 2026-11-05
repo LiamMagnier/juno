@@ -229,7 +229,7 @@ export function RightColumnShell(props: RightColumnShellProps) {
             title={resizeHint}
             className="group absolute inset-y-0 start-0 z-popper hidden w-3 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none ltr:-translate-x-1/2 rtl:translate-x-1/2 @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
           >
-            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
               <GripVertical className="size-3.5" />
             </span>
           </button>

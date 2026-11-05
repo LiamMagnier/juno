@@ -299,8 +299,9 @@ test("Meta takes function names with at most one dot; a call comes back under th
 });
 
 test("the catalog fixes reach the wire: DeepSeek Instant, GLM-5.3 effort, Kimi and MiniMax", () => {
-  // DeepSeek V4 and V4.1 Flash think by default; Instant must SAY none.
-  assert.deepEqual(compatReasoningFields(model("deepseek:deepseek-flash"), undefined), { reasoning_effort: "none" });
+  // DeepSeek V4 and V4.1 Flash think by default; Instant must SAY off, in the
+  // spelling the thinking-mode guide documents and the production adapter sends.
+  assert.deepEqual(compatReasoningFields(model("deepseek:deepseek-flash"), undefined), { thinking: { type: "disabled" } });
   assert.deepEqual(compatReasoningFields(model("deepseek:deepseek-v4-pro"), "max"), { reasoning_effort: "max" });
   // GLM-5.3 always thinks: the effort enum, never `thinking: disabled`.
   for (const effort of ["low", "high", "max"] as const) {

@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
+import { markRequestRejected } from "@/lib/provider-error";
 import { getModelMetrics, reasoningCaps } from "@/lib/model-metrics";
 import {
   compatPromptCacheRequestFields,
@@ -396,7 +397,7 @@ export async function* streamOpenAICompat(
     // K2.x line stays on the usesThinkingObject path below (and is canDisable:
     // false, so it never actually emits `thinking` either).
     (model.provider === "moonshot" && modelId.includes("k3")) ||
-    // MiniMax M3.1 Flash Preview: the one MiniMax with reasoning_effort.
+    // MiniMax M3.1 Flash (GA and Preview): the one MiniMax line with reasoning_effort.
     (model.provider === "minimax" && modelId.includes("m3.1"));
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {
@@ -452,12 +453,13 @@ export async function* streamOpenAICompat(
       ];
     }
   }
-  if (isZhipuThinking) {
+  if (isZhipuThinking && !modelId.includes("glm-5.3")) {
     // Instant (no effort) turns GLM thinking off; any effort turns it on.
-    // GLM-5.2/5.3 additionally take reasoning_effort (handled above). GLM-5.3
-    // cannot think "disabled" — that request fails — so it is always enabled.
-    const glmAlwaysThinks = modelId.includes("glm-5.3");
-    params.thinking = { type: effectiveReasoningEffort || glmAlwaysThinks ? "enabled" : "disabled" };
+    // GLM-5.2 additionally takes reasoning_effort (handled above). GLM-5.3
+    // always thinks and its depth is the effort enum alone (docs.z.ai
+    // guides/llm/glm-5.3: disabling "will cause an error"), so it gets no
+    // `thinking` object at all — the same body llm/compat-loop.ts sends.
+    params.thinking = { type: effectiveReasoningEffort ? "enabled" : "disabled" };
   }
   if (model.provider === "deepseek" && model.reasoning && !effectiveReasoningEffort && reasoningCaps(model).canDisable) {
     // DeepSeek V4/V4.1 think by DEFAULT (effort high), so Instant has to be
@@ -574,6 +576,8 @@ export async function* streamOpenAICompat(
       stream = await c.create(params, { signal, headers: requestHeaders });
     } catch (err) {
       metered?.end(null, { ok: false });
+      // The first request was refused before any stream (pre-stream-retry.ts).
+      if (round === 0) markRequestRejected(err);
       throw err;
     }
 

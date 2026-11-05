@@ -19,8 +19,24 @@ import type { ConnectorFailure, ToolPresentArgs } from "@/types/run";
 
 /** One connector tool call's bound, also the SDK request timeout (SPEC §4.4). */
 export const CONNECTOR_TOOL_TIMEOUT_MS = 60_000;
-/** Chat's budget for one connector's connect + listTools (SPEC §3.4 item 1). */
-export const CHAT_CONNECT_TIMEOUT_MS = 10_000;
+/**
+ * Chat's budget for one connector's connect + listTools (SPEC §3.4 item 1):
+ * a server that has not listed its tools by then is dropped for the turn,
+ * with a warning row, rather than holding the first token. The default of
+ * `MCP_CONNECT_TIMEOUT_MS` (`mcpConnectTimeoutMs`).
+ */
+export const CHAT_CONNECT_TIMEOUT_MS = 5_000;
+
+/**
+ * `MCP_CONNECT_TIMEOUT_MS`: a chat turn's per-server budget for connect +
+ * tools/list. Default 5000, bounded 1000 to 30000 (owner to confirm,
+ * docs/OPEN_DECISIONS.md).
+ */
+export function mcpConnectTimeoutMs(env: Record<string, string | undefined> = process.env): number {
+  const raw = env.MCP_CONNECT_TIMEOUT_MS;
+  const value = raw === undefined || raw.trim() === "" ? NaN : Number(raw);
+  return Number.isFinite(value) ? Math.min(30_000, Math.max(1_000, Math.round(value))) : CHAT_CONNECT_TIMEOUT_MS;
+}
 /** Pictures kept from one connector result (SPEC §3.4 item 4). */
 export const MAX_CONNECTOR_RESULT_IMAGES = 2;
 

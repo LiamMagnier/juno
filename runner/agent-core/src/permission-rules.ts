@@ -25,6 +25,13 @@ export type PermissionRuleSubject =
   | { command: string }
   /** A workspace-relative path. */
   | { path: string }
+  /**
+   * Several workspace-relative paths, for one call that touches many files
+   * (`edit_files`). Each path is ruled on as if it were its own call and the
+   * strictest ruling wins: one denied path refuses the batch, and an allow
+   * rule speaks for it only when every path is allowed.
+   */
+  | { paths: string[] }
   /** A host name, for tools that reach the network. */
   | { domain: string };
 
@@ -40,8 +47,8 @@ export const PERMISSION_RULE_FAMILIES: Readonly<Record<string, readonly string[]
   bash: ['run_command', 'run_tests', 'shell_start', 'git_status', 'git_diff', 'git_log', 'git_commit', 'hook', 'bash'],
   shell: ['run_command', 'run_tests', 'shell_start', 'git_status', 'git_diff', 'git_log', 'git_commit', 'hook', 'bash'],
   read: ['read_file', 'list_directory', 'find_files', 'glob', 'grep'],
-  edit: ['create_file', 'write_file', 'apply_patch', 'multi_edit', 'delete_file', 'move_file', 'edit_file'],
-  write: ['create_file', 'write_file', 'apply_patch', 'multi_edit', 'delete_file', 'move_file', 'edit_file'],
+  edit: ['create_file', 'write_file', 'apply_patch', 'multi_edit', 'delete_file', 'move_file', 'edit_file', 'edit_files'],
+  write: ['create_file', 'write_file', 'apply_patch', 'multi_edit', 'delete_file', 'move_file', 'edit_file', 'edit_files'],
   git: ['git_status', 'git_diff', 'git_log', 'git_commit'],
   websearch: ['web_search'],
   webfetch: ['web_fetch'],
@@ -131,6 +138,12 @@ export class PermissionRule {
     }
     if ('command' in subject) return PermissionRule.commandMatches(this.specifier, subject.command);
     if ('path' in subject) return PermissionRule.pathMatches(this.specifier, subject.path);
+    // Matching a batch means matching all of it. `evaluate` rules on each
+    // path in turn, so a deny rule that names one of them still refuses.
+    if ('paths' in subject) {
+      const specifier = this.specifier;
+      return subject.paths.length > 0 && subject.paths.every((p) => PermissionRule.pathMatches(specifier, p));
+    }
     if (!this.specifier.toLowerCase().startsWith('domain:')) return false;
     return PermissionRule.domainMatches(this.specifier.slice(7), subject.domain);
   }
@@ -275,6 +288,18 @@ export class PermissionRuleSet {
       const allowed = firstMatch(rules, toolName, segments, false);
       return allowed ? { decision: 'allow', rule: allowed } : null;
     }
+    // A batch is as restricted as its most restricted file: deny beats ask,
+    // ask beats no rule, and allow holds only when every file is allowed.
+    if (subject && 'paths' in subject) {
+      if (subject.paths.length === 0) return this.evaluate(toolName, null);
+      const rulings = subject.paths.map((p) => this.evaluate(toolName, { path: p }));
+      const denied = rulings.find((ruling) => ruling?.decision === 'deny');
+      if (denied) return denied;
+      const asked = rulings.find((ruling) => ruling?.decision === 'ask');
+      if (asked) return asked;
+      if (rulings.some((ruling) => ruling === null)) return null;
+      return rulings[0] ?? null;
+    }
     const denied = this.deny.find((rule) => rule.matches(toolName, subject));
     if (denied) return { decision: 'deny', rule: denied };
     const asked = this.ask.find((rule) => rule.matches(toolName, subject));
@@ -304,7 +329,7 @@ export class PermissionRuleSet {
         .join(' ');
       return new PermissionRule('Bash', `${prefix} *`);
     }
-    if ('path' in subject) return new PermissionRule('Edit');
+    if ('path' in subject || 'paths' in subject) return new PermissionRule('Edit');
     return new PermissionRule('WebFetch', `domain:${subject.domain}`);
   }
 }

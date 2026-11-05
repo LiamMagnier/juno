@@ -13,7 +13,7 @@
  * come back in the same order the branches produced them, and the caller does
  * exactly what it did before with each one.
  */
-import type { FastMode } from "@/lib/pricing";
+import type { FastMode, GenerationCostOpts } from "@/lib/pricing";
 import type { TextSegment } from "@/lib/chat/answer-split";
 import { SourceRegistry } from "@/lib/chat/source-registry";
 import { appendReasoningDelta, emptyReasoning, type ReasoningState } from "@/lib/reasoning-parts";
@@ -105,6 +105,8 @@ export class GenerationAccumulator {
   providerOutputChars = 0;
   reasoningState: ReasoningState = emptyReasoning();
   usage: UsageAccumulator = {};
+  /** Request boundaries stay internal; the client receives the settled total. */
+  readonly requestUsages: GenerationCostOpts[] = [];
   finishReason: ChatFinishReason = "stop";
   /** The adapter's own sentence about why, when it has one. See LlmEvent. */
   finishNote: string | null = null;
@@ -201,6 +203,10 @@ export class GenerationAccumulator {
    */
   replaceText(next: string): void {
     this.text = next;
+  }
+
+  recordRequestUsage(usage: GenerationCostOpts): void {
+    this.requestUsages.push({ ...usage });
   }
 
   apply(event: LlmEvent): StreamEffect {
@@ -340,6 +346,7 @@ export class GenerationAccumulator {
   /** The raw counters `buildUsage` reconciles into a billable figure. */
   rawUsage(chars: { promptChars: number; reasoningChars?: number }) {
     return {
+      ...(this.requestUsages.length ? { requestUsages: this.requestUsages } : {}),
       input: this.usage.input,
       output: this.usage.output,
       reasoning: this.usage.reasoning,

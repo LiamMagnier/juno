@@ -311,7 +311,11 @@ paths:
     post:
       servers: [{ url: /api }]
       operationId: cancelNativeChatGeneration
-      description: Account-scoped best-effort cancellation of an in-process generation.
+      description: >-
+        Account-scoped Stop for a generation held by any backend process. The
+        process that received the request aborts it at once when it holds the
+        generation; otherwise the Stop is recorded durably and the holding
+        process reads it within about a second.
       requestBody:
         required: true
         content:
@@ -319,7 +323,10 @@ paths:
             schema: { $ref: '#/components/schemas/ChatCancellationRequest' }
       responses:
         '200':
-          description: The request was valid; cancelled is false if no owned live generation was registered.
+          description: >-
+            The request was valid. cancelled is true when a terminal frame is on
+            its way to the stream's reader; false when no owned live generation
+            was found or the Stop could not be recorded.
           content: { application/json: { schema: { $ref: '#/components/schemas/ChatCancellationResponse' } } }
         '400': { $ref: '#/components/responses/GeneralRouteError' }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
@@ -1162,6 +1169,11 @@ paths:
                     properties:
                       memorySensitiveTopics: { type: array, items: { type: string } }
                       memoryBackgroundLearning: { type: boolean }
+                      toneWarmth: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                      toneEnthusiasm: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                      toneFormatting: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                      toneEmoji: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                      toneConciseness: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
                       backgroundProviderMode: { type: string }
                       actionApprovalPolicy: { type: string }
                       lockdownMode: { type: boolean }
@@ -1177,6 +1189,9 @@ paths:
         refuses: name, memoryBackgroundLearning, memorySensitiveTopics,
         backgroundProviderMode, actionApprovalPolicy, lockdownMode,
         blockedConnectors and monthlySpendCapEur (null restores the default).
+        The tone characteristics (toneWarmth, toneEnthusiasm, toneFormatting,
+        toneEmoji, toneConciseness) are accepted here and by the sync
+        settings.update patch alike.
       requestBody:
         required: true
         content:
@@ -1192,6 +1207,11 @@ paths:
                 lockdownMode: { type: boolean }
                 blockedConnectors: { type: array, maxItems: 200, items: { type: string, maxLength: 120 } }
                 monthlySpendCapEur: { type: [integer, 'null'], minimum: 0, maximum: 100000 }
+                toneWarmth: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                toneEnthusiasm: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                toneFormatting: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                toneEmoji: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
+                toneConciseness: { $ref: '#/components/schemas/ToneCharacteristicLevel' }
       responses:
         '200': { description: Saved. }
         '400': { $ref: '#/components/responses/GeneralRouteError' }
@@ -1252,6 +1272,11 @@ paths:
       servers: [{ url: /api }]
       operationId: hireNativeAgent
       summary: Hire an agent, with its thread and optional first goal
+      description: >-
+        Hiring needs a plan that includes agents. On any other plan the server
+        answers 402 with `error: plan_locked`, `upgradePlan` (the cheapest plan
+        that includes them) and a sentence to show, and creates nothing.
+        Agents an account kept from before a downgrade stay listed and readable.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/AgentHireRequest' } } }
@@ -1261,6 +1286,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/AgentResponse' } } }
         '400': { $ref: '#/components/responses/GeneralRouteError' }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '402': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
         '409': { $ref: '#/components/responses/GeneralRouteError' }
         '429': { $ref: '#/components/responses/GeneralRouteError' }
@@ -1406,6 +1432,12 @@ paths:
     post:
       servers: [{ url: /api }]
       operationId: createNativeAgentNote
+      description: >-
+        Notes are screened for secrets: one that puts a value beside a
+        password, PIN, code, key or login (in the languages the app ships) is
+        refused with 422 (`note_secret`); a key, token or card number inside a
+        sentence is masked before it is stored. The screen is a rule over
+        words, so a secret phrased another way can get through.
       requestBody:
         required: true
         content:
@@ -1419,6 +1451,7 @@ paths:
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
         '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '422': { $ref: '#/components/responses/GeneralRouteError' }
   /agents/{agentId}/notes/{noteId}:
     parameters:
       - { in: path, name: agentId, required: true, schema: { type: string } }
@@ -1426,19 +1459,28 @@ paths:
     patch:
       servers: [{ url: /api }]
       operationId: updateNativeAgentNote
-      description: An edited note becomes the person's words (`source` = user).
+      description: >-
+        An edited note becomes the person's words (`source` = user) and is
+        kept. `{ "action": "keep" }` instead keeps, unchanged, a note the agent
+        saved in a task that waits for review (`pendingNotes` on the agent's
+        detail); keeping one already kept answers `replay: true`. Screened like
+        a new note (422 `note_secret`).
       requestBody:
         required: true
         content:
           application/json:
-            schema: { type: object, required: [content], properties: { content: { type: string, maxLength: 1000 } } }
+            schema:
+              oneOf:
+                - { type: object, required: [content], properties: { content: { type: string, maxLength: 1000 } } }
+                - { type: object, required: [action], additionalProperties: false, properties: { action: { type: string, enum: [keep] } } }
       responses:
         '200':
           description: The note after the change.
-          content: { application/json: { schema: { type: object, required: [note], properties: { note: { $ref: '#/components/schemas/AgentNote' } } } } }
+          content: { application/json: { schema: { type: object, required: [note], properties: { note: { $ref: '#/components/schemas/AgentNote' }, replay: { type: boolean } } } } }
         '400': { $ref: '#/components/responses/GeneralRouteError' }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '422': { $ref: '#/components/responses/GeneralRouteError' }
     delete:
       servers: [{ url: /api }]
       operationId: deleteNativeAgentNote
@@ -3641,11 +3683,21 @@ components:
                     items: { type: string }
               availability:
                 type: string
-                enum: [available, coming_soon, requires_plan]
+                enum: [available, coming_soon, requires_plan, health_check_failed]
                 description: >-
                   `requires_plan` means the model exists and streams but the
                   caller's plan cannot call it. A client must show it disabled
                   with `requiredPlan` as the reason, never as a selection.
+                  `health_check_failed` means the model cannot be served right
+                  now (its lab's route is failing its health probe, or its own
+                  capability probe failed); `availabilityReason` says which. A
+                  client must show it disabled, never as a selection.
+              availabilityReason:
+                type: string
+                nullable: true
+                description: >-
+                  Set only with `health_check_failed`: `provider_unhealthy`, or
+                  the model capability probe's reason (e.g. `model_health_check`).
               requiredPlan:
                 type: string
                 description: The plan the chat route actually enforces (paid models are Pro-floored).
@@ -3682,6 +3734,14 @@ components:
                       True only for `juno:auto`: the router chooses the thinking
                       depth per message, `supportedReasoningEfforts` is empty,
                       and a client must not send `reasoningEffort` with it.
+    ToneCharacteristicLevel:
+      type: string
+      enum: [less, default, more]
+      description: >-
+        One tone characteristic (src/lib/characteristics.ts), layered on the
+        personality preset and under the custom instructions. "default" puts
+        nothing in the prompt; a server reads an unknown stored value as
+        "default", and the settings record and GET /settings send it as such.
     BootstrapResponse:
       type: object
       required: [profile, subscription, usage, settings, featureFlags, currentChangeCursor, compactionFloorCursor, modelManifestVersion, contractVersion, minimumClientVersions, announcements]
@@ -3735,7 +3795,13 @@ components:
         operation:
           type: object
           description: >-
-            Strict operation union implemented by the server. project.update accepts
+            Strict operation union implemented by the server. conversation.create
+            and conversation.update (in its `patch`) accept an optional boolean
+            memoryOff, "Memory off for this chat": the chat's turns read no
+            memory and save or forget nothing, and the background reader skips
+            it. Setting it back to false (memory on again) also marks what was
+            said meanwhile as read, so it is never learned from; the
+            conversation sync entity reports it as memoryOff. project.update accepts
             entityId plus optional name, instructions, starred and workDefaults
             fields. workDefaults is the Work bundle a task filed in the project
             inherits (target, preferredHostId, model, reasoningEffort, budget,
@@ -4031,6 +4097,15 @@ components:
       properties:
         ok: { const: true }
         cancelled: { type: boolean }
+        delivery:
+          type: string
+          enum: [local, remote, queued, none]
+          description: >-
+            How the Stop travelled. local, this process aborted it; remote, the
+            process holding it will read the recorded Stop; queued, recorded but
+            no process holds a live lease yet, so it applies if one picks the
+            generation up; none, it could not be recorded. Optional: older
+            servers omit it, and clients decide on cancelled.
     ChatReceiptResponse:
       type: object
       additionalProperties: false
@@ -5425,7 +5500,8 @@ components:
         agentId: { type: string }
         title: { type: string }
         detail: { type: string }
-        status: { type: string, enum: [active, paused, achieved, dropped] }
+        # unverified: every step ran but its success criteria were not shown to be met (server-set only).
+        status: { type: string, enum: [active, paused, achieved, dropped, unverified] }
         cadence: { type: string, enum: [none, daily, weekly] }
         lastCheckInAt: { type: [string, 'null'], format: date-time }
         lastCheckInNote: { type: [string, 'null'] }
@@ -5487,6 +5563,8 @@ components:
         goals: { type: array, items: { $ref: '#/components/schemas/AgentGoal' } }
         ideas: { type: array, items: { $ref: '#/components/schemas/AgentIdea' } }
         notes: { type: array, items: { $ref: '#/components/schemas/AgentNote' } }
+        # Notes a task saved that wait for the person to keep or forget. Never in `notes`.
+        pendingNotes: { type: array, items: { $ref: '#/components/schemas/AgentNote' } }
         routines: { type: array, items: { $ref: '#/components/schemas/AgentRoutine' } }
         tasks: { type: array, items: { $ref: '#/components/schemas/AgentTaskGlance' } }
     AgentTaskStarted:

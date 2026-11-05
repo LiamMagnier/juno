@@ -10,6 +10,7 @@ import { canInlineDocument, isPdfAttachment, oversizeDocumentNote } from "@/lib/
 import { providerRequestModel } from "@/lib/model-request";
 import { env } from "@/lib/env";
 import { normalizeFinishReason } from "@/lib/finish-reason";
+import { markRequestRejected } from "@/lib/provider-error";
 import { providerApiKey } from "@/lib/providers";
 import { getObjectBytes } from "@/lib/storage";
 import {
@@ -404,14 +405,22 @@ export async function* streamAnthropic(
         // `fast` flag is computed from, so downgrading it here is what stops a
         // provider that never reports `speed` from being billed the premium rate.
         servedFast = false;
+        // Tell the budget guard before standard-speed tokens start arriving;
+        // retaining the requested premium rate can stop an affordable answer.
+        yield { type: "usage", fast: false };
         try {
           stream = await openStream(false, params);
         } catch (retryErr) {
           metered?.end(null, { ok: false });
+          // Rejected before any stream, but this was already the request's
+          // second send: the turn does not ask this model a third time.
+          if (roundIndex === 0) markRequestRejected(retryErr, { adapterRetried: true });
           throw retryErr;
         }
       } else {
         metered?.end(null, { ok: false });
+        // The first request was refused before any stream (pre-stream-retry.ts).
+        if (roundIndex === 0) markRequestRejected(err);
         throw err;
       }
     }
@@ -453,9 +462,10 @@ export async function* streamAnthropic(
      *
      * Safe to emit repeatedly because these are cumulative and monotonic, and
      * the accumulator merges usage with `preferHigher` (src/lib/usage-merge.ts).
-     * `fast` is deliberately withheld until the final event: it is a billing
-     * rate, not a counter, and asserting it early would let a turn that later
-     * degrades to standard speed be priced at the premium one.
+     * The final event carries the served speed. A rejected premium attempt
+     * also emits `fast: false` before its standard retry so the live budget
+     * estimate immediately follows the downgrade. Settlement uses each
+     * completed request's own metered tier when its receipts reconcile.
      */
     yield {
       type: "usage",

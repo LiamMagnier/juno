@@ -121,6 +121,8 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
     try {
       const parsed = new URL(requestedCallback, "https://juno.invalid");
       if (parsed.origin !== "https://juno.invalid") return "/chat";
+      // Normalising can collapse "/.//evil.com" into "//evil.com": another host.
+      if (parsed.pathname.startsWith("//") || parsed.pathname.startsWith("/\\")) return "/chat";
       return `${parsed.pathname}${parsed.search}${parsed.hash}`;
     } catch {
       return "/chat";

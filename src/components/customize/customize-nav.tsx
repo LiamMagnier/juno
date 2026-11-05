@@ -53,7 +53,7 @@ export function CustomizeNav({ current, className }: { current: CustomizeTab; cl
       {/* A rounded-menu shell on a hairline, its thumb concentric inside it
           (14 outer, 4 inset, 10 thumb; the hairline is an inset shadow so it
           takes no room from the inset), the homepage's quiet chrome. */}
-      <div className="flex max-w-full gap-0.5 overflow-x-auto rounded-menu bg-muted p-1 shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.07)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex max-w-full scroll-px-2 gap-0.5 overflow-x-auto rounded-menu bg-muted p-1 shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.07)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {destinations.map((item) => {
           const selected = shown === item.id;
           return (
@@ -71,7 +71,7 @@ export function CustomizeNav({ current, className }: { current: CustomizeTab; cl
               // control as 10, so it misfires here.
               // eslint-disable-next-line design-system/concentric-radius
               className={cn(
-                "relative flex h-8 shrink-0 items-center rounded-field px-3.5 text-ui transition-[color,transform] duration-fast ease-out-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring active:scale-[0.97] motion-reduce:active:scale-100 coarse:h-10",
+                "relative flex h-8 shrink-0 items-center rounded-field px-3.5 text-ui transition-[color,transform] duration-fast ease-out-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring active:scale-[0.97] motion-reduce:active:scale-100 coarse:h-10 hit-44",
                 selected ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >

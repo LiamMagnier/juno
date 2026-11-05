@@ -5,6 +5,7 @@ import { isValidBrowserAuthorization } from "@/lib/native-auth-core";
 import { issueNativeAuthorizationCode } from "@/lib/native-auth";
 import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { AppAuthHandoff, LegacyAppAuthHandoff } from "./handoff";
+import { PageRoot } from "@/components/app/page-root";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,11 @@ export default async function AppAuthPage({ searchParams }: { searchParams: Prom
       store.get("authjs.session-token")?.value ??
       store.get("__Secure-authjs.session-token")?.value ??
       "";
-    return <LegacyAppAuthHandoff token={token} />;
+    return (
+      <PageRoot>
+        <LegacyAppAuthHandoff token={token} />
+      </PageRoot>
+    );
   }
 
   if (!isValidBrowserAuthorization(authorization)) {
@@ -62,7 +67,11 @@ export default async function AppAuthPage({ searchParams }: { searchParams: Prom
     nonce: authorization.nonce,
     installationId: authorization.installationId,
   });
-  return <AppAuthHandoff code={code} state={authorization.state} nonce={authorization.nonce} redirectUri={authorization.redirectUri} />;
+  return (
+    <PageRoot>
+      <AppAuthHandoff code={code} state={authorization.state} nonce={authorization.nonce} redirectUri={authorization.redirectUri} />
+    </PageRoot>
+  );
 }
 
 function AuthFailure({ message }: { message: string }) {

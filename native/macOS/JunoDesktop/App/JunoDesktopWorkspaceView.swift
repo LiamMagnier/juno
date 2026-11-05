@@ -109,7 +109,33 @@ struct JunoDesktopWorkspaceView: View {
             // menu bar): only Chat has the page stacks, so the active window
             // shows Chat and its workspace follows the request.
             .onChange(of: DesktopPageRouter.shared.pending?.id, initial: true) { _, _ in adoptPageRequest() }
-            .onChange(of: appearsActive) { _, _ in adoptPageRequest() }
+            .onChange(of: appearsActive) { _, _ in
+                adoptPageRequest()
+                recordForRecovery()
+            }
+            // What the front window shows, for the session snapshot a launch
+            // after an unclean exit restores (§3.3).
+            .onChange(of: recoveryState, initial: true) { _, _ in recordForRecovery() }
+    }
+
+    /// The product, conversation and Code session on screen.
+    private var recoveryState: [String?] {
+        [
+            product.rawValue,
+            configuration.conversationModel?.selectedConversationID,
+            workbenchModel?.selectedSessionID?.value,
+        ]
+    }
+
+    /// Only the window in front speaks for the session: with two windows
+    /// open, the one the reader is using is the one worth restoring.
+    private func recordForRecovery() {
+        guard appearsActive else { return }
+        DesktopCrashRecovery.shared.noteWindow(
+            product: product == .code ? .code : .chat,
+            conversationID: product == .chat ? configuration.conversationModel?.selectedConversationID : nil,
+            codeSessionID: workbenchModel?.selectedSessionID?.value
+        )
     }
 
     private func adoptPageRequest() {

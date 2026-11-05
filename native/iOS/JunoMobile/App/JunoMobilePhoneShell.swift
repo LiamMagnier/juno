@@ -83,7 +83,7 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
     // ChatGPT's proportion: the drawer takes four fifths of the screen, so
     // about a fifth of the card (80pt on a 402pt iPhone) stays in view as the
     // way back. Derived from the container, never a device constant.
-    min(size.width * 0.8, 380)
+    min(size.width * JunoGeneratedShell.drawerWidthFraction, JunoGeneratedShell.drawerWidthMax)
   }
 
   var body: some View {
@@ -110,7 +110,7 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
           .frame(maxHeight: .infinity)
           // A short parallax: the sidebar starts a little behind and slides
           // the last quarter of the way as the conversation leaves.
-          .offset(x: reduceMotion ? 0 : -full * 0.22 * (1 - progress))
+          .offset(x: reduceMotion ? 0 : -full * JunoGeneratedShell.drawerParallax * (1 - progress))
           .opacity(reduceMotion ? (progress > 0.01 ? 1 : 0) : 1)
           .environment(\.junoMobileDrawerOpen, isOpen || dragging)
           .accessibilityHidden(!isOpen)
@@ -127,7 +127,7 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
             // card, kept catching every touch with the drawer closed, so
             // nothing in the conversation responded.
             Color.black
-              .opacity((colorScheme == .dark ? 0.30 : 0.04) * progress)
+              .opacity((colorScheme == .dark ? JunoGeneratedShell.drawerDimDark : 0.04) * progress)
               .contentShape(.rect)
               .onTapGesture { setOpen(false) }
               .allowsHitTesting(isOpen)
@@ -188,7 +188,7 @@ struct JunoMobilePushDrawer<Sidebar: View, Content: View>: View {
   }
 
   private func dragGesture(full: CGFloat) -> some Gesture {
-    DragGesture(minimumDistance: 8, coordinateSpace: .global)
+    DragGesture(minimumDistance: JunoGeneratedGesture.slop, coordinateSpace: .global)
       .onChanged { value in
         // Horizontal intent only; a vertical scroll on the open card must
         // not nudge the drawer.
@@ -274,24 +274,10 @@ struct JunoMobileProductSwitch: View {
   }
 }
 
-/// The press every quiet tappable in the redesigned chrome shares: scale 0.97
-/// and 85% opacity over the 120ms press rung; opacity only under Reduce Motion.
+/// Quiet controls share the same press response as content and composer actions.
 struct JunoMobileQuietPressStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
-    Pressed(pressed: configuration.isPressed, label: configuration.label)
-  }
-
-  private struct Pressed: View {
-    let pressed: Bool
-    let label: ButtonStyleConfiguration.Label
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-      label
-        .scaleEffect(pressed && !reduceMotion ? 0.97 : 1)
-        .opacity(pressed ? 0.85 : 1)
-        .animation(JunoMotion.reduced(JunoMotion.press, when: reduceMotion, tier: .tint), value: pressed)
-    }
+    JunoPressButtonStyle().makeBody(configuration: configuration)
   }
 }
 

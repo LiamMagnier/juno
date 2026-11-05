@@ -180,7 +180,7 @@ export function EvidencePanel({
                     >
                       {done ? <StatusIcons.success className="size-3" /> : null}
                     </span>
-                    <p className="min-w-0 flex-1 text-ui leading-snug text-foreground/85">{objective.question}</p>
+                    <p className="min-w-0 flex-1 text-ui leading-snug text-foreground">{objective.question}</p>
                   </div>
 
                   <div className="mt-1.5 pl-6">
@@ -248,14 +248,14 @@ export function EvidencePanel({
               <li key={rung.type} className="flex items-center gap-1.5 text-caption text-muted-foreground">
                 <span aria-hidden className={cn("size-1.5 rounded-full", rung.fill)} />
                 {rung.label}
-                <span className="tabular-nums text-foreground/70">{rung.count}</span>
+                <span className="tabular-nums text-muted-foreground">{rung.count}</span>
               </li>
             ))}
             {mix.unclassified > 0 && (
               <li className="flex items-center gap-1.5 text-caption text-muted-foreground">
                 <span aria-hidden className="size-1.5 rounded-full bg-border" />
                 {EVIDENCE_COPY.unclassified}
-                <span className="tabular-nums text-foreground/70">{mix.unclassified}</span>
+                <span className="tabular-nums text-muted-foreground">{mix.unclassified}</span>
               </li>
             )}
           </ul>
@@ -280,7 +280,7 @@ export function EvidencePanel({
               ];
               return (
                 <li key={conflict.id} className="min-w-0 rounded-field border border-warning/25 bg-warning/[0.06] p-2.5">
-                  <p className="text-ui leading-snug text-foreground/85">{conflict.description}</p>
+                  <p className="text-ui leading-snug text-foreground">{conflict.description}</p>
                   <p className="mt-1 truncate text-caption text-muted-foreground">
                     {conflict.severity} {EVIDENCE_COPY.severity}
                     {hosts.length > 0 ? ` · ${EVIDENCE_COPY.between} ${hosts.join(", ")}` : ""}

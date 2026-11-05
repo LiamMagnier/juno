@@ -5,7 +5,7 @@ import { SiteFooter, SiteHeader } from "@/components/landing/site-chrome";
 
 /** The prose treatment, as plain `[&_…]` selectors on the article. */
 const ARTICLE = [
-  "pb-16 text-body-lg leading-relaxed text-foreground/90",
+  "pb-16 text-body-lg leading-relaxed text-foreground",
   // Headings on Juno's own scale (display / title / heading). The tokens carry
   // weight and tracking, so nothing is restated beside them.
   "[&_h1]:text-balance [&_h1]:font-serif [&_h1]:text-display [&_h1]:font-medium [&_h1]:tracking-tight [&_h1]:text-foreground",

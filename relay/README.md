@@ -50,6 +50,22 @@ set `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787` in `.env.local`.
 | `RELAY_QWEN_MODEL` | no | default `qwen3.5-omni-flash-realtime` |
 | `RELAY_QWEN_REALTIME_URL` | no | default `wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime` |
 | `RELAY_MINIMAX_MODEL` / `RELAY_MINIMAX_TTS_MODEL` | no | defaults `MiniMax-M2.7-highspeed` / `speech-2.6-turbo` |
+| `JUNO_APP_URL` | for memory, personas, spend and tools | the Juno backend the relay calls back (`/api/voice/memory`, `/persona`, `/spend`, `/tools`). Without it a call has none of those, and is still a call. |
+
+## Tools in a call
+
+A call whose token grants tools (`tl: 1`, from a chat that is not incognito) asks Juno for them at
+start and declares them to providers that take functions: Gemini Live (beside its delegate), the
+OpenAI Realtime dialect and xAI. GPT-Live, Qwen and MiniMax declare none, and `session.ready.tools`
+is `0`. Every call runs on Juno (`src/tools.ts`): the relay sends the function name and arguments
+and gets back an NDJSON stream — an `approval` line when the call waits on the person, then one
+`result`. It holds no connector token, policy or registry of its own. The person answers a card on
+screen, or aloud with a clear yes or no in a turn that began after the card went up and not while
+the model's own speech was still playing (a yes there may be an echo); anything that cannot be
+undone takes the card. The relay never records an answer: it sends the client `tool.spoken`, and
+the signed-in client answers the card through Juno's decision route with its digest. The client
+sees `tool.activity` and `tool.spoken` frames (web only; the native decoders carry an unknown
+type, and the native apps do not ask for tools yet).
 
 `GET /healthz` reports which providers are configured.
 

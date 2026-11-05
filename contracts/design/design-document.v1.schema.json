@@ -2283,7 +2283,10 @@
                   "maximum": 10000,
                   "$ref": "#/$defs/__schema5"
                 }
-              ]
+              ],
+              "items": false,
+              "minItems": 4,
+              "maxItems": 4
             }
           ]
         },
@@ -4684,7 +4687,10 @@
                       "maximum": 10000,
                       "$ref": "#/$defs/__schema5"
                     }
-                  ]
+                  ],
+                  "items": false,
+                  "minItems": 4,
+                  "maxItems": 4
                 }
               ]
             },
@@ -7400,7 +7406,10 @@
                       "maximum": 10000,
                       "$ref": "#/$defs/__schema6"
                     }
-                  ]
+                  ],
+                  "items": false,
+                  "minItems": 4,
+                  "maxItems": 4
                 }
               ]
             },

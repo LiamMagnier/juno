@@ -3,6 +3,7 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
+import { controlMotionClass } from "@/components/ui/control-recipe";
 
 /**
  * The four interactive roles that are NOT the action button.
@@ -56,11 +57,7 @@ const pressableVariants = cva(
   // properties, not `duration-fast` / `ease-out-soft`: tailwindcss-animate
   // reads those utilities as ANIMATION timing too, and would retime an
   // entrance on the same element.
-  "pressable relative select-none disabled:pointer-events-none disabled:opacity-50 " +
-    "motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] " +
-    "motion-reduce:[transition-duration:var(--dur-fast)] motion-reduce:[transition-timing-function:var(--ease-out-soft)] " +
-    "motion-reduce:active:scale-100 " +
-    "[&_svg]:pointer-events-none [&_svg]:shrink-0",
+  cn(controlMotionClass, "relative select-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0"),
   {
     variants: {
       /**
@@ -79,9 +76,13 @@ const pressableVariants = cva(
         // `active:scale-100` cancels `.pressable`'s dip (a row never scales)
         // and `active:bg-selected` is its press: a tonal step past the hover
         // fill, on the same fast cross-fade.
-        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 text-left text-body text-foreground/90 hover:bg-accent hover:text-accent-foreground active:scale-100 active:bg-selected",
+        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 text-left text-body text-foreground hover:bg-accent hover:text-accent-foreground active:scale-100 active:bg-selected",
         tile: "control-neu flex flex-col items-start gap-1 rounded-card p-3 text-left text-ui",
-        chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground",
+        // `hit-44`: a chip is drawn 24-32px tall at every rung and never grows
+        // with the pointer (a filter row that doubled in height on a phone
+        // would push the content it filters off the first screen), so a
+        // finger reaches it through the invisible 44px pad (G54) instead.
+        chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground hit-44",
         // `rounded-full`: the house idiom for "a glyph you can press" is a circle.
         icon: "inline-flex items-center justify-center rounded-full border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
       },

@@ -1,0 +1,22 @@
+{
+  "tool": "calculate",
+  "steps": [
+    {
+      "expression": "floor(4.35 * 100)",
+      "value": 435
+    },
+    {
+      "expression": "floor(0.29 * 100)",
+      "value": 29
+    },
+    {
+      "expression": "floor(1.10 * 100)",
+      "value": 110
+    },
+    {
+      "expression": "435 + 29 + 110",
+      "value": 574
+    }
+  ],
+  "answer": 574
+}

@@ -157,6 +157,23 @@ test("contract matrix: Work runs and Orbit agent tasks", () => {
   }
 });
 
+test("starting an agent's computer is pinned: destructive_sensitive, asks under every mode, never standing", () => {
+  // docs/design/agents-v2/COMPUTERS_2026-10.md §S1.5: the "Start {name}'s
+  // computer" card under the agent's "ask first" policy.
+  const start = contract.cases.find((c) => c.runtime === "work" && c.action === "work.computer.start");
+  assert.ok(start, "the contract carries work.computer.start");
+  assert.deepEqual(start.expect, { tier: "destructive_sensitive", asksUnderEveryMode: true, standing: false });
+  assert.equal(start.risk, "sensitive");
+  for (const policy of WORK_PERMISSION_POLICIES) {
+    const ruling = approvalRuling({ action: "work.computer.start", risk: "sensitive", policy, standingAllowance: "irreversible" });
+    assert.equal(ruling.ask, true, policy);
+    // The start's own words, never the command ones.
+    assert.match(ruling.explanation, /^Starting the agent's computer uses this week's computer time\./);
+    assert.doesNotMatch(ruling.explanation, /runs a command/);
+  }
+  assert.equal(mayBeCoveredByStandingAllowance("work.computer.start", "sensitive"), false);
+});
+
 test("floor 1 across the board: destructive or sensitive never proceeds without a person", () => {
   for (const c of contract.cases.filter((c) => c.expect.tier === "destructive_sensitive")) {
     assert.equal(c.expect.asksUnderEveryMode, true, `${c.runtime} ${c.action ?? c.tool ?? c.risk}`);
@@ -223,8 +240,10 @@ test("grant-minting code is reachable only from signed-in routes, never from a t
   const minting: Array<[RegExp, string[]]> = [
     // Recording a person's answer to a connector approval (and any standing grant).
     [/\bdecideActionApproval\s*\(/, ["src/lib/action-approval-store.ts", "src/app/api/approvals/[id]/route.ts"]],
-    // Recording a person's answer to a Work approval.
-    [/\bworkApproval\.(update|updateMany|upsert)\s*\(/, ["src/app/api/work/approvals/[id]/decision/route.ts"]],
+    // Recording a person's answer to a Work approval. park-resume.ts only
+    // CLOSES requests an ended execution left pending (expired or superseded,
+    // never allowed); the assertions after this loop hold it to exactly that.
+    [/\bworkApproval\.(update|updateMany|upsert)\s*\(/, ["src/app/api/work/approvals/[id]/decision/route.ts", "src/lib/work/park-resume.ts"]],
     // Creating a standing connector grant row.
     [/\bactionApprovalGrant\.(create|upsert|update|updateMany)\s*\(/, ["src/lib/action-approval-store.ts", "src/app/api/approvals/grants/[id]/route.ts"]],
     // Granting a saved credential to a task.
@@ -235,6 +254,16 @@ test("grant-minting code is reachable only from signed-in routes, never from a t
     const found = files.filter((file) => pattern.test(readFileSync(path.join(ROOT, file), "utf8")));
     assert.deepEqual(found.sort(), [...allowed].sort(), `${pattern} appears only where a person's decision arrives`);
   }
+  // The one Work approval write outside the decision route closes a pending
+  // request and can only ever write "expired" or "superseded": never a grant.
+  const parkResume = readFileSync(path.join(ROOT, "src/lib/work/park-resume.ts"), "utf8");
+  const closes = [...parkResume.matchAll(/workApproval\.updateMany\(\{([\s\S]*?)\n {4}\}\);/g)].map((m) => m[1]);
+  assert.equal(closes.length, 1, "park-resume.ts writes approvals in one place");
+  assert.match(closes[0], /where: \{ id: row\.id, userId: input\.userId, decision: "pending" \}/);
+  assert.match(closes[0], /data: \{ decision, decidedAt: input\.now \}/);
+  assert.match(parkResume, /const decision = abandonedApprovalDecision\(row\.expiresAt, input\.now\);/);
+  const rules = readFileSync(path.join(ROOT, "src/lib/work/park-resume-rules.ts"), "utf8");
+  assert.match(rules, /export function abandonedApprovalDecision\(expiresAt: Date, now: Date\): "expired" \| "superseded" \{/);
   // And no tool the model can call is named for approving, granting or deciding.
   const toolSources = walk(path.join(ROOT, "src/lib/tools/specs")).map((file) => readFileSync(file, "utf8"));
   for (const source of toolSources) {

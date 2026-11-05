@@ -190,12 +190,15 @@ function structuredData(): string {
 
 export default async function FileUnderstandingPage() {
   // The CSP is nonce-based (src/middleware.ts), so the one inline script on
-  // this page has to carry the nonce or the policy drops it silently.
+  // this page has to carry the nonce or the policy drops it silently. The
+  // browser then hides the nonce's value from the DOM (it reads back as ""),
+  // so hydration sees a mismatch on every load unless it is told to expect
+  // one, as the root layout and the home and /vs pages do.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   return (
     <>
-      <script nonce={nonce} type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData() }} />
+      <script nonce={nonce} suppressHydrationWarning type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData() }} />
 
       {/* ── Masthead ──────────────────────────────────────────────────── */}
       <header className="max-w-3xl">
@@ -1186,7 +1189,7 @@ export default async function FileUnderstandingPage() {
             <ol className="mt-3 space-y-1.5">
               {CONTENTS.map((item) => (
                 <li key={item.id} className="flex gap-2.5">
-                  <span className="shrink-0 font-mono text-micro text-muted-foreground/70 tabular-nums">
+                  <span className="shrink-0 font-mono text-micro text-muted-foreground tabular-nums">
                     {item.index}
                   </span>
                   <a

@@ -326,7 +326,7 @@ export function CodeSurface({
               // a smear of moving code, and the blur behind it cost a compositor
               // layer to soften that smear rather than remove it. Same rung as the
               // pane, with the border as the only divider.
-              "sticky left-0 z-10 shrink-0 select-none border-r border-border/40 bg-muted px-2 py-3 text-right text-muted-foreground/70",
+              "sticky left-0 z-10 shrink-0 select-none border-r border-border/40 bg-muted px-2 py-3 text-right text-muted-foreground",
               metrics
             )}
           >
@@ -339,7 +339,7 @@ export function CodeSurface({
         )}
 
         <div className={cn("relative min-w-0 flex-1", !wrap && "w-max")}>
-          <pre aria-hidden className={cn("px-3 py-3 pr-8 text-foreground/85", metrics, whitespace)}>
+          <pre aria-hidden className={cn("px-3 py-3 pr-8 text-foreground", metrics, whitespace)}>
             {showHighlight ? (
               <code className="hljs bg-transparent p-0" dangerouslySetInnerHTML={{ __html: highlighted }} />
             ) : (
@@ -372,7 +372,9 @@ export function CodeSurface({
             className={cn(
               "absolute inset-0 size-full cursor-text resize-none overflow-hidden bg-transparent px-3 py-3 pr-8",
               "text-transparent caret-foreground outline-none",
-              "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              // The caret says where a click went; the frame is for the
+              // keyboard only (a field matches :focus-visible on every focus).
+              "kbd-focus:ring-2 kbd-focus:ring-inset kbd-focus:ring-[hsl(var(--ring)/0.55)]",
               metrics,
               whitespace
             )}

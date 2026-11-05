@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { ShareLinksGallery } from "./gallery";
 
 /**
@@ -10,5 +11,9 @@ import { ShareLinksGallery } from "./gallery";
  */
 export default function ShareLinksDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <ShareLinksGallery />;
+  return (
+    <PageRoot>
+      <ShareLinksGallery />
+    </PageRoot>
+  );
 }

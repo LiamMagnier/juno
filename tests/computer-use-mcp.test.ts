@@ -13,6 +13,7 @@ import {
   type ComputerBridgeRequest,
   type ComputerBridgeResponse,
   type DesktopLockRecord,
+  type SystemNoticeItem,
 } from "../runner/env-server/src/contracts/code-v2";
 import { ComputerBridgeUnavailable, createUnixSocketBridge, type ComputerBridge } from "../runner/env-server/src/mcp/computer-bridge";
 import {
@@ -287,6 +288,33 @@ test("refusals: invalid args never reach the Mac; a busy app is the Mac's to say
   assert.equal(stopped.isError, true);
   assert.match((stopped.content[0] as { text: string }).text, /You pressed Esc\.\nStop using the computer/);
   await tools.dispose();
+});
+
+test("an unattended turn is marked on the call, and the Mac's lock notice joins the thread", async () => {
+  const notices: SystemNoticeItem[] = [];
+  const notice: SystemNoticeItem = {
+    id: "screen_locked_1790000000",
+    kind: "system_notice",
+    createdAt: "2026-10-08T20:00:00Z",
+    level: "warning",
+    code: "screen_locked",
+    text: "Alevr paused “Nightly tidy”. It never unlocks your Mac; unlock it to let Alevr carry on.",
+  };
+  const bridge = new FakeBridge(() => ({ id: "x", ok: false, text: "The Mac is locked, so screen control is paused.", notice }));
+  const tools = createComputerTools({
+    bridge,
+    session: { id: "claude:t9", title: "Nightly tidy", runtimeMode: "full", unattended: true },
+    onNotice: (n) => notices.push(n),
+  });
+  const result = await tools.call({ action: "screenshot" }, { callId: "u1" });
+  assert.equal(result.isError, true);
+  assert.equal(bridge.requests[0].unattended, true, "the Mac is told nobody is watching");
+  assert.deepEqual(notices, [notice]);
+  assert.ok(validates("SystemNoticeItem", notice));
+
+  const attended = createComputerTools({ bridge, session: { id: "claude:t9", title: "", runtimeMode: "ask" } });
+  await attended.call({ action: "screenshot" }, { callId: "a1" });
+  assert.equal("unattended" in bridge.requests.at(-1)!, false, "an attended call carries no flag");
 });
 
 test("registerComputerTools adds one tool and routes calls with a call id", async () => {

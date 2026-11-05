@@ -194,8 +194,20 @@ export interface RoutineToolContext {
 
 /** Every app the account has connected, labelled, plus this message's. */
 async function connectedApps(ctx: RoutineToolContext): Promise<RoutineProposalApp[]> {
+  return connectedAppsFor(ctx.user.id, ctx.activeConnectors);
+}
+
+/**
+ * Every app an account has connected, labelled, plus the ones enabled for this
+ * message. Shared with `draft_skill` (src/lib/chat/skill-draft-tool.ts), which
+ * matches a taught method's apps against the same list.
+ */
+export async function connectedAppsFor(
+  userId: string,
+  activeConnectors: readonly RoutineProposalApp[]
+): Promise<RoutineProposalApp[]> {
   const apps = new Map<string, RoutineProposalApp>();
-  for (const app of ctx.activeConnectors) apps.set(app.id, app);
+  for (const app of activeConnectors) apps.set(app.id, app);
   try {
     const [{ prisma }, connectors, composio] = await Promise.all([
       import("@/lib/prisma"),
@@ -203,7 +215,7 @@ async function connectedApps(ctx: RoutineToolContext): Promise<RoutineProposalAp
       import("@/lib/composio"),
     ]);
     const rows = await prisma.connection.findMany({
-      where: { userId: ctx.user.id },
+      where: { userId },
       select: { provider: true },
       take: 100,
     });

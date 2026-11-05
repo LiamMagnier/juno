@@ -38,6 +38,15 @@ struct DesktopSettingsGeneralPane: View {
             StudioAppearanceSettings(includeDiffLayout: false)
             } else {
             Section {
+                DesktopQuickEntryShortcutRow()
+            } header: {
+                DesktopSettingsGroupHeader(
+                    title: "Quick Entry",
+                    note: "A shortcut that works in every app. It needs no extra permission."
+                )
+            }
+
+            Section {
                 DesktopSettingRow(
                     title: "Alevr for Mac",
                     description: updateStatus
@@ -165,7 +174,7 @@ struct DesktopSettingsGeneralPane: View {
         let status: String = switch updater.phase {
         case .idle: "Alevr checks for updates every ten minutes while it is open."
         case .checking: "Checking for updates…"
-        case .current: "Up to date."
+        case .current: updater.justUpdatedTo.map { "Updated to \($0). Up to date." } ?? "Up to date."
         case .downloading(let version, let fraction):
             if let fraction {
                 "Downloading \(version), \(Int((fraction * 100).rounded()))%."

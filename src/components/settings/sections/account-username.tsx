@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SettingRow } from "@/components/settings/setting-row";
 import { checkUsername, derivedHandle, USERNAME_MAX } from "@/lib/username";
 import { cn } from "@/lib/utils";
@@ -234,7 +235,7 @@ export function UsernameRow({
                 >
                   @
                 </span>
-                <input
+                <Input
                   ref={inputRef}
                   id={fieldId}
                   name="username"
@@ -250,14 +251,7 @@ export function UsernameRow({
                   aria-invalid={invalid || undefined}
                   aria-describedby={messageId}
                   placeholder={fallback}
-                  className={cn(
-                    "flex h-9 w-full rounded-field border border-foreground/[0.14] bg-foreground/[0.025] py-1 pl-7 pr-3.5 text-ui text-foreground shadow-none dark:border-white/[0.12] dark:bg-white/[0.03]",
-                    "transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft motion-reduce:transition-none",
-                    "placeholder:text-muted-foreground/70 hover:border-foreground/25 focus-visible:bg-background",
-                    "focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] focus-visible:outline-none",
-                    "aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:shadow-[0_0_0_3px_hsl(var(--destructive)/0.16)]",
-                    "disabled:cursor-not-allowed disabled:opacity-50 coarse:h-11"
-                  )}
+                  className="pl-7"
                 />
               </div>
               <div className="ml-auto flex shrink-0 items-center gap-2">

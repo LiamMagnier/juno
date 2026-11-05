@@ -5,6 +5,9 @@ import * as React from "react";
 import NewChatLoading from "@/app/(app)/chat/loading";
 import ConversationLoading from "@/app/(app)/chat/[id]/loading";
 import AppGroupLoading from "@/app/(app)/loading";
+import ProjectsLoading from "@/app/(app)/projects/loading";
+import { BOOTSTRAP } from "@/app/dev/composer-landing/fixture";
+import { AppProvider } from "@/components/app/app-provider";
 import { AppPageHeaderSkeleton } from "@/components/app/app-page";
 import { CHAT_COMPOSER_FIELD_ID } from "@/components/chat/composer";
 import { MessageItem } from "@/components/chat/message-item";
@@ -222,7 +225,20 @@ function Landing() {
   );
 }
 
+/**
+ * MessageItem reads the account through useApp (its Regenerate menu lists the
+ * models, its thinking row the chat's title), so the turns need the provider
+ * the signed-in layout gives them; without it this page was a 500.
+ */
 export function PolishGallery() {
+  return (
+    <AppProvider bootstrap={BOOTSTRAP}>
+      <PolishGalleryBody />
+    </AppProvider>
+  );
+}
+
+function PolishGalleryBody() {
   const [filter, setFilter] = React.useState("all");
 
   // Open the third turn in its editor, the way ↑ in an empty composer does.
@@ -378,6 +394,14 @@ export function PolishGallery() {
             <div>
               <Label>Header with a back link and eyebrow</Label>
               <AppPageHeaderSkeleton nav headingWidth="w-64" />
+            </div>
+            <div data-gallery="projects-loading">
+              <Label>Projects</Label>
+              {/* `@container/page`, as <main> is: the skeleton's lede steps from
+                  its phone bars to its desktop ones on the page's width. */}
+              <div className="@container/page h-[420px] overflow-hidden rounded-card border border-border">
+                <ProjectsLoading />
+              </div>
             </div>
           </div>
         </Section>

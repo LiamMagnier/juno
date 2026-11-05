@@ -107,7 +107,9 @@ function parsePricing(md: string, src: Source, facts: Map<string, ModelFact>) {
         }
       }
       // The table is the whole list: every other priced model has no fast mode.
-      for (const f of facts.values()) {
+      // An empty read is not a list: it means the table's format changed, and
+      // reading it as "fast mode withdrawn everywhere" would strip every tier.
+      for (const f of fastIds.size > 0 ? facts.values() : []) {
         if (f.rates && !fastIds.has(f.id) && f.fast === undefined) {
           f.fast = null;
           f.sources.fast = src;

@@ -27,6 +27,33 @@ struct JunoCodeApprovalActivityAttributes: ActivityAttributes {
   var requestID: String
 }
 
+/// One live agent run (a Code session on a paired Mac, or a Work task on a Mac
+/// or a cloud computer) on the Lock Screen and in the Dynamic Island.
+///
+/// Updated locally by the app while it is in the foreground or inside its
+/// background execution time (`JunoMobileRunActivities`), and ended when the
+/// run leaves the server's live list. `startedAt` is immutable so the elapsed
+/// clock is drawn by the system (`Text(timerInterval:)`) and keeps ticking
+/// between updates, even when no update can be sent.
+struct JunoAgentRunActivityAttributes: ActivityAttributes {
+  struct ContentState: Codable, Hashable {
+    var statusLine: String
+    var steps: Int
+    var currentAction: String?
+    var costUSD: Double?
+    var pendingApprovals: Int
+    var needsYou: Bool
+    var usesComputer: Bool
+    /// Set on the final update, so the dismissed card says how it ended.
+    var finished: Bool
+  }
+
+  var runKey: String
+  var title: String
+  var hostName: String?
+  var startedAt: Date
+}
+
 /// The deep-link space the widget extension and the Live Activities live in:
 /// the auth callback scheme, namespaced under a `juno` host so an OAuth
 /// callback is never mistaken for navigation. The builder runs in the
@@ -38,6 +65,19 @@ enum JunoMobileWidgetRoute {
 
   static func url(path: String) -> URL {
     URL(string: "\(scheme)://\(host)/\(path)")!
+  }
+
+  /// The Runs screen, optionally focused on one run, and optionally with that
+  /// run's Stop confirmation up. A link only ever opens the screen: the Stop
+  /// itself is a second, deliberate tap there, so a forged link can do no more
+  /// than show a question.
+  static func runsURL(runKey: String? = nil, stop: Bool = false) -> URL {
+    var components = URLComponents(url: url(path: "runs"), resolvingAgainstBaseURL: false)!
+    var items: [URLQueryItem] = []
+    if let runKey { items.append(URLQueryItem(name: "run", value: runKey)) }
+    if stop { items.append(URLQueryItem(name: "stop", value: "1")) }
+    components.queryItems = items.isEmpty ? nil : items
+    return components.url!
   }
 
   static func approvalURL(

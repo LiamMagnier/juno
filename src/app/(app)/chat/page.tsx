@@ -1,4 +1,5 @@
 import { ChatView } from "@/components/chat/chat-view";
+import { PageRoot } from "@/components/app/page-root";
 import type { ReasoningEffort } from "@/types/chat";
 
 const REASONING_VALUES = new Set<ReasoningEffort>([
@@ -29,18 +30,20 @@ export default async function NewChatPage({
 }) {
   const { project, q, research, researchRun, model, reasoning } = await searchParams;
   return (
-    <ChatView
-      conversationId={null}
-      initialMessages={[]}
-      initialArtifacts={[]}
-      // Prefer the model chosen on the project (or any deep-link) page; empty
-      // falls through to the account default inside ChatView.
-      initialModel={model ?? ""}
-      projectId={project}
-      initialPrompt={q}
-      initialPromptResearch={research === "1"}
-      initialResearchRun={researchRun}
-      initialReasoningEffort={parseReasoning(reasoning)}
-    />
+    <PageRoot>
+      <ChatView
+        conversationId={null}
+        initialMessages={[]}
+        initialArtifacts={[]}
+        // Prefer the model chosen on the project (or any deep-link) page; empty
+        // falls through to the account default inside ChatView.
+        initialModel={model ?? ""}
+        projectId={project}
+        initialPrompt={q}
+        initialPromptResearch={research === "1"}
+        initialResearchRun={researchRun}
+        initialReasoningEffort={parseReasoning(reasoning)}
+      />
+    </PageRoot>
   );
 }

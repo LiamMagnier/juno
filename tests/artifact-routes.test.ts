@@ -40,6 +40,7 @@ import {
 import { titleForPath } from "@/lib/route-title";
 import { runUnifiedSearch, type SearchExecutor } from "@/lib/search/engine";
 import type { ArtifactType } from "@/lib/message-content";
+import { PageRoot } from "@/components/app/page-root";
 
 // ---------------------------------------------------------------------------
 // Stand-ins for the page's dependencies. Registered before the page is first
@@ -130,10 +131,14 @@ async function openArtifact(id: string, v?: string | string[]): Promise<Element>
   const scope = globalThis as { React?: typeof React };
   scope.React ??= React;
   const { default: ArtifactPage } = await import("@/app/(app)/a/[id]/page");
-  return (await ArtifactPage({
+  const root = (await ArtifactPage({
     params: Promise.resolve({ id }),
     searchParams: Promise.resolve(v === undefined ? {} : { v }),
   })) as unknown as Element;
+  // The page hands Next a <PageRoot> around its view (src/components/app/page-root.tsx,
+  // the facebook/react#35518 workaround); the view is that wrapper's only child.
+  assert.equal(root.type, PageRoot);
+  return root.props.children as Element;
 }
 
 /** The target and status of the `redirect()` a call threw, or a failure. */

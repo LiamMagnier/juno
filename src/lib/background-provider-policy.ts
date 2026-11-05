@@ -109,6 +109,18 @@ export function resolveBackgroundCandidates<T extends UtilityCandidate>(opts: {
   /** Provider of the model the user chose for the work this job supports. */
   conversationProvider?: string | null;
   candidates: readonly T[];
+  /**
+   * Whether a lab is answering (provider-health.ts `providerHealthy`). A lab
+   * known to be down is dropped from the mode's candidates, so a title or a
+   * memory extraction does not spend a call on a guaranteed failure — on
+   * 2026-10-26 every background job of a conversation on the out-of-credit
+   * default lab did exactly that. Dropping only narrows, inside the mode:
+   * under `same_provider` (and `selected_provider`) a down lab means the job
+   * is skipped with that mode's own denial, never sent elsewhere; under
+   * `any_allowed_provider` the answering labs are walked, or every permitted
+   * one when none is; `local_only` is never filtered.
+   */
+  isProviderHealthy?: (provider: string) => boolean;
 }): BackgroundProviderDecision<T> {
   const policy = normalizeBackgroundProviderPolicy(opts.policy);
   const { mode } = policy;
@@ -119,6 +131,9 @@ export function resolveBackgroundCandidates<T extends UtilityCandidate>(opts: {
     allowlist && allowlist.length > 0
       ? opts.candidates.filter((c) => allowlist.includes(c.provider))
       : [...opts.candidates];
+  // Health narrows inside each mode, never across it (see `isProviderHealthy`).
+  const answering = (list: T[]): T[] =>
+    opts.isProviderHealthy ? list.filter((c) => c.isLocal === true || opts.isProviderHealthy!(c.provider)) : list;
 
   if (opts.candidates.length === 0) {
     return { candidates: [], deniedReason: "no_candidates", mode };
@@ -132,7 +147,7 @@ export function resolveBackgroundCandidates<T extends UtilityCandidate>(opts: {
       // No conversation provider means there is nothing to match, and guessing
       // would be the cross-provider send this mode forbids.
       const provider = opts.conversationProvider;
-      const matching = provider ? permitted.filter((c) => c.provider === provider) : [];
+      const matching = answering(provider ? permitted.filter((c) => c.provider === provider) : []);
       return matching.length > 0
         ? { candidates: matching, mode }
         : { candidates: [], deniedReason: "no_candidate_for_conversation_provider", mode };
@@ -140,7 +155,7 @@ export function resolveBackgroundCandidates<T extends UtilityCandidate>(opts: {
 
     case "selected_provider": {
       const provider = policy.selectedProvider;
-      const matching = provider ? permitted.filter((c) => c.provider === provider) : [];
+      const matching = answering(provider ? permitted.filter((c) => c.provider === provider) : []);
       return matching.length > 0
         ? { candidates: matching, mode }
         : { candidates: [], deniedReason: "selected_provider_unavailable", mode };
@@ -153,10 +168,13 @@ export function resolveBackgroundCandidates<T extends UtilityCandidate>(opts: {
         : { candidates: [], deniedReason: "no_local_model", mode };
     }
 
-    case "any_allowed_provider":
+    case "any_allowed_provider": {
       // The only mode that may cross providers, and the only one a user has to
-      // opt into by name.
-      return { candidates: permitted, mode };
+      // opt into by name. The labs that are answering go first; when none is,
+      // the walk tries them all, as it always did, rather than skip.
+      const healthy = answering(permitted);
+      return { candidates: healthy.length > 0 ? healthy : permitted, mode };
+    }
   }
 }
 

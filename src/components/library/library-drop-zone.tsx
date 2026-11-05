@@ -123,7 +123,14 @@ export function useFileDrop({
  * `pointer-events-none` so the drag keeps landing on the page underneath,
  * which is what keeps the entered-elements set above honest.
  */
-export function LibraryDropOverlay({ open }: { open: boolean }) {
+export function LibraryDropOverlay({
+  open,
+  limitMb,
+}: {
+  open: boolean;
+  /** The plan's per-file limit (PLANS[plan].maxUploadMb), said before the drop instead of after a refusal. */
+  limitMb?: number;
+}) {
   const reduce = useReducedMotion();
   return (
     <AnimatePresence>
@@ -134,7 +141,7 @@ export function LibraryDropOverlay({ open }: { open: boolean }) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1, transition: transition.fast }}
           exit={{ opacity: 0, transition: transition.exit }}
-          className="pointer-events-none absolute inset-2 z-popper grid place-items-center rounded-panel border-2 border-dashed border-primary/45 bg-background/85 backdrop-blur-sm"
+          className="pointer-events-none absolute inset-2 z-popper grid place-items-center rounded-panel border-2 border-dashed border-primary/45 bg-background/90"
         >
           <motion.div
             initial={reduce ? false : { scale: 0.98 }}
@@ -146,7 +153,9 @@ export function LibraryDropOverlay({ open }: { open: boolean }) {
             </span>
             <div className="space-y-1">
               <p className="text-body font-medium text-foreground">Drop files to add them to your library</p>
-              <p className="text-caption text-muted-foreground">Images, PDFs, documents, spreadsheets and code</p>
+              <p className="text-caption text-muted-foreground">
+                {limitMb ? `Images, PDFs, documents, spreadsheets and code, up to ${limitMb} MB each` : "Images, PDFs, documents, spreadsheets and code"}
+              </p>
             </div>
           </motion.div>
         </motion.div>

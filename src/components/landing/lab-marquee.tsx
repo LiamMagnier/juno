@@ -30,7 +30,7 @@ export function LabMarquee() {
     <ul aria-label="Labs in the picker">
       {LABS.map(({ provider, label }) => (
         <li key={provider}>
-          <ProviderLogo provider={provider} label={label} className="size-7 text-foreground/80" />
+          <ProviderLogo provider={provider} label={label} className="size-7 text-muted-foreground" />
         </li>
       ))}
     </ul>

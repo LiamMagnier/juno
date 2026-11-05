@@ -358,7 +358,7 @@ public final class NativeCompareModel {
             run.finishReason = message.finishReason
             runs[paneID] = run
             return true
-        case .failed(let message, let reason, _, _):
+        case .failed(let message, let reason, _, _, _):
             run.status = .error
             run.errorMessage = message
             run.errorAction = .retry

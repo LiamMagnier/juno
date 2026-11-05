@@ -88,6 +88,9 @@ if (!URL) {
     for (const id of [owner, stranger]) {
       await db.user.create({ data: { id, email: `${id}@example.invalid`, emailVerified: new Date() } });
     }
+    // Moving an assistant to the crew hires a member, which needs a plan with
+    // agents (src/lib/agents/plan-gate.ts): the owner is on Pro.
+    await db.subscription.create({ data: { userId: owner, plan: "PRO", status: "ACTIVE" } });
   });
 
   test.after(async () => {

@@ -244,6 +244,16 @@
     },
     {
       "runtime": "work",
+      "action": "work.computer.start",
+      "risk": "sensitive",
+      "expect": {
+        "tier": "destructive_sensitive",
+        "asksUnderEveryMode": true,
+        "standing": false
+      }
+    },
+    {
+      "runtime": "work",
       "action": "work.browser.submit",
       "risk": "irreversible",
       "expect": {

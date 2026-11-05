@@ -6,15 +6,15 @@ import { ChevronDown, ChevronUp } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { menuGlyphInkClass, menuRowClass, menuShellFrameClass } from "@/components/ui/menu-recipe";
 import { cn } from "@/lib/utils";
+import { fieldChoiceClass, fieldFrameClass, fieldHeightClass } from "@/components/ui/field-recipe";
 
 const Select = SelectPrimitive.Root;
 const SelectGroup = SelectPrimitive.Group;
 const SelectValue = SelectPrimitive.Value;
 
 /**
- * The trigger is the third text-entry control and shares input.tsx's recipe
- * exactly: `.surface-inset`, the --input hairline, border-only focus, the
- * same 220ms hover ramp, the same touch height.
+ * A choice uses the same field material, focus line and touch height as text.
+ * While its list owns focus, the trigger retains the engaged edge and fill.
  */
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
@@ -23,7 +23,10 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "surface-inset group flex h-9 w-full items-center justify-between whitespace-nowrap rounded-field border border-foreground/[0.14] bg-foreground/[0.025] px-3.5 py-2 text-ui transition-[color,border-color,box-shadow,background-color] duration-base ease-out-soft placeholder:text-muted-foreground hover:border-foreground/25 focus-visible:border-primary focus-visible:bg-background focus-visible:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] dark:border-white/[0.12] dark:bg-white/[0.03] data-[state=open]:border-foreground/25 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 coarse:h-11 [&>span]:line-clamp-1",
+      fieldFrameClass,
+      fieldHeightClass,
+      fieldChoiceClass,
+      "group flex items-center justify-between whitespace-nowrap px-3.5 py-2 [&>span]:line-clamp-1",
       className
     )}
     {...props}
@@ -33,7 +36,7 @@ const SelectTrigger = React.forwardRef<
       {/* ease-in-out, not ease-out-soft: this is an A-to-B move with both
           endpoints visible (the token table's own rule for a chevron rotate) —
           an ease-out makes it look like it arrives from somewhere off-screen. */}
-      <ChevronDown className="size-4 shrink-0 opacity-60 transition-transform duration-base ease-in-out motion-reduce:transition-none group-data-[state=open]:rotate-180" />
+      <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-in-out motion-reduce:transition-none group-data-[state=open]:rotate-180" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));

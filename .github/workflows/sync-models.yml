@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
+  # Bootstrap the missing model-watch label after this fix reaches main.
+  # Shipping the app must not also trigger the expensive radar operation.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sync-models.yml"
 
 permissions:
   contents: write
@@ -15,7 +21,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ensure-model-watch-label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ensure model-watch exists before creating radar issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh label list --limit 500 --json name --jq '.[].name' | grep -Fxq 'model-watch'; then
+            echo "model-watch label exists."
+          else
+            gh label create model-watch --color 1F6FEB --description "Model announcements detected by the daily catalog radar"
+          fi
+
   sync:
+    # On pushes, install the label only; no model PRs or radar issues.
+    needs: [ensure-model-watch-label]
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -48,8 +74,14 @@ jobs:
       - name: Check the catalogue against the labs' own pages
         run: npm run models:sync -- --out /tmp/model-sync-report.md
 
+      # One invalid catalogue row must not hold back the benchmark refresh or
+      # the model-watch issue (both independent of models.ts). The failure is
+      # copied into the issue and fails the job in the last step instead.
       - name: Validate catalog
-        run: npm run validate:models
+        id: validate
+        continue-on-error: true
+        shell: bash
+        run: npm run validate:models 2>&1 | tee /tmp/validate-models.log
 
       - name: Stop when nothing changed
         id: changes
@@ -72,24 +104,41 @@ jobs:
           git commit -m "chore(models): refresh benchmarks and model radar"
           git push origin "$SYNC_BRANCH"
 
+      # Until the repository allows it (Settings > Actions > General > Workflow
+      # permissions > "Allow GitHub Actions to create and approve pull
+      # requests"), GitHub refuses the PR. That failed every run from Oct 1 to
+      # Oct 18; the branch is already pushed, so it is a warning with the
+      # compare link, and the model-watch issue below still opens.
       - name: Open reviewable model update
         if: steps.changes.outputs.changed == 'true'
         shell: bash
         run: |
-          gh pr create \
+          if ! gh pr create \
             --base main \
             --head "$SYNC_BRANCH" \
             --title "chore(models): benchmark and radar refresh" \
-            --body "Automated pricing benchmark and industry-radar update. No model is added to the catalog by this job; new models are curated by hand from their docs."
+            --body "Automated pricing benchmark and industry-radar update. No model is added to the catalog by this job; new models are curated by hand from their docs."; then
+            echo "::warning::Could not open the pull request. Review the pushed branch: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$SYNC_BRANCH"
+          fi
 
       - name: Open model-watch issue for newly announced models
         if: steps.changes.outputs.changed == 'true'
         shell: bash
         run: |
           cat /tmp/model-sync-report.md >> /tmp/model-radar-report.md 2>/dev/null || true
+          if [ "${{ steps.validate.outcome }}" = "failure" ]; then
+            { echo; echo "## validate:models failed (needs a person)"; echo; echo '```'; cat /tmp/validate-models.log; echo '```'; } >> /tmp/model-radar-report.md
+          fi
           if [ -s /tmp/model-radar-report.md ]; then
             gh issue create \
               --title "Model watch: new provider releases detected" \
               --label model-watch \
               --body-file /tmp/model-radar-report.md
           fi
+
+      - name: Fail when the catalogue is invalid
+        if: steps.validate.outcome == 'failure'
+        shell: bash
+        run: |
+          grep -E 'FAIL:' /tmp/validate-models.log | sed 's/^ *FAIL: /::error::/' || true
+          exit 1

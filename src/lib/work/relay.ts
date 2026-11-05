@@ -450,6 +450,13 @@ export function startCommandPayload(input: {
   model?: string | null;
   permissionPolicy?: WorkPermissionPolicy | null;
 }): Record<string, unknown> {
+  // What a crew member's task runs as (`agentContext`: its brief, goals and
+  // kept notes) is deliberately not a field here. This payload is stored on the
+  // command row, and the notes are encrypted at rest; the claim endpoint adds
+  // the context for the Mac that claims a start or resume, built from the live
+  // agent (`serializeClaimedCommand`, src/lib/work/serializers.ts). Additive
+  // there, so the protocol version does not move: a Mac that predates it
+  // ignores the key, and one that reads it uses it as system context only.
   const model = typeof input.model === "string" && input.model.length > 0 ? input.model : null;
   const policy = isPermissionPolicy(input.permissionPolicy) ? input.permissionPolicy : null;
   return {

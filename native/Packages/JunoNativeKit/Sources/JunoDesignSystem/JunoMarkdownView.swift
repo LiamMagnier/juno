@@ -55,6 +55,7 @@ public struct JunoMarkdownText: View {
     @Environment(\.junoTextScale) private var textScale
     @Environment(\.junoFindHighlight) private var find
     @Environment(\.junoCitationCount) private var citations
+    @Environment(\.junoProseContinuesRun) private var continuesRun
 
     public var body: some View {
         switch style {
@@ -83,7 +84,9 @@ public struct JunoMarkdownText: View {
         let bases = findBases
         return VStack(alignment: .leading, spacing: JunoProseMetrics.blockGap * textScale) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                JunoReadingBlockView(block: block, isFirst: index == 0)
+                // The live tail of a paced reply continues the settled
+                // prefix above it, so its first block keeps its lead.
+                JunoReadingBlockView(block: block, isFirst: index == 0 && !continuesRun)
                     .environment(\.junoFindHighlight, find?.shifted(by: bases[safe: index] ?? 0))
                     .junoStreamRevealScope(isLast: index == blocks.count - 1)
                     .junoStreamBlockReveal()

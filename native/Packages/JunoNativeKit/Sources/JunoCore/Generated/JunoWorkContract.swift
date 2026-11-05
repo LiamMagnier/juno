@@ -10,7 +10,7 @@ public enum JunoWorkContract {
     /// Bumped whenever a value is added or its meaning changes.
     public static let version = 3
     /// SHA-256 of the contract this was generated from.
-    public static let digest = "47437c0f0baa6311c4713bcb1b920938f1543bede42fb1faf0e1fc2862f921ba"
+    public static let digest = "bcdf98685b329bf8f7f775505ffbf26c142a3cea627d841e9eecfe333c0ae06d"
 }
 
 /// Every state a Work session or run can be in.
@@ -103,6 +103,8 @@ public enum JunoWorkTerminalReason: String, CaseIterable, Codable, Sendable {
     case interrupted = "interrupted"
     /// A newer run for the same session took over; the old one is cancelled rather than failed, because nothing went wrong.
     case superseded = "superseded"
+    /// A cloud run waited past its limit with no cloud executor running to claim it; nothing ran.
+    case executorUnavailable = "executor_unavailable"
 
     /// The status the run lands in for this reason.
     public var status: JunoWorkStatus {
@@ -115,6 +117,7 @@ public enum JunoWorkTerminalReason: String, CaseIterable, Codable, Sendable {
         case .hostOffline: return .hostOffline
         case .interrupted: return .interrupted
         case .superseded: return .cancelled
+        case .executorUnavailable: return .interrupted
         }
     }
 }
@@ -749,6 +752,10 @@ public enum JunoWorkAuditKind: String, CaseIterable, Codable, Sendable {
     case skillPermissionConsent = "skill_permission_consent"
     /// A less precise tool was refused while a more precise one could serve the same intent.
     case tierDowngradeRefused = "tier_downgrade_refused"
+    /// Someone asked a live run to stop, from the web, the Mac or the phone.
+    case runStopRequested = "run_stop_requested"
+    /// A person steered, stopped, paused, resumed or topped up an agent of a Code run.
+    case agentControl = "agent_control"
 }
 
 /// How much an audit entry matters.

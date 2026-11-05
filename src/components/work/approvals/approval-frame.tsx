@@ -109,7 +109,7 @@ export function ApprovalFrame({
   return (
     <figure className={cn("m-0 max-w-[360px]", className)}>
       <div
-        className="relative overflow-hidden rounded-lg border border-border/60 bg-muted/40"
+        className="relative overflow-hidden rounded-card border border-border/60 bg-muted/40"
         style={{ aspectRatio: crop.aspect }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- a private, owner-only frame */}

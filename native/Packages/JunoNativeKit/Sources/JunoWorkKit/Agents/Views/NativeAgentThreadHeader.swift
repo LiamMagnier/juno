@@ -87,6 +87,16 @@ public struct NativeAgentThreadHeader: View {
         shownState == .waiting || shownState == .blocked || agent.needsYou > 0
     }
 
+    /// Cloud work cannot start right now: said in words where the state goes,
+    /// in the attention ink, rather than a thread that looks ready and then
+    /// refuses every task (the web's `workNotice`). Never over "needs you".
+    private var workNotice: String? {
+        attention ? nil : NativeAgentFormat.workNotice(for: agent, state: shownState)
+    }
+
+    /// The line under the name, as it is shown and as it is spoken.
+    private var shownLine: String { workNotice ?? sentence }
+
     private var hasComputer: Bool {
         guard let detail = model?.details[agent.id], detail.computerConfigured, let computer = detail.computer else {
             return false
@@ -106,6 +116,12 @@ public struct NativeAgentThreadHeader: View {
                             .lineLimit(1)
                         if attention {
                             NativeAgentNeedsYouLine(sentence: sentence, type: JunoType.caption.weight(.medium), iconSize: 12)
+                        } else if let workNotice {
+                            Text(verbatim: workNotice)
+                                .junoType(JunoType.caption.weight(.medium))
+                                .foregroundStyle(Color.junoWarningInk)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         } else {
                             JunoAgentStatusLine(sentence, state: shownState, type: .caption)
                         }
@@ -119,7 +135,7 @@ public struct NativeAgentThreadHeader: View {
             .buttonStyle(.junoAgentFace)
             .help("Open \(agent.name)’s profile")
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text(verbatim: "\(agent.name). \(sentence). Open profile"))
+            .accessibilityLabel(Text(verbatim: "\(agent.name). \(shownLine). Open profile"))
             .accessibilityAddTraits(.isButton)
 
             if model != nil {
@@ -136,7 +152,7 @@ public struct NativeAgentThreadHeader: View {
         }
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .background(alignment: .leading) { wash }
-        .onChange(of: sentence) { _, now in
+        .onChange(of: shownLine) { _, now in
             AccessibilityNotification.Announcement(now).post()
         }
         .sheet(isPresented: $showingProfile) {

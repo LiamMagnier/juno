@@ -485,12 +485,13 @@ test("OpenAI-compatible: each lab's thinking control goes out in its documented 
   assert.equal(qwen37.thinking_budget, 8192);
   assert.equal(qwen37.reasoning_effort, undefined);
 
-  // GLM-5.3 always thinks: the effort enum, and never thinking "disabled".
+  // GLM-5.3 always thinks: the effort enum alone, and never a thinking object
+  // (docs.z.ai glm-5.3; the same body llm/compat-loop.ts sends).
   const glm = await send("zhipu:glm-5.3", "low");
   assert.equal(glm.reasoning_effort, "low");
-  assert.deepEqual(glm.thinking, { type: "enabled" });
+  assert.equal(glm.thinking, undefined);
   const glmBare = await send("zhipu:glm-5.3", undefined);
-  assert.deepEqual(glmBare.thinking, { type: "enabled" });
+  assert.equal(glmBare.thinking, undefined, "never `disabled`, which fails the request");
 
   // DeepSeek thinks at high by default, so Instant has to be sent.
   const ds = await send("deepseek:deepseek-flash", undefined);

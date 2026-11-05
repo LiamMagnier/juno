@@ -162,13 +162,31 @@ export function statusLabel(status: WorkStatus): string {
 }
 
 /**
+ * Sentences for an ending whose status alone would say something untrue.
+ *
+ * `executor_unavailable` lands in `interrupted` (`statusForTerminalReason`),
+ * and the `interrupted` sentence warns that the run "may already have changed
+ * something" — beside a detail that says, correctly, that it never began and
+ * nothing was done. A queued run nobody claimed did nothing, so it gets the
+ * sentence that says so (the Mac's vocabulary says the same).
+ */
+const TERMINAL_REASON_SENTENCE: Partial<Record<string, string>> = {
+  executor_unavailable: "This never started: no cloud worker was running to pick it up. Nothing was done.",
+};
+
+/**
  * `actor` names who is doing the work when it is not Juno in general — an
  * agent's name on its own page and in its thread (docs/design/AGENTS.md). Only
  * a sentence that OPENS with "Juno" is re-voiced; the others do not name an
  * actor at all.
+ *
+ * `terminalReason`, when the caller has the run, picks the sentence for an
+ * ending its status cannot describe on its own (`TERMINAL_REASON_SENTENCE`).
+ * It only ever applies to the status that reason lands in.
  */
-export function statusSentence(status: WorkStatus, actor?: string | null): string {
-  const sentence = STATUS_META[status].sentence;
+export function statusSentence(status: WorkStatus, actor?: string | null, terminalReason?: string | null): string {
+  const byReason = terminalReason && status === "interrupted" ? TERMINAL_REASON_SENTENCE[terminalReason] : undefined;
+  const sentence = byReason ?? STATUS_META[status].sentence;
   return actor && sentence.startsWith(`${PRODUCT_NAME} `) ? `${actor}${sentence.slice(PRODUCT_NAME.length)}` : sentence;
 }
 

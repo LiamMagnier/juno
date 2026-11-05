@@ -14,6 +14,7 @@ import "@/components/semantic/semantic.css";
 // Every dialog, drawer and phone sheet (ui/dialog.tsx, ui/sheet.tsx, the Code
 // v2 composer sheet): global for the same reason as the kit above.
 import "@/components/ui/sheet.css";
+import "@/components/ui/dialog.css";
 import { headers } from "next/headers";
 import { Providers } from "@/components/providers";
 import { FONT_SIZE_BOOT_SCRIPT } from "@/components/settings/font-size";

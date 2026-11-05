@@ -41,7 +41,7 @@ export function NotificationRow({
 }) {
   const unread = !n.readAt;
   const className =
-    "flex w-full min-w-0 items-start gap-2.5 rounded-control px-2.5 py-2 text-left transition-[background-color,color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none";
+    "flex w-full min-w-0 items-start gap-2.5 rounded-control px-2.5 py-2 text-left transition-[background-color,color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent";
   const body = (
     <>
       {/* The face at rest (`idle`): a notification is a moment that has

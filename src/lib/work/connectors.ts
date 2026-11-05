@@ -283,6 +283,48 @@ export interface WorkConnectorAllowlist {
   taskAllowed?: readonly string[] | null;
 }
 
+/**
+ * The task layer for one run: what the session chose, or, for a task that
+ * never chose and that an agent owns, the agent's own apps.
+ *
+ * `Agent.connectorIds` is "the connected apps its tasks may reach". Every path
+ * that creates an agent's task writes that list onto the session as a choice
+ * (`startAgentTask`, routines, `start_task` in its thread, a hand-over), so a
+ * chosen session is read as it was chosen: a task the person approved keeps
+ * what it was approved with (`updateAgentForUser`). What this closes is the
+ * session that never chose and is the agent's anyway, a native client's or an
+ * older row: read as `null` it reached every app on the account under the
+ * agent's name. It is narrowed to the agent's apps instead, the rule a task
+ * handed to a member already follows (`transferredConnectorIds`). Only ever a
+ * narrowing: with no agent, `null` stays `null`.
+ */
+export function taskConnectorAllowance(input: {
+  /** The session's own answer, or null when it never chose (`connectorsChosen` false). */
+  chosen: readonly string[] | null;
+  /** The owning agent's `connectorIds`, or null for a task no live agent owns. */
+  agentConnectorIds: readonly string[] | null;
+}): readonly string[] | null {
+  if (input.chosen !== null) return [...input.chosen];
+  if (input.agentConnectorIds !== null) return [...new Set(input.agentConnectorIds)];
+  return null;
+}
+
+/**
+ * A `Connection` row that is infrastructure rather than an app anybody linked.
+ *
+ * Composio's per-person directory session (`__composio_directory`,
+ * src/lib/composio.ts) is stored as a Connection so its handle is encrypted
+ * like any other, and it is never shown as a connection card. A run's inventory
+ * read it as a linked connector with no usable credential, so every run that
+ * had not chosen its apps carried "Composio app directory needs to be
+ * reconnected", a shortfall nobody could act on. Internal rows share the `__`
+ * prefix, which no registry id, Composio app id (`composio:`) or custom
+ * connector id starts with.
+ */
+export function isInternalConnectionProvider(provider: string): boolean {
+  return provider.startsWith("__");
+}
+
 export const WORK_CONNECTOR_UNAVAILABLE_REASONS = [
   "blocked_by_admin",
   "not_on_admin_allowlist",

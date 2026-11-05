@@ -171,15 +171,20 @@ This is a fresh read of `src/lib/computer/*`, the Work computer and browser tool
 ### Remaining gaps (need the real host, or are larger than this pass)
 
 - **In-flight cancellation and process freeze.** Nothing kills an in-flight `xdotool` or shell when a takeover starts, and detached uid-1000 processes keep running. Proposed: `provider.freezeAgent` / `thawAgent` (`pkill -STOP/-CONT -u 1000`, kill xdotool) on control open, hand back and lapse. This needs broker argv acceptance on the docker host. Today the epoch fence discards the *result*, but the side effect still happens.
+  - *Status 2026-10-28 (pipe-v4, working tree, not deployed; computers off in production):* the provider primitives exist and are proven on a real container: `DockerProvider.freezeAgent` (frozen marker, `agent-exec freeze` until no uid-1000 task runs, the agent's X clients cut through XRes, held keys released) and `thawAgent`, with broker argv tests (`tests/computer-broker-argv.test.ts`, `tests/computer-docker-primitives.test.ts`, `tests/test_computer_boundary.py` TakeoverPrimitives). Wiring them into take over, hand back and lapse is S1 of `docs/design/agents-v2/COMPUTERS_2026-10.md`.
 - **Takeover lapse.**
   - The web viewer stops heartbeating in a hidden tab, and heartbeats are limited to 10 per minute per user, so a lapse can return control while the person is still typing.
   - A lapse does not rotate VNC or record `takeover_lapsed`.
   - Proposed: per-agent limits, hidden-tab control beats, and a sweep that closes lapsed windows.
+  - *Status 2026-10-28:* rotation and `takeover_lapsed` at lapse are S1 of `COMPUTERS_2026-10.md` (store wiring); open here until it lands.
 - **Xvfb runs with `-ac`.** Any uid-1000 process can read the display. Verifying and hardening this needs the image.
 - **Network.** DNS to 1.1.1.1 and 9.9.9.9 is open (tunnelling); the proxy allows any public host on ports 80 and 443. Needs a real proxy and firewall.
+  - *Status 2026-10-28 (pipe-v4, working tree, not deployed; computers off in production):* DNS closed (resolvers removed, `--dns 192.0.2.53`, port 53 rejected; `test_names_do_not_resolve_and_fail_within_two_seconds`, `test_public_resolvers_are_closed`); every connection logged by computer with no path or query and a per-computer hourly budget (`EgressThroughTheProxy`, `tests/test_computer_infrastructure.py`). Any public host on 80 and 443 stays open (owner decision 5).
 - **Pixel clicks on submit controls.** These are still `command` unless the page takes payment. An `elementFromPoint` check through `withPage` is the next step.
 - **Cleanup.** No orphan reconciliation (`listOwned` is never called), no volume size limit, no `ulimit nofile`.
+  - *Status 2026-10-28:* the sweep reaps orphans (`listOwned`, 10-minute grace) and survives one unreachable computer (`tests/computer-sweep-resilience.test.ts`); retention is implemented and off (`tests/computer-retention.test.ts`). The volume limit is still measured, not enforced.
 - **Audit log.** The holder at hand back, lapses, and wake/sleep are not logged. The native journal is in memory only.
+  - *Status 2026-10-28:* the `AgentComputerAudit` table and its writer are S1 of `COMPUTERS_2026-10.md`; open here until it lands.
 - **Dead code.** `src/lib/agent/computer.ts` still reports success without dispatching. It stays unregistered, and registering it would be a security regression.
 
 ## 4. Retrieval security (§17)

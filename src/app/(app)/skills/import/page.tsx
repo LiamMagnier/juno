@@ -1,4 +1,5 @@
 import { SkillsLibraryPage } from "@/components/skills/skills-library-page";
+import { PageRoot } from "@/components/app/page-root";
 
 /**
  * /skills/import: the library with the importer already open over it.
@@ -9,5 +10,9 @@ import { SkillsLibraryPage } from "@/components/skills/skills-library-page";
  * with /skills, so Back does not reopen it.
  */
 export default function ImportSkillsPage() {
-  return <SkillsLibraryPage importOnOpen />;
+  return (
+    <PageRoot>
+      <SkillsLibraryPage importOnOpen />
+    </PageRoot>
+  );
 }

@@ -15,7 +15,7 @@
  * reply. Pure; the route does the I/O.
  */
 import { isClientCommandType, type ClientCommand } from "@/lib/code-v2/contracts";
-import type { LinkReply } from "@/lib/code-v2/env-link-hub";
+import { LINK_AGENT_CONTROL_COMMANDS, type LinkReply } from "@/lib/code-v2/env-link-hub";
 
 /** Commands the browser may never send (they carry secrets meant for the local app only). */
 export const LOCAL_ONLY_COMMANDS = new Set(["env.configure"]);
@@ -45,6 +45,8 @@ export function parseLinkRequest(body: unknown): LinkParse {
     }
     if (LOCAL_ONLY_COMMANDS.has(c.type)) return { ok: false, status: 403, error: "That command only runs inside the Mac app." };
     if (BACKEND_ONLY_COMMANDS.has(c.type)) return { ok: false, status: 403, error: "Only another conversation can send that." };
+    // A person's agent controls go through the agent-control route, which audits and rate-limits them.
+    if (LINK_AGENT_CONTROL_COMMANDS.has(c.type)) return { ok: false, status: 403, error: "Use the agent controls for that." };
     return { ok: true, request: { kind: "rpc", command: c as unknown as ClientCommand } };
   }
   if (body.kind === "poll") {

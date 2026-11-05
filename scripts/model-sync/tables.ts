@@ -195,7 +195,10 @@ export function col(table: Table, re: RegExp): number {
 export function usd(cell: string | undefined): number | null {
   if (cell == null) return null;
   const s = cellText(cell);
-  const m = s.match(/^\$\s?(\d+(?:\.\d+)?)(?:\s*(?:\/\s*(?:MTok|M tokens|1M tokens)|per 1M tokens))?\s*$/i);
+  // "$8 USD / MTok": Anthropic's fast-mode table started naming the currency
+  // (2026-10-18), which made the whole table unreadable and every fast tier
+  // look withdrawn.
+  const m = s.match(/^\$\s?(\d+(?:\.\d+)?)(?:\s*USD)?(?:\s*(?:\/\s*(?:MTok|M tokens|1M tokens)|per 1M tokens))?\s*$/i);
   return m ? Number(m[1]) : null;
 }
 

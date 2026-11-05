@@ -4,7 +4,9 @@ import { requireUser } from "@/lib/code-remote";
 import { rateLimit } from "@/lib/rate-limit";
 import { findAgent, recordAgentEvent } from "@/lib/agents/store";
 import { getCurrentDeviceSessionId } from "@/lib/session";
-import { isAgentComputerConfigured } from "@/lib/computer/provider";
+import { computerProvider } from "@/lib/computer/provider";
+import { COMPUTER_ACCESS_COPY } from "@/lib/computer/access-copy";
+import { ComputerAccessError, computerErrorBody } from "@/lib/computer/errors";
 import {
   AsleepComputerError,
   TakeoverHeldElsewhereError,
@@ -30,6 +32,13 @@ export async function POST(req: Request, { params }: Params) {
   if (!user) return error;
   const { id } = await params;
 
+  // No computers on this server: answered here, before the store, so a
+  // request writes nothing (as the files and heartbeat routes do).
+  if (!computerProvider()) {
+    const { status, body } = computerErrorBody(new ComputerAccessError("server_off", COMPUTER_ACCESS_COPY.serverOff));
+    return NextResponse.json(body, { status, headers: VIEW_HEADERS });
+  }
+
   // Per agent: a person watching two agents' computers (a PiP each, an
   // overlay, the apps) must not run one shared budget dry.
   const limit = await rateLimit({
@@ -52,13 +61,6 @@ export async function POST(req: Request, { params }: Params) {
     );
   }
 
-  if (!(await isAgentComputerConfigured())) {
-    return NextResponse.json(
-      { error: "not_enabled", message: "Agent computers are not configured on this server." },
-      { status: 404, headers: VIEW_HEADERS }
-    );
-  }
-
   const parsed = viewBodySchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
@@ -72,10 +74,13 @@ export async function POST(req: Request, { params }: Params) {
   const deviceSessionId = await getCurrentDeviceSessionId();
 
   try {
+    // Access (provider, rollout, plan, host, allowance) first, inside the
+    // store: no app link is minted for an account that may not use it.
     const session = await openComputerViewSession(user.id, id, mode, {
       handoff,
       fallbackOrigin,
       deviceSessionId,
+      agentName: agent.name,
     });
 
     // A link is a promise of control, not control: the takeover starts, and
@@ -100,6 +105,8 @@ export async function POST(req: Request, { params }: Params) {
         relayUrl: session.relayUrl,
         token: session.token,
         password: session.password,
+        // A new take over: whether the agent's processes were paused.
+        ...(session.freeze ? { freeze: session.freeze } : {}),
       },
       { headers: VIEW_HEADERS }
     );
@@ -114,9 +121,7 @@ export async function POST(req: Request, { params }: Params) {
       // A sentence and nothing else: no relay token, no password, no link.
       return NextResponse.json({ error: "held_elsewhere", message: err.message }, { status: 409, headers: VIEW_HEADERS });
     }
-    return NextResponse.json(
-      { error: "view_failed", message: "Unable to open computer viewer." },
-      { status: 409, headers: VIEW_HEADERS }
-    );
+    const { status, body } = computerErrorBody(err, { fallbackError: "view_failed" });
+    return NextResponse.json(body, { status, headers: VIEW_HEADERS });
   }
 }

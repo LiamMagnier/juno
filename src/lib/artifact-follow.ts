@@ -1,6 +1,7 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { invalidateSummariesForDeletedConversations } from "@/lib/memory-summary-changes";
 
 export type ArtifactFollowDb = Pick<
   Prisma.TransactionClient,
@@ -100,6 +101,9 @@ export async function deleteConversationsKeepingArtifacts(userId: string, conver
   return prisma.$transaction(
     async (tx) => {
       await keepArtifactAttachments(tx as unknown as Db, userId, conversationIds);
+      // Memory: a deleted chat's digest stops speaking through the summaries
+      // built from it (the facts learned there are the person's, and stay).
+      await invalidateSummariesForDeletedConversations(tx as unknown as Prisma.TransactionClient, userId, conversationIds);
       const deleted = await tx.conversation.deleteMany({ where: { userId, id: { in: [...conversationIds] } } });
       return deleted.count;
     },

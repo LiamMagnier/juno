@@ -15,7 +15,8 @@ extension CodeV2AlevrCatalog {
             guard let route = CodeModelProviderResolver.default.route(for: model.id) else { return nil }
             let option = byID[model.id]
             let levels = model.effortLevels ?? []
-            let declared = option?.catalog?.thinking.defaultStopID.flatMap(CodeV2.EffortLevel.init(rawValue:))
+            // The picker's own default (declared, else Instant as `none`).
+            let declared = model.defaultEffort
             return EnvBackendModel(
                 provider: route.providerID,
                 providerName: option?.catalog?.providerName,

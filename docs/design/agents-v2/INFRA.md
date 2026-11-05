@@ -1,5 +1,13 @@
 # Agents v2 — the computer infrastructure (mentor-written; copy verbatim)
 
+> **Historical (superseded October 2026).** This file describes the first image: an
+> XFCE desktop session and Chromium's DevTools on a TCP port. pipe-v3 removed both (no
+> desktop session or other program as the browser uid; CDP over a private pipe behind
+> a token-checked gate), and pipe-v4 added the exec launcher, no DNS, the egress log and
+> budget, and the take-over freeze. The current files are in `deploy/agent-computers/`;
+> how they are run is in `OPERATIONS.md`; the plan is `COMPUTERS_2026-10.md`. Do not
+> copy anything below. Agent computers are off in production.
+
 Each agent's computer is a **Docker container on the owner's own server** (the Juno VM,
 which the owner is upgrading). Inside each container:
 - a full Linux desktop: Xvfb + XFCE;

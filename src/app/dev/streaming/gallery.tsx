@@ -104,12 +104,23 @@ export function StreamingGallery({ autoplay }: { autoplay?: "short" | "long" }) 
   };
   React.useEffect(() => stop, []);
 
-  const play = React.useCallback((kind: "short" | "long", sp: Speed = speed) => {
+  /**
+   * `followUp` asks a new question under the transcript and streams its
+   * answer, which is a turn starting: the reading-first follow pins the
+   * question near the top and the answer fills the bed below it
+   * (e2e/transcript-pinned-turn.spec.ts). Without it, the last answer is
+   * replayed in place.
+   */
+  const play = React.useCallback((kind: "short" | "long", sp: Speed = speed, followUp = false) => {
     stop();
     const text = kind === "long" ? LONG_REPLY : REPLY;
     const id = `a-${Date.now()}`;
     setBusy(true);
-    setMessages((prev) => [prev[0], msg({ id, role: "ASSISTANT", content: "", streaming: true, model: "claude-sonnet-4-5", activity: [] })]);
+    setMessages((prev) => {
+      const kept = followUp || prev[prev.length - 1]?.role !== "ASSISTANT" ? prev : prev.slice(0, -1);
+      const question = followUp ? [msg({ id: `u-${Date.now()}`, role: "USER", content: "And how do we know when it is safe to turn it on for every route?" })] : [];
+      return [...kept, ...question, msg({ id, role: "ASSISTANT", content: "", streaming: true, model: "claude-sonnet-4-5", activity: [] })];
+    });
     const update = (patch: Partial<ChatMessage>) => setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
     timers.current.push(window.setTimeout(() => update({ activity: ACTIVITY.slice(0, 1) }), 300));
     timers.current.push(window.setTimeout(() => update({ activity: ACTIVITY }), 900));
@@ -153,6 +164,8 @@ export function StreamingGallery({ autoplay }: { autoplay?: "short" | "long" }) 
           <h1 className="mr-3 text-ui font-medium">Streamed writing</h1>
           <Button size="sm" onClick={() => play("short")} data-testid="play-short">Play reply</Button>
           <Button size="sm" variant="outline" onClick={() => play("long")} data-testid="play-long">Play 6,000 words</Button>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => play("short", speed, true)} data-testid="followup-short">Ask a follow-up</Button>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => play("long", speed, true)} data-testid="followup-long">Follow-up, 6,000 words</Button>
           <Button size="sm" variant="outline" aria-pressed={speed === "slow"} onClick={() => setSpeed((s) => (s === "fast" ? "slow" : "fast"))}>
             {speed === "fast" ? "Fast model" : "Slow model"}
           </Button>

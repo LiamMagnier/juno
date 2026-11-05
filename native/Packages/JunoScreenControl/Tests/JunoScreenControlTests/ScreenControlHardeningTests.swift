@@ -316,6 +316,9 @@ final class ScreenControlHardeningTests: XCTestCase {
         ]
         try await fixture.start()
         await fixture.service.setPreferences(ScreenControlPreferences(denied: ["com.apple.notes"]))
+        // The widest frame there is: the reader ticked "whole display".
+        _ = try await fixture.service.requestTakeover(sessionID: "s1", displayID: nil)
+        await fixture.service.setTakeoverScope(sessionID: "s1", wholeDisplay: true)
         _ = try await fixture.service.beginTakeover(sessionID: "s1", displayID: nil)
         _ = try await fixture.service.perform(
             sessionID: "s1",

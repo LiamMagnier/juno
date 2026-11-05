@@ -110,7 +110,7 @@ export interface HealthTriggerRow {
 
 const LIVE_RUN = new Set(["queued", "preparing", "running"]);
 const WAITING_RUN = new Set(["waiting_input", "waiting_approval"]);
-const FAILED_REASONS = new Set(["failed", "interrupted", "timed_out", "budget_exceeded", "host_offline"]);
+const FAILED_REASONS = new Set(["failed", "interrupted", "timed_out", "budget_exceeded", "host_offline", "executor_unavailable"]);
 
 /** The connector a trigger reads, for the Reconnect link. Mirrors `TRIGGER_SOURCE_CONNECTORS`. */
 const SOURCE_CONNECTOR: Record<string, string> = {
@@ -151,12 +151,18 @@ function isFailure(run: HealthRunRow): boolean {
 }
 
 /**
- * A fire the scheduler wrote down as never having run: budget spent, or the
- * Mac it needs was offline. Not a failure of the work, and not fixed the same
- * way, so it is said differently.
+ * A fire the scheduler wrote down as never having run: budget spent, the Mac
+ * it needs was offline, or it runs in the cloud and no cloud worker was
+ * running (written by the scheduler, or by the queued-run expiry sweep). Not a
+ * failure of the work, and not fixed the same way, so it is said differently.
  */
 export function isSkippedFire(run: Pick<HealthRunRow, "terminalReason" | "startedAt">): boolean {
-  return run.startedAt === null && (run.terminalReason === "budget_exceeded" || run.terminalReason === "host_offline");
+  return (
+    run.startedAt === null &&
+    (run.terminalReason === "budget_exceeded" ||
+      run.terminalReason === "host_offline" ||
+      run.terminalReason === "executor_unavailable")
+  );
 }
 
 function isUnattended(origin: string): boolean {
@@ -177,6 +183,8 @@ function failureWords(run: HealthRunRow): { label: string; detail: string } {
       return { label: "Last run ran out of time", detail: "It stopped at its time limit before finishing." };
     case "host_offline":
       return { label: "Last run couldn’t reach the Mac", detail: "The Mac it runs on was offline." };
+    case "executor_unavailable":
+      return { label: "Last run never started", detail: "No cloud worker was running to start it, so nothing was done." };
     case "interrupted":
       return { label: "Last run was interrupted", detail: "It stopped partway through and did not finish." };
     default:
@@ -301,6 +309,16 @@ export function scheduleHealth(input: {
         label: "Last run skipped: budget used up",
         detail: `${skipDetail(newest, "It didn’t start because the budget available to it was used up.")}${streak}`,
         action: { kind: "usage", href: "/settings?section=billing", label: "See usage" },
+      };
+    }
+    if (newest.terminalReason === "executor_unavailable") {
+      return {
+        ...base,
+        state: "skipped",
+        tone: "attention",
+        label: "Last run skipped: no cloud worker",
+        detail: `${skipDetail(newest, "No cloud worker was running to start it, so it didn’t start.")}${streak}`,
+        action: { kind: "edit", href: `/automations/${input.scheduleId}`, label: "Change where it runs" },
       };
     }
     return {

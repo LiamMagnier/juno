@@ -22,6 +22,7 @@
 import { isFirstPartyId } from "@/lib/first-party-connectors/providers";
 import {
   LOCAL_ONLY_TRIGGER_KINDS,
+  refusedForAbsentCloudExecutor,
   selectTarget,
   type HostCapabilityView,
   type WorkCapability,
@@ -33,6 +34,7 @@ import {
   type WorkTriggerKind,
 } from "@/lib/work/domain";
 import { canonicalize } from "@/lib/work/canonical";
+import { EXECUTOR_UNKNOWN_EXPLANATION, planDespiteUnknownCloud } from "@/lib/work/executor-presence";
 import {
   configForTimeTrigger,
   isTimeTriggerKind,
@@ -959,6 +961,9 @@ export const TRIGGER_HOLD_CAUSES = [
   "account_concurrency",
   "budget_exhausted",
   "host_offline",
+  // The cloud executor's heartbeat could not be read and whether one is alive
+  // decides the fire: held (the event stays unread) until a read works.
+  "executor_unknown",
 ] as const;
 
 export type TriggerHoldCause = (typeof TRIGGER_HOLD_CAUSES)[number];
@@ -979,7 +984,12 @@ export interface TriggerDispatchInput {
   /** The account's Work hosts, the schedule's preferred one first. */
   hosts: readonly HostCapabilityView[];
   requiredCapabilities: readonly WorkCapability[];
-  cloudAvailable: boolean;
+  /**
+   * Whether a cloud executor is alive, or "unknown" when its heartbeat could
+   * not be read. Unknown never skips (consumes) an event: see
+   * `planDespiteUnknownCloud`.
+   */
+  cloudAvailable: boolean | "unknown";
   /**
    * Micro-USD the account may still spend right now, or null when it is not
    * metered.
@@ -1009,6 +1019,17 @@ export type TriggerDispatchDecision =
 
 export function planTriggerDispatch(input: TriggerDispatchInput): TriggerDispatchDecision {
   const { schedule } = input;
+  const cloudAvailable = input.cloudAvailable;
+
+  if (cloudAvailable === "unknown") {
+    // A failed heartbeat read is evidence of nothing. Where the answer turns
+    // on it the event is held, unconsumed, for the next poll to offer again,
+    // rather than skipped as executor_unavailable while a runner may be alive.
+    return planDespiteUnknownCloud<TriggerDispatchDecision>(
+      (known) => planTriggerDispatch({ ...input, cloudAvailable: known }),
+      () => ({ outcome: "wait", cause: "executor_unknown", explanation: EXECUTOR_UNKNOWN_EXPLANATION })
+    );
+  }
 
   if (!schedule.enabled) {
     // Waiting rather than skipping, and this is the one place the two come
@@ -1059,7 +1080,7 @@ export function planTriggerDispatch(input: TriggerDispatchInput): TriggerDispatc
     requested: schedule.target,
     required,
     hosts: input.hosts,
-    cloudAvailable: input.cloudAvailable,
+    cloudAvailable,
   });
 
   if (selection.target === null) {
@@ -1074,7 +1095,9 @@ export function planTriggerDispatch(input: TriggerDispatchInput): TriggerDispatc
         return {
           outcome: "skip",
           cause: "host_offline",
-          reason: "host_offline",
+          // The run written down for it says which machine was missing: a
+          // cloud routine with no cloud worker running never involved a Mac.
+          reason: refusedForAbsentCloudExecutor(selection) ? "executor_unavailable" : "host_offline",
           explanation: `${selection.explanation} This schedule is set to skip rather than wait.`,
         };
       case "cloud_subset": {
@@ -1086,13 +1109,13 @@ export function planTriggerDispatch(input: TriggerDispatchInput): TriggerDispatc
           requested: "automatic",
           required,
           hosts: input.hosts,
-          cloudAvailable: input.cloudAvailable,
+          cloudAvailable,
         });
         if (fallback.target === null) {
           return {
             outcome: "skip",
             cause: "host_offline",
-            reason: "host_offline",
+            reason: refusedForAbsentCloudExecutor(selection) ? "executor_unavailable" : "host_offline",
             explanation: `${selection.explanation} There is no part of this the cloud can do on its own.`,
           };
         }

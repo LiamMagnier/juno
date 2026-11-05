@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LIVE_UI_SECTION, buildSystemPromptSections } from "@/lib/chat/system-prompt";
+import { LIVE_UI_DO_SECTION, LIVE_UI_SECTION, buildSystemPromptSections } from "@/lib/chat/system-prompt";
 import { lenientClientFeatures } from "@/lib/chat/request";
 import { parseLiveUI, liveDefaults, type LiveComponent } from "@/lib/live-ui/spec";
 import { LiveScope } from "@/lib/live-ui/expr";
@@ -138,4 +138,14 @@ test("a client without the exercise card gets exercises in prose, and no Run rul
 
 test("native builds opt in to the exercise card and Run with their own client features", () => {
   assert.deepEqual(lenientClientFeatures(["live_ui", "live_ui_exercise", "code_run"]), ["live_ui", "live_ui_exercise", "code_run"]);
+});
+
+test("the web learns the views people act on; native builds that cannot draw them never do", () => {
+  const web = buildSystemPromptSections({ ...base, liveUi: true, liveUiDo: true }).stable;
+  assert.ok(web.includes("## Live UI: views people act on"));
+  for (const t of ["recipe", "compare", "cards", "choices", "flashcards", "tabs"]) assert.ok(LIVE_UI_DO_SECTION.includes(`${t} (`) || LIVE_UI_DO_SECTION.includes(`"type":"${t}"`), t);
+  assert.ok(!buildSystemPromptSections({ ...base, liveUi: true }).stable.includes("views people act on"));
+  assert.ok(!buildSystemPromptSections({ ...base, liveUi: true, liveUiDo: true, voiceMode: true }).stable.includes("views people act on"));
+  assert.ok(LIVE_UI_DO_SECTION.length < 2600, `section is ${LIVE_UI_DO_SECTION.length} chars`);
+  assertValidViews(LIVE_UI_DO_SECTION, 2);
 });

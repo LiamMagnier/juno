@@ -1,0 +1,24 @@
+{
+  "parser": "pdf",
+  "parserVersion": "3-ladder+pdfjs1",
+  "status": "ok",
+  "blocks": [
+    {
+      "type": "paragraph",
+      "text": "Meridian pilot report Summary: the pilot handled 100 requests per day with a median response time of 9 hours. The comparison with the baseline is observational and does not establish causality.",
+      "page": 1,
+      "path": "pilot-report.pdf",
+      "heading": [],
+      "confidence": 0.9
+    },
+    {
+      "type": "paragraph",
+      "text": "Governance Stop condition: the follow-up pilot stops if the error rate exceeds 4 percent. Final review: 2026-10-19. Evaluation owner: Maya Okafor.",
+      "page": 2,
+      "path": "pilot-report.pdf",
+      "heading": [],
+      "confidence": 0.9
+    }
+  ],
+  "pageCount": 2
+}

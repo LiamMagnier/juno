@@ -46,6 +46,11 @@ import { getUserPlan } from "@/lib/usage";
  *
  * A missing Settings row reads as the column defaults (both on), matching how
  * the chat bootstrap treats an account that has never saved a setting.
+ *
+ * A chat with memory off for itself (src/lib/chat/memory-off.ts) is never
+ * history to read, so an account whose only unread chats are those is not
+ * visited — the pass would find nothing (`pendingBackfill` and `queueRereads`
+ * skip them too) and spend a usage-window read to learn it.
  */
 export async function findAccountsToDream(limit: number): Promise<string[]> {
   const rows = await prismaUnguarded.$queryRaw<{ userId: string }[]>(Prisma.sql`
@@ -58,6 +63,7 @@ export async function findAccountsToDream(limit: number): Promise<string[]> {
         OR c."lastMessageAt" > m."processedAt"
         OR (m."extractorVersion" < ${EXTRACTOR_VERSION} AND (m."digest" IS NOT NULL OR m."factCount" > 0))
       )
+      AND c."memoryOff" = false
       AND COALESCE(s."memoryEnabled", true) = true
       AND COALESCE(s."memoryBackgroundLearning", true) = true
     GROUP BY c."userId"

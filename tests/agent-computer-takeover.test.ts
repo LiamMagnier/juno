@@ -189,6 +189,8 @@ describe("(b) a takeover is exclusive", () => {
   beforeEach(() => {
     process.env.AUTH_SECRET = process.env.AUTH_SECRET || "test-auth-secret-32-bytes-minimum-length!!";
     process.env.AGENT_COMPUTER_PROVIDER = "fake";
+    // Open to every plan that includes computers (src/lib/computer/access.ts); an account the in-memory store does not know reads as the owner's.
+    process.env.AGENT_COMPUTER_ROLLOUT = "plans";
     resetComputerProviderCache();
     fakeComputerProvider.reset();
     memDb = store.createInMemoryComputerPersistence();
@@ -303,12 +305,17 @@ describe("(b) a takeover is exclusive", () => {
 
   it("the runner wires the takeover and lease check into the computer and browser tools", () => {
     const runner = readFileSync("scripts/work-runner.ts", "utf8");
+    // The computer starts lazily now (src/lib/computer/run-tools.ts); the
+    // fences are the same: takeover and lease before and after every call.
     assert.match(
       runner,
-      /blockedReason: \(\) =>\s*computerBlockedReason\(input\.userId, input\.remoteComputer!\.attachment\.agentId, new Date\(\), input\.runId\)/,
+      /blockedReason: \(\) =>\s*computerBlockedReason\(input\.userId, lazyComputer\.agentId, new Date\(\), input\.runId\)/,
     );
     assert.match(runner, /guardBrowserForTakeover\(\s*connectAgentBrowser\(/);
     assert.match(runner, /computerTakeoverFence\(input\.userId, takeoverAgentId, new Date\(\), input\.runId\)/);
+    // Every computer tool goes through the start gate, and only shell and files without vision.
+    assert.match(runner, /\.map\(\(tool\) => runtime\.withComputerStart\(tool, lazyComputer\.gate\)\)/);
+    assert.match(runner, /computerToolNamesFor\(\{ vision: input\.vision \}\)/);
   });
 
   it("a computer over its disk quota is not attached to a task", async () => {
@@ -362,6 +369,8 @@ describe("(d) control belongs to one client, and every client can see who has it
   beforeEach(() => {
     process.env.AUTH_SECRET = process.env.AUTH_SECRET || "test-auth-secret-32-bytes-minimum-length!!";
     process.env.AGENT_COMPUTER_PROVIDER = "fake";
+    // Open to every plan that includes computers (src/lib/computer/access.ts); an account the in-memory store does not know reads as the owner's.
+    process.env.AGENT_COMPUTER_ROLLOUT = "plans";
     resetComputerProviderCache();
     fakeComputerProvider.reset();
     memDb = store.createInMemoryComputerPersistence();

@@ -1,4 +1,4 @@
-import { aggregateAgentState, type AgentState } from "@/lib/agents/domain";
+import { aggregateAgentState, type AgentExecutionTarget, type AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
 import type { VoicePhase } from "@/lib/voice-phase";
 import type { ClientWorkSession } from "@/lib/work/serializers";
@@ -52,4 +52,76 @@ export function threadAgentState(
     agent.state === "waiting" && !!agent.task && !list.some((session) => session.id === agent.task?.sessionId);
   if (serverTaskElsewhere && local !== "sleeping") return "waiting";
   return local;
+}
+
+/** Shown in a cloud agent's thread and profile while no cloud executor is running. */
+export const CLOUD_WORKER_DOWN_MESSAGE = "No cloud worker is running, so tasks can't start.";
+
+/**
+ * The one line a thread shows when its agent's work cannot start where it is
+ * set to run, or null when nothing is wrong (or nothing is known).
+ *
+ * Only the cloud is judged here: the roster carries the executor heartbeat
+ * (`cloudWorkAvailable`), and a Mac agent's Mac is shown, with its own online
+ * state, on the profile. Ignored while the agent is visibly busy, because a
+ * task already running proves nothing new and the face says what it is doing.
+ */
+export function threadWorkNotice(
+  agent: Pick<ClientAgent, "executionTarget" | "cloudWorkAvailable" | "status">,
+  state: AgentState
+): string | null {
+  if (agent.status === "paused") return null;
+  if (state === "working" || state === "thinking" || state === "listening") return null;
+  if ((agent.executionTarget ?? "cloud") !== "cloud") return null;
+  return agent.cloudWorkAvailable === false ? CLOUD_WORKER_DOWN_MESSAGE : null;
+}
+
+/** How a Mac reads in an agent's "Runs on" list. */
+export const RUNS_ON_HOST_LABELS = {
+  online: "Online",
+  notResponding: "Not responding",
+  offline: "Offline",
+  switchedOff: "Work is switched off on this Mac",
+} as const;
+
+/**
+ * A Mac's line in "Runs on", in the words a refused task uses for the same
+ * state (`hostStateWords` in src/lib/work/domain.ts): a heartbeat gone quiet is
+ * "Not responding", never "stale", and only a Mac that is actually gone is
+ * "Offline". Ready means what dispatch means: switched on, not revoked, awake.
+ */
+export function runsOnHostLabel(host: { enabled: boolean; revokedAt: string | null; state: string }): string {
+  if (!host.enabled || host.revokedAt !== null) return RUNS_ON_HOST_LABELS.switchedOff;
+  if (host.state === "online" || host.state === "idle") return RUNS_ON_HOST_LABELS.online;
+  if (host.state === "stale") return RUNS_ON_HOST_LABELS.notResponding;
+  return RUNS_ON_HOST_LABELS.offline;
+}
+
+/**
+ * True when an agent names a preferred Mac that is no longer among the
+ * account's Macs (revoked and removed). Its tasks then go to any Mac, and the
+ * profile says so rather than showing no choice at all.
+ */
+export function preferredHostGone(preferredHostId: string | null | undefined, hosts: readonly { id: string }[]): boolean {
+  return Boolean(preferredHostId) && !hosts.some((host) => host.id === preferredHostId);
+}
+
+/**
+ * Whether choosing a row in an agent's "Which Mac" list has anything to save.
+ *
+ * Not the same as "is it the row shown as chosen". A preferred Mac that is
+ * gone (revoked, so no longer listed) is shown as "Any of your Macs", because
+ * that is what dispatch does with it, but its id is still stored. Choosing
+ * "Any of your Macs" must then send `preferredHostId: null` to clear it; the
+ * row used to count as current and the click did nothing.
+ */
+export function macChoiceSaves(input: {
+  target: AgentExecutionTarget;
+  /** `Agent.preferredHostId` as stored, gone or not. */
+  storedPreferredHostId: string | null;
+  /** The row chosen: a Mac's id, or null for "Any of your Macs". */
+  choice: string | null;
+}): boolean {
+  if (input.target !== "mac") return true;
+  return input.choice !== input.storedPreferredHostId;
 }

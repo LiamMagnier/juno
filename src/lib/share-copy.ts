@@ -23,7 +23,9 @@ import type { ArtifactType } from "@/lib/message-content";
  * The page decides what can be copied the way it decides what can be seen:
  * a link that is revoked, taken down, from a banned owner, unpublished, reset
  * or in Recently deleted copies nothing, and the answer says no more than the
- * page would. A design is not copied: its page shows the server's picture of
+ * page would. Neither does a share with specific people (the public lookup
+ * never returns one): it is view-only for its people, and its page offers no
+ * copy. A design is not copied: its page shows the server's picture of
  * its first page and keeps the document (every page, every embedded image) on
  * the server, so a copy would hand over more than the owner put on show.
  */

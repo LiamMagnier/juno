@@ -41,6 +41,20 @@
 /** `^=` matches both the app's `reduced` and the galleries' legacy `reduce` in one selector. */
 const REDUCED = '[data-motion^="reduce"]';
 const FULL = '[data-motion="full"]';
+/**
+ * The in-app Increase contrast setting (spec §3.2), on the same mechanism:
+ *
+ *   @media (prefers-contrast: more) { S { d } }
+ *     → @media (prefers-contrast: more) { S:where(not inside [data-contrast="standard"]) { d } }
+ *       S:where(inside [data-contrast="more"]) { d }
+ *
+ * so high contrast follows the OS unless the reader turned it off in the app,
+ * and turns on from the app on any device. The token block in globals.css and
+ * every component's own contrast rule ride on it; the Swift projection reads
+ * the same token block as Increase Contrast. Only `more` is twinned.
+ */
+const CONTRAST_MORE = '[data-contrast="more"]';
+const CONTRAST_STANDARD = '[data-contrast="standard"]';
 
 const inside = (attr) => `${attr}, ${attr} *`;
 
@@ -49,9 +63,12 @@ const SCOPES = {
   notFull: `:where(:not(${inside(FULL)}))`,
   notReduced: `:where(:not(${inside(REDUCED)}))`,
   onFull: `:where(${inside(FULL)})`,
+  onContrast: `:where(${inside(CONTRAST_MORE)})`,
+  notStandard: `:where(:not(${inside(CONTRAST_STANDARD)}))`,
 };
 /** What a bare `:root` / `html` compound becomes when the twin must match the attribute's element (0,1,0, like `:root`). */
-const ROOT_SWAP = { onReduced: REDUCED };
+const ROOT_SWAP = { onReduced: REDUCED, onContrast: CONTRAST_MORE };
+const CONTRAST_FEATURE = /^\(\s*prefers-contrast\s*:\s*more\s*\)$/i;
 
 const LEGACY_PSEUDO_ELEMENT = /^:(?:before|after|first-line|first-letter)(?![\w-])/i;
 const MOTION_FEATURE = /^\(\s*prefers-reduced-motion\s*(?::\s*(reduce|no-preference)\s*)?\)$/i;
@@ -145,6 +162,26 @@ function parseQuery(params) {
   return alternatives;
 }
 
+/**
+ * The same, for the contrast preference: `contrast` is "more" or null. Only
+ * `more` is twinned; `less`, `custom` and `no-preference` are left as written.
+ */
+function parseContrastQuery(params) {
+  const alternatives = [];
+  for (const raw of splitTopLevel(params, ",")) {
+    const text = raw.trim();
+    if (/\b(?:not|only|or)\b/i.test(text)) return null;
+    let contrast = null;
+    const rest = [];
+    for (const part of splitAnd(text)) {
+      if (CONTRAST_FEATURE.test(part.trim())) contrast = "more";
+      else rest.push(part.trim());
+    }
+    alternatives.push({ contrast, rest });
+  }
+  return alternatives;
+}
+
 function splitTopLevel(text, separator) {
   const out = [];
   let depth = 0;
@@ -215,7 +252,21 @@ function plugin() {
           media(atRule, { AtRule, result }) {
             // Visitors receive proxies, so a rewritten block is marked on the
             // node itself (raws survive the proxy) rather than in a WeakSet.
-            if (atRule.raws.alevrMotion || !/prefers-reduced-motion/i.test(atRule.params)) return;
+            // Each preference marks only its own flag and carries the other's
+            // over from the block it rewrote, so a query naming both
+            // preferences is rewritten once by each and never again.
+            if (!atRule.raws.alevrMotion && /prefers-reduced-motion/i.test(atRule.params)) {
+              rewriteMotion(atRule, { AtRule, result });
+              return;
+            }
+            if (!atRule.raws.alevrContrast && /prefers-contrast/i.test(atRule.params)) {
+              rewriteContrast(atRule, { AtRule });
+            }
+          },
+        },
+      };
+
+      function rewriteMotion(atRule, { AtRule, result }) {
             const alternatives = parseQuery(atRule.params);
             if (!alternatives || !alternatives.some((a) => a.motion)) return;
 
@@ -274,17 +325,52 @@ function plugin() {
                 wrap(query(a.rest, "reduce"), "onFull");
               }
             }
-            for (const node of out) {
-              if (node.type !== "atrule") continue;
-              node.raws.alevrMotion = true;
-              node.walkAtRules("media", (inner) => {
-                inner.raws.alevrMotion = true;
-              });
-            }
+            mark(out, "alevrMotion", atRule.raws.alevrContrast ? "alevrContrast" : null);
             atRule.replaceWith(out);
-          },
-        },
-      };
+      }
+
+      function rewriteContrast(atRule, { AtRule }) {
+        const alternatives = parseContrastQuery(atRule.params);
+        if (!alternatives || !alternatives.some((a) => a.contrast)) return;
+        const out = [];
+        const plain = alternatives.filter((a) => !a.contrast);
+        if (plain.length) {
+          const keep = new AtRule({ name: "media", params: plain.map((a) => a.rest.join(" and ")).join(", ") });
+          keep.append(atRule.nodes.map((n) => n.clone()));
+          out.push(keep);
+        }
+        for (const a of alternatives.filter((x) => x.contrast)) {
+          // The OS preference, unless the app turned it off.
+          const os = new AtRule({ name: "media", params: [...a.rest, "(prefers-contrast: more)"].join(" and ") });
+          os.append(atRule.nodes.map((n) => n.clone()));
+          scopeRules(os, "notStandard", { dropUnscopable: false });
+          if (os.nodes.length) out.push(os);
+          // The in-app toggle, on any device. Keyframes never go in a twin:
+          // they are global by name, and the original block keeps them.
+          const twin = new AtRule({ name: "media", params: a.rest.join(" and ") || "all" });
+          twin.append(atRule.nodes.map((n) => n.clone()));
+          twin.walkAtRules(/keyframes$/i, (keyframes) => keyframes.remove());
+          scopeRules(twin, "onContrast", { dropUnscopable: true });
+          if (!twin.nodes.length) continue;
+          if (a.rest.length) out.push(twin);
+          else out.push(...twin.nodes.map((n) => n.clone()));
+        }
+        mark(out, "alevrContrast", atRule.raws.alevrMotion ? "alevrMotion" : null);
+        atRule.replaceWith(out);
+      }
+
+      /** Mark rewritten blocks (and media nested in them) with `flag`, and with `carry` when the source had it. */
+      function mark(nodes, flag, carry) {
+        for (const node of nodes) {
+          if (node.type !== "atrule") continue;
+          node.raws[flag] = true;
+          if (carry) node.raws[carry] = true;
+          node.walkAtRules("media", (inner) => {
+            inner.raws[flag] = true;
+            if (carry) inner.raws[carry] = true;
+          });
+        }
+      }
     },
   };
 }
@@ -293,3 +379,4 @@ plugin.postcss = true;
 module.exports = plugin;
 module.exports.scopeSelector = scopeSelector;
 module.exports.parseQuery = parseQuery;
+module.exports.parseContrastQuery = parseContrastQuery;

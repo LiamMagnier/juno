@@ -108,6 +108,58 @@ export function cheapestEligible<M extends SelectableModel>(
   return [...candidates].sort((a, b) => a.cost - b.cost)[0];
 }
 
+/**
+ * The provider failure classes where answering with a different lab plausibly
+ * works: the lab's account is broken (auth, billing), its servers are failing
+ * (capacity), it is throttling (rate_limit), or it does not serve the id
+ * (not_found). Not `content_filter` — offering another model to get round a
+ * safety refusal is not a recovery — and not the request-level classes
+ * (context, invalid_request), the transport (network) or `unknown`, where the
+ * honest next step is Try again or a shorter chat.
+ */
+export const SUGGEST_ALTERNATIVE_FOR = ["auth", "billing", "capacity", "rate_limit", "not_found"] as const;
+
+/**
+ * The one model to offer as "Answer with <model>" after a turn failed at its
+ * provider: the cheapest eligible model on a DIFFERENT, healthy lab whose
+ * training terms clear (`clearsTrainingTerms`).
+ *
+ * `cheapestEligible` drops a model row marked `trainsOnPrompts`, which is not
+ * enough here: most training terms are the PROVIDER's (a lab whose API terms
+ * allow training, unverified terms, a tier-dependent lab whose paid tier is
+ * not attested), recorded in src/lib/router/data-policy.ts. That module is the
+ * caller's to read (failure-recovery.ts passes `autoDataUseVerdict`), so the
+ * check is a required argument: no caller can offer a cheaper lab on terms
+ * nobody reviewed by leaving it out.
+ *
+ * A suggestion, never a substitution. It is shown on the error card and sent
+ * only if the reader clicks it, which makes it their explicit choice — the
+ * routing contract in `SelectionInputs.allowSubstitution` is untouched. A
+ * different lab because every fault this answers belongs to the lab (its
+ * account, its servers, its quota), so the same lab's next model meets the
+ * same fault.
+ */
+export function suggestAlternativeModel<M extends SelectableModel>(input: {
+  failed: Pick<SelectableModel, "id" | "provider">;
+  errorClass: string;
+  catalogue: readonly M[];
+  isEligible: (model: M) => boolean;
+  isProviderHealthy: (provider: string) => boolean;
+  /** The platform's data-use record clears this model for training: model row and provider terms. */
+  clearsTrainingTerms: (model: M) => boolean;
+}): M | null {
+  if (!(SUGGEST_ALTERNATIVE_FOR as readonly string[]).includes(input.errorClass)) return null;
+  return cheapestEligible(
+    input.catalogue,
+    (model) =>
+      model.id !== input.failed.id &&
+      model.provider !== input.failed.provider &&
+      input.clearsTrainingTerms(model) &&
+      input.isEligible(model),
+    input.isProviderHealthy
+  );
+}
+
 export function selectModel<M extends SelectableModel>(
   inputs: SelectionInputs<M>
 ): ModelSelection<M> {

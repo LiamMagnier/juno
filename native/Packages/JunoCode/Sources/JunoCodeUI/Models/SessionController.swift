@@ -261,6 +261,10 @@ public final class SessionController {
         let modelSupportsVision: (String) -> Bool
         /// Whether a thinking parameter may be sent for this model at all.
         let modelTakesThinkingParameter: (String) -> Bool
+        /// Fits a stored depth to a model's manifest tiers
+        /// (``ModelOption/refittingEffort(_:)``): `.some(x)` to change it to
+        /// `x`, nil when it already fits or the model is unknown.
+        let refitReasoningEffort: (String, ReasoningEffort?) -> ReasoningEffort??
         /// The model's advertised context window, when the signed-in
         /// manifest provides one. The runtime uses it to compact before a
         /// provider rejects an oversized long-running session.
@@ -777,6 +781,7 @@ public final class SessionController {
         modelClient: any AgentModelClient,
         modelSupportsVision: @escaping (String) -> Bool = { _ in false },
         modelTakesThinkingParameter: @escaping (String) -> Bool = { _ in true },
+        refitReasoningEffort: @escaping (String, ReasoningEffort?) -> ReasoningEffort?? = { _, _ in nil },
         modelContextWindowTokens: @escaping (String) -> Int? = { _ in nil },
         fallbackResolver: (any ModelFallbackResolver)? = nil,
         modelPricing: @escaping (String) -> CodeUsagePricing? = { _ in nil }
@@ -803,6 +808,7 @@ public final class SessionController {
             modelClient: modelClient,
             modelSupportsVision: modelSupportsVision,
             modelTakesThinkingParameter: modelTakesThinkingParameter,
+            refitReasoningEffort: refitReasoningEffort,
             modelContextWindowTokens: modelContextWindowTokens,
             fallbackResolver: fallbackResolver,
             modelPricing: modelPricing
@@ -2717,8 +2723,13 @@ public final class SessionController {
             // App grants lapse on a model change (§3.3); screen control stays on.
             await localComputer?.revokeGrants(sessionID: sessionID)
         }
+        // The depth follows the model: one the new model does not take (GPT's
+        // `minimal` on Claude Haiku 5.5) is reset to its declared default, as
+        // the web does, rather than sent and refused.
+        let refitted = live.refitReasoningEffort(modelID, session.configuration.reasoningEffort)
         _ = try? await live.store.updateSession(id: sessionID) { session in
             session.configuration.modelID = modelID
+            if let refitted { session.configuration.reasoningEffort = refitted }
         }
         computerUseLatestCapture = nil
         await refreshComputerUse()

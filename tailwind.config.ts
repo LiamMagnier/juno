@@ -6,8 +6,9 @@ import containerQueries from "@tailwindcss/container-queries";
 /*
  * Juno design tokens (Slice 0 — Foundation)
  * -----------------------------------------
- * Type scale ............ text-{display,page-title,title,heading,body-lg,body,ui,label,caption,micro}
- *                         (+ legacy `hero`) · serif = human moments · sans = UI body · mono = labels/metadata
+ * Type scale ............ text-{home-title,display,page-title,title,heading,body-lg,reading,body,nav,ui,label,kbd}
+ *                         (+ marketing `hero`; `caption` deprecated and `micro` retired, both 12px) ·
+ *                         serif = human moments · sans = UI body · mono = labels/metadata/keycaps
  * Motion ................ ease-{out-soft,out-strong,out-expo,in,in-out,breathe,out-back,spring,drawer} ·
  *                         duration-{press,fast,exit,base,slow,emphasis}
  *                         (mirrored as --ease-* / --dur-* in globals.css, where the
@@ -36,6 +37,14 @@ import containerQueries from "@tailwindcss/container-queries";
 const config: Config = {
   darkMode: ["class"],
   content: ["./src/**/*.{ts,tsx}"],
+  // Hover is a pointer's state, not a finger's (spec §4.5 rule 6: "only
+  // under (hover: hover)"). Without this every `hover:` utility also matched
+  // the emulated hover a phone leaves on whatever was tapped last, so a row or
+  // a button kept its hover fill after the finger lifted until something else
+  // was touched. With it, `hover:` (and `group-hover:` / `peer-hover:`)
+  // compile inside `@media (hover: hover) and (pointer: fine)`. Touch reveals
+  // use `coarse:` or focus, never sticky hover.
+  future: { hoverOnlyWhenSupported: true },
   theme: {
     container: {
       center: true,
@@ -47,6 +56,17 @@ const config: Config = {
         border: "hsl(var(--border) / <alpha-value>)",
         input: "hsl(var(--input) / <alpha-value>)",
         ring: "hsl(var(--ring) / <alpha-value>)",
+        // Shared form material, also generated as JunoGeneratedColors.field*.
+        // Hover/focus roles already carry alpha; a second opacity would erase
+        // the measured boundary contrast.
+        field: {
+          DEFAULT: "hsl(var(--field-surface))",
+          active: "hsl(var(--field-surface-active))",
+          border: "hsl(var(--field-border))",
+          hover: "hsl(var(--field-hover))",
+          focus: "hsl(var(--field-focus))",
+          ring: "hsl(var(--field-ring))",
+        },
         background: "hsl(var(--background) / <alpha-value>)",
         foreground: "hsl(var(--foreground) / <alpha-value>)",
         primary: {
@@ -64,6 +84,8 @@ const config: Config = {
         presence: {
           DEFAULT: "hsl(var(--presence) / <alpha-value>)",
           ink: "hsl(var(--presence-ink) / <alpha-value>)",
+          // The finished-away wash (C22); carries its own alpha.
+          wash: "hsl(var(--presence-wash))",
         },
         destructive: {
           DEFAULT: "hsl(var(--destructive) / <alpha-value>)",
@@ -83,6 +105,32 @@ const config: Config = {
         // weaker than one the pointer is merely over. `secondary` is a tonal
         // fill (bubbles, tracks, badges), not a state. See globals.css.
         selected: "hsl(var(--selected) / <alpha-value>)",
+        // Wave 2 roles (globals.css §3.1). `muted-on-fill` is quiet text on a
+        // hover or selected fill, where `muted-foreground` fails AA; the
+        // bubble-hover fill is for controls drawn on the user bubble.
+        "muted-on-fill": "hsl(var(--muted-foreground-on-fill) / <alpha-value>)",
+        "ink-tertiary": "hsl(var(--ink-tertiary) / <alpha-value>)",
+        "user-bubble": {
+          DEFAULT: "hsl(var(--user-bubble) / <alpha-value>)",
+          hover: "hsl(var(--user-bubble-hover) / <alpha-value>)",
+        },
+        // The status roles (§3.4). StatusMark and every status consumer read
+        // these, never presence / signal / destructive directly, so the
+        // needs-you mapping (sign-off S1) changes in globals.css alone.
+        status: {
+          running: "hsl(var(--status-running) / <alpha-value>)",
+          "needs-you": "hsl(var(--status-needs-you) / <alpha-value>)",
+          "needs-you-ink": "hsl(var(--status-needs-you-ink) / <alpha-value>)",
+          ready: "hsl(var(--status-ready) / <alpha-value>)",
+          blocked: "hsl(var(--status-blocked) / <alpha-value>)",
+        },
+        signal: {
+          DEFAULT: "hsl(var(--signal) / <alpha-value>)",
+          ink: "hsl(var(--signal-ink) / <alpha-value>)",
+          // Carries its own alpha (0.14 / 0.18): never add a second one.
+          wash: "hsl(var(--signal-wash))",
+        },
+        attention: "hsl(var(--attention) / <alpha-value>)",
         popover: {
           DEFAULT: "hsl(var(--popover) / <alpha-value>)",
           foreground: "hsl(var(--popover-foreground) / <alpha-value>)",
@@ -178,7 +226,7 @@ const config: Config = {
         // thumbs, icon tiles, inline notes, the dashed box a short empty state
         // sits in.
         field: "10px",
-        menu: "14px", // dropdown / select / tabs shells
+        menu: "12px", // dropdown / select / tabs shells (Graphite: 12 with a 6px inset, rows 6)
         card: "12px", // cards, toasts, tiles
         popover: "12px", // alias of card — popovers, transcripts
         surface: "12px", // alias of card — in-flow panels and section wells
@@ -186,7 +234,7 @@ const config: Config = {
         // The composer is a raised soft card and takes the panel rung. It is
         // distinct through placement and material, not an oversized novelty
         // radius.
-        composer: "22px",
+        composer: "26px",
         // Marketing stages only: the painted plates and product shots on the
         // front door (landing, download, auth art). Never inside the product.
         stage: "28px",
@@ -199,8 +247,14 @@ const config: Config = {
         // chosen. They move WITH the shell — nesting reads as concentric only
         // while the inner radius stays a consistent fraction of the outer one,
         // so a shell that got 2px rounder hands its children a share of it.
-        "composer-control": "10px",
-        "composer-action": "12px",
+        "composer-control": "14px",
+        "composer-action": "16px",
+        // The one user bubble (spec D6, sign-off S3): card radius, with an 8px
+        // tuck on the logical end-end corner — `rounded-bubble
+        // rounded-ee-bubble-tuck`, which mirrors in RTL. Mirrored as
+        // --radius-bubble / --radius-bubble-tuck in globals.css for CSS recipes.
+        bubble: "12px",
+        "bubble-tuck": "8px",
         // Provider/product marks. A PERCENTAGE, not px, so one value is one shape
         // at every size — 24% is the iOS app-icon superellipse ratio these marks
         // are imitating. Owned by <ProviderLogo>; call sites must not override it.
@@ -213,15 +267,15 @@ const config: Config = {
         // parent's padding, read off the two custom properties the parent sets
         // with `nest-<rung>` and `nest-p-<step>` (the plugin below):
         //
-        //   <div class="nest-menu nest-p-1.5">        14px shell, 6px inset
-        //     <div class="rounded-inner">…</div>      → 8px, by construction
+        //   <div class="nest-menu nest-p-1.5">        12px shell, 6px inset
+        //     <div class="rounded-inner">…</div>      → 6px, by construction
         //
         // Move the shell a rung or change its padding and the child follows —
         // the arithmetic lives in one place instead of in a comment beside every
-        // nested box. The fallbacks are the menu recipe's own numbers (14 − 6 =
-        // 8), so a row rendered outside any `nest-*` parent is still a control.
+        // nested box. The fallbacks are the menu recipe's own numbers (12 − 6 =
+        // 6), so a row rendered outside any `nest-*` parent is still a control.
         // A calc, not px, so the native token mirror skips it (it reads px only).
-        inner: "max(0px, calc(var(--r-outer, 14px) - var(--pad, 6px)))",
+        inner: "max(0px, calc(var(--r-outer, 12px) - var(--pad, 6px)))",
       },
       boxShadow: {
         // The Soft UI depth kit (globals.css `--shadow-*`, per theme). Prefer the
@@ -320,6 +374,12 @@ const config: Config = {
       // motion exactly as `var(--dur-slow)` does.
       // tests/tailwind-motion-tokens.test.ts holds every key to its token.
       transitionDuration: {
+        // The bare `transition` / `transition-colors` / `transition-opacity`
+        // utilities (and every `motion-reduce:transition-*` re-declaration)
+        // set a duration of their own. Stock Tailwind makes that 150ms, off
+        // the ladder, which is what about 75 class strings without a
+        // `duration-*` beside them were running. The fast rung instead.
+        DEFAULT: "var(--dur-fast, 120ms)",
         press: "var(--dur-press, 70ms)",
         fast: "var(--dur-fast, 120ms)",
         exit: "var(--dur-exit, 160ms)",
@@ -422,9 +482,24 @@ const config: Config = {
          * display tracking, so an app page opens in the homepage's voice.
          *   m = 3.125cqi, b = 12px = 0.75rem
          */
+        //
+        // Wave 2 (spec §3.5): Newsreader 500 — every app h1, Settings
+        // included, sets this rung in `font-serif`. Below a 640px viewport it
+        // is a fixed 1.75rem (globals.css, `.text-page-title` in utilities),
+        // which a clamp keyed to the column cannot say.
         "page-title": [
           "clamp(2rem, 0.75rem + 3.125cqi, 2.75rem)",
-          { lineHeight: "1.08", letterSpacing: "-0.03em", fontWeight: "600" },
+          { lineHeight: "1.08", letterSpacing: "-0.03em", fontWeight: "500" },
+        ],
+        /*
+         * The home greeting (spec §3.5, C3): Newsreader 400, one step under
+         * `display` at the narrow end and over it at the wide one, keyed to the
+         * column like the rungs above.
+         *   home-title  34px → 50px : m = 2.2cqi, b = 24px = 1.5rem
+         */
+        "home-title": [
+          "clamp(2.125rem, 1.5rem + 2.2cqi, 3.125rem)",
+          { lineHeight: "1.1", letterSpacing: "-0.02em", fontWeight: "400" },
         ],
         title: [
           "1.375rem",
@@ -473,13 +548,11 @@ const config: Config = {
          * read. 1.5, not body's 1.6: rows and chips are usually one line tall,
          * and their rhythm comes from the row grid, not from leading.
          */
-        ui: ["0.8125rem", { lineHeight: "1.5" }],
-        // Eyebrow/metadata — sizing only; pair with `font-mono` + `uppercase`.
-        // 0.10em is the editorial maximum for caps: above ~0.12em uppercase
-        // micro-labels stop grouping into words and read as decoration. It is also
-        // the most likely SC 1.4.12 failure in the tree, since tracking stacks with
-        // a user-forced 0.12em on fixed-height chips. AsciiWordmark keeps its own
-        // 0.12em — that is a logotype, not a label.
+        ui: ["0.84375rem", { lineHeight: "1.25rem" }],
+        // All metadata and section headings (spec §3.5): JetBrains Mono 500,
+        // sentence case, tabular figures. globals.css gives `.text-label` the
+        // mono face and tabular-nums at zero specificity (`:where`), so an
+        // explicit `font-sans` beside it still wins.
         /*
          * 0.01em, down from 0.10em. A tenth of an em is a CAPS tracking: caps
          * are all the same height with no ascenders or descenders to separate
@@ -492,22 +565,25 @@ const config: Config = {
           "0.75rem",
           { lineHeight: "1.4", letterSpacing: "0.01em", fontWeight: "500" },
         ],
-        caption: ["0.6875rem", { lineHeight: "1.45", letterSpacing: "0.02em" }],
         /*
-         * The mono metadata floor — token counts, model ids, timestamps, the
-         * smallest eyebrow chips. Pair with `font-mono` (and often
-         * `uppercase`), like `label` two rungs up. 10.5px, deliberately ABOVE
-         * the 10px (139 sites) and 9px (20 sites) it replaces: below ~10.5px
-         * the mono face's hairline strokes start losing whole pixels to
-         * antialiasing on 1x displays, and most of these sites are
-         * muted-foreground on top of that — the floor is where the smallest
-         * voice in the product stays legible rather than decorative. (The half
-         * pixel rounds per-DPR at 1x and renders true at 2x.) Tracking stays
-         * at caption's 0.02em, far under label's 0.10em: mono's fixed advance
-         * already separates glyphs, and at this size added air reads as gaps
-         * between letters, not as an eyebrow.
+         * THE TYPE FLOOR (spec D16, owner sign-off S4): 12px on the web. The
+         * two rungs under it are lifted here, in one place, which raises every
+         * one of their ~1,344 uses at once; each package then moves its own
+         * uses to the semantic rung (`label` for metadata, `ui` for controls).
+         * `caption` is a deprecated name for 12px sans; `micro` is RETIRED and
+         * aliased to it until its last use moves. The transcript-chrome lint
+         * (eslint-rules) flags both inside the turn body, the composer,
+         * tooltips, notifications and the sidebar.
          */
-        micro: ["0.65625rem", { lineHeight: "1.45", letterSpacing: "0.02em" }],
+        caption: ["0.75rem", { lineHeight: "1.4" }],
+        micro: ["0.75rem", { lineHeight: "1.4" }],
+        /*
+         * The one rung under the floor, and only for keycaps and count badges of
+         * up to three characters (Kbd and Badge; the lint keeps it there). 11px
+         * mono — globals.css gives `.text-kbd` the mono face and tabular
+         * figures, which a fontSize entry cannot.
+         */
+        kbd: ["0.6875rem", { lineHeight: "1.45" }],
       },
       /*
        * Text colour is NOT the same ramp as fill colour.
@@ -602,28 +678,23 @@ const config: Config = {
         // 6px (SOFT_UI.md §2.4), down from 8: the workhorse entrance should be
         // felt as settling, not as arriving from somewhere. `src/lib/motion.ts`
         // mirrors the offset (SHIFT.rise) — change both.
-        // Agents (docs/design/agents-rework/DIRECTION.md): a face changing its
-        // look in the studio, and a new agent arriving. Spring overshoot, once.
+        // Agents (docs/design/AGENTS.md §4.2): a face changing its look in
+        // the studio, and an agent greeting in its empty thread. Plain expo
+        // ease-outs: a face never overshoots (the one pop in the system is
+        // the needs-you ball).
         "studio-swap": {
-          "0%": { opacity: "0.55", transform: "scale(0.9)" },
-          "60%": { opacity: "1", transform: "scale(1.04)" },
-          "100%": { opacity: "1", transform: "scale(1)" },
+          "0%": { opacity: "0.55", transform: "scale(calc(1 - 0.06 * var(--motion-shift, 1)))" },
+          "100%": { opacity: "1", transform: "none" },
         },
         "agent-arrive": {
-          "0%": { opacity: "0", transform: "scale(0.6) translateY(12px)" },
-          "55%": { opacity: "1", transform: "scale(1.06) translateY(0)" },
-          "100%": { opacity: "1", transform: "scale(1) translateY(0)" },
+          "0%": { opacity: "0", transform: "scale(calc(1 - 0.08 * var(--motion-shift, 1))) translateY(calc(8px * var(--motion-shift, 1)))" },
+          "100%": { opacity: "1", transform: "none" },
         },
-        // A new turn in the transcript (owner, 2026-10-08: new content fades in as it is
-        // revealed): the rise-in's settle, a touch longer, out of a slight blur.
-        "turn-in": {
-          from: {
-            opacity: "0",
-            transform: "translateY(calc(8px * var(--motion-shift, 1)))",
-            filter: "blur(4px)",
-          },
-          to: { opacity: "1", transform: "translateY(0)", filter: "blur(0)" },
-        },
+        // `turn-in` (420ms out of a 4px blur) is RETIRED (spec C1): no entrance
+        // blurs, and the assistant turn's root does not animate at all. The
+        // user bubble rises with `animate-rise-user`; parts settle with
+        // `animate-settle-part`. Both keyframes live in globals.css, beside
+        // the tier table, so plain CSS rules can name them too.
         "rise-in": {
           from: {
             opacity: "0",
@@ -713,6 +784,8 @@ const config: Config = {
         // flip it per data-side (globals.css) so a menu always emerges from its
         // trigger — a bottom-anchored menu rises 4px, a top-anchored one settles
         // 4px down. Non-popper users of animate-pop-in keep the 4px-rise default.
+        // No blur on the way in: entrances move opacity and transform only
+        // (tests/wave2-p1-tier-table.test.ts, "no keyframe blurs").
         "pop-in": {
           from: {
             opacity: "0",
@@ -822,35 +895,38 @@ const config: Config = {
         // One-shot flourish when the thumb lands on the top tier.
         "ultra-pop": {
           "0%": { transform: "translateY(-50%) scale(1)" },
-          "45%": { transform: "translateY(-50%) scale(1.18)" },
+          "45%": { transform: "translateY(-50%) scale(calc(1 + 0.18 * var(--motion-shift, 1)))" },
           "100%": { transform: "translateY(-50%) scale(1)" },
         },
       },
       animation: {
-        // A-to-B moves with both endpoints visible run in-out, not ease-out; and
-        // the collapse is faster than the expand, like every other exit here.
-        // These two previously used the raw `ease-out` keyword — off-token entirely.
+        // (The accordion pair that used to open this map is gone with its last
+        // call site; its keyframes stay above, tiered in globals.css.)
         // `fade-in` is the keyframe `page-in` and `overlay-in` both build on, so
         // it is the most-run animation in the product — and it was the last pair
-        // still on the raw `ease-out` keyword and off-ladder 200/250ms, the exact
-        // fault the accordion pair above was fixed for.
+        // still on the raw `ease-out` keyword and off-ladder 200/250ms.
         "fade-in": "fade-in var(--dur-base) var(--ease-out-soft)",
         "fade-in-up": "fade-in-up var(--dur-base) var(--ease-out-soft)",
-        "pulse-ring": "pulse-ring 1.6s var(--ease-breathe) infinite",
+        "pulse-ring": "pulse-ring var(--loop-breathe) var(--ease-breathe) infinite",
         // One-shot variant (quiz correct-answer flourish) — the arbitrary
         // [animation-iteration-count:1] override does NOT work on animate-*
         // utilities (the shorthand re-declares iteration-count later in the
         // stylesheet at equal specificity), so a named one-shot is required.
-        "pulse-ring-once": "pulse-ring 1.6s var(--ease-breathe) 1 both",
+        "pulse-ring-once": "pulse-ring var(--loop-breathe) var(--ease-breathe) 1 both",
         // linear: the band exits one edge and teleports to the other, so there is
         // no turn to ease — an eased sweep decelerates into the seam and jumps.
-        blink: "blink 1.1s steps(1) infinite",
+        blink: "blink var(--loop-beat) steps(1) infinite",
         // 6px of travel is a --dur-base move on the default decelerate; the
         // old slow/out-strong pairing was sized for the 8px it no longer has.
         "rise-in": "rise-in var(--dur-base) var(--ease-out-soft)",
-        "turn-in": "turn-in 420ms var(--ease-out-soft) both",
-        "studio-swap": "studio-swap var(--dur-emphasis) var(--ease-spring) both",
-        "agent-arrive": "agent-arrive 640ms var(--ease-spring) both",
+        // The user bubble lands (C1): a 6px × shift rise over the fast rung,
+        // painted within 100ms of Enter. Keyframe in globals.css.
+        "rise-user": "rise-user var(--dur-fast) var(--ease-out-soft) both",
+        // An answer part arriving mid-stream: 4px × shift over the base rung,
+        // no blur. Keyframe in globals.css.
+        "settle-part": "settle-part var(--dur-base) var(--ease-out-soft) both",
+        "studio-swap": "studio-swap var(--dur-emphasis) cubic-bezier(0.16, 1, 0.3, 1) both",
+        "agent-arrive": "agent-arrive var(--dur-emphasis) cubic-bezier(0.16, 1, 0.3, 1) both",
         // Drawers (sheet.tsx). Enter on the drawer curve at --dur-base — a
         // 280px panel wants ~240ms — and leave faster on the accelerate, as
         // every exit here does.
@@ -865,13 +941,15 @@ const config: Config = {
         // A loop turns around at both ends, so it takes the symmetric curve —
         // `ease-in-out` the keyword is NOT --ease-in-out the token, and neither
         // is the loop curve. See --ease-breathe.
-        "icon-breathe": "icon-breathe 2.6s var(--ease-breathe) infinite",
+        "icon-breathe": "icon-breathe var(--loop-galaxy) var(--ease-breathe) infinite",
         "title-out": "title-out var(--dur-exit) var(--ease-in)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
         // (pair with .origin-popper on Radix popper content so scale anchors to the trigger).
-        // Enter on the SPRING at --dur-base (SOFT_UI.md §2.4): scale .96 → 1
-        // with a ~2% overrun, so a menu settles into place rather than stopping
-        // on it. The exit reverses faster on the accelerate, as leaving should.
+        // Enter on --ease-spring at --dur-base (SOFT_UI.md §2.4): scale .96 → 1
+        // on a long, overshoot-free decelerate (.22, 1, .36, 1 has no overrun:
+        // its y never passes 1), so a menu settles into place rather than
+        // stopping on it. The exit reverses faster on the accelerate, as
+        // leaving should.
         "pop-in": "pop-in var(--dur-base) var(--ease-spring) both",
         "pop-out": "pop-out var(--dur-fast) var(--ease-in) both",
         // Dialogs: the same spring pop, one exit rung slower because a dialog
@@ -896,11 +974,8 @@ const config: Config = {
         "cite-flash": "cite-flash var(--dur-slow) var(--ease-out-soft) both",
         "overlay-in": "fade-in var(--dur-fast) var(--ease-out-soft) both",
         "overlay-out": "fade-out var(--dur-base) var(--ease-in) both",
-        // Reasoning slider's top tier (reasoning-slider.tsx).
-        // 24s, not 6s: the gradient should read as a slow luminous drift, not a
-        // sweep. `linear` is deliberate — an eased loop visibly pulses at the
-        // seam, which is the thing that looked like flashing.
-        // Per-particle durations (7-13s) are set inline; this is only the fallback.
+        // (The reasoning slider's `ultra-*` animations no longer live in this
+        // map; their keyframes above have no utility and are tiered C.)
       },
     },
   },
@@ -941,6 +1016,15 @@ const config: Config = {
     // `coarse:` → touch devices, for 44px hit areas (WCAG AA).
     plugin(({ addVariant, addUtilities }) => {
       addVariant("coarse", "@media (pointer: coarse)");
+      // `kbd-focus:` → a text field's KEYBOARD focus. `focus-visible:` cannot
+      // say it: a text field matches :focus-visible on every focus, a click
+      // and a script's autofocus included. lib/input-modality.ts mirrors how
+      // the person last moved focus to <html data-modality>, so a field's
+      // pointer focus can stay a darker edge (`focus-visible:`) and only the
+      // keyboard gets the ring. `kbd-focus-within:` is the same for a box
+      // drawn around a text field (a field row, an inline editor).
+      addVariant("kbd-focus", ":root[data-modality=keyboard] &:focus-visible");
+      addVariant("kbd-focus-within", ":root[data-modality=keyboard] &:has(:is(input, textarea, [contenteditable]):focus-visible)");
       // iOS notch/home-indicator breathing room (composer, sheets, full-bleed layouts).
       addUtilities({
         ".pt-safe": { paddingTop: "env(safe-area-inset-top, 0px)" },

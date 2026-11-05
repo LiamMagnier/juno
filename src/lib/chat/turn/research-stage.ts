@@ -13,6 +13,7 @@ import type { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
 import type { ChatRequestBody } from "@/lib/chat/request";
 import type { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { SKILL_WITHHELD_RESEARCH } from "@/lib/chat/skills";
 import type { ReasoningEffort } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 import type { TurnOutcome } from "./finalize";
@@ -39,6 +40,7 @@ export async function resolveResearchStage({
   modelHistory,
   researchActive,
   researchRequested,
+  researchWithheldBySkill = false,
   researchHandsOff = false,
   acc,
   send,
@@ -58,6 +60,12 @@ export async function resolveResearchStage({
   modelHistory: MessageForModel[];
   researchActive: boolean;
   researchRequested: boolean;
+  /**
+   * Research was on for this message and the applied skill turned it off: a
+   * taught skill that does not list web search (`scopeTurnToSkill`). The
+   * notice says so instead of blaming the plan or the deployment.
+   */
+  researchWithheldBySkill?: boolean;
   /**
    * The client declared `research_background` (SPEC §9.6.1): research starts
    * as a background run and the turn hands off to it instead of gathering
@@ -194,6 +202,9 @@ export async function resolveResearchStage({
         title: research.state === "awaiting_plan_confirmation" ? "Research plan ready" : "Research did not complete",
       });
     }
+  } else if (researchRequested && researchWithheldBySkill) {
+    researchNotice = SKILL_WITHHELD_RESEARCH.notice;
+    sendActivity({ kind: "warning", title: SKILL_WITHHELD_RESEARCH.title, detail: SKILL_WITHHELD_RESEARCH.detail });
   } else if (researchRequested) {
     researchNotice = PLANS[plan].webSearch
       ? "Research is not configured on this deployment. A search provider must be available before I can investigate your question."

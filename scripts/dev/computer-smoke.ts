@@ -1,5 +1,14 @@
 /**
- * Local Docker Desktop smoke test for Agent Computers (Phase 2 gate).
+ * Local Docker Desktop smoke test for Agent Computers (Phase 2 gate), kept for a
+ * quick look on a developer's Mac.
+ *
+ * Superseded as evidence by tests/computer-real-e2e.test.ts (COMPUTERS_2026-10.md S4):
+ * the same and more (CDP through the gate, xdotool on the display, RFB through the
+ * relay, pause, stop and start, take over and hand back, a scripted Work run, an image
+ * rebuild, losing the host) on a real computer behind the production network,
+ * firewall and proxy (tests/computer_host_fixture.py), for both the docker and the
+ * remote provider, and in CI (the computer-e2e job in .github/workflows/deploy.yml).
+ * Run that suite to prove anything; this script proves only that a Mac can start one.
  *
  * Run explicitly (not part of `npm test`):
  *   AGENT_COMPUTER_PROVIDER=docker AGENT_COMPUTER_IMAGE=juno-computer:dev \

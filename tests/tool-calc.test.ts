@@ -55,6 +55,35 @@ test("the grammar: numbers, operators, parentheses, functions and constants", ()
   assert.equal(value("pi"), 3.14159265359, "rounded to 12 significant digits");
 });
 
+test("floor, ceil and round act on the figure a person means, not on binary noise", () => {
+  // 4.35 * 100 is 434.99999999999994 in IEEE 754; floor of it used to be 434
+  // (the workflow benchmark's reasoning-03 caught it computing cents).
+  assert.equal(value("floor(4.35 * 100)"), 435);
+  assert.equal(value("floor(0.29 * 100)"), 29);
+  assert.equal(value("floor(0.57 * 100)"), 57);
+  assert.equal(value("floor(0.7 + 0.1) + floor((0.7 + 0.1) * 10)"), 8);
+  assert.equal(value("ceil(0.1 * 3 * 10)"), 3, "3.0000000000000004 is 3");
+  assert.equal(value("ceil(1.1 * 1.1 * 100)"), 121);
+  assert.equal(value("round(1.005, 2)"), 1.01, "100.49999999999999 is a half");
+  assert.equal(value("round(100.49999999999999)"), 101);
+  assert.equal(value("floor(-4.35 * 100)"), -435);
+  // An argument that really carries more digits is used exactly as before.
+  assert.equal(value("floor(123456789012.5) - 123456789012"), 0);
+  assert.equal(value("ceil(123456789012.5) - 123456789012"), 1);
+  assert.equal(value("floor(999999999999.5) - 999999999999"), 0);
+  assert.equal(value("round(0.4999999999999)"), 0, "13 significant digits are not noise");
+  assert.equal(value("ceil(1.0000000000001)"), 2);
+  // Already exact values are untouched.
+  assert.equal(value("floor(2.5)"), 2);
+  assert.equal(value("floor(-2.5)"), -3);
+  assert.equal(value("round(2.5)"), 3);
+  assert.equal(value("round(-2.5)"), -2);
+  assert.equal(value("ceil(2.1)"), 3);
+  assert.equal(value("floor(7)"), 7);
+  assert.equal(value("round(2.675, 2)"), 2.68);
+  assert.equal(value("round(1234, -2)"), 1200);
+});
+
 test("precedence and associativity", () => {
   assert.equal(value("2 + 3 * 4"), 14);
   assert.equal(value("(2 + 3) * 4"), 20);

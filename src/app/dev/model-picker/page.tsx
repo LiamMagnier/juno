@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageRoot } from "@/components/app/page-root";
 import { ModelPickerFixture } from "./fixture";
 
 /**
@@ -16,5 +17,9 @@ import { ModelPickerFixture } from "./fixture";
  */
 export default function ModelPickerDevPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <ModelPickerFixture />;
+  return (
+    <PageRoot>
+      <ModelPickerFixture />
+    </PageRoot>
+  );
 }

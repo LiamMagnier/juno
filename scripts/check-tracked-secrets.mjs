@@ -43,6 +43,9 @@ const intentionalFixtures = new Set([
   // Fake BYOK keys (abcdef…) that Code's key format checks and routing must accept.
   "tests/code-v2-byok-routing.test.ts|OpenAI secret",
   "tests/code-v2-webfn.test.ts|OpenAI secret",
+  // Fake keys (sk-ant-abcdef…) an agent's note must have masked before it is saved.
+  "tests/orbit-truth.test.ts|OpenAI secret",
+  "tests/orbit-truth.integration.test.ts|OpenAI secret",
 ]);
 
 const findings = [];

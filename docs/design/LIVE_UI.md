@@ -85,6 +85,28 @@ ordered route with "Open in Maps" per stop and a whole-route link; the only
 URLs ever built are Apple Maps and Google Maps search/directions from the
 stop text, never a URL from the model.
 
+### 2.4 Views people act on (2026-10, web)
+
+After ChatGPT's GPT-6 Intelligent UI: views for what the reader will DO with
+an answer. Taught to the model by `LIVE_UI_DO_SECTION`
+(`src/lib/chat/system-prompt.ts`), web only (`liveUiDo`), because the native
+renderers skip unknown types; rendered by `live-ui-intelligent.tsx`.
+
+| type | fields | behaviour |
+|------|--------|-----------|
+| `recipe` | `servings`, `yieldLabel?`, `ingredients:[{name, qty?, unit?, note?}]`, `steps:[{text, minutes?}]` | servings stepper rescales every quantity (g → kg, whole things stay whole, spoons snap to ¼ ⅓ ½); ingredients tick off and "Copy what's missing"; steps tick off; `minutes` adds a timer per step that marks the step done when it rings |
+| `choices` | `question?`, `options:[{label, detail?, prompt?}]`, `multi?` | a question answered with a tap: the pick is sent as the user's next message (`multi` collects picks, then Send); locks once sent |
+| `compare` | `options:[{name, price?, tagline?, badge?, pros, cons, facts, prompt?}]`, `recommend?` | option cards side by side; the recommended one carries the accent and a "Best pick" badge; "Go with X" sends `prompt` |
+| `cards` | `items:[{title, subtitle?, meta?, rating?, detail?, tags?, prompt?}]` | a gallery of places, products or people; a card with `prompt` is a button that asks about it |
+| `tabs` | `tabs:[{label, children}]` | a segmented tab bar with a sliding pill; each tab holds ordinary components |
+| `flashcards` | `cards:[{front, back}]` | a card that turns over, Again / Got it, progress |
+
+Aliases: `ingredients`/`cook` → recipe, `choice`/`ask`/`follow-up` → choices,
+`versus`/`vs`/`comparison` → compare, `places`/`products`/`gallery` → cards,
+`deck`/`flashcard` → flashcards. Every slider (Live UI and the app) is the
+Liquid Glass slider: a white capsule that becomes a clear lens while held
+(`live-ui.css`, `.glass-slider`).
+
 ## 3. Expressions
 
 A small, safe language with identical semantics in TypeScript

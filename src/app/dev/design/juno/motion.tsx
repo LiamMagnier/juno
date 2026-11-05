@@ -51,7 +51,7 @@ export const SPRING = {
   /** Neighbours moving, panels docking, the composer moving from the home to the dock (C18). */
   layout: { type: "spring", duration: 0.36, bounce: 0 },
   /** Anything following a pointer or finger. */
-  interactive: { type: "spring", duration: 0.32, bounce: 0.15 },
+  interactive: { type: "spring", duration: D.slow, bounce: 0.15 },
   /** Two sites only: an approved action's receipt settling, and long work finishing on screen. */
   reward: { type: "spring", duration: 0.36, bounce: 0.15 },
   /**
@@ -90,7 +90,7 @@ export const T = {
  * half-transparent material lets the text behind it read through sharp, so
  * the translucent frames are kept to the first few.
  */
-export const POP_IN: Transition = { duration: D.base, ease: EASE_OUT, opacity: { duration: 0.08, ease: EASE_OUT } };
+export const POP_IN: Transition = { duration: D.base, ease: EASE_OUT, opacity: { duration: D.press, ease: EASE_OUT } };
 
 /**
  * A sheet arriving (Revision 2): it travels on the drawer curve (360 ms) but its opacity arrives on `fast`

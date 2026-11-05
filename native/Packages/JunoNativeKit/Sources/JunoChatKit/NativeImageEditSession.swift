@@ -77,7 +77,7 @@ public final class NativeImageEditSession {
                 case .completed:
                     phase = .finished(conversationID: conversationID)
                     return
-                case .failed(let message, _, _, _):
+                case .failed(let message, _, _, _, _):
                     phase = .failed(message)
                     return
                 default:

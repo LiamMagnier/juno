@@ -1,4 +1,13 @@
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import {
+  foldForTopics,
+  topicOfStatement,
+  topicPrefixes,
+  topicRefusalMessage,
+  topicWords,
+  topicWordsOfFolded,
+  wordsCoverTopic,
+} from "@/lib/memory-topics";
 
 /**
  * The one door every MemoryEntry write goes through.
@@ -41,6 +50,53 @@ export function normalizeStatement(value: string): string {
     .trim();
 }
 
+/** One block-list entry, parsed once: a topic's words, or a statement's comparable form. */
+type CompiledEntry =
+  | { statement: string; topic: string[]; prefixes: string[]; normalized?: undefined }
+  | { statement: string; topic?: undefined; prefixes?: undefined; normalized: string };
+
+/**
+ * The block-list, parsed once for a run of checks.
+ *
+ * Matching one candidate against one entry is cheap; what is not cheap is
+ * re-deriving every entry for every candidate. The read gate checks every fact
+ * a chat turn considers (a crowded account has thousands) against every entry,
+ * and recognising a topic, normalising a statement and splitting a topic into
+ * words were all redone per pair: 20 entries over 2,000 facts cost a chat turn
+ * about 45 ms at the median. Compiled, each entry is parsed once per call and
+ * each candidate is split into words once, whatever the list's length.
+ *
+ * `findSuppression` and `proseCoveredBySuppression` accept either form, so a
+ * single check stays a one-liner and a loop compiles once.
+ */
+export interface CompiledBlockList {
+  readonly kind: "compiled-block-list";
+  /** Entries that can match anything (an empty statement never does). */
+  readonly size: number;
+  readonly entries: readonly CompiledEntry[];
+}
+
+export function compileBlockList(suppressions: readonly string[] | CompiledBlockList): CompiledBlockList {
+  if (!Array.isArray(suppressions)) return suppressions as CompiledBlockList;
+  const entries: CompiledEntry[] = [];
+  for (const statement of suppressions as readonly string[]) {
+    // A TOPIC exclusion ("Anything about my divorce") is matched by the topic
+    // rule — every word of the topic present in the candidate as a word — not
+    // by containment of its own sentence, which no fact about the topic would
+    // ever contain. See memory-topics.ts. It is still one block-list, read by
+    // every writer through this module.
+    const topic = topicOfStatement(statement);
+    if (topic !== null) {
+      const words = topicWords(topic);
+      if (words.length > 0) entries.push({ statement, topic: words, prefixes: topicPrefixes(words) });
+      continue;
+    }
+    const normalized = normalizeStatement(statement);
+    if (normalized.length > 0) entries.push({ statement, normalized });
+  }
+  return { kind: "compiled-block-list", size: entries.length, entries };
+}
+
 /**
  * The suppression covering `candidate`, or null when nothing does.
  *
@@ -55,15 +111,70 @@ export function normalizeStatement(value: string): string {
  */
 export function findSuppression(
   candidate: string,
-  suppressions: readonly string[]
+  suppressions: readonly string[] | CompiledBlockList
 ): string | null {
+  const list = compileBlockList(suppressions);
+  if (list.size === 0) return null;
   const c = normalizeStatement(candidate);
   if (!c) return null;
-  for (const suppression of suppressions) {
-    const n = normalizeStatement(suppression);
-    if (n.length > 0 && (c === n || c.includes(n) || n.includes(c))) return suppression;
+  const topic = topicMatcher(candidate);
+  for (const entry of list.entries) {
+    if (entry.topic) {
+      if (topic(entry)) return entry.statement;
+      continue;
+    }
+    const n = entry.normalized;
+    if (c === n || c.includes(n) || n.includes(c)) return entry.statement;
   }
   return null;
+}
+
+/**
+ * The topic rule for one candidate against many topic entries: folded once,
+ * split into words only when some entry's prefixes are all in the text (most
+ * facts are about none of the person's excluded topics, and never split).
+ */
+function topicMatcher(candidate: string): (entry: { topic: string[]; prefixes: string[] }) => boolean {
+  let folded: string | null = null;
+  let words: string[] | null = null;
+  return (entry) => {
+    folded ??= foldForTopics(candidate);
+    if (!entry.prefixes.every((prefix) => folded!.includes(prefix))) return false;
+    words ??= topicWordsOfFolded(folded);
+    return wordsCoverTopic(words, entry.topic);
+  };
+}
+
+/**
+ * Whether one sentence of GENERATED prose (a consolidated summary) says
+ * something on the block-list — the check run over a summary before it is
+ * stored, so a model that ignored "never include this" cannot put it back
+ * into every chat's context.
+ *
+ * Narrower than `findSuppression` on purpose. A topic is matched by the topic
+ * rule as everywhere else. A statement only when the sentence CONTAINS the
+ * whole forgotten statement: the reverse containment that `findSuppression`
+ * also accepts (a short candidate inside a long suppression) is right for a
+ * terse extracted fact and wrong for prose, where a one-word sentence ("Yes.")
+ * would be inside some suppression by accident and a paragraph would lose it.
+ */
+export function proseCoveredBySuppression(
+  sentence: string,
+  suppressions: readonly string[] | CompiledBlockList
+): boolean {
+  const list = compileBlockList(suppressions);
+  if (list.size === 0) return false;
+  const c = normalizeStatement(sentence);
+  if (!c) return false;
+  const topic = topicMatcher(sentence);
+  for (const entry of list.entries) {
+    if (entry.topic) {
+      if (topic(entry)) return true;
+      continue;
+    }
+    if (c.includes(entry.normalized)) return true;
+  }
+  return false;
 }
 
 /**
@@ -82,6 +193,11 @@ const REFUSAL_MESSAGE = {
 };
 
 export function suppressionRefusalMessage(suppression: string): string {
+  // A topic exclusion is refused in its own words: "not anything about my
+  // divorce" tells the person which switch to look for, where quoting the
+  // stored "Anything about my divorce" back as a forgotten statement does not.
+  const topic = topicOfStatement(suppression);
+  if (topic !== null) return topicRefusalMessage(topic);
   const quoted =
     suppression.length > QUOTED_SUPPRESSION_LIMIT
       ? `${suppression.slice(0, QUOTED_SUPPRESSION_LIMIT - 1)}…`

@@ -97,7 +97,7 @@ if (!DB_URL) {
       data: { conversationId: chat.id, role: "USER", content: "I live in Lisbon these days." },
     });
     const profile = (userId: string, query: string, extra: { projectId?: string | null } = {}) =>
-      memory.getMemoryProfile(userId, { query, embed: embedQuery as never, ...extra });
+      memory.getMemoryProfile(userId, { conversationProvider: null, query, embed: embedQuery as never, ...extra });
     const fact = (userId: string, needle: string) =>
       prisma.memoryEntry.findFirst({ where: { userId, kind: "FACT", content: { contains: needle } } });
     const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
@@ -347,7 +347,7 @@ if (!DB_URL) {
       });
     };
     const injected = async (projectId: string | null = null) => {
-      const p = await memory.getMemoryProfile(user.id, { query: "anything", projectId });
+      const p = await memory.getMemoryProfile(user.id, { conversationProvider: null, query: "anything", projectId });
       return [p.summary ?? "", ...p.recent].join("\n");
     };
     // The current revision, as a synced device would hold it (triggers bump it on every write).

@@ -43,6 +43,7 @@ import {
   extractGeminiSseEvents,
 } from "@/lib/gemini-round";
 import { GeminiProviderError, requestGeminiStream, type GeminiRequestContext } from "@/lib/gemini-network";
+import { markRequestRejected } from "@/lib/provider-error";
 
 export {
   toGeminiContents,
@@ -235,19 +236,26 @@ export async function* streamGemini(
         });
 
         metered = meter?.begin({ wire: "gemini", round: step, body: requestBody });
-        const res = transport
-          ? await transport.request({ url, body: requestBody, signal })
-          : await requestGeminiStream({
-              url,
-              init: {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-                body: JSON.stringify(requestBody),
-              },
-              signal,
-              context: geminiContext,
-              apiKeys,
-            });
+        let res: Response;
+        try {
+          res = transport
+            ? await transport.request({ url, body: requestBody, signal })
+            : await requestGeminiStream({
+                url,
+                init: {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+                  body: JSON.stringify(requestBody),
+                },
+                signal,
+                context: geminiContext,
+                apiKeys,
+              });
+        } catch (error) {
+          // The first request was refused before any stream (pre-stream-retry.ts).
+          if (step === 0) markRequestRejected(error);
+          throw error;
+        }
         const thisStep = step++;
 
         // requestGeminiStream rejects successful responses without a body.
@@ -322,7 +330,7 @@ export async function* streamGemini(
         }
         metered?.end(
           state.sawUsage
-            ? { input: state.usage.input, output: state.usage.output, cacheRead: state.usage.cached, reasoning: state.usage.thoughts }
+            ? { input: state.usage.input, output: state.usage.output, cacheRead: state.usage.cached, reasoning: state.usage.thoughts, total: state.usage.total }
             : null
         );
         metered = undefined;

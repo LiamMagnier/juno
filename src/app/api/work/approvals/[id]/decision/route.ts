@@ -3,9 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { authenticateNativeBearer } from "@/lib/native-auth";
 import { markRunNotificationsRead } from "@/lib/notifications";
-import { isWorkStatus } from "@/lib/work/domain";
+import { isTerminalStatus, isWorkStatus } from "@/lib/work/domain";
 import { recordWorkAudit } from "@/lib/work/audit";
-import { appendEvents, dispatchRunCommand, setSessionAttention } from "@/lib/work/store";
+import { appendEvents, dispatchRunCommand, requeueParkedRun, setSessionAttention } from "@/lib/work/store";
+import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
+import { CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE } from "@/lib/work/executor-presence";
+import { currentRunState, waitsOnApproval } from "@/lib/work/park-resume";
 import { approvalCommandKey } from "@/lib/work/relay";
 import { serializeApproval, serializeCommand } from "@/lib/work/serializers";
 import {
@@ -33,6 +36,41 @@ const REFUSAL_MESSAGES: Record<ApprovalDecisionRefusal, string> = {
   not_standing_allowable:
     `${PRODUCT_NAME} will not stop asking about this one. Allow it this time if you want it to happen.`,
 };
+
+/**
+ * The refusal's sentence for this row, when the row says more than the reason.
+ *
+ * A request closed because the execution that asked it ended (`superseded`,
+ * written by `closeAbandonedApprovals` in src/lib/work/park-resume.ts) is
+ * refused as `already_decided` — the code clients already handle — but nobody
+ * answered it, so saying "already answered" would send the person looking for
+ * a decision nobody made. An expired request on a run that was parked on it is
+ * put back in the queue so the task asks again (`continueAfterRefusal`).
+ */
+function refusalMessage(
+  reason: ApprovalDecisionRefusal,
+  storedDecision: string,
+  askingAgain: boolean,
+  declinedLapsed = false
+): string {
+  if (reason === "already_decided" && storedDecision === "superseded") {
+    return `${PRODUCT_NAME} is no longer waiting on this request, so this answer was not recorded. Answer the one it is asking now.`;
+  }
+  if (reason === "expired" && askingAgain) return `${REFUSAL_MESSAGES.expired} ${PRODUCT_NAME} will ask again.`;
+  if (reason === "expired" && declinedLapsed) {
+    return `${REFUSAL_MESSAGES.expired} Nothing was done, and the task stays paused on it: stop it, or resume it to be asked again.`;
+  }
+  return REFUSAL_MESSAGES[reason];
+}
+
+/**
+ * What the person is told when their decision is recorded but the run does not
+ * carry on yet. Null when it does, or when there is nothing to add (a decision
+ * on a request the run no longer waits on).
+ */
+const DECISION_KEPT_NO_EXECUTOR = `Your decision is saved. ${CLOUD_EXECUTOR_UNAVAILABLE_MESSAGE} Resume the task once it is back and it continues with your decision.`;
+const DECISION_KEPT_PAUSED =
+  "Your decision is saved. This task is paused, so it continues with your decision when you resume it.";
 
 /**
  * Which client answered, in the Work actor vocabulary (`web | macos | ios`).
@@ -82,6 +120,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           id: true,
           sessionId: true,
           status: true,
+          pauseReason: true,
           permissionPolicy: true,
           hostId: true,
           effectiveTarget: true,
@@ -139,14 +178,36 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         reason: outcome.reason,
       },
     });
+    // Only a request still pending: one closed when a later execution started
+    // is not what the run waits on now, whatever else it is waiting for. And
+    // only an attempt to allow it: bringing the run back to ask again is what
+    // a person pressing Allow on a lapsed card wanted, and the opposite of
+    // what one pressing Deny did. A deny leaves the run parked, and says so.
+    const lapsedPending = outcome.reason === "expired" && approval.decision === "pending";
+    const askingAgain =
+      lapsedPending && decision !== "denied"
+        ? await continueAfterRefusal(user.id, approval.id, approval.runId, now)
+        : false;
     return NextResponse.json(
-      { error: outcome.reason, message: REFUSAL_MESSAGES[outcome.reason] },
+      {
+        error: outcome.reason,
+        message: refusalMessage(
+          outcome.reason,
+          approval.decision,
+          askingAgain,
+          lapsedPending && decision === "denied" && (await parkedOn(user.id, approval.id, approval.runId))
+        ),
+        ...(askingAgain ? { resumed: true } : {}),
+      },
       { status: 409 }
     );
   }
 
   if (outcome.outcome === "replay") {
-    return NextResponse.json({ approval: stored, replay: true }, { status: 200 });
+    // The decision is recorded already. A retry still puts a parked run back
+    // in the queue, in case the first request was cut off before it did.
+    const resumed = await continueAfterDecision(user.id, approval.id, approval.run, now);
+    return NextResponse.json({ approval: stored, replay: true, ...resumed }, { status: 200 });
   }
 
   // `decision: "pending"` in the WHERE is what makes this write-once. Two
@@ -164,7 +225,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // Lost the race to an identical answer: the outcome the caller wanted is
     // the outcome that exists, so this is a replay rather than a conflict.
     if (current && serializeApproval(current).decision === outcome.decision) {
-      return NextResponse.json({ approval: serializeApproval(current), replay: true }, { status: 200 });
+      const resumed = await continueAfterDecision(user.id, approval.id, approval.run, now);
+      return NextResponse.json({ approval: serializeApproval(current), replay: true, ...resumed }, { status: 200 });
     }
     await recordWorkAudit({
       userId: user.id,
@@ -183,7 +245,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       },
     });
     return NextResponse.json(
-      { error: "already_decided", message: REFUSAL_MESSAGES.already_decided },
+      { error: "already_decided", message: refusalMessage("already_decided", current?.decision ?? "", false) },
       { status: 409 }
     );
   }
@@ -286,19 +348,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
   });
 
-  // The question has been answered, so the session stops asking. The status
-  // itself belongs to the executor — it moves the run off `waiting_approval`
-  // when it picks the decision up — and a status this build cannot read is left
-  // alone rather than mirrored as a guess.
-  if (isWorkStatus(approval.run.status)) {
-    await setSessionAttention({
-      sessionId: approval.run.sessionId,
-      userId: user.id,
-      status: approval.run.status,
-      needsAttention: false,
-      now,
-    });
-  }
+  const resumed = await continueAfterDecision(user.id, approval.id, approval.run, now);
 
   const updated = await prisma.workApproval.findFirst({ where: { id: approval.id, userId: user.id } });
   return NextResponse.json({
@@ -307,5 +357,92 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // could not be told. Stated either way rather than omitted, so a client can
     // distinguish "recorded and delivered" from "recorded".
     command: dispatched.status === "queued" ? serializeCommand(dispatched.command) : null,
+    ...resumed,
   });
+}
+
+/**
+ * What happens to the run once its approval is decided.
+ *
+ * Read again now that the decision is written, never from the row read before
+ * it: the executor may have parked in between (its wait ran out a moment
+ * before the decision landed). It checks once more after it parks
+ * (`parkedWaitAnswered`), so whichever of the two writes second sees the
+ * other's.
+ *
+ * A cloud run the executor parked on this request goes back in the queue
+ * (`requeueParkedRun`, a compare-and-set, so a retry, the answer route or a
+ * press of Resume racing this changes nothing twice) and stays in "Needs you"
+ * as resuming until it is picked up. When it resumes, the call it parked on is
+ * given this decision — only for the same action digest, under the same
+ * policy, before this approval's own expiry (src/lib/work/park-resume.ts) — so
+ * the person decides once.
+ *
+ * Only for the request a cloud run is waiting on (`waitsOnApproval`): a
+ * decision on an older one answers nothing the run will read, so it neither
+ * requeues the run nor clears "Needs you" while what it does wait on is open.
+ * Otherwise the session simply stops asking: the status belongs to the executor, which
+ * moves the run off `waiting_approval` when it reads the decision, and a
+ * status this build cannot read is left alone rather than mirrored as a guess.
+ * A run the person paused stays paused, and one parked while no cloud worker
+ * is alive keeps its place in "Needs you" so the person can resume it once one
+ * is. A Mac run is answered over the relay and keeps the behaviour it had.
+ */
+async function continueAfterDecision(
+  userId: string,
+  approvalId: string,
+  before: { id: string; sessionId: string; status: string; pauseReason: string | null; effectiveTarget: string | null },
+  now: Date
+): Promise<{ resumed: boolean; explanation?: string }> {
+  const run = (await currentRunState({ runId: before.id, userId })) ?? before;
+  if (run.effectiveTarget === "cloud" && !(await waitsOnApproval({ runId: run.id, userId, approvalId }))) {
+    return { resumed: false };
+  }
+  const parked = run.status === "paused" && run.pauseReason === "waiting" && run.effectiveTarget === "cloud";
+  if (parked) {
+    // Nothing would pick it up: kept in "Needs you", and the person is told
+    // what will carry it on, as the answer route tells them.
+    if (!(await cloudWorkAvailable())) return { resumed: false, explanation: DECISION_KEPT_NO_EXECUTOR };
+    const requeued = await requeueParkedRun({ runId: run.id, userId, now });
+    return { resumed: requeued.requeued || (requeued.run !== null && requeued.run.status !== "paused" && !isTerminalStatus(requeued.run.status)) };
+  }
+  if (run.status === "paused" && run.effectiveTarget === "cloud") {
+    // The person's own pause, on this request: theirs to lift. Nothing more is
+    // asked of them now, and Resume hands the restored call this decision.
+    await setSessionAttention({ sessionId: run.sessionId, userId, status: "paused", needsAttention: false, now });
+    return { resumed: false, explanation: DECISION_KEPT_PAUSED };
+  }
+  if (isWorkStatus(run.status)) {
+    await setSessionAttention({
+      sessionId: run.sessionId,
+      userId,
+      status: run.status,
+      needsAttention: false,
+      now,
+    });
+  }
+  return { resumed: run.status === "waiting_approval" || run.status === "queued" || run.status === "preparing" || run.status === "running" };
+}
+
+/**
+ * After a refused attempt to allow an expired request: when the run is parked
+ * on that very request, put it back in the queue so it asks again under a new
+ * request with its own expiry. Nothing is authorised by this — the restored
+ * call is told the request lapsed — and the expiry that refused the decision
+ * is the stored one, unchanged. Returns whether the run is now asking again.
+ * Never called for a deny: the person said no, and bringing the run back to
+ * ask again would do the opposite (the run stays parked and they are told so).
+ */
+async function continueAfterRefusal(userId: string, approvalId: string, runId: string, now: Date): Promise<boolean> {
+  if (!(await parkedOn(userId, approvalId, runId))) return false;
+  if (!(await cloudWorkAvailable())) return false;
+  const requeued = await requeueParkedRun({ runId, userId, now });
+  return requeued.requeued;
+}
+
+/** Whether a cloud run is parked by its executor on this very request. */
+async function parkedOn(userId: string, approvalId: string, runId: string): Promise<boolean> {
+  const run = await currentRunState({ runId, userId });
+  if (!run || run.status !== "paused" || run.pauseReason !== "waiting" || run.effectiveTarget !== "cloud") return false;
+  return waitsOnApproval({ runId, userId, approvalId });
 }

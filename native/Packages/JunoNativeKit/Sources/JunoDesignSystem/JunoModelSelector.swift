@@ -214,6 +214,7 @@ public struct JunoModelSelector: View {
         }
         .padding(.horizontal, JunoSpace.close)
         .frame(height: 40)
+        .junoFieldSurface(isFocused: searchFocused)
         .onAppear { searchFocused = true }
     }
 

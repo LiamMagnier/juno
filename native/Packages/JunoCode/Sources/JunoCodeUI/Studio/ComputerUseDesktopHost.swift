@@ -17,6 +17,7 @@ public final class ComputerUseDesktopHost {
 
     private var overlay: ComputerActionOverlayWindow?
     private var bridge: ComputerBridgeServer?
+    private var lockNotices: Task<Void, Never>?
 
     /// - Parameter summon: brings a window forward when a connected agent
     ///   asks for something and no window can show the card.
@@ -26,6 +27,14 @@ public final class ComputerUseDesktopHost {
         let window = ComputerActionOverlayWindow(model: .shared)
         overlay = window
         window.start()
+
+        // A run paused because the Mac locked: say so on the Mac's lock
+        // screen and in Notification Centre. Screen control never unlocks it.
+        lockNotices = Task { @MainActor in
+            for await notice in await ScreenControlService.shared.lockNotices() {
+                StudioRunMonitor.shared.screenLockChanged(notice)
+            }
+        }
 
         let executor = ComputerBridgeExecutor(
             service: ScreenControlService.shared,
@@ -56,6 +65,8 @@ public final class ComputerUseDesktopHost {
     /// On quit: no stale socket or token is left for an env server to find.
     public func uninstall() {
         EnvServerHub.onLaunch = nil
+        lockNotices?.cancel()
+        lockNotices = nil
         CodeV2ConnectedApprovals.shared.declineAll()
         bridge?.stop()
         bridge = nil

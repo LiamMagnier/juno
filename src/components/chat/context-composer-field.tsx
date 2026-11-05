@@ -31,6 +31,7 @@ import {
 } from "./context-editor-dom";
 import { MentionPalette, TokenPopover, markSource, tokenAccessibleName, type PaletteStatus } from "./context-composer-layers";
 import { ContextTokenMark } from "./context-token-mark";
+import { isEmptiedEditor } from "./context-editor-empty";
 import { plainReturnSends, useEnterKeyHint } from "@/lib/touch-keyboard";
 import { enterIntent, enterKeyOf } from "@/lib/composer-keys";
 import { useReducedMotion } from "@/lib/motion-preference";
@@ -65,6 +66,8 @@ type Props = Omit<React.ComponentPropsWithoutRef<"textarea">, "value"> & {
   value: string;
   conversationId: string | null;
   onTokensChange: (tokens: ContextToken[]) => void;
+  /** Tokens already held by the view when a layout handoff remounts the field. */
+  initialTokens?: ContextToken[];
   privateMode?: boolean;
   /** No @ lookup at all (a live voice call, an image model). */
   mentionsDisabled?: boolean;
@@ -131,6 +134,7 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
     value,
     conversationId,
     onTokensChange,
+    initialTokens,
     privateMode,
     mentionsDisabled,
     anchorRef,
@@ -159,7 +163,7 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
   const enterKeyHint = useEnterKeyHint();
   const composing = React.useRef(false);
   const lastReported = React.useRef<string | null>(null);
-  const tokensRef = React.useRef<ContextToken[]>([]);
+  const tokensRef = React.useRef<ContextToken[]>(initialTokens ?? []);
   const selectedToken = React.useRef<HTMLElement | null>(null);
   const paletteId = React.useId().replace(/:/g, "");
   const lookupEnabled = !privateMode && !mentionsDisabled;
@@ -256,8 +260,9 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
     const root = rootRef.current;
     if (!root) return;
     let result = readEditor(root);
-    // An emptied contenteditable keeps a stray <br>; clear it so the placeholder returns.
-    if (!result.text && root.childNodes.length) {
+    // An emptied contenteditable keeps a stray <br> (read as "\n"); clear it so
+    // `data-empty`, and with it the placeholder, returns (context-editor-empty.ts).
+    if (isEmptiedEditor(root)) {
       root.replaceChildren();
       result = { text: "", tokens: [] };
     }

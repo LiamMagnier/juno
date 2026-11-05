@@ -9,9 +9,17 @@ broker accepts) and then runs the program with the local interpreter in the
 session directories, the way the bind mounts would present them.
 
 With JUNO_EXEC_DOCKER_TESTS=1 and Docker running, the last class runs real
-containers from the juno-exec:dev image through the real broker (developer
-mode) and checks the boundary itself: no network, read-only root, non-root
-user, the pids limit, the memory limit.
+containers from the pinned image (juno-exec:dev, or JUNO_EXEC_IMAGE) through
+the real broker (developer mode) and the real service, and checks the boundary
+itself: no route to metadata, private or public addresses; no host secret in
+the program's environment; a read-only root, read-only inputs and program, and
+no host path beyond the session's own; a non-root uid with no capabilities;
+cancel and the time limit kill the container before a delayed write; the
+container Docker created has exactly the pinned profile; pids, memory, CPU and
+/tmp are bounded. CI runs it as a required job (deploy.yml `exec-boundary`):
+
+    docker build -t juno-exec:dev deploy/exec-host/image
+    JUNO_EXEC_DOCKER_TESTS=1 python3 scripts/sandbox-boundary-check.py tests.test_exec_host.RealSandboxBoundary
 """
 import importlib.util
 import io
@@ -19,6 +27,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tarfile
@@ -42,6 +51,9 @@ def module(name, filename):
 
 broker = module("exec_broker", "juno-exec-docker-broker.py")
 service_module = module("juno_exec", "juno-exec.py")
+_probe_spec = importlib.util.spec_from_file_location("sandbox_probe", ROOT / "tests" / "sandbox_probe.py")
+sandbox_probe = importlib.util.module_from_spec(_probe_spec)
+_probe_spec.loader.exec_module(sandbox_probe)
 
 TOKEN = "t" * 48
 SESSION = "s_" + "a" * 32
@@ -823,75 +835,396 @@ class Hardening(unittest.TestCase):
         self.assertEqual(service_module.redacted_path("/v1/runs/r_%s?wait=3" % ("1" * 24)), "/v1/runs/r_%s" % ("1" * 24))
 
 
-@unittest.skipUnless(os.environ.get("JUNO_EXEC_DOCKER_TESTS") == "1" and shutil.which("docker"), "set JUNO_EXEC_DOCKER_TESTS=1 with Docker running")
+# ── the real boundary: the pinned image, the real broker, real containers ──
+#
+# Opt in with JUNO_EXEC_DOCKER_TESTS=1 (CI: deploy.yml `exec-boundary`, through
+# scripts/sandbox-boundary-check.py, which fails on any skip). Once opted in,
+# nothing here quietly skips: no Docker, no image or a root uid is an error.
+# The program in most tests is tests/sandbox_probe.py, sent through the API as
+# model code arrives; it reports raw observations and the asserts live here.
+
+REAL_EXEC_TESTS = os.environ.get("JUNO_EXEC_DOCKER_TESTS") == "1"
+REAL_EXEC_IMAGE = os.environ.get("JUNO_EXEC_IMAGE", "juno-exec:dev")
+OTHER_SESSION = "s_" + "c" * 32
+OTHER_ACCOUNT = "a_" + "d" * 32
+
+# What the host holds and a program must never see. The suite puts these in the
+# service's own environment, so they are in the broker's and Docker's too.
+HOST_SECRET_NAMES = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY",
+                     "OPENROUTER_API_KEY", "DATABASE_URL", "DIRECT_URL", "REDIS_URL", "AUTH_SECRET", "NEXTAUTH_SECRET",
+                     "CODE_INTERPRETER_TOKEN", "JUNO_EXEC_TOKEN", "CLOUD_CODE_SECRET", "MESSAGE_ENCRYPTION_KEY",
+                     "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN", "STRIPE_SECRET_KEY", "PROD_ENV")
+
+# Every variable a program may see: the pinned image's own ENV (the python base
+# and deploy/exec-host/image/Dockerfile) plus the HOSTNAME Docker sets. A new
+# one has to be added here on purpose; anything else is a leak.
+EXEC_PROGRAM_ENV = frozenset({
+    "PATH", "HOSTNAME", "HOME", "LANG", "GPG_KEY", "PYTHON_VERSION", "PYTHON_SHA256", "DEBIAN_FRONTEND",
+    "PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED", "PIP_NO_CACHE_DIR", "PIP_DISABLE_PIP_VERSION_CHECK",
+    "MPLBACKEND", "MPLCONFIGDIR", "XDG_CACHE_HOME",
+})
+
+# `--network none`: no interface but loopback, so every one of these must fail
+# with ENETUNREACH (no route), never a refusal or a timeout from something that
+# answered. Metadata services, the container bridge and Docker's TCP port, the
+# agent-computer proxy, RFC 1918 and CGNAT ranges, a public resolver.
+NO_ROUTE_IPV4 = [
+    ("169.254.169.254", 80), ("169.254.169.254", 443),   # AWS, GCP, Azure, OCI instance metadata
+    ("169.254.170.2", 80),                                # ECS task credentials
+    ("168.63.129.16", 80),                                # Azure wire server
+    ("100.100.100.200", 80),                              # Alibaba metadata
+    ("10.0.0.1", 443), ("172.16.0.1", 443), ("192.168.0.1", 80), ("100.64.0.1", 443),
+    ("172.17.0.1", 2375), ("172.30.0.1", 3128),
+    ("1.1.1.1", 443), ("1.1.1.1", 53),
+]
+NO_ROUTE_IPV6 = [("fd00:ec2::254", 80), ("2606:4700:4700::1111", 443)]
+# Mount types that are not a host disk.
+PSEUDO_FILESYSTEMS = {"overlay", "proc", "sysfs", "tmpfs", "devpts", "mqueue", "cgroup", "cgroup2", "devtmpfs",
+                      "securityfs", "debugfs", "tracefs", "fusectl", "configfs", "binfmt_misc", "nsfs"}
+# The session's own three directories, the files Docker writes for every
+# container, and the host's docker-init binary that `--init` mounts read-only.
+EXEC_HOST_MOUNTS = {"/work", "/work/inputs", "/juno/program", "/etc/hosts", "/etc/hostname", "/etc/resolv.conf",
+                    "/usr/sbin/docker-init"}
+
+
+def host_primary_address():
+    """The address this host uses for outbound traffic, if it has a route at all."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.0.2.1", 9))
+        return probe.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        probe.close()
+
+
+@unittest.skipUnless(REAL_EXEC_TESTS, "set JUNO_EXEC_DOCKER_TESTS=1 with Docker running (scripts/sandbox-boundary-check.py)")
 class RealSandboxBoundary(unittest.TestCase):
-    """The real image through the real broker (developer mode): the boundary itself."""
+    """The pinned image through the real broker (developer mode) and the real service."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.docker = shutil.which("docker")
+        if not cls.docker:
+            raise AssertionError("JUNO_EXEC_DOCKER_TESTS=1 but there is no docker binary")
+        image = subprocess.run([cls.docker, "image", "inspect", REAL_EXEC_IMAGE, "--format", "{{.Id}}"], capture_output=True, text=True)
+        if image.returncode != 0:
+            raise AssertionError("build deploy/exec-host/image as %s first: %s" % (REAL_EXEC_IMAGE, image.stderr.strip()))
+        cls.image_id = image.stdout.strip()
+        # Match setup.sh: the container runs as the workspace-owning service uid,
+        # never root. (A hardcoded 1000 cannot write a CI workspace owned by 1001.)
+        if os.getuid() == 0 or os.getgid() == 0:
+            raise AssertionError("run the real sandbox suite as a non-root user in the docker group, as the service runs")
 
     def setUp(self):
-        image = subprocess.run(["docker", "image", "inspect", "juno-exec:dev", "--format", "{{.Id}}"], capture_output=True, text=True)
-        if image.returncode != 0:
-            self.skipTest("build deploy/exec-host/image as juno-exec:dev first")
+        self.canary = "juno-host-canary-" + os.urandom(12).hex()
+        secrets_env = unittest.mock.patch.dict(os.environ, {name: self.canary for name in HOST_SECRET_NAMES})
+        secrets_env.start()
+        self.addCleanup(secrets_env.stop)
         self.directory = tempfile.mkdtemp(prefix="juno-exec-real-", dir=os.path.expanduser("~"))
-        self.addCleanup(shutil.rmtree, self.directory, True)
-        data = os.path.realpath(self.directory)
-        policy = policy_for(os.path.join(data, "sessions"), image=image.stdout.strip())
-        policy_path = os.path.join(data, "policy.json")
-        with open(policy_path, "w") as file:
-            json.dump(policy, file)
-        env = dict(os.environ, JUNO_EXEC_BROKER_POLICY=policy_path, JUNO_EXEC_DOCKER=shutil.which("docker"))
-        config = {"token": TOKEN, "policy": policy, "dataRoot": data,
+        self.data = os.path.realpath(self.directory)
+        self.policy = policy_for(os.path.join(self.data, "sessions"), image=self.image_id)
+        self.policy["runUser"] = "%d:%d" % (os.getuid(), os.getgid())
+        self.policy_path = os.path.join(self.data, "policy.json")
+        with open(self.policy_path, "w") as file:
+            json.dump(self.policy, file)
+        env = dict(os.environ, JUNO_EXEC_BROKER_POLICY=self.policy_path, JUNO_EXEC_DOCKER=self.docker)
+        config = {"token": TOKEN, "policy": self.policy, "dataRoot": self.data,
                   "broker": {"mode": "process", "argv": [sys.executable, str(ROOT / "deploy/exec-host/juno-exec-docker-broker.py")], "env": env}}
         self.service = service_module.Service(config)
+        self.workspace = os.path.join(self.policy["sessionsRoot"], SESSION, "work")
         self.server = service_module.ThreadingHTTPServer(("127.0.0.1", 0), service_module.make_handler(self.service, TOKEN))
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.addCleanup(self.server.shutdown)
+        self.addCleanup(self._close)
         self.base = "http://127.0.0.1:%d" % self.server.server_address[1]
 
-    def run_code(self, code, language="python", timeout_ms=60000):
-        request = urllib.request.Request(self.base + "/v1/runs", method="POST", data=json.dumps({
-            "session": SESSION, "account": ACCOUNT, "language": language, "code": code, "timeoutMs": timeout_ms}).encode())
+    def _close(self):
+        self.server.shutdown()
+        self.server.server_close()
+        for run_id in list(self.service.runs):
+            subprocess.run([self.docker, "rm", "-f", "juno-exec-" + run_id], capture_output=True)
+        self.service._remove_tree(self.directory)
+
+    # ── helpers ──
+    def request(self, method, path, body=None, headers=None, raw=False):
+        data = body if isinstance(body, (bytes, type(None))) else json.dumps(body).encode()
+        request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Authorization", "Bearer " + TOKEN)
-        request.add_header("Idempotency-Key", os.urandom(8).hex())
-        with urllib.request.urlopen(request, timeout=30) as response:
-            run = json.loads(response.read())
-        while True:
-            request = urllib.request.Request(self.base + "/v1/runs/%s?wait=25" % run["id"])
-            request.add_header("Authorization", "Bearer " + TOKEN)
+        for key, value in (headers or {}).items():
+            request.add_header(key, value)
+        try:
             with urllib.request.urlopen(request, timeout=60) as response:
-                run = json.loads(response.read())
+                payload = response.read()
+                return response.status, (payload if raw else json.loads(payload or b"null"))
+        except urllib.error.HTTPError as error:
+            return error.code, error.read()
+
+    def start(self, code, language="python", timeout_ms=60000, session=SESSION, account=ACCOUNT):
+        status, run = self.request("POST", "/v1/runs", {"session": session, "account": account, "language": language,
+                                                        "code": code, "timeoutMs": timeout_ms},
+                                   headers={"Idempotency-Key": os.urandom(8).hex()})
+        self.assertIn(status, (200, 201), run)
+        return run
+
+    def wait_for_terminal(self, run_id, seconds=90):
+        deadline = time.monotonic() + seconds
+        while True:
+            self.assertLess(time.monotonic(), deadline, "the real container did not finish within its bounded test window")
+            status, run = self.request("GET", "/v1/runs/%s?wait=25" % run_id)
+            self.assertEqual(status, 200, run)
             if run["status"] in service_module.TERMINAL:
                 return run
 
-    def test_no_network_read_only_root_non_root_user(self):
+    def run_code(self, code, **options):
+        return self.wait_for_terminal(self.start(code, **options)["id"])
+
+    def full_output(self, run_id, stream="stdout"):
+        status, data = self.request("GET", "/v1/runs/%s/output?stream=%s&limit=1048576" % (run_id, stream), raw=True)
+        self.assertEqual(status, 200)
+        return data.decode("utf-8", "replace")
+
+    def probe(self, spec, **options):
+        run = self.run_code(sandbox_probe.program(spec), **options)
+        self.assertEqual(run["status"], "succeeded", run)
+        return run, sandbox_probe.parse(self.full_output(run["id"]))
+
+    def wait_for_marker(self, name, seconds=30):
+        deadline = time.monotonic() + seconds
+        while not os.path.isfile(os.path.join(self.workspace, name)):
+            self.assertLess(time.monotonic(), deadline, "the container never wrote its start marker")
+            time.sleep(0.05)
+
+    def container_exists(self, run_id):
+        listed = subprocess.run([self.docker, "ps", "-a", "-q", "--filter", "name=^juno-exec-%s$" % run_id], capture_output=True, text=True)
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        return bool(listed.stdout.strip())
+
+    def assert_container_gone(self, run_id, seconds=15):
+        deadline = time.monotonic() + seconds
+        while self.container_exists(run_id):
+            self.assertLess(time.monotonic(), deadline, "the container outlived its run")
+            time.sleep(0.2)
+
+    # ── identity and privilege ──
+    def test_the_program_runs_as_the_unprivileged_workspace_owner_with_no_capabilities(self):
+        _, report = self.probe({"privileged": True, "processes": True})
+        self.assertEqual((report["uid"], report["euid"], report["gid"]), (os.getuid(), os.getuid(), os.getgid()))
+        self.assertNotIn(0, report["groups"])
+        for key in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"):
+            self.assertEqual(int(report["status"][key], 16), 0, key)
+        self.assertEqual(report["status"]["NoNewPrivs"], "1")
+        self.assertEqual(report["status"]["Seccomp"], "2", "Docker's seccomp filter is not applied")
+        for call, result in report["privileged"].items():
+            self.assertIn(result, ("EPERM", "EACCES"), call)
+        # Nothing in the sandbox runs as root, not even its init.
+        self.assertTrue(report["processes"])
+        self.assertEqual({row["uid"] for row in report["processes"]}, {os.getuid()}, report["processes"])
+
+    # ── network ──
+    def test_metadata_private_and_public_addresses_have_no_route(self):
+        targets = NO_ROUTE_IPV4 + NO_ROUTE_IPV6
+        primary = host_primary_address()
+        if primary:
+            targets = targets + [(primary, 22), (primary, 443)]
+        _, report = self.probe({"tcp": targets, "dns": ["1.1.1.1", "169.254.169.254", "10.0.0.2"], "timeout": 3,
+                                "resolve": ["example.com", "metadata.google.internal", "localhost.localdomain.invalid"]})
+        self.assertEqual(report["loopbackControl"], "open", "the probe cannot detect an open port, so its refusals mean nothing")
+        self.assertEqual(report["interfaces"], ["lo"])
+        self.assertEqual(report["ipv4Routes"], [], "the sandbox has a route")
+        for host, port in targets:
+            result = report["tcp"]["%s:%d" % (host, port)]
+            if ":" in host:
+                self.assertIn(result, ("ENETUNREACH", "EADDRNOTAVAIL", "EAFNOSUPPORT"), "%s:%d" % (host, port))
+            else:
+                self.assertEqual(result, "ENETUNREACH", "%s:%d: no route, not merely a closed port" % (host, port))
+        for server, result in report["dns"].items():
+            self.assertEqual(result, "ENETUNREACH", server)
+        for name, result in report["resolve"].items():
+            self.assertFalse(result.startswith("resolved"), "%s resolved inside the sandbox: %s" % (name, result))
+
+    # ── secrets ──
+    def test_host_secrets_and_the_service_token_never_reach_the_program(self):
+        run, report = self.probe({"environ": True, "processes": True})
+        names = set(report["environ"]["self"])
+        self.assertLessEqual(names, EXEC_PROGRAM_ENV, "unexpected variables in the sandbox: %s" % sorted(names - EXEC_PROGRAM_ENV))
+        self.assertFalse(names & set(HOST_SECRET_NAMES))
+        for pid, entries in report["environ"].items():
+            if pid != "self" and isinstance(entries, list):
+                visible = {entry.split("=", 1)[0] for entry in entries}
+                self.assertLessEqual(visible, EXEC_PROGRAM_ENV, "process %s: %s" % (pid, sorted(visible - EXEC_PROGRAM_ENV)))
+        everything = self.full_output(run["id"]) + self.full_output(run["id"], "stderr")
+        self.assertIn('"uid"', everything)
+        for needle, what in ((self.canary, "a host secret"), (TOKEN, "the service token"), (self.data, "the host data path")):
+            self.assertNotIn(needle, everything, what + " reached the program")
+        # The configuration Docker holds for the container carries none either.
+        self.assertNotIn(self.canary, json.dumps(self.service.runs[run["id"]].record()))
+
+    # ── filesystem ──
+    def test_the_filesystem_is_confined_to_the_session(self):
+        status, _ = self.request("PUT", "/v1/sessions/%s/inputs/data.csv" % SESSION, body=b"a,b\n1,2\n")
+        self.assertEqual(status, 201)
+        _, report = self.probe({
+            "writes": ["/escape", "/usr/local/bin/escape", "/etc/planted", "/opt/juno/planted", "/skills/planted",
+                       "/etc/passwd", "/opt/juno/manifest.py",
+                       "/work/inputs/data.csv", "/work/inputs/planted", "/juno/program/main.py", "/juno/program/planted",
+                       "/work/written-by-program.txt", "/tmp/scratch.txt"],
+            "exists": [self.data, self.policy_path, self.policy["sessionsRoot"], os.path.expanduser("~"),
+                       "/var/run/docker.sock", "/run/docker.sock", "/run/juno-exec/broker.sock", "/etc/juno"],
+            "mounts": True})
+        writes = report["writes"]
+        # Creating a file is refused by the read-only mount itself (EROFS comes
+        # before any permission check), wherever the directory's owner.
+        for path in ("/escape", "/usr/local/bin/escape", "/etc/planted", "/opt/juno/planted", "/skills/planted"):
+            self.assertEqual(writes[path], "EROFS", path + ": the root filesystem must be read-only")
+        # Existing read-only files (root's, and the program the service wrote
+        # 0444): the permission check answers first.
+        for path in ("/etc/passwd", "/opt/juno/manifest.py", "/juno/program/main.py"):
+            self.assertIn(writes[path], ("EACCES", "EROFS"), path)
+        # The input is owned by the very uid the program runs as and writable by
+        # it, so only the read-only bind mount stands between them.
+        for path in ("/work/inputs/data.csv", "/work/inputs/planted", "/juno/program/planted"):
+            self.assertEqual(writes[path], "EROFS", path + ": inputs and the program are mounted read-only")
+        self.assertEqual(writes["/work/written-by-program.txt"], "ok")
+        self.assertEqual(writes["/tmp/scratch.txt"], "ok")
+        for path, present in report["exists"].items():
+            self.assertFalse(present, path + " is visible inside the sandbox")
+        mounts = {entry["mountpoint"]: entry for entry in report["mounts"]}
+        self.assertEqual(mounts["/"]["fstype"], "overlay")
+        self.assertIn("ro", mounts["/"]["options"].split(","))
+        self.assertEqual(mounts["/tmp"]["fstype"], "tmpfs")
+        self.assertTrue({"nosuid", "nodev"} <= set(mounts["/tmp"]["options"].split(",")))
+        host_disks = {entry["mountpoint"] for entry in report["mounts"] if entry["fstype"] not in PSEUDO_FILESYSTEMS}
+        self.assertLessEqual(host_disks, EXEC_HOST_MOUNTS, "host directories mounted into the sandbox: %s" % sorted(host_disks - EXEC_HOST_MOUNTS))
+        for path in ("/work/inputs", "/juno/program", "/usr/sbin/docker-init"):
+            if path in mounts:
+                self.assertIn("ro", mounts[path]["options"].split(","), path)
+        self.assertIn("/work/inputs", mounts)
+        self.assertIn("/juno/program", mounts)
+        self.assertIn("rw", mounts["/work"]["options"].split(","))
+        self.assertEqual(mounts["/work"]["root"].rstrip("/").rsplit("/", 2)[-2:], [SESSION, "work"], "/work is not this session's workspace")
+        with open(os.path.join(self.policy["sessionsRoot"], SESSION, "inputs", "data.csv"), "rb") as file:
+            self.assertEqual(file.read(), b"a,b\n1,2\n")
+
+    def test_workspace_symlinks_never_lead_the_service_out_of_the_session(self):
         run = self.run_code("\n".join([
-            "import os, socket, json",
-            "result = {'uid': os.getuid()}",
-            "try:",
-            "    socket.create_connection(('1.1.1.1', 53), timeout=3); result['net'] = 'open'",
-            "except OSError as error:",
-            "    result['net'] = type(error).__name__",
-            "try:",
-            "    socket.getaddrinfo('example.com', 443); result['dns'] = 'resolved'",
-            "except OSError as error:",
-            "    result['dns'] = type(error).__name__",
-            "try:",
-            "    open('/usr/escape', 'w'); result['root'] = 'writable'",
-            "except OSError as error:",
-            "    result['root'] = type(error).__name__",
-            "print(json.dumps(result))",
+            "import os",
+            "os.symlink(%r, '/work/host-policy')" % self.policy_path,
+            "os.symlink('/etc/passwd', '/work/passwd')",
+            "os.symlink('/', '/work/root')",
+            "os.makedirs('/work/out')",
+            "os.symlink(%r, '/work/out/sessions')" % self.policy["sessionsRoot"],
+            "open('/work/real.txt', 'w').write('real')",
         ]))
         self.assertEqual(run["status"], "succeeded", run)
-        result = json.loads(run["stdout"]["head"])
-        self.assertNotEqual(result["uid"], 0)
-        self.assertNotEqual(result["net"], "open")
-        self.assertNotEqual(result["dns"], "resolved")
-        self.assertNotEqual(result["root"], "writable")
+        self.assertEqual([entry["path"] for entry in run["files"]], ["real.txt"])
+        for path in ("host-policy", "passwd", "root/etc/passwd", "out/sessions"):
+            status, _ = self.request("GET", "/v1/runs/%s/files/%s" % (run["id"], path), raw=True)
+            self.assertEqual(status, 404, path)
+        with open(self.policy_path, encoding="utf-8") as file:
+            self.assertEqual(json.load(file)["image"], self.image_id)
 
-    def test_pids_and_memory_are_bounded(self):
+    def test_another_session_cannot_see_this_workspace(self):
+        first = self.run_code("open('/work/private.txt', 'w').write('session one')")
+        self.assertEqual(first["status"], "succeeded", first)
+        _, report = self.probe({"exists": ["/work/private.txt", self.workspace], "reads": ["/work"], "mounts": True},
+                               session=OTHER_SESSION, account=OTHER_ACCOUNT)
+        self.assertEqual(report["reads"]["/work"], "ok")
+        self.assertEqual(report["exists"], {"/work/private.txt": False, self.workspace: False})
+        mounts = {entry["mountpoint"]: entry for entry in report["mounts"]}
+        self.assertEqual(mounts["/work"]["root"].rstrip("/").rsplit("/", 2)[-2:], [OTHER_SESSION, "work"])
+
+    # ── stopping ──
+    def test_cancel_kills_the_container_before_a_delayed_write(self):
+        run = self.start("import time\nfrom pathlib import Path\nPath('/work/started').write_text('started')\n"
+                         "time.sleep(6)\nPath('/work/after-stop').write_text('unauthorized-after-stop')\n")
+        self.wait_for_marker("started")
+        started = time.monotonic()
+        self.assertTrue(self.container_exists(run["id"]))
+        status, _ = self.request("POST", "/v1/runs/%s/cancel" % run["id"], body=b"")
+        self.assertEqual(status, 202)
+        final = self.wait_for_terminal(run["id"])
+        self.assertEqual(final["status"], "cancelled")
+        self.assertLess(time.monotonic() - started, 5, "cancel took longer than the program's own delay")
+        self.assert_container_gone(run["id"])
+        time.sleep(max(0.0, started + 6.5 - time.monotonic()))
+        self.assertFalse(os.path.exists(os.path.join(self.workspace, "after-stop")), "the program kept running after cancel")
+
+    def test_the_time_limit_kills_the_container_before_a_delayed_write(self):
+        begun = time.monotonic()
+        run = self.start("import time\nfrom pathlib import Path\nPath('/work/started').write_text('started')\n"
+                         "time.sleep(8)\nPath('/work/late').write_text('after the limit')\n", timeout_ms=3000)
+        final = self.wait_for_terminal(run["id"])
+        self.assertEqual(final["status"], "timed_out", final)
+        self.assertLess(time.monotonic() - begun, 8, "the time limit did not stop the program before it finished")
+        self.assertTrue(os.path.exists(os.path.join(self.workspace, "started")))
+        self.assert_container_gone(run["id"])
+        time.sleep(max(0.0, begun + 9 - time.monotonic()))
+        self.assertFalse(os.path.exists(os.path.join(self.workspace, "late")))
+
+    # ── what Docker actually created ──
+    def test_a_running_container_has_exactly_the_pinned_profile(self):
+        run = self.start("import time\nopen('/work/started', 'w').write('1')\ntime.sleep(60)\n")
+        self.wait_for_marker("started")
+        inspected = subprocess.run([self.docker, "inspect", "juno-exec-" + run["id"]], capture_output=True, text=True)
+        self.assertEqual(inspected.returncode, 0, inspected.stderr)
+        container = json.loads(inspected.stdout)[0]
+        self.request("POST", "/v1/runs/%s/cancel" % run["id"], body=b"")
+        host = container["HostConfig"]
+        self.assertEqual(container["Image"], self.image_id)
+        self.assertEqual(container["Config"]["User"], self.policy["runUser"])
+        self.assertEqual(container["Config"]["Labels"].get("juno.security"), "exec-v1")
+        self.assertEqual(host["NetworkMode"], "none")
+        self.assertTrue(host["ReadonlyRootfs"])
+        self.assertFalse(host["Privileged"])
+        self.assertEqual(host["CapDrop"], ["ALL"])
+        self.assertFalse(host.get("CapAdd"))
+        self.assertEqual(host["SecurityOpt"], ["no-new-privileges"])
+        self.assertEqual(host["PidsLimit"], 256)
+        self.assertEqual(host["Memory"], 1536 * 1024 * 1024)
+        self.assertEqual(host["MemorySwap"], 1536 * 1024 * 1024)
+        self.assertEqual(host["NanoCpus"], 1000000000)
+        self.assertTrue(host["Init"])
+        self.assertTrue(host["AutoRemove"])
+        self.assertEqual(host["LogConfig"]["Type"], "none")
+        self.assertEqual(host["Tmpfs"], {"/tmp": "rw,nosuid,nodev,size=256m,mode=1777"})
+        self.assertFalse(host.get("Devices"))
+        self.assertFalse(host.get("PortBindings"))
+        self.assertIn(host.get("PidMode") or "", ("", "private"))
+        self.assertIn(host.get("IpcMode") or "", ("", "private", "shareable"))
+        self.assertFalse(host.get("UsernsMode"))
+        root = os.path.join(self.policy["sessionsRoot"], SESSION)
+        mounts = sorted((entry["Type"], entry["Source"], entry["Destination"], entry["RW"]) for entry in container["Mounts"])
+        self.assertEqual(mounts, sorted([("bind", root + "/work", "/work", True),
+                                         ("bind", root + "/inputs", "/work/inputs", False),
+                                         ("bind", root + "/programs/" + run["id"], "/juno/program", False)]))
+        names = {entry.split("=", 1)[0] for entry in container["Config"]["Env"]}
+        self.assertLessEqual(names, EXEC_PROGRAM_ENV)
+        self.assertNotIn(self.canary, inspected.stdout)
+        self.assertEqual(self.wait_for_terminal(run["id"])["status"], "cancelled")
+        self.assert_container_gone(run["id"])
+
+    # ── resources ──
+    def test_processes_memory_cpu_and_tmp_are_bounded(self):
+        _, report = self.probe({"cgroup": True, "fill": ["/tmp/fill", 320]})
+        limits = report["cgroup"]
+        self.assertEqual(int(limits["memory"]), 1536 * 1024 * 1024, limits)
+        self.assertEqual(limits["pids"], "256", limits)
+        if limits["cpuMax"]:
+            quota, period = limits["cpuMax"].split()
+        else:
+            quota, period = limits["cpuQuota"], limits["cpuPeriod"]
+        self.assertEqual(int(quota), int(period), "one CPU: %s" % limits)
+        self.assertEqual(report["fill"]["result"], "ENOSPC", report["fill"])
+        self.assertLessEqual(report["fill"]["megabytes"], 256)
+
         forks = self.run_code("for i in $(seq 1 400); do sleep 5 & done; wait; echo done", language="bash", timeout_ms=30000)
-        self.assertIn("fork", (forks["stderr"]["head"] + forks["stderr"]["tail"]).lower())
+        self.assertIn("fork", (forks["stderr"]["head"] + forks["stderr"]["tail"]).lower(), forks)
+
         memory = self.run_code("x = bytearray(3 * 1024 * 1024 * 1024)\nprint('allocated')")
-        self.assertNotEqual(memory["status"], "succeeded")
+        self.assertEqual(memory["status"], "failed", memory)
+        self.assertNotIn("allocated", memory["stdout"]["head"])
+        self.assertEqual(memory["exitCode"], 137, "killed by the memory limit: %s" % memory)
 
 
 import unittest.mock  # noqa: E402  (patch helpers used above)

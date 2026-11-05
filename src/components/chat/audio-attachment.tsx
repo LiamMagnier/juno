@@ -128,7 +128,7 @@ export function AudioAttachment({ attachment }: { attachment: ClientAttachment }
   return (
     <figure
       data-testid="audio-attachment"
-      className="group/audio w-[480px] max-w-full rounded-field border border-border/60 bg-card px-3.5 pb-3 pt-3.5 transition-colors duration-fast ease-out-soft hover:border-border motion-safe:animate-fade-in motion-reduce:transition-none"
+      className="group/audio w-[480px] max-w-full rounded-field border border-border/60 bg-card px-3.5 pb-3 pt-3.5 transition-colors duration-fast ease-out-soft hover:border-border motion-safe:animate-fade-in"
     >
       <div className="flex items-center gap-3">
         <button
@@ -141,7 +141,7 @@ export function AudioAttachment({ attachment }: { attachment: ClientAttachment }
             "jicon-trigger inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background",
             "transition-[transform,opacity] duration-fast ease-out-soft active:scale-[0.96] active:duration-press",
             "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
-            "disabled:cursor-not-allowed disabled:opacity-40 coarse:size-11 motion-reduce:transition-none motion-reduce:active:scale-100",
+            "disabled:cursor-not-allowed disabled:opacity-40 coarse:size-11 motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
           )}
         >
           {playing ? (
@@ -162,7 +162,7 @@ export function AudioAttachment({ attachment }: { attachment: ClientAttachment }
           href={attachment.url}
           download={attachment.fileName}
           aria-label={`Download ${attachment.fileName}`}
-          className="jicon-trigger inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.96] active:duration-press coarse:size-10 motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="jicon-trigger inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.96] active:duration-press coarse:size-10 motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
         >
           <Download className="size-4" aria-hidden="true" />
         </a>
@@ -211,7 +211,7 @@ export function AudioAttachment({ attachment }: { attachment: ClientAttachment }
             aria-hidden="true"
             className={cn(
               "pointer-events-none absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground shadow-soft",
-              "opacity-0 transition-opacity duration-fast ease-out-soft group-hover/scrub:opacity-100 group-focus-visible/scrub:opacity-100 motion-reduce:transition-none",
+              "opacity-0 transition-opacity duration-fast ease-out-soft group-hover/scrub:opacity-100 group-focus-visible/scrub:opacity-100",
               (dragging || playing) && known && "opacity-100",
             )}
             style={{ left: `${progress * 100}%` }}

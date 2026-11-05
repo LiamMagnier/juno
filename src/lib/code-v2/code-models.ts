@@ -36,7 +36,7 @@ export const CODE_MODEL_RANKING: readonly string[] = [
   "xai:grok-4.7",
   "openai:gpt-5.6-terra",
   "zhipu:glm-5.3",
-  "moonshot:kimi-k3",
+  "moonshot:kimi-k3.1-pro",
   "deepseek:deepseek-v4-pro",
   "qwen:qwen3.8-max",
   "moonshot:kimi-k2.7-code",

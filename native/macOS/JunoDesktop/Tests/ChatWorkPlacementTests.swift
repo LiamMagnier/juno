@@ -46,6 +46,22 @@ struct ChatWorkPlacementTests {
         #expect(ChatWorkVocabulary.sentence(.running, actor: nil) == "Alevr is working on this now.")
     }
 
+    /// A queued cloud run that expired unclaimed is `interrupted`, but it never
+    /// began: the card's header says so instead of warning that it may have
+    /// changed something above a detail that says nothing was done (the web's
+    /// `statusSentence(status, actor, terminalReason)`).
+    @Test
+    func anExpiredRunThatNeverStartedIsNotToldItMayHaveChangedSomething() {
+        let expired = ChatWorkVocabulary.sentence(.interrupted, actor: "Ada", terminalReason: "executor_unavailable")
+        #expect(expired == "This never started: no cloud worker was running to pick it up. Nothing was done.")
+        #expect(!expired.contains("may already have changed"))
+        #expect(ChatWorkVocabulary.sentence(.interrupted, actor: nil, terminalReason: "interrupted")
+            == ChatWorkVocabulary.sentence(.interrupted))
+        #expect(ChatWorkVocabulary.sentence(.interrupted, actor: nil) == ChatWorkVocabulary.sentence(.interrupted))
+        #expect(ChatWorkVocabulary.sentence(.queued, actor: nil, terminalReason: "executor_unavailable")
+            == ChatWorkVocabulary.sentence(.queued))
+    }
+
     /// The web's number formats, which the meter and the queue use.
     @Test
     func theWebsFormats() {

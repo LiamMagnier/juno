@@ -176,21 +176,21 @@
   .pf-enter .pf-cell {
     opacity: 0;
     transform: translateY(4px) scale(0.6);
-    animation: pf-cell 620ms var(--pf-ease) forwards;
-    animation-delay: calc(var(--c, 0) * 11ms + var(--r, 0) * 18ms + 180ms);
+    animation: pf-cell var(--dur-emphasis) var(--pf-ease) forwards;
+    animation-delay: calc(var(--c, 0) * var(--stagger-row) + var(--r, 0) * var(--stagger-row) + var(--dur-exit));
   }
   .pf-enter .pf-bar {
     transform: scaleY(0);
-    animation: pf-grow 700ms var(--pf-ease) forwards;
-    animation-delay: calc(var(--c, 0) * 9ms + 80ms);
+    animation: pf-grow var(--dur-emphasis) var(--pf-ease) forwards;
+    animation-delay: calc(var(--c, 0) * var(--stagger-row) + var(--dur-press));
   }
   .pf-enter .pf-share {
     transform: scaleX(0);
-    animation: pf-grow-x 900ms var(--pf-ease) forwards;
-    animation-delay: calc(var(--i, 0) * 60ms + 200ms);
+    animation: pf-grow-x var(--dur-emphasis) var(--pf-ease) forwards;
+    animation-delay: calc(var(--i, 0) * var(--stagger-onboarding) + var(--dur-base));
   }
-  .pf-enter .pf-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: pf-draw 1300ms var(--pf-ease) 100ms forwards; }
-  .pf-enter .pf-area { opacity: 0; animation: pf-fade 900ms var(--pf-ease) 600ms forwards; }
+  .pf-enter .pf-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: pf-draw var(--dur-emphasis) var(--pf-ease) var(--dur-fast) forwards; }
+  .pf-enter .pf-area { opacity: 0; animation: pf-fade var(--dur-emphasis) var(--pf-ease) var(--dur-emphasis) forwards; }
   .pf-swap { animation: pf-fade 220ms var(--pf-ease); }
 }
 @keyframes pf-cell { to { opacity: 1; transform: none; } }

@@ -20,14 +20,35 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * that is killed leaves nothing reusable behind.
  */
 /** What a callback is for. Each has its own audience, checked by its own route. */
-export type RelayCallbackAudience = "juno.voice.spend" | "juno.voice.memory" | "juno.voice.persona";
+export type RelayCallbackAudience =
+  | "juno.voice.spend"
+  | "juno.voice.memory"
+  | "juno.voice.persona"
+  /** List the call's tools, or run one (`/api/voice/tools`). Never a decision:
+   *  an approval is answered only by the person's signed-in client. */
+  | "juno.voice.tools";
+
+/** Signed alongside a callback. Each route reads the ones its audience needs. */
+export interface RelayCallbackClaims {
+  /** The project a memory request is for. */
+  pid?: string;
+  /** The agent a persona request is for. */
+  aid?: string;
+  /** The relay's id for this call: the approval broker keys the call's receipts by it. */
+  sid?: string;
+  /** The conversation a tools request is for, as the app signed it into the call's token. */
+  cid?: string;
+  /** Connectors the chat had switched on when the call started, as the app signed them. */
+  cx?: string[];
+  /** The caller's IANA time zone, for the clock tool and connectors that read dates. */
+  tz?: string;
+}
 
 export function mintRelayCallbackToken(
   userId: string,
   ttlSeconds = 60,
   audience: RelayCallbackAudience = "juno.voice.spend",
-  /** Signed alongside: the project a memory request is for, the agent a persona request is for. */
-  claims: { pid?: string; aid?: string } = {}
+  claims: RelayCallbackClaims = {}
 ): string {
   const secret = process.env.AUTH_SECRET;
   if (!secret) throw new Error("AUTH_SECRET is not configured on the relay.");
@@ -40,6 +61,10 @@ export function mintRelayCallbackToken(
     aud: audience,
     ...(claims.pid ? { pid: claims.pid } : {}),
     ...(claims.aid ? { aid: claims.aid } : {}),
+    ...(claims.sid ? { sid: claims.sid } : {}),
+    ...(claims.cid ? { cid: claims.cid } : {}),
+    ...(claims.cx?.length ? { cx: claims.cx } : {}),
+    ...(claims.tz ? { tz: claims.tz } : {}),
   });
   const body = Buffer.from(payload).toString("base64url");
   const mac = createHmac("sha256", secret).update(body).digest("base64url");
@@ -57,11 +82,49 @@ export function mintRelayCallbackToken(
  * it, and the relay asks for that agent's persona with it. Absent rather than
  * null when there is none, so a grant from a token that predates the claim is
  * the same grant it always was.
+ *
+ * `tools` is set when the app minted the token for a call that may use the
+ * chat's tools — from a chat that is not incognito (an incognito chat leaves
+ * no receipts or audit rows, and a tool call writes both). It names the
+ * conversation (checked to be this person's before it was signed), the
+ * connectors the chat had switched on, and the caller's time zone. None of it
+ * is a credential: the relay carries the claim back when it asks Juno for the
+ * call's tools, and Juno resolves every connector against this person's own
+ * rows when it runs one (relay/src/tools.ts).
  */
+export interface VoiceToolGrant {
+  conversationId: string | null;
+  connectorIds: string[];
+  timeZone: string | null;
+}
+
 export interface RelayGrant {
   userId: string;
   memory: { projectId: string | null } | null;
   agentId?: string;
+  tools?: VoiceToolGrant;
+}
+
+/** At most this many connector ids ride in a token; more is a malformed claim, not a longer list. */
+export const VOICE_TOOL_MAX_CONNECTORS = 12;
+const CONNECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9:_.-]{0,119}$/;
+const TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+){0,2}$/;
+const RECORD_ID = /^[a-z0-9]{20,40}$/i;
+
+/** The tools claim of a session token, or null when the token grants none. */
+function toolGrantOf(payload: { tl?: unknown; cid?: unknown; cx?: unknown; tz?: unknown }): VoiceToolGrant | null {
+  if (payload.tl !== 1) return null;
+  const connectorIds = Array.isArray(payload.cx)
+    ? [...new Set(payload.cx.filter((id): id is string => typeof id === "string" && CONNECTOR_ID.test(id)))].slice(
+        0,
+        VOICE_TOOL_MAX_CONNECTORS
+      )
+    : [];
+  return {
+    conversationId: typeof payload.cid === "string" && RECORD_ID.test(payload.cid) ? payload.cid : null,
+    connectorIds,
+    timeZone: typeof payload.tz === "string" && payload.tz.length <= 64 && TIME_ZONE.test(payload.tz) ? payload.tz : null,
+  };
 }
 
 export function verifyRelayToken(token: string | null): RelayGrant | null {
@@ -82,6 +145,10 @@ export function verifyRelayToken(token: string | null): RelayGrant | null {
       mem?: unknown;
       pid?: unknown;
       aid?: unknown;
+      tl?: unknown;
+      cid?: unknown;
+      cx?: unknown;
+      tz?: unknown;
     };
     // Spend callback tokens use the same HMAC secret but are for the opposite
     // direction. Accepting their audience here would let a captured relay
@@ -94,7 +161,8 @@ export function verifyRelayToken(token: string | null): RelayGrant | null {
         ? { projectId: typeof payload.pid === "string" && payload.pid.length > 0 ? payload.pid : null }
         : null;
     const agentId = typeof payload.aid === "string" && /^[a-z0-9]{20,40}$/i.test(payload.aid) ? payload.aid : null;
-    return { userId: payload.uid, memory, ...(agentId ? { agentId } : {}) };
+    const tools = toolGrantOf(payload);
+    return { userId: payload.uid, memory, ...(agentId ? { agentId } : {}), ...(tools ? { tools } : {}) };
   } catch {
     return null;
   }

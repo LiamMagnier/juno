@@ -1,4 +1,5 @@
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoVoiceKit
@@ -133,9 +134,49 @@ struct JunoMobileComposer: View {
   /// system font's at 17pt, scaled with Dynamic Type as the field's font is.
   @State private var fieldHeight: CGFloat = 0
   @ScaledMetric(relativeTo: .body) private var fieldLineHeight: CGFloat = 20.29
+  /// "Create image" (G04): the chat model to give back when it is turned off.
+  @State private var imageMode = NativeImageMode()
+  /// The picture model the reader last made something with, so the switch
+  /// reopens on it while it is still usable. Empty until the first one.
+  @AppStorage("juno.mobile.composer.last-image-model") private var lastImageModelID = ""
 
   private var selectedModel: NativeChatModelOption? {
     model.model(withID: selectedModelID)
+  }
+
+  // MARK: Image mode
+
+  /// The selected model makes pictures: "Create image" is on.
+  private var inImageMode: Bool {
+    NativeImageMode.isImageModel(selectedModel)
+  }
+
+  /// Whether "Create image" is offered: a picture model this account can use,
+  /// outside a call. (A private chat has its own composer, which never
+  /// offers it.)
+  private var imageModeAvailable: Bool {
+    voiceSession == nil && !NativeImageMode.usableImageModels(in: model.composerCatalog).isEmpty
+  }
+
+  private var createImageBinding: Binding<Bool> {
+    Binding(
+      get: { inImageMode },
+      set: { isOn in if isOn { enterImageMode() } else { exitImageMode() } }
+    )
+  }
+
+  private func enterImageMode() {
+    guard let id = imageMode.enter(
+      currentModelID: selectedModelID,
+      catalog: model.composerCatalog,
+      lastUsedImageModelID: lastImageModelID.isEmpty ? nil : lastImageModelID
+    ) else { return }
+    selectedModelID = id
+  }
+
+  private func exitImageMode() {
+    guard let id = imageMode.exit(catalog: model.composerCatalog) else { return }
+    selectedModelID = id
   }
 
   /// The "/" commands this composer can honour. Rows whose surface the
@@ -430,7 +471,7 @@ struct JunoMobileComposer: View {
                 HStack(spacing: JunoSpace.cozy) {
                   ForEach(armedTokens) { token in
                     JunoMobileComposerToken(
-                      icon: token.icon, title: token.title, remove: token.remove
+                      icon: token.icon, title: token.title, remove: token.remove, removeLabel: token.removeLabel
                     )
                   }
                 }
@@ -544,9 +585,9 @@ struct JunoMobileComposer: View {
           .accessibilityHint(voiceBargeInHint)
           // Native Liquid Glass, as the owner requires for floating chrome:
           // the system material, not a rebuilt one. One rounded card, radius
-          // 24 — no border, no shadow, nothing inside it wearing its own glass.
+          // from the shared composer token — no extra border or shadow.
           .junoGlass(
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+            in: RoundedRectangle(cornerRadius: JunoComposerMetrics.cornerRadius, style: .continuous)
           )
           // In a call the card's own edge carries the voice light: on the
           // edge and outside it, never over the field.
@@ -561,7 +602,7 @@ struct JunoMobileComposer: View {
               JunoVoiceGlow(
                 mode: dictation.isListening ? .you : .off,
                 you: { [dictation] in dictation.level },
-                cornerRadius: 24
+                cornerRadius: JunoComposerMetrics.cornerRadius
               )
               .transition(.opacity)
             }
@@ -696,6 +737,10 @@ struct JunoMobileComposer: View {
       if let schema = model.model(withID: id)?.mediaParams, !schema.isEmpty {
         model.mediaParamsMemory.activate(id, schema: schema)
       }
+      // Image mode remembers the chat model to give back, and the picture
+      // model to reopen on, whichever control chose them.
+      imageMode.observe(selectedModelID: id, catalog: model.composerCatalog)
+      if NativeImageMode.isImageModel(model.model(withID: id)) { lastImageModelID = id }
     }
     .sheet(isPresented: $showingModelPicker) {
       JunoMobileModelSelectorView(
@@ -882,11 +927,23 @@ struct JunoMobileComposer: View {
     let id: String
     let icon: JunoIcon
     let title: String
+    var removeLabel: String? = nil
     let remove: () -> Void
   }
 
   private var armedTokens: [ArmedToken] {
     var tokens: [ArmedToken] = []
+    // Image mode leads (G04): it changes what the message is, so it is read
+    // before anything that qualifies a chat turn. Its ✕ gives the chat model
+    // back.
+    if inImageMode {
+      tokens.append(ArmedToken(
+        id: "image",
+        icon: .image,
+        title: JunoMobileShellStrings.text("image.create"),
+        removeLabel: JunoMobileShellStrings.text("image.modeExit")
+      ) { exitImageMode() })
+    }
     if tools.deepResearch {
       tokens.append(ArmedToken(id: "research", icon: .research, title: String(localized: "Deep research")) {
         tools.deepResearch = false
@@ -930,7 +987,9 @@ struct JunoMobileComposer: View {
           ScrollView(.horizontal) {
             HStack(spacing: JunoSpace.cozy) {
               ForEach(armedTokens) { token in
-                JunoMobileComposerToken(icon: token.icon, title: token.title, remove: token.remove)
+                JunoMobileComposerToken(
+                  icon: token.icon, title: token.title, remove: token.remove, removeLabel: token.removeLabel
+                )
               }
             }
           }
@@ -1117,6 +1176,21 @@ struct JunoMobileComposer: View {
       if let typed = JunoComposerPreviewFlags.value("--juno-preview-prompt") {
         prompt = typed
       }
+      // `--juno-preview-attach`: a picture and a spreadsheet on the draft, so
+      // the composer's attachment tray can be captured without the pickers.
+      if JunoComposerPreviewFlags.isSet("--juno-preview-attach"), let attachmentModel,
+        attachmentModel.attachments.isEmpty
+      {
+        if let photo = PreviewImageFixtures.png(for: PreviewImageFixtures.userPhotoID) {
+          attachmentModel.add(
+            data: photo, fileName: "Moodboard.png", mimeType: "image/png",
+            conversationID: conversation?.id, isImage: true)
+        }
+        attachmentModel.add(
+          data: Data("Account,Stage,Value\nNorthwind,Proposal,48000\nContoso,Negotiation,125000\n".utf8),
+          fileName: "Q3 pipeline.csv", mimeType: "text/csv",
+          conversationID: conversation?.id, isImage: false)
+      }
       if JunoComposerPreviewFlags.value("--juno-preview-dictation") != nil {
         beginDictation()
       }
@@ -1222,6 +1296,7 @@ struct JunoMobileComposer: View {
       // "no" here would hide the switch while the catalog loads.
       modelSupportsWebSearch: selectedModel?.supportsWebSearch ?? true,
       memoryEnabled: memoryEnabled,
+      createImage: imageModeAvailable ? createImageBinding : nil,
       setMemoryEnabled: setMemoryEnabled,
       connectors: connectors,
       setProject: { projectID in
@@ -1373,7 +1448,18 @@ struct JunoMobileComposer: View {
     prompt = existing.isEmpty ? text : "\(existing) \(text)"
   }
 
+  @ViewBuilder
   private var phaseIndicator: some View {
+    // A dropped turn coming back says which way it is coming back (Tether):
+    // no spinner while it is only waiting for the network or parked.
+    if model.chatPhase == .reconnecting, let connection = model.chatConnection {
+      NativeTetherStatusLine(connection: connection)
+    } else {
+      plainPhaseIndicator
+    }
+  }
+
+  private var plainPhaseIndicator: some View {
     HStack(spacing: JunoSpace.tight) {
       if isStreamingPhase {
         ProgressView().controlSize(.mini)

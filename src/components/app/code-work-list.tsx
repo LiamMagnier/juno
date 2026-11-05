@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown } from "@/components/ui/icons";
 import { Icon } from "@/components/ui/juno-icons";
+import { fieldFrameClass } from "@/components/ui/field-recipe";
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { RUN_STATE_META, isBlockedOnYou, prSettled, runState } from "@/lib/code-runs";
 import { newestPerConversation } from "@/lib/conversation-status";
@@ -60,15 +61,21 @@ import {
   type ThreadSummary,
 } from "@/lib/code-v2/thread-sections";
 import { cn } from "@/lib/utils";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DeviceLinkTransport, EnvClient } from "@/lib/code-v2/env-client";
 import { reducedMotionAt } from "@/lib/motion-preference";
+import { DURATION, EASING } from "@/lib/design/tokens.generated";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { InlineTitleInput, useCodeSessionActions } from "@/components/code/v2/session-actions";
+// `.title-fade`: the Chat rows' truncation, which this list shares (it is also
+// drawn outside the sidebar, by the Code workspace, so it imports the rule).
+import "@/components/app/sidebar-column.css";
 
 interface RemovableCodeProject { id: string; key?: string | null; name: string; path: string }
 
+
+const FLIP_EASE = `cubic-bezier(${EASING.outStrong.join(", ")})`;
+const FADE_EASE = `cubic-bezier(${EASING.outSoft.join(", ")})`;
 
 function useFlip(container: React.RefObject<HTMLElement | null>, key: string) {
   const prev = React.useRef<Map<string, number>>(new Map());
@@ -78,13 +85,17 @@ function useFlip(container: React.RefObject<HTMLElement | null>, key: string) {
     const rows = [...root.querySelectorAll<HTMLElement>("[data-flip]")];
     const next = new Map(rows.map((r) => [r.dataset.flip!, r.offsetTop]));
     const reduce = reducedMotionAt(root);
-    if (prev.current.size && !reduce) {
+    if (prev.current.size) {
       const plan = planFlip(prev.current, next);
       for (const row of rows) {
         const id = row.dataset.flip!;
         const dy = plan.moves.get(id);
-        if (dy) row.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: FLIP_DURATION_MS, easing: "cubic-bezier(0.32,0.72,0,1)" });
-        else if (plan.entering.includes(id) && !plan.skipFades) row.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FLIP_DURATION_MS, easing: "ease-out" });
+        // The slide is travel (Tier B: skipped under reduced motion); the
+        // entering row's fade is opacity (Tier A: kept, over the fast rung).
+        // Both on the token curves, read from the generated table, rather
+        // than a literal cubic and the browser's stock `ease-out`.
+        if (dy && !reduce) row.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: FLIP_DURATION_MS, easing: FLIP_EASE });
+        else if (!dy && plan.entering.includes(id) && !plan.skipFades) row.animate([{ opacity: 0 }, { opacity: 1 }], { duration: reduce ? DURATION.fast : FLIP_DURATION_MS, easing: FADE_EASE });
       }
     }
     prev.current = next;
@@ -115,8 +126,8 @@ export interface WorkRowActions {
  * while its menu is open. A right-click on the row opens the same menu.
  */
 const ROW_KEBAB =
-  "absolute right-1 top-1.5 grid size-7 place-items-center rounded-control text-muted-foreground opacity-0 outline-none transition-opacity duration-fast ease-out-soft hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 aria-expanded:bg-foreground/5 aria-expanded:text-foreground aria-expanded:opacity-100 motion-reduce:transition-none coarse:size-10 coarse:opacity-100";
-const TRAILING_YIELDS = "transition-opacity duration-fast ease-out-soft motion-reduce:transition-none group-hover:opacity-0 group-has-[[aria-expanded=true]]:opacity-0 group-has-[button:focus-visible]:opacity-0";
+  "absolute right-1 top-1.5 grid size-7 place-items-center rounded-control text-muted-foreground opacity-0 outline-none transition-opacity duration-fast ease-out-soft hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 aria-expanded:bg-foreground/5 aria-expanded:text-foreground aria-expanded:opacity-100 coarse:size-10 coarse:opacity-100";
+const TRAILING_YIELDS = "transition-opacity duration-fast ease-out-soft group-hover:opacity-0 group-has-[[aria-expanded=true]]:opacity-0 group-has-[button:focus-visible]:opacity-0";
 
 function WorkRow({
   t,
@@ -142,7 +153,10 @@ function WorkRow({
       <div data-flip={t.id} className="flex min-h-11 items-center rounded-control px-1">
         <InlineTitleInput
           initial={t.title}
-          className="h-8 w-full rounded-control border border-input bg-background px-2 text-nav outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          // The shared field (field-recipe): it opens focused, a pressed or
+          // autofocused field steps its edge up, and only the keyboard gets
+          // the ring line. 32px and the row's own type, inside a 44px row.
+          className={cn(fieldFrameClass, "h-8 px-2 text-nav")}
           onCommit={(value) => {
             setRenaming(false);
             if (value.trim() && value.trim() !== t.title) actions.rename(t.id, value);
@@ -156,7 +170,7 @@ function WorkRow({
     <>
       <span className="flex min-w-0 items-center gap-2">
         <span
-          className={cn("min-w-0 flex-1 truncate text-nav", t.unread && "font-medium text-foreground")}
+          className={cn("title-fade min-w-0 flex-1 text-nav", t.unread && "font-medium text-foreground")}
           onDoubleClick={actions ? (e) => (e.preventDefault(), setRenaming(true)) : undefined}
         >
           {t.title}
@@ -179,11 +193,14 @@ function WorkRow({
         </span>
       </span>
       <span className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
-        <span className="min-w-0 shrink truncate">{t.project}</span>
+        {/* `title-fade-hug`: this label is as wide as its text, so the
+            always-on fallback mask would fade the end of a name that fits
+            (sidebar-column.css). */}
+        <span className="title-fade title-fade-hug min-w-0 shrink">{t.project}</span>
         {where && (
           <>
             <Icon name={t.pr ? "pull-request" : "branch"} size={12} className="shrink-0" />
-            <span className="min-w-0 flex-1 truncate">{where}</span>
+            <span className="title-fade min-w-0 flex-1">{where}</span>
           </>
         )}
       </span>
@@ -293,25 +310,23 @@ export function CodeWorkList({
 
   return (
     <div ref={root}>
-      <Dialog open={removing !== null} onOpenChange={(open) => { if (!open && !removalBusy) setRemoving(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Remove {removing?.name} from Alevr?</DialogTitle>
-            <DialogDescription>Running sessions will stop and their records will be removed from Alevr. The folder stays on disk.</DialogDescription>
-          </DialogHeader>
-          {removalError && <p role="alert" className="text-ui text-destructive">{removalError}</p>}
-          <DialogFooter>
-            <Button variant="ghost" disabled={removalBusy} onClick={() => setRemoving(null)}>Cancel</Button>
-            <Button variant="destructive" disabled={removalBusy} onClick={async () => {
-              if (!removing || !onRemoveProject) return;
-              setRemovalBusy(true); setRemovalError(null);
-              try { await onRemoveProject(removing); setProject(null); setRemoving(null); }
-              catch (error) { setRemovalError(error instanceof Error ? error.message : "Could not remove this project."); }
-              finally { setRemovalBusy(false); }
-            }}>{removalBusy ? "Removing…" : "Remove"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={removing !== null}
+        onOpenChange={(open) => { if (!open) setRemoving(null); }}
+        busy={removalBusy}
+        title={`Remove ${removing?.name ?? ""} from Alevr?`}
+        description="Running sessions will stop and their records will be removed from Alevr. The folder stays on disk."
+        confirmLabel="Remove"
+        onConfirm={async () => {
+          if (!removing || !onRemoveProject) return;
+          setRemovalBusy(true); setRemovalError(null);
+          try { await onRemoveProject(removing); setProject(null); setRemoving(null); }
+          catch (error) { setRemovalError(error instanceof Error ? error.message : "Could not remove this project."); }
+          finally { setRemovalBusy(false); }
+        }}
+      >
+        {removalError && <p role="alert" className="text-ui text-destructive">{removalError}</p>}
+      </ConfirmDialog>
       {/* The filter is the list's first heading: `Section`'s heading recipe
           (12 px annotation on the 16 px edge, ink that answers the pointer),
           with its chevron always drawn because it opens a menu. */}
@@ -320,9 +335,10 @@ export function CodeWorkList({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-7 max-w-full select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground data-[state=open]:text-foreground motion-reduce:transition-none coarse:h-11"
+              className="flex h-7 max-w-full select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground data-[state=open]:text-foreground coarse:h-11"
             >
-              <span className="shell-annot min-w-0 truncate">{project ?? "All projects"}</span>
+              {/* As wide as its text, like the row's project name: `title-fade-hug`. */}
+              <span className="shell-annot title-fade title-fade-hug min-w-0">{project ?? "All projects"}</span>
               <ChevronDown aria-hidden className="size-3 shrink-0" />
             </button>
           </DropdownMenuTrigger>

@@ -66,6 +66,8 @@ export type PlusMenuItem =
       disabled?: boolean;
       /** A short mono figure after the label — e.g. the row's shortcut. */
       detail?: string;
+      /** `detail` is a keyboard hint (⌘U, /sketch): not drawn under a coarse pointer, where it means nothing. */
+      keyHint?: boolean;
       /** Trailing note in the muted mono, e.g. why a row can't be used. */
       note?: string;
     }
@@ -113,16 +115,17 @@ export type PlusMenuSection = PlusMenuItem[];
 export const plusMenuRowClass = cn(menuRowClass, "min-h-9");
 
 /**
- * How a menu arrives (REFINEMENT_BRIEF: ~180ms, .97 → 1 from the trigger side,
- * on the homepage's ease). The shell's own `animate-pop-in` already anchors to
- * the trigger (`origin-popper`) and drifts toward it; this tightens it to the
- * brief's numbers at the call site. The scale is set under `motion-safe` only,
- * so the reduced tier keeps its identity scale and gets the fade alone.
+ * How a menu arrives (REFINEMENT_BRIEF: ~180ms, so the nearest rung, exit;
+ * .97 → 1 from the trigger side, on the homepage's ease). The shell's own
+ * `animate-pop-in` already anchors to the trigger (`origin-popper`) and drifts
+ * toward it; this tightens it to the brief's numbers at the call site. The
+ * scale is set under `motion-safe` only, so the reduced tier keeps its
+ * identity scale and gets the fade alone.
  * Exported so the account menu arrives the same way.
  */
 export const menuEntranceClass =
   "motion-safe:[--motion-scale-from:0.97] " +
-  "data-[state=open]:[animation-duration:180ms] data-[state=open]:[animation-timing-function:var(--ease-out-expo)]";
+  "data-[state=open]:[animation-duration:var(--dur-exit)] data-[state=open]:[animation-timing-function:var(--ease-out-expo)]";
 
 /** The hairline between groups, inset to the rows' text edge rather than run to the shell. */
 export const menuInsetSeparatorClass = "mx-2.5 my-1.5 bg-foreground/[0.08]";
@@ -155,6 +158,8 @@ export const PlusMenuRow = React.forwardRef<
     selected?: boolean;
     note?: string;
     detail?: string;
+    /** `detail` is a keyboard hint: hidden under a coarse pointer, like the palette's key hints (composer.css). */
+    keyHint?: boolean;
     /** A muted descriptor after the label, on its line. */
     description?: string;
     /**
@@ -171,7 +176,7 @@ export const PlusMenuRow = React.forwardRef<
     onSelect?: () => void;
   }
 >(function PlusMenuRow(
-  { icon, checked, selected, note, detail, description, stacked, keepOpen, leading, className, children, onSelect, ...props },
+  { icon, checked, selected, note, detail, keyHint, description, stacked, keepOpen, leading, className, children, onSelect, ...props },
   ref,
 ) {
   const toggle = checked !== undefined;
@@ -198,7 +203,7 @@ export const PlusMenuRow = React.forwardRef<
       {stacked && description ? (
         <span className="flex min-w-0 flex-1 flex-col py-1.5">
           <span className="truncate">{children}</span>
-          <span className="truncate text-caption font-normal text-muted-foreground">{description}</span>
+          <span className="truncate font-sans text-label font-normal text-muted-foreground">{description}</span>
         </span>
       ) : (
         // The name is the row: it keeps its whole width (up to the row's) and
@@ -207,24 +212,29 @@ export const PlusMenuRow = React.forwardRef<
         <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
           <span className="min-w-0 max-w-full shrink-0 truncate">{children}</span>
           {description && (
-            <span className="min-w-0 truncate text-caption font-normal text-muted-foreground">{description}</span>
+            <span className="min-w-0 truncate font-sans text-label font-normal text-muted-foreground">{description}</span>
           )}
         </span>
       )}
       {detail && (
-        <span className="max-w-[7rem] shrink-0 truncate font-mono text-caption tracking-[0.02em] text-muted-foreground/80 tabular-nums">
+        <span
+          className={cn(
+            "max-w-[7rem] shrink-0 truncate font-mono text-label font-normal tracking-[0.02em] text-muted-foreground tabular-nums",
+            keyHint && "coarse:hidden",
+          )}
+        >
           {detail}
         </span>
       )}
       {note ? (
-        <span className="max-w-28 text-right text-caption text-muted-foreground">{note}</span>
+        <span className="max-w-28 text-right font-sans text-label font-normal text-muted-foreground">{note}</span>
       ) : toggle ? (
         /* A toggle draws a switch: the state is legible at rest, off as well
            as on, where a tick only ever said "on". */
         <span
           aria-hidden="true"
           className={cn(
-            "relative h-4 w-7 shrink-0 rounded-full transition-colors duration-base ease-out-expo motion-reduce:transition-none",
+            "relative h-4 w-7 shrink-0 rounded-full transition-colors duration-base ease-out-expo",
             ticked ? "bg-foreground" : "bg-foreground/[0.14]",
           )}
         >
@@ -233,7 +243,7 @@ export const PlusMenuRow = React.forwardRef<
               // On, the thumb takes the page's ground: the track is the
               // homepage's solid primary (near-white in the dark theme), and a
               // white thumb on it vanished. Off, a white thumb on a faint track.
-              "absolute left-0.5 top-0.5 size-3 rounded-full shadow-[0_1px_2px_rgb(0_0_0/0.18)] transition-[transform,background-color] duration-base ease-out-expo motion-reduce:transition-none",
+              "absolute left-0.5 top-0.5 size-3 rounded-full shadow-[0_1px_2px_rgb(0_0_0/0.18)] transition-[transform,background-color] duration-base ease-out-expo motion-reduce:transition-[background-color]",
               ticked ? "translate-x-3 bg-background" : "bg-white",
             )}
           />
@@ -296,6 +306,7 @@ export function PlusMenu({
   /** A menu opened from the keyboard appears in the same frame (F0); by pointer it pops from the trigger (F2). */
   const [openedBy, setOpenedBy] = React.useState<"keyboard" | "pointer">("pointer");
   const [compact, setCompact] = React.useState(false);
+  const [tipOpen, setTipOpen] = React.useState(false);
   const [panelId, setPanelId] = React.useState<string | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const panel = sections.flat().find(item => item.kind === "sub" && item.id === panelId);
@@ -323,9 +334,18 @@ export function PlusMenu({
       if (!next) { setPanelId(null); if (panel?.kind === "sub") panel.onOpenChange?.(false); }
       onOpenChange(next);
     }}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
+      {/* Never over its own open menu. With the menu's trigger outside, the
+          menu's pointerdown (which prevents its default) also stops the
+          tooltip's own close-on-press, so the menu's state holds it shut. */}
+      <Tooltip open={tipOpen && !open} onOpenChange={setTipOpen}>
+        {/* The MENU's trigger is the outer one. Each Radix trigger stamps its
+            own `data-state` and the outer's props are spread under the
+            inner's, so with the tooltip outside, the button reported the
+            tooltip's "closed" while the menu was open: the + never turned
+            into its close mark and never took the open tone. Outside, the
+            menu's state wins; the tooltip's lives on its content. */}
+        <DropdownMenuTrigger asChild>
+          <TooltipTrigger asChild>
             <Button
               type="button"
               variant="ghost"
@@ -341,8 +361,8 @@ export function PlusMenu({
                   open (C19: base, in-out); from the keyboard it turns at once. */}
               <Plus aria-hidden="true" className="composer-plus__glyph size-5" motion="none" />
             </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
         <TooltipContent>{tooltip}</TooltipContent>
       </Tooltip>
 
@@ -414,6 +434,7 @@ export function PlusMenu({
                         disabled={item.disabled}
                         note={item.note}
                         detail={item.detail}
+                        keyHint={item.keyHint}
                         onSelect={item.onSelect}
                       >
                         {item.label}
@@ -451,7 +472,7 @@ export function PlusMenu({
                         <PlusMenuGlyph icon={item.icon} />
                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
                         {item.detail && (
-                          <span className="max-w-[6rem] shrink-0 truncate font-mono text-caption tracking-[0.02em] text-muted-foreground/80">
+                          <span className="max-w-[6rem] shrink-0 truncate font-mono text-label font-normal tracking-[0.02em] text-muted-foreground">
                             {item.detail}
                           </span>
                         )}
@@ -463,7 +484,7 @@ export function PlusMenu({
                           <PlusMenuGlyph icon={item.icon} />
                           <span className="min-w-0 flex-1 truncate">{item.label}</span>
                           {item.detail && (
-                            <span className="mr-0.5 max-w-[6rem] shrink-0 truncate font-mono text-caption tracking-[0.02em] text-muted-foreground/80">
+                            <span className="mr-0.5 max-w-[6rem] shrink-0 truncate font-mono text-label font-normal tracking-[0.02em] text-muted-foreground">
                               {item.detail}
                             </span>
                           )}

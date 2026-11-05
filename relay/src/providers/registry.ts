@@ -24,6 +24,7 @@ const openaiDialect: RealtimeDialect = {
   inputRate: 24000,
   assistantHistoryContentType: "output_text",
   supportsVideo: true,
+  supportsTools: true,
   sessionUpdate: (seed: VoiceSessionSeed) => ({
     // GA session shape: audio config nested under session.audio.
     type: "realtime",
@@ -87,6 +88,9 @@ const xaiDialect: RealtimeDialect = {
   assistantHistoryContentType: "output_text",
   supportsVideo: false,
   meterInputAudio: true,
+  // The voice agent API takes Realtime-shaped function tools and reports
+  // calls with the same events.
+  supportsTools: true,
   sessionUpdate: (seed: VoiceSessionSeed) => ({
     instructions: seed.instructions,
     voice: seed.voice || "eve",

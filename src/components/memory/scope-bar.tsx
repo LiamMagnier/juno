@@ -71,7 +71,9 @@ export function ScopeBar({
               >
                 {scope.id && <AppIcons.projects className="size-3.5" aria-hidden="true" />}
                 <span translate={scope.id ? "no" : undefined}>{scope.label}</span>
-                <span className="tabular-nums text-muted-foreground">{scope.count.toLocaleString()}</span>
+                {/* On the selected chip's on-tone fill, where plain muted ink
+                    measures 4.32:1 (globals.css, --muted-foreground-on-fill). */}
+                <span className="tabular-nums text-muted-on-fill">{scope.count.toLocaleString()}</span>
               </Pressable>
             );
           })}

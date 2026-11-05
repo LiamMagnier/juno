@@ -302,6 +302,35 @@ test("Anthropic: a model switch and an effort change are named as the reason the
   assert.deepEqual(records.map((r) => r.prefix.verdict), ["first", "settings", "model"]);
 });
 
+test("Anthropic: rejected fast tier reports the downgrade before standard tokens and meters only consumed usage", async () => {
+  const m = model("claude-opus-5-5");
+  const records: ProviderRequestRecord[] = [];
+  const receipts: Array<{ fastMode?: unknown }> = [];
+  const meter = createRequestMeter({ model: m, role: "chat", fastMode: true }, {
+    sink: (record) => records.push(record),
+    onUsage: (usage) => receipts.push(usage),
+  });
+  let attempts = 0;
+  const events = await drain(streamAnthropic(
+    m, SYSTEM, [user("Hello")], 4_000, undefined, "medium", false,
+    undefined, DATE, true, STABLE,
+    { create: async (_params, options) => {
+      attempts += 1;
+      if (attempts === 1) throw Object.assign(new Error("Fast capacity exhausted"), { status: 429 });
+      return scripted([aStart({ input_tokens: 100 }), ...aText(0, "Hello."), aStop("end_turn", 20)], options.signal);
+    } },
+    "none", meter,
+  ));
+  assert.equal(attempts, 2);
+  const downgrade = events.findIndex((event) => event.type === "usage" && event.fast === false);
+  const firstText = events.findIndex((event) => event.type === "text");
+  assert.ok(downgrade >= 0 && downgrade < firstText);
+  assert.deepEqual(records.map((record) => [record.ok, record.usageReported]), [[false, false], [true, true]]);
+  assert.equal(records[0].costUsd, 0);
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].fastMode, false);
+});
+
 // ── OpenAI Responses, GPT-5.6+ ───────────────────────────────────────────────
 
 type REvent = OpenAI.Responses.ResponseStreamEvent;

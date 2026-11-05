@@ -28,10 +28,10 @@ import {
 import {
   LINK_LIMITS,
   globalOriginKey,
-  LINK_REFUSED_COMMANDS,
-  LINK_RELAYED_COMMANDS,
   LINK_TERMINAL_COMMANDS,
+  linkRelays,
   type LinkEndpoint,
+  type LinkRpcOptions,
   type LinkHostPullReply,
   type LinkHub,
   type LinkReply,
@@ -117,13 +117,13 @@ export class PgDeviceLink implements LinkEndpoint {
 
   // ── Browser side ──────────────────────────────────────────────────────
 
-  async rpc(command: ClientCommand): Promise<LinkReply> {
+  async rpc(command: ClientCommand, options: LinkRpcOptions = {}): Promise<LinkReply> {
     const refuse = (code: "unsupported" | "not_ready" | "bad_request", message: string): LinkReply => ({
       responses: [{ type: "response", id: String(command?.id ?? ""), ok: false, error: { code, message } }],
     });
     if (!command || typeof command.id !== "string" || typeof command.type !== "string") return refuse("bad_request", "Malformed command.");
     const terminal = LINK_TERMINAL_COMMANDS.has(command.type);
-    if (LINK_REFUSED_COMMANDS.has(command.type) || (!terminal && !LINK_RELAYED_COMMANDS.has(command.type))) {
+    if (!linkRelays(command.type, options)) {
       return refuse("unsupported", "That action is only available in Alevr on your Mac.");
     }
     const host = await this.#host();

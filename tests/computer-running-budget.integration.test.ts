@@ -14,6 +14,8 @@ if (!url) {
   process.env.DATABASE_URL = url;
   process.env.AUTH_SECRET ??= "computer-running-budget-integration-test";
   process.env.AGENT_COMPUTER_PROVIDER = "fake";
+  // Computers for every plan that includes them (src/lib/computer/access.ts); the plan below is Pro.
+  process.env.AGENT_COMPUTER_ROLLOUT = "plans";
   process.env.AGENT_COMPUTER_COST_USD_PER_MIN = "0.06";
   let limit = Infinity;
   let recording = true;

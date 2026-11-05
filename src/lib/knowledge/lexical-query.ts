@@ -114,3 +114,62 @@ export function lexicalCandidateQuery(spec: LexicalQuerySpec): Prisma.Sql {
      LIMIT ${spec.limit}
   `;
 }
+
+export interface VectorQuerySpec {
+  userId: string;
+  /** Only chunks embedded in this space can be compared with the query vector. */
+  embeddingModelId: string;
+  filters?: Pick<LexicalQueryFilters, "projectId" | "documentIds">;
+  limit: number;
+}
+
+/**
+ * The vector half of retrieval, as a statement, for the same reason the
+ * lexical half is one: `$queryRaw` is invisible to the ownership guard, so
+ * the owner has to be provably bound in the SQL itself. It used to bind
+ * `c."userId"` only (projects spec PRJ-1, §0.2 item 6); a chunk whose
+ * document belongs to someone else is now invisible here as it is in the
+ * lexical leg, which shared projects depend on.
+ */
+export function vectorCandidateQuery(spec: VectorQuerySpec): Prisma.Sql {
+  const conditions: Prisma.Sql[] = [
+    Prisma.sql`c."userId" = ${spec.userId}`,
+    Prisma.sql`d."userId" = ${spec.userId}`,
+    Prisma.sql`c."deletedAt" IS NULL`,
+    Prisma.sql`c."embeddingModel" = ${spec.embeddingModelId}`,
+    Prisma.sql`array_length(c.embedding, 1) > 0`,
+    Prisma.sql`d."deletedAt" IS NULL`,
+    Prisma.sql`d."supersededById" IS NULL`,
+    Prisma.sql`d."state" = ANY(${RETRIEVABLE_STATES})`,
+  ];
+  const filters = spec.filters;
+  if (filters?.projectId !== undefined) {
+    conditions.push(
+      filters.projectId === null
+        ? Prisma.sql`d."projectId" IS NULL`
+        : Prisma.sql`d."projectId" = ${filters.projectId}`
+    );
+  }
+  if (filters?.documentIds?.length) {
+    conditions.push(Prisma.sql`c."documentId" = ANY(${[...filters.documentIds]})`);
+  }
+  return Prisma.sql`
+    SELECT c.id,
+           c."documentId",
+           c.ordinal,
+           c.text,
+           c."blockIds",
+           c.embedding,
+           c."embeddingModel",
+           d."fileName",
+           d."mimeType",
+           d."projectId",
+           COALESCE(d."indexedAt", d."createdAt") AS "documentAt",
+           0.0 AS "lexicalScore"
+      FROM "KnowledgeChunk" c
+      JOIN "KnowledgeDocument" d ON d.id = c."documentId"
+     WHERE ${Prisma.join(conditions, " AND ")}
+     ORDER BY c."createdAt" DESC
+     LIMIT ${spec.limit}
+  `;
+}

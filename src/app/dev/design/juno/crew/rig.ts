@@ -129,11 +129,11 @@ export interface SpringSpec {
   bounce: number;
 }
 export const SPRING = {
-  standard: { duration: 0.24, bounce: 0.08 },
-  emphasized: { duration: 0.38, bounce: 0.14 },
-  interactive: { duration: 0.32, bounce: 0.15 },
-  look: { duration: 0.2, bounce: 0.05 },
-  slow: { duration: 0.6, bounce: 0 },
+  standard: { duration: 0.22, bounce: 0.08 },
+  emphasized: { duration: 0.36, bounce: 0.14 },
+  interactive: { duration: 0.36, bounce: 0.15 },
+  look: { duration: 0.22, bounce: 0.05 },
+  slow: { duration: 0.56, bounce: 0 },
 } satisfies Record<string, SpringSpec>;
 
 export class Spring {

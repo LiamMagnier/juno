@@ -66,6 +66,7 @@ const RECEIPT_RUNNING: Record<string, string> = {
   calculate: "Calculating",
   start_task: "Handing this to a task",
   suggest_research: "Suggested research",
+  generate_image: "Creating an image",
   create_agent: "Creating an agent",
   update_agent: "Updating its profile",
   agent_profile: "Updating its profile",
@@ -96,6 +97,7 @@ const RECEIPT_RUNNING: Record<string, string> = {
   computer_read_page: "Working with files on its computer",
   computer_write_file: "Writing a file on its computer",
   computer_open_url: "Opening a page on its computer",
+  computer_fill_login: "Signing in with a saved login",
   // Juno Code / Work vocabulary (kept in step with JunoWorkVocabulary).
   list_folder: "Looking through a folder",
   read_file: "Reading a file",
@@ -135,6 +137,7 @@ const RECEIPT_DONE: Record<string, string> = {
   calculate: "Calculated",
   start_task: "Started a task",
   suggest_research: "Suggested research",
+  generate_image: "Created an image",
   create_agent: "Created an agent",
   update_agent: "Updated its profile",
   agent_profile: "Updated its profile",
@@ -165,6 +168,7 @@ const RECEIPT_DONE: Record<string, string> = {
   computer_read_page: "Worked with files on its computer",
   computer_write_file: "Wrote a file on its computer",
   computer_open_url: "Opened a page on its computer",
+  computer_fill_login: "Signed in with a saved login",
   list_folder: "Looked through a folder",
   read_file: "Read a file",
   search_files: "Searched your files",
@@ -203,6 +207,7 @@ const RECEIPT_ICON: Record<string, ReceiptIconKind> = {
   calculate: "calculator",
   start_task: "task",
   suggest_research: "research",
+  generate_image: "image",
   create_agent: "agents",
   update_agent: "agents",
   agent_profile: "agents",
@@ -233,6 +238,7 @@ const RECEIPT_ICON: Record<string, ReceiptIconKind> = {
   computer_read_page: "file",
   computer_write_file: "filePlus",
   computer_open_url: "web",
+  computer_fill_login: "keyboard",
   list_folder: "file",
   read_file: "file",
   search_files: "search",
@@ -448,12 +454,34 @@ export function fenceMatchesWrittenFile(
   return false;
 }
 
+/** How a call that was never allowed to run ended: a decision, not a failure. */
+export type ReceiptRefusal = "denied" | "expired" | "cancelled";
+
+/** The neutral status word for each, in the panel's own approval words. */
+export const RECEIPT_REFUSAL_TEXT: Readonly<Record<ReceiptRefusal, string>> = {
+  denied: "Declined",
+  expired: "Approval expired",
+  cancelled: "Cancelled",
+};
+
+/**
+ * The refusal behind a call's end, from its typed outcome. A declined, expired
+ * or cancelled call still rides `status: "failed"` for older readers, so the
+ * outcome is the only place the difference shows. Null for a call that ran,
+ * whether it succeeded or really failed.
+ */
+export function receiptRefusalOf(tool: Pick<ClientToolDetail, "outcome"> | undefined): ReceiptRefusal | null {
+  const outcome = tool?.outcome;
+  return outcome === "denied" || outcome === "expired" || outcome === "cancelled" ? outcome : null;
+}
+
 /**
  * A failure's reason line. One sentence, no em-dash. Null when the call
- * simply finished, so the receipt stays one row.
+ * simply finished, so the receipt stays one row, and null for a refusal,
+ * whose status word already says how it ended.
  */
 export function receiptFailureReason(tool: ClientToolDetail | undefined): string | null {
-  if (!tool || tool.status !== "failed") return null;
+  if (!tool || tool.status !== "failed" || receiptRefusalOf(tool)) return null;
   if (tool.resultNote === "unfinished") return "The run ended before this call returned.";
   if (tool.resultNote === "empty") return "The call returned nothing.";
   if (tool.result?.trim()) {

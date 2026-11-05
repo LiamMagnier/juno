@@ -37,6 +37,7 @@ export const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
      It cannot catch /admin or /artifacts: a prefix matches only itself or
      itself followed by "/". */
   ["/a", FEATURE_NAMES.artifacts.singular],
+  ["/activity", FEATURE_NAMES.activity.label],
   ["/library", FEATURE_NAMES.library.label],
   ["/artifacts", FEATURE_NAMES.artifacts.label],
   ["/projects", FEATURE_NAMES.projects.label],

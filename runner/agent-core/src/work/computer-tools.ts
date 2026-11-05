@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { ToolContext, ToolResult } from '../tools/types.js';
 import type {
   WorkProvenance,
@@ -106,10 +107,28 @@ export interface ComputerToolsDeps {
   drag?(opts: { x1: number; y1: number; x2: number; y2: number }): Promise<ComputerShotData>;
   /** A region of a fresh screenshot, cropped and enlarged. Absent: `computer_zoom` says so. */
   zoom?(region: ComputerZoomRegion): Promise<ComputerShotData>;
-  exec(command: string, opts: { timeoutSeconds: number; cwd?: string }): Promise<ComputerExecOutcome>;
+  /**
+   * Runs a command. `callId` is the provider's id for this call, so the host
+   * can stream the output to the person's terminal pane under it (S5.1); the
+   * outcome is the same whether it does or not.
+   */
+  exec(command: string, opts: { timeoutSeconds: number; cwd?: string; callId?: string }): Promise<ComputerExecOutcome>;
   listFiles(path: string): Promise<ComputerFileEntryItem[]>;
-  readFile(path: string, maxBytes: number): Promise<string>;
-  writeFile(path: string, content: string): Promise<void>;
+  /**
+   * At most `maxBytes` of a file, as its bytes (S5.2). A string is read as
+   * UTF-8 text already decoded (an older host).
+   */
+  readFile(path: string, maxBytes: number): Promise<Uint8Array | string>;
+  /** Writes these bytes, exactly. */
+  writeFile(path: string, bytes: Uint8Array): Promise<void>;
+  /** A file's size, for the sentence about a binary file. Optional. */
+  fileSize?(path: string): Promise<number | null>;
+  /**
+   * Hands a file on the computer to the person as a deliverable of this run
+   * (`computer_files` publish, S5.3). Absent: publishing says it is not
+   * available here.
+   */
+  publish?(request: { path: string; title?: string }): Promise<{ ok: true; detail: string } | { ok: false; message: string }>;
   /**
    * Keeps one step's screenshot for the filmstrip and the approval card, or
    * returns null when it was not kept (no storage, or the run's cap). Only
@@ -132,6 +151,8 @@ export interface ComputerToolsDeps {
 
 const MAX_SHELL_OUTPUT_CHARS = 20_000;
 const MAX_FILE_READ_BYTES = 200 * 1024;
+/** The most `computer_files` writes in one call, after decoding. */
+const MAX_FILE_WRITE_BYTES = 25 * 1024 * 1024;
 const SCREEN_WIDTH = 1280;
 const SCREEN_HEIGHT = 800;
 
@@ -172,6 +193,46 @@ function sanitizeCommandPreview(raw: string): string {
     })
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * How many bytes at the end are the start of a UTF-8 character the read cut
+ * off (0 when the last character is whole), so a cut never reads as binary.
+ */
+function cutCharacterBytes(bytes: Uint8Array): number {
+  for (let back = 1; back <= Math.min(3, bytes.length); back += 1) {
+    const byte = bytes[bytes.length - back]!;
+    if ((byte & 0xc0) === 0x80) continue;
+    const need = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
+    return need > back ? back : 0;
+  }
+  return 0;
+}
+
+/** The text in these bytes, or null when they are not text (not valid UTF-8, or a NUL in them). */
+export function decodeTextFile(bytes: Uint8Array, cut: boolean): string | null {
+  const body = cut ? bytes.subarray(0, bytes.length - cutCharacterBytes(bytes)) : bytes;
+  if (body.includes(0)) return null;
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(body);
+  } catch {
+    return null;
+  }
+}
+
+/** "512 bytes", "88 KB", "1.4 MB". */
+export function formatFileBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.max(0, Math.round(bytes))} bytes`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  const mb = bytes / (1024 * 1024);
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+}
+
+/** Base64 as the model wrote it, checked strictly (whitespace allowed), or null. */
+function decodeBase64(raw: string): Uint8Array | null {
+  const clean = raw.replace(/\s+/g, '');
+  if (clean.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(clean)) return null;
+  return new Uint8Array(Buffer.from(clean, 'base64'));
 }
 
 function capShellStream(label: string, value: string): string {
@@ -1114,7 +1175,7 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
       const cwd = String(input.cwd ?? '').trim() || '/home/agent/work';
       return { detail: { command, cwd } };
     },
-    async execute(input): Promise<ToolResult> {
+    async execute(input, ctx): Promise<ToolResult> {
       const command = String(input.command ?? '').trim();
       if (!command) return { output: 'A command is required.', isError: true };
       if (command.length > 4000) {
@@ -1128,6 +1189,8 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
       const res = await deps.exec(command, {
         timeoutSeconds,
         ...(cwd ? { cwd } : {}),
+        // The person's terminal pane shows this call's output under its id as it runs.
+        ...(ctx.callId ? { callId: ctx.callId } : {}),
       });
       const stdout = capShellStream('stdout', res.stdout);
       const stderr = capShellStream('stderr', res.stderr);
@@ -1144,27 +1207,42 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     },
   };
 
+  /** The `computer_files` action a call asks for; unknown values read as the harmless `list`. */
+  const fileAction = (input: Record<string, unknown>): 'list' | 'read' | 'write' | 'publish' => {
+    const raw = String(input.action ?? 'list');
+    return raw === 'read' || raw === 'write' || raw === 'publish' ? raw : 'list';
+  };
+
   const filesTool: WorkToolDefinition = {
     kind: 'edit',
     tier: 'shell',
-    intents: ['files.read', 'files.write'],
-    intentFor: (input) => (input.action === 'write' ? 'files.write' : 'files.read'),
-    actionFor: () => 'work.computer.files',
-    riskFor: (input) => (input.action === 'write' ? 'edit' : 'safe'),
+    intents: ['files.read', 'files.write', 'files.publish'],
+    intentFor: (input) => {
+      const action = fileAction(input);
+      return action === 'write' ? 'files.write' : action === 'publish' ? 'files.publish' : 'files.read';
+    },
+    // Publishing is a deliverable like `create_deliverable`'s: the same action
+    // and risk, so it is approved (or not) the way making one is.
+    actionFor: (input) => (fileAction(input) === 'publish' ? 'work.deliverable.create' : 'work.computer.files'),
+    riskFor: (input) => {
+      const action = fileAction(input);
+      return action === 'write' || action === 'publish' ? 'edit' : 'safe';
+    },
     provenanceFor: () => localAppProvenance('work.computer.files'),
     isHealthy: () => deps.isHealthy(),
     signatureInput: withEpoch,
     spec: {
       name: 'computer_files',
       description:
-        "List, read or write files in the agent's persistent home directory (/home/agent). Keep working files under /home/agent/work.",
+        "List, read, write or publish files in the agent's persistent home directory (/home/agent). Keep working files under /home/agent/work; files the person adds arrive in /home/agent/work/inbox. Reads and writes are text (utf8) unless encoding is base64, which carries any bytes exactly. Publish hands one file (up to 25 MB) to the person as a deliverable of this task, unchanged, as a download.",
       inputSchema: {
         type: 'object',
         properties: {
           action: {
             type: 'string',
-            enum: ['list', 'read', 'write'],
-            description: 'File operation: list directory, read file (up to 200 KB), or write file.',
+            enum: ['list', 'read', 'write', 'publish'],
+            description:
+              'list a directory, read a file (up to 200 KB), write a file, or publish a file to the person as a deliverable.',
           },
           path: {
             type: 'string',
@@ -1172,22 +1250,39 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
           },
           content: {
             type: 'string',
-            description: 'Text content to write when action is "write".',
+            description: 'What to write when action is "write": text, or base64 when encoding is "base64".',
+          },
+          encoding: {
+            type: 'string',
+            enum: ['utf8', 'base64'],
+            description:
+              'For read and write: "utf8" (the default) for text, "base64" for any other bytes (images, PDFs, archives).',
+          },
+          title: {
+            type: 'string',
+            description: 'For publish: the name the person sees (defaults to the file name).',
           },
         },
         required: ['action', 'path'],
       },
     },
     summarize: (input) => {
-      const act = String(input.action ?? 'list');
+      const act = fileAction(input);
       const p = sanitizeCommandPreview(String(input.path ?? '/home/agent/work')).slice(0, 120);
       if (act === 'write') return boundSummary(`Write file ${p}`);
       if (act === 'read') return boundSummary(`Read file ${p}`);
+      if (act === 'publish') return boundSummary(`Publish ${p} to the person as a deliverable`);
       return boundSummary(`List files in ${p}`);
     },
     async execute(input): Promise<ToolResult> {
-      const action = String(input.action ?? 'list');
+      const raw = String(input.action ?? 'list');
+      const action = fileAction(input);
+      if (raw !== action) return { output: `Unknown action: ${raw}`, isError: true };
       const targetPath = String(input.path ?? '/home/agent/work').trim() || '/home/agent/work';
+      const encoding = input.encoding === undefined || input.encoding === null || input.encoding === '' ? 'utf8' : String(input.encoding);
+      if (encoding !== 'utf8' && encoding !== 'base64') {
+        return { output: 'encoding must be "utf8" or "base64".', isError: true };
+      }
 
       if (action === 'list') {
         const items = await deps.listFiles(targetPath);
@@ -1202,13 +1297,31 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
       }
 
       if (action === 'read') {
-        const text = await deps.readFile(targetPath, MAX_FILE_READ_BYTES);
-        if (text.length >= MAX_FILE_READ_BYTES) {
+        // One byte past the limit, so a cut is known rather than guessed.
+        const read = await deps.readFile(targetPath, MAX_FILE_READ_BYTES + 1);
+        if (typeof read === 'string') {
+          // An older host decoded it already: text, as before.
+          return read.length >= MAX_FILE_READ_BYTES
+            ? { output: `${read.slice(0, MAX_FILE_READ_BYTES)}\n[File truncated at 200 KB]` }
+            : { output: read };
+        }
+        const cut = read.byteLength > MAX_FILE_READ_BYTES;
+        const bytes = cut ? read.subarray(0, MAX_FILE_READ_BYTES) : read;
+        if (encoding === 'base64') {
+          const encoded = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64');
+          return { output: cut ? `${encoded}\n[File truncated at 200 KB: this is its first 200 KB, in base64]` : encoded };
+        }
+        const text = decodeTextFile(bytes, cut);
+        if (text === null) {
+          const size = cut ? (deps.fileSize ? await deps.fileSize(targetPath).catch(() => null) : null) : bytes.byteLength;
+          const digest = createHash('sha256').update(bytes).digest('hex').slice(0, 12);
+          const sizeText =
+            typeof size === 'number' ? formatFileBytes(size) : `more than ${formatFileBytes(MAX_FILE_READ_BYTES)}`;
           return {
-            output: `${text.slice(0, MAX_FILE_READ_BYTES)}\n[File truncated at 200 KB]`,
+            output: `${targetPath} is a binary file (${sizeText}, sha256 ${cut ? 'of its first 200 KB ' : ''}${digest}). Read it with encoding base64, or publish it.`,
           };
         }
-        return { output: text };
+        return cut ? { output: `${text}\n[File truncated at 200 KB]` } : { output: text };
       }
 
       if (action === 'write') {
@@ -1222,11 +1335,29 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
             isError: true,
           };
         }
-        await deps.writeFile(targetPath, input.content);
-        return { output: `Wrote ${input.content.length} characters to ${targetPath}.` };
+        const bytes = encoding === 'base64' ? decodeBase64(input.content) : new TextEncoder().encode(input.content);
+        if (bytes === null) {
+          return { output: 'content is not valid base64. Nothing was written.', isError: true };
+        }
+        if (bytes.byteLength > MAX_FILE_WRITE_BYTES) {
+          return { output: `That is more than ${formatFileBytes(MAX_FILE_WRITE_BYTES)}. Nothing was written.`, isError: true };
+        }
+        await deps.writeFile(targetPath, bytes);
+        return {
+          output:
+            encoding === 'base64'
+              ? `Wrote ${bytes.byteLength} bytes to ${targetPath}.`
+              : `Wrote ${input.content.length} characters (${bytes.byteLength} bytes) to ${targetPath}.`,
+        };
       }
 
-      return { output: `Unknown action: ${action}`, isError: true };
+      // publish
+      if (!deps.publish) {
+        return { output: 'Publishing files is not available for this computer. Nothing was published.', isError: true };
+      }
+      const title = typeof input.title === 'string' && input.title.trim() ? input.title.trim().slice(0, 120) : undefined;
+      const outcome = await deps.publish({ path: targetPath, ...(title ? { title } : {}) });
+      return outcome.ok ? { output: outcome.detail } : { output: outcome.message, isError: true };
     },
   };
 
@@ -1242,4 +1373,179 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     shellTool,
     filesTool,
   ].map(guarded);
+}
+
+// ---------------------------------------------------------------------------
+// Starting the computer from a run (docs/design/agents-v2/COMPUTERS_2026-10.md §S1.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a run stands with its agent's computer.
+ *
+ * - `ready`: started in this run; every call is the tool's own.
+ * - `needs_start` (policy `allowed`, or a start the person already approved):
+ *   the first call starts it, then does what it asked.
+ * - `needs_approval` (policy `ask`, no start card in this run): the call is
+ *   put to the person as "Start {name}'s computer", and only starts it.
+ * - `start_pending`: a start card of this run is still waiting.
+ * - `declined`: this run's start card was denied or expired.
+ * - `refused`: the policy is off, or access, the allowance or the cap said no.
+ */
+export type StartState = 'ready' | 'needs_start' | 'needs_approval' | 'start_pending' | 'declined' | 'refused';
+
+export interface ComputerStartGate {
+  /** Re-read the policy and the run's start approval. Awaited by the wrapper's preview. */
+  refresh(): Promise<void>;
+  state(): StartState;
+  agentName: string;
+  /** null when started, else the sentence. Re-checks the policy itself. */
+  start(how: { approvedStart: boolean }): Promise<string | null>;
+  /**
+   * A start card this run raised ended without being approved: the session
+   * never ran the call (denied, expired). Lets the next call answer
+   * `declined` without a database read, so it is never asked twice.
+   */
+  noteStartUnanswered?(): void;
+  /** Told when a start card is about to be put to the person (the audit's `start_requested`). */
+  onStartRequested?(): void;
+}
+
+/** The approval card's summary for a start. Mirrors startApprovalSummary in src/lib/computer/access-copy.ts. */
+export function computerStartSummary(agentName: string): string {
+  return `Start ${agentName}’s computer`;
+}
+
+/** The start card's detail line. Mirrors startApprovalDetail in src/lib/computer/access-copy.ts. */
+export function computerStartDetailLine(callSummary: string): string {
+  return `What it wants to do next (asked separately): ${callSummary}`;
+}
+
+/** Mirrors the tool results in src/lib/computer/access-copy.ts. */
+export function computerStartedText(toolName: string): string {
+  return `Started your computer. Nothing else was done: call ${toolName} again to do what you asked.`;
+}
+export const COMPUTER_START_PENDING_TEXT =
+  'Waiting for the person to start your computer. This call did not run; call it again once the computer has started.';
+export const COMPUTER_START_DECLINED_TEXT =
+  'The person did not start your computer for this task. Carry on without it, or ask them with ask_user.';
+
+/** The action a start card is recorded under. Sensitive: asks under every mode, never standing. */
+export const COMPUTER_START_ACTION = 'work.computer.start';
+
+/** Per gate, across every tool it wraps: the last start card raised and whether its call ran. */
+const startCards = new WeakMap<ComputerStartGate, { callId: string | null; ran: boolean; decided: Map<string, StartState> }>();
+
+function cardsFor(gate: ComputerStartGate) {
+  let cards = startCards.get(gate);
+  if (!cards) {
+    cards = { callId: null, ran: true, decided: new Map() };
+    startCards.set(gate, cards);
+  }
+  return cards;
+}
+
+/**
+ * Wraps one computer tool so its first use in a run starts the computer, asking
+ * first under `ask` (D4: the approved call only starts it; the model repeats
+ * the action, which then goes through its own approval as usual).
+ *
+ * The session consults `actionFor` and `riskFor` before `preview`
+ * (session.ts, `executeToolCall`), so the state they read is the one the last
+ * refresh left; `preview` refreshes for `execute`, and `execute` re-checks
+ * through `start()`. A policy changed between two calls is therefore seen by
+ * the second call's `execute` (which says so) and by the third call's card.
+ * Every output of a start, a wait or a refusal is the platform's own text, so
+ * those calls carry trusted provenance; a call that reaches the tool keeps the
+ * tool's own.
+ */
+export function withComputerStart(definition: WorkToolDefinition, gate: ComputerStartGate): WorkToolDefinition {
+  const cards = cardsFor(gate);
+  /** The state a call is decided on: a start card that ended without running its call is a decline. */
+  const current = (): StartState => {
+    if (cards.callId && !cards.ran) {
+      cards.callId = null;
+      cards.ran = true;
+      gate.noteStartUnanswered?.();
+    }
+    return gate.state();
+  };
+  const platform = (state: StartState) =>
+    state === 'needs_approval' || state === 'start_pending' || state === 'declined' || state === 'refused';
+  const name = definition.spec.name;
+
+  return {
+    ...definition,
+    // A start card, or the platform's own answer: a call that will only wait,
+    // decline or refuse runs nothing the tool does, so it never raises the
+    // tool's own card (and a start it might make is one the policy allows).
+    actionFor: (input) => (platform(current()) ? COMPUTER_START_ACTION : definition.actionFor(input)),
+    riskFor: (input) => {
+      const state = current();
+      if (state === 'needs_approval') return ARBITRARY_CODE_RISK;
+      return platform(state) ? 'safe' : definition.riskFor(input);
+    },
+    provenanceFor: (input) =>
+      platform(current())
+        ? { source: "the agent's computer", sourceKind: 'local_app', action: COMPUTER_START_ACTION, trust: 'trusted' }
+        : definition.provenanceFor(input),
+    summarize: (input) =>
+      current() === 'needs_approval' ? computerStartSummary(gate.agentName) : definition.summarize(input),
+    async preview(input, ctx): Promise<WorkToolPreview | null> {
+      // The state this call's action and risk were taken from, before the refresh.
+      const decided = current();
+      cards.decided.set(ctx.callId, decided);
+      await gate.refresh().catch(() => undefined);
+      if (decided === 'needs_approval') {
+        if (ctx.forApproval) {
+          cards.callId = ctx.callId;
+          cards.ran = false;
+          gate.onStartRequested?.();
+        }
+        return {
+          summary: computerStartSummary(gate.agentName),
+          detail: { start: true, next: computerStartDetailLine(definition.summarize(input)) },
+        };
+      }
+      if (platform(decided)) return null;
+      return definition.preview ? definition.preview(input, ctx) : null;
+    },
+    async execute(input, ctx): Promise<WorkToolResult> {
+      const decided = (ctx.callId ? cards.decided.get(ctx.callId) : undefined) ?? current();
+      if (ctx.callId) {
+        cards.decided.delete(ctx.callId);
+        if (cards.callId === ctx.callId) cards.ran = true;
+      }
+      switch (decided) {
+        case 'needs_approval': {
+          // Approved (the session runs nothing it was refused): start, and nothing else.
+          const refusal = await gate.start({ approvedStart: true });
+          return refusal ? { output: refusal, isError: true } : { output: computerStartedText(name) };
+        }
+        case 'start_pending':
+          return { output: COMPUTER_START_PENDING_TEXT, isError: true };
+        case 'declined':
+          return { output: COMPUTER_START_DECLINED_TEXT, isError: true };
+        case 'refused': {
+          // The refusal's own sentence. Never the tool's output: this call was
+          // decided as platform text (trusted provenance), so even if the
+          // computer starts now, the action waits for the next call.
+          const refusal = await gate.start({ approvedStart: false });
+          return refusal ? { output: refusal, isError: true } : { output: computerStartedText(name) };
+        }
+        case 'needs_start': {
+          const refusal = await gate.start({ approvedStart: false });
+          if (refusal) return { output: refusal, isError: true };
+          return definition.execute(input, ctx);
+        }
+        case 'ready': {
+          // Consent withdrawn since the call was decided: nothing runs.
+          if (gate.state() === 'refused') {
+            const refusal = await gate.start({ approvedStart: false });
+            if (refusal) return { output: refusal, isError: true };
+          }
+          return definition.execute(input, ctx);
+        }
+      }
+    },
+  };
 }

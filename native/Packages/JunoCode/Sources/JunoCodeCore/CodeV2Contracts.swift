@@ -1071,6 +1071,8 @@ public enum CodeV2 {
 
         /// The code of the notice an agent leaves when it opens the Preview.
         public static let previewOpenedCode = "preview_opened"
+        /// The code of the notice for a run paused because the Mac locked.
+        public static let screenLockedCode = "screen_locked"
 
         public init(
             id: String, turnId: String? = nil, createdAt: String, level: Level = .info, text: String, code: String? = nil,
@@ -1438,12 +1440,15 @@ public enum CodeV2 {
         public var sessionId: String
         public var title: String?
         public var runtimeMode: RuntimeMode?
+        /// Nobody is watching this turn (a scheduled resume, a routine): no
+        /// take-over, a time limit, and skip-and-record instead of a card.
+        public var unattended: Bool?
         public var callId: String?
         public var args: ComputerToolArgs?
 
         public init(
             id: String, type: RequestType, token: String, sessionId: String, title: String? = nil,
-            runtimeMode: RuntimeMode? = nil, callId: String? = nil, args: ComputerToolArgs? = nil
+            runtimeMode: RuntimeMode? = nil, unattended: Bool? = nil, callId: String? = nil, args: ComputerToolArgs? = nil
         ) {
             self.id = id
             self.type = type
@@ -1451,6 +1456,7 @@ public enum CodeV2 {
             self.sessionId = sessionId
             self.title = title
             self.runtimeMode = runtimeMode
+            self.unattended = unattended
             self.callId = callId
             self.args = args
         }
@@ -1476,10 +1482,14 @@ public enum CodeV2 {
         public var missingPermissions: [String]?
         public var holder: DesktopLockRecord?
         public var endsTurn: Bool?
+        /// A `.systemNotice` the env server adds to the thread as it is (the
+        /// `screen_locked` pause). Stable id per lock: one notice, one push.
+        public var notice: TurnItem?
 
         public init(
             id: String, ok: Bool, text: String, image: ComputerBridgeImage? = nil, item: TurnItem? = nil,
-            missingPermissions: [String]? = nil, holder: DesktopLockRecord? = nil, endsTurn: Bool? = nil
+            missingPermissions: [String]? = nil, holder: DesktopLockRecord? = nil, endsTurn: Bool? = nil,
+            notice: TurnItem? = nil
         ) {
             self.id = id
             self.ok = ok
@@ -1489,6 +1499,7 @@ public enum CodeV2 {
             self.missingPermissions = missingPermissions
             self.holder = holder
             self.endsTurn = endsTurn
+            self.notice = notice
         }
     }
 
@@ -1687,6 +1698,9 @@ public enum CodeV2 {
         case turnSteer = "turn.steer"
         case agentMessage = "agent.message"
         case agentInterrupt = "agent.interrupt"
+        case agentPause = "agent.pause"
+        case agentResume = "agent.resume"
+        case agentTopUp = "agent.topUp"
         case turnQueue = "turn.queue"
         case turnInterrupt = "turn.interrupt"
         case approvalRespond = "approval.respond"

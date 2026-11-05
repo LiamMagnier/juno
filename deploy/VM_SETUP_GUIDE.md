@@ -168,6 +168,9 @@ sudo apt install nginx -y
 
 # 2. Create the site configuration (we've provided a template in your repository)
 sudo cp deploy/nginx.conf.template /etc/nginx/sites-available/juno
+# ...and the "Updating, back in a moment" page it shows page navigations while
+# the app restarts (without it, nginx shows its plain 502 as before)
+sudo install -D -m 644 deploy/maintenance/updating.html /var/www/juno-maintenance/updating.html
 
 # 3. Edit the copied config file to set your custom domain
 sudo nano /etc/nginx/sites-available/juno
@@ -227,6 +230,33 @@ update the backend, SSH in and run:
 ```bash
 ./deploy/deploy.sh
 ```
+
+#### Before rolling back past a release
+`./deploy/deploy.sh --rollback` restores the previous release's code, not the
+data the newer release wrote. Some rows written by a newer release do not
+parse on an older one. Check the list below before you roll back past one of
+these releases, and keep the rollback short:
+
+- **Teach Juno (taught skills).** From this release, a skill contract may name
+  namespaced connector ids such as `composio:gmail` or `mcp:<id>`
+  (`SKILL_CONNECTOR_NAME_PATTERN` in `src/lib/work/skills.ts`). An older build
+  rejects the `:`, and its `parseSkillContract` then reads the WHOLE contract
+  as empty. While the older build runs, such a skill loses its inputs,
+  outputs, budget, policy and Teach provenance, so a taught skill is no longer
+  kept to what it lists. The stored JSON is intact, and redeploying the newer
+  release restores it. Editing the skill on the older build would save a new
+  version with the empty contract, so do not edit skills during the rollback.
+  To count the affected versions first:
+  ```sql
+  SELECT count(*) FROM "WorkSkillVersion" v
+  WHERE EXISTS (
+    SELECT 1 FROM jsonb_array_elements_text(
+      CASE WHEN jsonb_typeof(v.contract->'requestedConnectors') = 'array'
+           THEN v.contract->'requestedConnectors' ELSE '[]'::jsonb END
+    ) AS c
+    WHERE c LIKE '%:%'
+  );
+  ```
 
 ---
 

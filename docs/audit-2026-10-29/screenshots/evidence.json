@@ -1,0 +1,53 @@
+{
+  "source": "Final sanctioned production browser run: 21 passed, zero failed/skipped; fake provider and disposable QA account. Phone images are responsive web views, not native app captures.",
+  "screenshots": [
+    {
+      "file": "composer-pending-draft-reduce.png",
+      "source": "test-results/playwright/composer-submission-a-newe-44e0c--first-send-handoff-reduce--chromium/composer-pending-draft-reduce.png",
+      "width": 1280,
+      "height": 720,
+      "bytes": 66270,
+      "sha256": "d6113b534a67a8ea3a3376cbd67a4ef5b26da4490aea36e4afa8826e7cf4b5d5"
+    },
+    {
+      "file": "find-context-preview.png",
+      "source": "test-results/playwright/conversation-find-Find-pre-0e124-without-stopping-the-answer-chromium/find-context-preview.png",
+      "width": 1280,
+      "height": 720,
+      "bytes": 83536,
+      "sha256": "273b194a0f1e1151eb773276a0f2f7b6071b2455a15849895e780f4b96148724"
+    },
+    {
+      "file": "desktop-light-settings-fields.png",
+      "source": "test-results/playwright/design-primitives-audit-de-0347c-main-readable-and-reachable-chromium/desktop-light-settings-fields.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 85093,
+      "sha256": "09f800eb1e25efe085033a63e2e917691343aaa7f5abc0ca4a2a367e9f0dc7f6"
+    },
+    {
+      "file": "desktop-light-settings-select.png",
+      "source": "test-results/playwright/design-primitives-audit-de-0347c-main-readable-and-reachable-chromium/desktop-light-settings-select.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 98566,
+      "sha256": "197c9eb5660b688b0149fc3bba2e0f87f6c9043431d7f6b10504d24f851fdbe6"
+    },
+    {
+      "file": "phone-dark-connector-dialog.png",
+      "source": "test-results/playwright/design-primitives-audit-ph-af40b-main-readable-and-reachable-chromium/phone-dark-connector-dialog.png",
+      "width": 390,
+      "height": 844,
+      "bytes": 52327,
+      "sha256": "09908fb07336a74d014793c023ae65cc08a6220d189f86a282589e3cb096ac79"
+    },
+    {
+      "file": "phone-dark-settings-fields.png",
+      "source": "test-results/playwright/design-primitives-audit-ph-af40b-main-readable-and-reachable-chromium/phone-dark-settings-fields.png",
+      "width": 390,
+      "height": 844,
+      "bytes": 47287,
+      "sha256": "94b16519071e2fcf155a4551bb4740d1c9fa221ec20828b89e4371ff9e640e20"
+    }
+  ]
+}

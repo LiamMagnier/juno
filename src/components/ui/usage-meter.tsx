@@ -24,10 +24,11 @@ export interface UsageMeterProps {
  * runs on the compositor and draws the same picture, because the track clips
  * it — the same construction `<Progress>` uses, so the two bars move alike.
  * `--dur-slow`: a quota changing is a change the reader did not cause, and it
- * should be seen moving.
+ * should be seen moving. It keeps moving under reduced motion: a progress fill
+ * is Tier A (spec §4.7), and --dur-slow shortens to the base rung there.
  */
 const METER_FILL =
-  "h-full w-full rounded-full transition-[transform,background-color] duration-slow ease-out-soft motion-reduce:transition-none";
+  "h-full w-full rounded-full transition-[transform,background-color] duration-slow ease-out-soft";
 
 function meterFill(percentage: number): React.CSSProperties {
   return { transform: `translateX(-${100 - percentage}%)` };

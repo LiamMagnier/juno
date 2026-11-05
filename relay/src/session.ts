@@ -9,10 +9,11 @@ import {
   VOICE_HISTORY_MAX_TURN_CHARS,
   VOICE_HISTORY_MAX_TURNS,
 } from "./protocol.js";
-import { mintRelayCallbackToken } from "./auth.js";
+import { mintRelayCallbackToken, type VoiceToolGrant } from "./auth.js";
 import { PROVIDERS, agentVoice } from "./providers/registry.js";
 import type { ProviderEvents, TranscriptEntry, VoiceProviderSession } from "./providers/types.js";
 import { effectiveRelaySessionLimitSec } from "./session-limit.js";
+import { VoiceToolBridge, type VoiceToolListing } from "./tools.js";
 import { providerText, VOICE_CONTEXT_MAX_CHARS, VOICE_TOOL_LIMIT } from "./voice-context.js";
 
 // What this call cannot do lives beside the provider text helpers
@@ -44,6 +45,12 @@ export const VOICE_MEMORY_MAX_CHARS = 4_000;
 export const VOICE_PERSONA_MAX_CHARS = 4_000;
 /** A call must not wait long on memory: past this it starts without it. */
 const MEMORY_FETCH_TIMEOUT_MS = 2_500;
+/**
+ * How long after the model's speech should have finished playing a new turn
+ * still counts as heard over it — client buffering and network jitter. Such a
+ * turn may decline a card but never approve one (relay/src/tools.ts).
+ */
+const ECHO_GUARD_MS = 600;
 
 /**
  * Ask Juno what this call should know about its caller. Server to server,
@@ -203,6 +210,21 @@ export class RelaySession {
   private memory: string | null | undefined;
   /** The agent this call is, fetched once like memory. `undefined` until asked. */
   private persona: VoicePersona | null | undefined;
+  /**
+   * The chat's tools for this call (relay/src/tools.ts), listed once when the
+   * call starts and kept across provider switches. Null when the token granted
+   * none or Juno could not be reached for the list.
+   */
+  private toolBridge: VoiceToolBridge | null = null;
+  private toolsLoaded = false;
+  /** Whether the caller's current turn has opened (speech onset or first caption) and not yet finished. */
+  private userTurnOpen = false;
+  /**
+   * When the model speech sent so far will have finished playing, by the
+   * relay's clock: each chunk extends it by its own length. A turn that opens
+   * before this (plus `ECHO_GUARD_MS`) may be the call hearing itself.
+   */
+  private assistantAudioEndsAtMs = 0;
 
   constructor(
     private ws: WebSocket,
@@ -216,6 +238,11 @@ export class RelaySession {
       agentId?: string | null;
       /** Test seam: how the persona is fetched. */
       fetchPersona?: (userId: string, agentId: string) => Promise<VoicePersona | null>;
+      /** Set when the call's token granted the chat's tools — see RelayGrant. */
+      tools?: VoiceToolGrant | null;
+      /** Test seams: how Juno is reached for tools, or the list itself. */
+      toolsFetch?: typeof fetch;
+      toolListing?: VoiceToolListing | null;
     } = {}
   ) {
     this.usageTimer = setInterval(() => {
@@ -241,9 +268,9 @@ export class RelaySession {
           this.userTurnAnchor = -1;
           this.historySeeded = true;
         }
-        // Side by side: a call in an agent's thread waits for the slower of
-        // the two, not for both in turn.
-        await Promise.all([this.loadMemory(), this.loadPersona()]);
+        // Side by side: a call in an agent's thread waits for the slowest of
+        // these, not for each in turn.
+        await Promise.all([this.loadMemory(), this.loadPersona(), this.loadTools()]);
         await this.startProvider(msg.provider, msg.thinking === true, msg.effort);
         return;
       case "session.switch":
@@ -260,6 +287,9 @@ export class RelaySession {
         // history and echo them to the client transcript immediately.
         this.transcript.push({ role: "user", text, context: context || undefined, final: true });
         this.send({ type: "transcript", role: "user", text: displayText, final: true, turnId: msg.turnId });
+        // A typed turn is the person's own words too, and may answer a card.
+        this.toolBridge?.userTurnOpened();
+        this.toolBridge?.userTurnFinal(text);
         this.provider?.sendText(providerText(text, context));
         return;
       }
@@ -299,6 +329,31 @@ export class RelaySession {
     }
     const fetchPersona = this.opts.fetchPersona ?? ((userId, id) => fetchVoicePersona(userId, id));
     this.persona = await fetchPersona(this.userId, agentId).catch(() => null);
+  }
+
+  /** Once per call, and only when the call's token granted tools. */
+  private async loadTools(): Promise<void> {
+    if (this.toolsLoaded) return;
+    this.toolsLoaded = true;
+    const grant = this.opts.tools;
+    if (!grant) return;
+    const bridge = new VoiceToolBridge({
+      userId: this.userId,
+      sessionId: this.sessionId,
+      grant,
+      send: (msg) => this.send(msg),
+      ...(this.opts.toolsFetch ? { fetchImpl: this.opts.toolsFetch } : {}),
+      ...(this.opts.toolListing !== undefined ? { listing: this.opts.toolListing } : {}),
+    });
+    await bridge.load();
+    this.toolBridge = bridge;
+  }
+
+  /** A turn of the caller's opened: the point a spoken answer to a card is counted from. */
+  private openUserTurn(): void {
+    if (this.userTurnOpen) return;
+    this.userTurnOpen = true;
+    this.toolBridge?.userTurnOpened(Date.now() < this.assistantAudioEndsAtMs + ECHO_GUARD_MS);
   }
 
   handleAudio(pcm16k: Buffer): void {
@@ -348,11 +403,15 @@ export class RelaySession {
       const events = this.makeEvents(id, session);
       // The voice is chosen per connect, not per call: its names belong to a
       // provider, and a switch lands on a provider with different ones.
+      // The tools ride every connect, as memory does: a switch lands on a
+      // provider that declares them its own way, or not at all.
+      const tools = this.toolBridge?.declarations ?? [];
       await session.connect(
         {
           instructions: voiceInstructions(this.memory ?? null, this.persona?.instructions ?? null),
           transcript: this.transcript.slice(-30),
           voice: agentVoice(id, this.persona?.voiceSlot ?? null),
+          ...(tools.length ? { tools, toolInstructions: this.toolBridge?.instructions ?? null } : {}),
         },
         events
       );
@@ -386,6 +445,10 @@ export class RelaySession {
         ...(established.delegate ? { delegate: established.delegate } : {}),
         ...(established.effort ? { effort: established.effort } : {}),
         ...(established.notice ? { notice: established.notice } : {}),
+        // How many of the chat's tools the model was given — only for a call
+        // Juno lent some to, so 0 means "this voice model can't use them", never
+        // "none were granted" or "Juno could not be asked".
+        ...(tools.length ? { tools: established.tools ?? 0 } : {}),
       });
     } catch (err) {
       this.send({
@@ -412,6 +475,7 @@ export class RelaySession {
     return {
       onAudio: (pcm, rate) => {
         if (!isCurrent() || this.closed) return;
+        this.assistantAudioEndsAtMs = Math.max(this.assistantAudioEndsAtMs, Date.now()) + (pcm.length / 2 / rate) * 1000;
         const out = rate === PLAYBACK_SAMPLE_RATE ? pcm : resamplePcm16(pcm, rate, PLAYBACK_SAMPLE_RATE);
         if (this.ws.readyState === this.ws.OPEN) this.ws.send(out, { binary: true });
       },
@@ -424,7 +488,15 @@ export class RelaySession {
           if (text) this.recordTurn(t.role, text);
           if (t.text) this.send({ type: "transcript", role: t.role, text: t.text, final: true });
           else if (text) this.send({ type: "transcript", role: t.role, text, final: true });
+          if (t.role === "user") {
+            // The person's finished words are the only thing that can answer
+            // a card aloud, and only in a turn that opened after the card did.
+            this.openUserTurn();
+            this.userTurnOpen = false;
+            if (text) this.toolBridge?.userTurnFinal(text);
+          }
         } else {
+          if (t.role === "user" && t.text) this.openUserTurn();
           this.partial[t.role] += t.text;
           this.send({ type: "transcript", role: t.role, text: t.text, final: false });
         }
@@ -433,14 +505,28 @@ export class RelaySession {
       onUserSpeechStart: () => {
         if (!isCurrent()) return;
         if (this.userTurnAnchor < 0) this.userTurnAnchor = this.transcript.length;
+        this.openUserTurn();
         this.send({ type: "turn", speaker: "user", phase: "start" });
       },
+      ...(this.toolBridge && this.toolBridge.declarations.length
+        ? {
+            onToolCall: (call) => {
+              const bridge = this.toolBridge;
+              if (!isCurrent() || !bridge) return Promise.resolve("The call moved on, so nothing was run.");
+              // A waiting call's outcome reaches the model as a turn of its
+              // own, on whichever provider is serving the call by then.
+              return bridge.run(call, (late) => this.provider?.sendText(late));
+            },
+          }
+        : {}),
       onInterrupted: () => {
         if (!isCurrent()) return;
         // Providers do not send a final transcript event for cancelled output.
         // Preserve the audible/visible prefix for provider-switch context, then
         // let the client seal its matching partial when it receives interrupted.
         this.commitPartial("assistant");
+        // The client flushes its playback now, so nothing more of it is heard.
+        this.assistantAudioEndsAtMs = Date.now();
         this.send({ type: "interrupted" });
       },
       onUsage: (u) => {
@@ -611,6 +697,9 @@ export class RelaySession {
     this.closed = true;
     if (this.usageTimer) clearInterval(this.usageTimer);
     if (this.sessionTimer) clearTimeout(this.sessionTimer);
+    // Calls still running are cancelled; an approval nobody answered is
+    // superseded on Juno's side when its request goes away.
+    this.toolBridge?.close();
     await this.provider?.close().catch(() => {});
     this.provider = null;
   }

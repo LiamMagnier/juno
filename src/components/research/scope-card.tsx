@@ -175,7 +175,7 @@ export function ScopeCard({ runId, atTail, onStarted, embedded = false }: ScopeC
         <RunGalaxy phase="waiting" loopId={`research-plan:${runId}`} />
         <PhraseWithArgs
           spec={[phrase(RESEARCH_COPY.scope.planReady), phrase(RESEARCH_COPY.scope.review)]}
-          className="min-w-0 flex-1 truncate text-ui text-foreground/80"
+          className="min-w-0 flex-1 truncate text-ui text-muted-foreground"
         />
         <ChevronRight aria-hidden className="size-3.5 text-muted-foreground rtl:-scale-x-100" />
       </Pressable>
@@ -310,7 +310,7 @@ function ScopeCardBody({
       aria-busy={locked || undefined}
       data-revising={revising || undefined}
       className={cn(
-        "rf-scope @container/scope relative text-card-foreground transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+        "rf-scope @container/scope relative text-card-foreground transition-opacity duration-base ease-out-soft",
         !embedded && "rounded-card border border-border/70 bg-card",
         revising && "opacity-60",
       )}
@@ -351,7 +351,7 @@ function ScopeCardBody({
                   aria-label={phraseText([{ parts: [{ phrase: questionLabel }, { kind: "number", value: i + 1 }] }], locale)}
                   data-no-auto-translate
                   onChange={(e) => setDraft((d) => editQuestion(d, question.key, e.target.value))}
-                  className="min-h-9 flex-1 resize-none rounded-field border border-transparent bg-transparent px-2 py-1.5 text-body text-foreground [field-sizing:content] hover:border-input focus-visible:border-primary focus-visible:outline-none disabled:opacity-60"
+                  className="min-h-9 flex-1 resize-none rounded-field border border-transparent bg-transparent px-2 py-1.5 text-body text-foreground [field-sizing:content] hover:border-input focus-visible:border-foreground/60 kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] focus-visible:outline-none disabled:opacity-60"
                 />
                 {canRemoveQuestion(draft) && (
                   <Pressable
@@ -395,7 +395,7 @@ function ScopeCardBody({
               const answer = draft.answers[clarification.id] ?? "";
               return (
                 <div key={clarification.id} className="space-y-1.5">
-                  <p lang={contentLang} id={`clarify-${run.id}-${clarification.id}`} className="text-body text-foreground/90">
+                  <p lang={contentLang} id={`clarify-${run.id}-${clarification.id}`} className="text-body text-foreground">
                     {clarification.question}
                   </p>
                   {clarification.options.length > 0 ? (

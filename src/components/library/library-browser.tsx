@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { IndexStatus } from "@/components/library/index-status";
+import { previewOnClick } from "@/components/library/library-items";
 import { kindLabel, typeLabel, type LibraryItem, type LibraryUpload, type LibraryView } from "@/components/library/library-types";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
@@ -45,6 +46,11 @@ export interface LibraryRowActions {
   onDelete: (item: LibraryItem) => void;
   onRestore: (item: LibraryItem) => void;
   onVersions: (item: LibraryItem) => void;
+  /**
+   * Look at a file in place (library-quick-look.tsx). Optional: without it a
+   * name opens the file in a new tab, which downloads anything not a picture.
+   */
+  onPreview?: (item: LibraryItem) => void;
 }
 
 export interface LibraryUploadActions {
@@ -84,7 +90,14 @@ const listGrid =
   "@[40rem]/page:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_6rem_7.5rem] " +
   "@[48rem]/page:grid-cols-[1.25rem_minmax(0,1fr)_4.5rem_5.5rem_6rem_7.5rem]";
 
-const captionClass = "text-caption tabular-nums text-muted-foreground";
+/**
+ * Inside a list row, the caption ink steps to `muted-on-fill` while the row
+ * wears a fill (hover, selected): `muted-foreground` on `--selected` measured
+ * 4.32:1 light and 4.0:1 dark, under AA. Outside a row the group variants
+ * match nothing and the caption keeps its ink.
+ */
+const captionClass =
+  "text-caption tabular-nums text-muted-foreground group-hover/row:text-muted-on-fill group-data-[selected]/row:text-muted-on-fill";
 
 function nameId(id: string) {
   return `library-name-${id}`;
@@ -222,7 +235,7 @@ function ItemMenu({
 }
 
 /** The file's name, as the link that opens it (or plain text once it is deleted). */
-function ItemName({ item, className }: { item: LibraryItem; className?: string }) {
+function ItemName({ item, className, onPreview }: { item: LibraryItem; className?: string; onPreview?: (item: LibraryItem) => void }) {
   const shared = cn("block truncate text-ui font-medium", className);
   if (item.deletedAt) {
     return (
@@ -239,7 +252,14 @@ function ItemName({ item, className }: { item: LibraryItem; className?: string }
       rel="noopener noreferrer"
       title={item.fileName}
       translate="no"
-      className={cn(shared, "text-foreground underline-offset-4 hover:underline")}
+      aria-haspopup={onPreview ? "dialog" : undefined}
+      onClick={previewOnClick(item, onPreview)}
+      // The name is the row's main target, drawn one 20px line tall. Under a
+      // finger its box grows to 44 with padding the negative margin hands
+      // back, so the row keeps its rhythm; `relative` lifts it over the
+      // caption it now overlaps, so that strip opens the file too. A ::before
+      // pad (`hit-44`) would be clipped by `truncate`.
+      className={cn(shared, "text-foreground underline-offset-4 hover:underline coarse:relative coarse:-my-3 coarse:min-h-11 coarse:py-3")}
     >
       {item.fileName}
     </a>
@@ -327,7 +347,7 @@ export function LibraryListHeader({
   );
 }
 
-function ListThumb({ item }: { item: LibraryItem }) {
+function ListThumb({ item, onPreview }: { item: LibraryItem; onPreview?: (item: LibraryItem) => void }) {
   // No excerpt at 40px: six grey lines at that size are texture, not content,
   // and skipping it keeps a long list from making a request per row.
   const preview = <FilePreview item={item} className="absolute inset-0" sizes="40px" excerpt={false} />;
@@ -339,7 +359,7 @@ function ListThumb({ item }: { item: LibraryItem }) {
       {preview}
     </div>
   ) : (
-    <a href={item.url} target="_blank" rel="noopener noreferrer" tabIndex={-1} aria-hidden="true" className={className}>
+    <a href={item.url} target="_blank" rel="noopener noreferrer" tabIndex={-1} aria-hidden="true" onClick={previewOnClick(item, onPreview)} className={className}>
       {preview}
     </a>
   );
@@ -366,10 +386,11 @@ function LibraryListRow({
     <article
       role="listitem"
       aria-labelledby={nameId(item.id)}
+      data-selected={selected || undefined}
       style={stagger ? staggerDelay(index, "tight") : undefined}
       className={cn(
         listGrid,
-        "group/row min-h-16 px-2 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+        "group/row min-h-16 px-2 transition-colors duration-fast ease-out-soft",
         stagger && "motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         // Hover is the fill; selected is the next rung down (FLAT_UI.md §3.1),
         // so a selected row under the pointer does not lighten.
@@ -387,9 +408,9 @@ function LibraryListRow({
       />
 
       <div className="flex min-w-0 items-center gap-3 py-3">
-        <ListThumb item={item} />
+        <ListThumb item={item} onPreview={actions.onPreview} />
         <div className="min-w-0 flex-1">
-          <ItemName item={item} />
+          <ItemName item={item} onPreview={actions.onPreview} />
           <MetaLine item={item} className="mt-0.5 @[40rem]/page:hidden" />
           {/* A kept file's index is live and belongs to its chat; in Recently
               deleted the thing to say is where the file still is. */}
@@ -597,7 +618,7 @@ export function LibraryList({
 const gridClass =
   "ed-arrive grid grid-cols-2 gap-x-3 gap-y-5 @[40rem]/page:grid-cols-3 @[40rem]/page:gap-x-4 @5xl/page:grid-cols-4";
 
-function GridThumb({ item }: { item: LibraryItem }) {
+function GridThumb({ item, onPreview }: { item: LibraryItem; onPreview?: (item: LibraryItem) => void }) {
   // `sizes` can only speak in window widths, so it says the one true thing it
   // can: below 640 there is no sidebar and a tile is half the window; above it
   // the grid steps on the content column, which caps a tile near 320px.
@@ -615,6 +636,7 @@ function GridThumb({ item }: { item: LibraryItem }) {
       rel="noopener noreferrer"
       tabIndex={-1}
       aria-hidden="true"
+      onClick={previewOnClick(item, onPreview)}
       className="block size-full focus-visible:rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       {preview}
@@ -652,7 +674,7 @@ function LibraryGridTile({
       className={cn("group/tile flex min-w-0 flex-col", stagger && "motion-safe:animate-rise-in [animation-fill-mode:backwards]")}
     >
       <div className="surface-inset relative aspect-square overflow-hidden rounded-card">
-        <GridThumb item={item} />
+        <GridThumb item={item} onPreview={actions.onPreview} />
         {/* The hover shade and the selected ring, over the picture and under
             the controls. Colour and opacity only. */}
         <span
@@ -678,7 +700,7 @@ function LibraryGridTile({
         />
       </div>
       <div className="min-w-0 px-0.5 pt-2.5">
-        <ItemName item={item} />
+        <ItemName item={item} onPreview={actions.onPreview} />
         <MetaLine item={item} className="mt-0.5" />
         {item.keptIn ? (
           <KeptInNote keptIn={item.keptIn} className="mt-0.5" />

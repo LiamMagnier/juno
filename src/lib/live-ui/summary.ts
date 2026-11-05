@@ -72,6 +72,38 @@ function walk(list: readonly LiveComponent[], out: string[]): void {
       case "text":
         if (!c.text.includes("{{")) out.push(c.text.replace(/\*\*/g, ""));
         break;
+      case "recipe":
+        if (c.title) out.push(c.title);
+        out.push(`For ${c.servings} ${c.yieldLabel}`);
+        for (const i of c.ingredients) out.push(`• ${i.qty !== undefined ? `${i.qty}${i.unit ? ` ${i.unit}` : ""} ` : ""}${i.name}${i.note ? ` (${i.note})` : ""}`);
+        c.steps.forEach((step, index) => out.push(`${index + 1}. ${step.text}${step.minutes ? ` (${step.minutes} min)` : ""}`));
+        break;
+      case "choices":
+        if (c.question) out.push(c.question);
+        for (const o of c.options) out.push(`○ ${o.label}${o.detail ? `: ${o.detail}` : ""}`);
+        break;
+      case "compare":
+        if (c.title) out.push(c.title);
+        c.options.forEach((o, index) => {
+          out.push(`${o.name}${o.price ? ` · ${o.price}` : ""}${c.recommend === index ? " (recommended)" : ""}${o.tagline ? `: ${o.tagline}` : ""}`);
+          for (const p of o.pros) out.push(`   + ${p}`);
+          for (const m of o.cons) out.push(`   − ${m}`);
+        });
+        break;
+      case "cards":
+        if (c.title) out.push(c.title);
+        for (const it of c.items) out.push(`${it.title}${it.subtitle ? ` · ${it.subtitle}` : ""}${it.detail ? `: ${it.detail}` : ""}`);
+        break;
+      case "tabs":
+        for (const tab of c.tabs) {
+          out.push(tab.label);
+          walk(tab.children, out);
+        }
+        break;
+      case "flashcards":
+        if (c.title) out.push(c.title);
+        for (const card of c.cards) out.push(`${card.front}: ${card.back}`);
+        break;
       default:
         break;
     }

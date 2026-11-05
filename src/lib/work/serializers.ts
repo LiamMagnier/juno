@@ -28,6 +28,7 @@ import type {
   WorkSession,
 } from "@prisma/client";
 import type { EventVisibility } from "@/lib/event-envelope";
+import { AGENT_CONTEXT_COMMAND_KINDS } from "@/lib/agents/relay-context";
 import {
   WORK_ACCESS_MODES,
   WORK_APPROVAL_DECISIONS,
@@ -715,6 +716,10 @@ const REMOTE_PAYLOAD_KEYS: Record<WorkCommandKind, readonly string[]> = {
   // prevent. It discloses nothing: it is one of three words, it is the mode
   // the owner picked, and it can only ever be at least as strict as the Mac's
   // own advertised setting.
+  //
+  // `agentContext` is absent on purpose, here and on `resume`. A crew member's
+  // persona and kept notes reach the Mac only through `serializeClaimedCommand`,
+  // built at claim time and never stored, so a stored copy is always withheld.
   start: ["runId", "target", "goal", "model", "permissionPolicy"],
   pause: ["runId"],
   // Resume carries the whole start payload, not just the id: a Mac relaunched
@@ -856,3 +861,32 @@ export function serializeCommandForRemote(command: WorkCommand): RemoteWorkComma
  * is bound to the pathless one. Wanting the raw payload has to be said out loud.
  */
 export const serializeCommand = serializeCommandForRemote;
+
+/**
+ * A command as the claim endpoint (GET /api/work/hosts/[id]/commands) hands it
+ * to the Mac that has just claimed it: the remote shape, plus `agentContext` on
+ * a start or a resume for a crew member's session.
+ *
+ * `agentContext` is never part of the stored payload. It is the agent's brief,
+ * goals and decrypted notes, rebuilt from the live rows when the command is
+ * claimed (`claimedCommandAgentContext` in src/lib/agents/run-context.ts) and
+ * passed in here, so no plaintext copy of an encrypted note sits in
+ * `WorkCommand.payload`, and a note forgotten since dispatch does not reach a
+ * resume. `REMOTE_PAYLOAD_KEYS` deliberately leaves the key out, so one that
+ * did reach a row (a client enqueueing its own `start`, or a row written
+ * before this) is still withheld: the only `agentContext` a Mac reads is the
+ * one the server built for it.
+ */
+export function serializeClaimedCommand(
+  command: WorkCommand,
+  extras: { agentContext?: string | null } = {}
+): RemoteWorkCommand {
+  const remote = serializeCommandForRemote(command);
+  const agentContext = typeof extras.agentContext === "string" ? extras.agentContext.trim() : "";
+  if (!agentContext || !(AGENT_CONTEXT_COMMAND_KINDS as readonly string[]).includes(remote.kind)) return remote;
+  return {
+    ...remote,
+    payload: { ...(remote.payload as Record<string, Prisma.JsonValue>), agentContext },
+    redacted: remote.redacted.filter((key) => key !== "agentContext"),
+  };
+}

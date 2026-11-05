@@ -22,34 +22,35 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-357 routes: 226 native, 58 planned, 57 web only, 16 internal. 50 pages: on the Mac 37 native, 2 partial, 2 planned, 9 web only; on iOS 24 native, 9 partial, 8 planned, 9 web only.
+386 routes: 230 native, 79 planned, 58 web only, 19 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 16 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 9 | 0 | 2 | 0 |
 | [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 4 | 1 | 0 |
-| [Conversations, messages and sharing](#conversations) | – | – | 9 | 3 | 4 | 0 |
+| [Conversations, messages and sharing](#conversations) | – | – | 9 | 5 | 4 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
-| [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 4 | 2 | 0 |
-| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 7 | 3 | 0 |
-| [Memory](#memory) | 1/1 | 1/1 | 14 | 0 | 0 | 0 |
+| [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 6 | 2 | 0 |
+| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 9 | 3 | 0 |
+| [Memory](#memory) | 1/1 | 1/1 | 14 | 2 | 0 | 0 |
 | [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 4 |
-| [Skills](#skills) | 4/4 | 2/4 (+1 partial) | 10 | 3 | 0 | 0 |
+| [Skills](#skills) | 4/5 | 2/5 (+1 partial) | 10 | 7 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
+| [Activity](#activity) | 1/1 | 1/1 | 1 | 0 | 1 | 0 |
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 2 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 2/3 (+1 partial) | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
-| [Agents](#agents) | 4/4 | 4/4 | 18 | 8 | 1 | 0 |
+| [Agents](#agents) | 4/4 | 4/4 | 18 | 16 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 1 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 28 | 15 | 6 | 1 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 31 | 16 | 6 | 1 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
 | [Owner tools](#admin) | 0/6 | 0/6 | 0 | 0 | 15 | 0 |
-| [Platform endpoints](#platform) | – | – | 1 | 0 | 1 | 10 |
+| [Platform endpoints](#platform) | – | – | 1 | 0 | 1 | 13 |
 | [Conversations messaging each other](#cross-conversation) | – | – | 6 | 0 | 0 | 0 |
 
 <a id="auth"></a>
@@ -160,6 +161,8 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/share` | GET, POST | Native | JunoChatKit, JunoDesktop |  |
 | `/api/share/[id]` | DELETE | Native | JunoChatKit |  |
 | `/api/share/copy` | POST | Web only |  | Make a copy of a shared artifact into the visitor's own account, from the public shared page, which only the web draws. |
+| `/api/share/people` | GET, POST | Planned |  | Share a chat or artifact with specific people by email (the web Share dialog's default): list who has access and add people. The apps' share sheets make public links only (NativeShareClient); revoking a people share is DELETE /api/share/[id], which they already call. |
+| `/api/share/people/[id]` | DELETE | Planned |  | Remove one person from a share with specific people, from the same web dialog; not in the apps' share sheets yet. |
 | `/api/share/report` | POST | Web only |  | Reporting a shared link happens on the shared page, which only the web draws. |
 
 <a id="search"></a>
@@ -214,6 +217,8 @@ The Mac's ⌘K panel searches chats, messages, projects, files and artifacts on 
 | `/api/library/[id]` | DELETE | Native | JunoChatKit |  |
 | `/api/library/made` | GET | Native | JunoChatKit |  |
 | `/api/library/attach` | POST | Native | JunoChatKit |  |
+| `/api/connectors/[id]/files` | GET | Planned |  | The web composer's Add from Google Drive / OneDrive picker (recent files and search). The apps' + menu has no cloud picker yet; the rows are in the shell contract as optional. |
+| `/api/connectors/[id]/files/attach` | POST | Planned |  | As /api/connectors/{id}/files: stores the picked files through the upload pipeline and answers with ready-to-send attachments, the shape /api/library/attach returns. |
 | `/api/prompts` | GET, POST | Planned |  | The saved-prompt library (insert, use counts); the apps read saved prompts through sync but have no library dialog. |
 | `/api/prompts/[id]` | POST, PATCH, DELETE | Planned |  | As /api/prompts. |
 | `/api/upload` | POST | Native | JunoChatKit |  |
@@ -250,6 +255,8 @@ Design is a type of artifact (register #73).
 | `/api/artifacts/[id]/restore` | POST | Native | JunoChatKit | Restore from Recently deleted: the Mac's Recently Deleted sheet on Artifacts and the iPhone's Recently Deleted list. A delete from the apps moves the artifact there (the sync feed tombstones it); a restore brings it back through sync. |
 | `/api/artifacts/[id]/versions` | GET | Native | JunoChatKit | Paginated version history (newest first): the Mac's Version History sheet and the iPhone's Version history, fifty at a time. |
 | `/api/artifacts/[id]/versions/[version]` | GET | Native | JunoChatKit | One version's body: restoring a version older than the synced window fetches it here first. |
+| `/api/artifact-runtime/complete` | POST | Planned |  | window.alevr.complete in an HTML or React artifact: the web's sandbox bridge (src/lib/artifact-ai/bridge-host.ts) calls it for the canvas, the chat card, /a/{id} and scripted shared pages, billed to the viewer. The Mac and iPhone run artifact previews without the bridge, so an app there gets no window.alevr yet (the system prompt teaches it to web turns only). |
+| `/api/artifact-runtime/storage` | POST | Planned |  | window.alevr.storage (get, set, delete, list) for the same artifacts: JSON values per artifact and per viewer, encrypted at rest. Native previews have no bridge yet, as above. |
 | `/api/design` | POST | Native | JunoDesktop |  |
 | `/api/design/[artifactId]` | GET | Web only |  | The Mac reads a design's document from its artifact and hands it to the hosted editor. |
 | `/api/design/[artifactId]/edit` | POST | Planned |  | Ask Juno to change the selected layers of a design; the Mac's hosted editor has no Ask Juno yet. |
@@ -268,7 +275,7 @@ Design is a type of artifact (register #73).
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
 | `/api/memory` | GET, POST, DELETE | Native | JunoChatKit |  |
-| `/api/memory/[id]` | PATCH, DELETE | Native | JunoChatKit |  |
+| `/api/memory/[id]` | GET, PATCH, DELETE | Native | JunoChatKit |  |
 | `/api/memory/backfill` | GET, POST | Native | JunoChatKit |  |
 | `/api/memory/consolidate` | POST | Native | JunoChatKit |  |
 | `/api/memory/edit` | POST | Native | JunoChatKit |  |
@@ -278,7 +285,9 @@ Design is a type of artifact (register #73).
 | `/api/memory/import` | POST | Native | JunoChatKit |  |
 | `/api/memory/import/preview` | POST | Native | JunoChatKit |  |
 | `/api/memory/recap` | GET | Native | JunoChatKit |  |
+| `/api/memory/topics` | GET, POST | Planned |  | Topics Alevr does not remember (“anything about my divorce”), listed and added from Excluded topics on the web's Memory page. A topic is a SUPPRESSION row, so the apps already list it from /api/memory and lift it with DELETE /api/memory/[id]; adding one (which retires every fact on the topic) has no native control yet. |
 | `/api/projects/[id]/memory` | GET, POST | Native | JunoChatKit |  |
+| `/api/conversations/[id]/memory` | GET, PATCH | Planned |  | “Memory off for this chat” (src/lib/chat/memory-off.ts), the web's composer + Memory switch and the chat's More menu. The apps already read the switch (`memoryOff` on the conversation sync entity and on GET /api/conversations/[id]) and can set it through sync (`memoryOff` on conversation.create and conversation.update, the same writer as this route); they draw no control for it yet. The server holds every turn to it whatever the client shows. |
 | `/api/memory/skill-candidates` | GET | Native | JunoChatKit |  |
 | `/api/memory/skill-candidates/[id]` | POST | Native | JunoChatKit |  |
 
@@ -330,6 +339,7 @@ Design is a type of artifact (register #73).
 | `/skills/[id]` | Native | Partial | DesktopSkillPage · JunoMobileSkillDetailView | The phone reads a skill, switches it on or off and deletes it; editing instructions, versions, usage and consent stay on the Mac and the web. |
 | `/skills/new` | Native | Planned | DesktopSkillPage (new) | Writing a new skill is Mac and web only; the phone imports skills from GitHub. |
 | `/skills/import` | Native | Native | DesktopSkillSheets (Import from GitHub) · JunoMobileSkillImportView | A sheet on both apps. |
+| `/skills/teach` | Planned | Planned |  | Teach Alevr: review a method taught once (or a chat's draft_skill card) step by step, confirm what it may use, then switch it on. The apps have no Teach page yet; on the Mac a skill is written in DesktopSkillPage, and a taught skill shows there like any other. |
 
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
@@ -346,6 +356,10 @@ Design is a type of artifact (register #73).
 | `/api/work/skills/[id]/versions/[version]/consent` | POST | Native | JunoWorkKit |  |
 | `/api/work/skills/[id]/versions/[version]/files` | GET | Planned |  | Reading a skill version's bundled files (skills as executable workflows, 2026-10-02); the Mac skill detail does not list them yet. |
 | `/api/work/skills/[id]/export` | GET | Planned |  | Download a skill as its SKILL.md or a zip other hosts install from. The apps have no export action yet. |
+| `/api/skills/teach` | GET, POST | Planned |  | Save a taught skill from the Teach page (saved off unless the reviewed permission fingerprint matches), and look up whether a chat's draft card was saved. The apps have no Teach page yet (see /skills/teach). |
+| `/api/skills/teach/[id]` | GET | Planned |  | Load a taught skill's steps as editable fields to re-teach it on the Teach page. As /api/skills/teach. |
+| `/api/skills/teach/[id]/revoke` | POST | Planned |  | Switch a taught skill off and out of automatic selection in one write, recorded as withdrawn consent. The apps can already switch any skill off through PATCH /api/work/skills/[id]; they have no Teach page to revoke from. |
+| `/api/skills/teach/context` | GET | Planned |  | The projects and connected apps a taught skill can name, for the Teach page's review. As /api/skills/teach. |
 
 <a id="assistants"></a>
 
@@ -360,6 +374,21 @@ Design is a type of artifact (register #73).
 | `/api/assistants` | GET, POST | Native | JunoChatKit |  |
 | `/api/assistants/[id]` | GET, PATCH, DELETE | Native | JunoChatKit |  |
 | `/api/assistants/[id]/move-to-crew` | POST | Planned |  | Move to crew (D-007): the assistant becomes a crew member and leaves the list. The apps still read and open assistants; they have no Move action yet. |
+
+<a id="activity"></a>
+
+## Activity
+
+G70: one overview of everything live across Work tasks, Code tasks and Research runs, grouped Needs you / Running / Ready / Blocked. Rows open the surface that owns the item (its chat, Code session or research page), where approvals and questions are answered; Stop uses each product's own stop route.
+
+| Page | Mac | iOS | Native screen | Note |
+|---|---|---|---|---|
+| `/activity` | Native | Native | DesktopActivityScreen (Chat sidebar destination); JunoMobileActivityView (drawer) |  |
+
+| Route | Methods | Status | Called from | Note |
+|---|---|---|---|---|
+| `/api/activity` | GET | Native | JunoChatKit | NativeActivityClient and NativeActivityModel in JunoChatKit/NativeActivity.swift. |
+| `/api/activity/counts` | GET | Web only |  | The web sidebar's Needs you badge. The apps read the counts that ride on GET /api/activity. |
 
 <a id="tasks"></a>
 
@@ -381,7 +410,7 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/work/artifacts/[id]` | GET | Native | JunoWorkKit |  |
 | `/api/work/artifacts/[id]/download` | GET | Native | JunoWorkKit |  |
 | `/api/work/artifacts/[id]/preview` | GET | Web only |  | A spreadsheet deliverable as a grid for the browser; the Mac opens deliverables in Quick Look (register #58). |
-| `/api/work/runs/[id]/control` | POST | Native | JunoWorkKit |  |
+| `/api/work/runs/[id]/control` | POST | Native | JunoChatKit, JunoWorkKit |  |
 | `/api/work/runs/[id]/frames/[callId]` | GET | Planned |  | One step's screenshot from a cloud computer run, owner only, for the web filmstrip and the marked approval card (src/lib/computer/frames.ts). The apps do not draw the filmstrip or the approval frame yet. |
 | `/api/work/sessions` | GET, POST | Native | JunoWorkKit |  |
 | `/api/work/sessions/[id]` | GET, PATCH, DELETE | Native | JunoWorkKit |  |
@@ -445,11 +474,16 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents/[id]` | GET, PATCH, DELETE | Native | JunoWorkKit |  |
 | `/api/agents/[id]/activity` | GET | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer` | GET, POST | Native | JunoWorkKit |  |
-| `/api/agents/[id]/computer/files` | GET | Planned |  | Agent computer file listing and download; web panel disclosure. |
+| `/api/agents/[id]/computer/files` | GET, POST | Planned |  | Agent computer file listing and download; web panel disclosure. |
+| `/api/agents/[id]/computer/demonstration` | GET, POST | Planned |  | Teach by demonstration (docs/design/agents-v2/TEACH.md): start and stop recording during a take over, behind AGENT_TEACH_ENABLED; the web computer overlay only for now. |
+| `/api/agents/[id]/computer/demonstration/draft` | POST | Planned |  | Drafts a skill from a recorded demonstration for review on the Teach page; the web computer overlay only for now. |
 | `/api/agents/[id]/computer/heartbeat` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer/poster` | GET | Native | JunoWorkKit |  |
+| `/api/agents/[id]/computer/shell` | GET | Planned |  | The agent's shell output for one of its Work runs, read after a cursor; the web computer pane's terminal polls it. |
 | `/api/agents/[id]/computer/view` | POST | Native | JunoWorkKit |  |
 | `/api/computer-view/session` | POST | Web only |  | Called by the /computer-view page the apps open in a web view: it trades the page's one-time ticket for the viewer's credentials. The apps never call it themselves. |
+| `/api/agents/[id]/credentials` | GET, POST | Planned |  | An agent's saved site logins (labels and sites, never values), off unless AGENT_VAULT_ENABLED=1; the web profile adds and removes them (docs/design/agents-v2/VAULT.md). |
+| `/api/agents/[id]/credentials/[credentialId]` | PATCH, DELETE | Planned |  | Change or remove one saved login of an agent; web profile only for now. |
 | `/api/agents/[id]/duplicate` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/goals` | GET, POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/goals/[goalId]` | PATCH, DELETE | Native | JunoWorkKit |  |
@@ -468,6 +502,9 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents/[id]/memory-access` | PATCH | Planned |  | What an Orbit member may read of the account's memory, set from its page on the web. The apps keep the default grant until they show the setting. |
 | `/api/agents/rooms` | GET, POST | Planned |  | Orbit rooms: two to six members answering in one conversation. Web first; the apps open a room's conversation as an ordinary chat. |
 | `/api/agents/rooms/[conversationId]` | GET | Planned |  | A room's members, turn plan and handoffs. The apps draw the replies without the room's bylines yet. |
+| `/api/channels/imessage` | GET, DELETE | Planned |  | Whether the server offers texting agents by iMessage, and the account's linked number (last four digits only); DELETE unlinks. Web Settings › Devices first; the apps link nothing yet, and texts reach the agent the same either way. |
+| `/api/channels/imessage/link` | POST | Planned |  | Texts a six-digit code to the number being linked. Web Settings first. |
+| `/api/channels/imessage/verify` | POST | Planned |  | Reads the code back to finish the link. Web Settings first. |
 
 <a id="research"></a>
 
@@ -532,6 +569,9 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/devices/[deviceId]/sessions/[sessionId]/events` | GET, POST | Native | JunoCodeKit |  |
 | `/api/code/devices/[deviceId]/sessions/[sessionId]/messages` | POST | Web only |  | As the approvals verb. |
 | `/api/code/devices/[deviceId]/sessions/[sessionId]/stop` | POST | Web only |  | As the approvals verb. |
+| `/api/runs/live` | GET | Native | JunoCodeKit | REA 8: every live Code session and Work run on the account (steps, current action, elapsed, cost, pending approvals), as a JSON snapshot or an SSE feed. The iPhone's Runs screen and its Live Activity (NativeLiveRunsClient in JunoCodeKit/LiveRuns.swift). |
+| `/api/runs/stop` | POST | Native | JunoCodeKit | REA 8: idempotent Stop for a live Code session or Work run, from the iPhone's Runs screen; the web's agents tree can share it. |
+| `/api/runs/approval` | POST | Native | JunoCodeKit | REA 8: answer a live run's pending approval from the iPhone; Code answers queue for the Mac, Work answers go through the Work decision route. |
 | `/api/code/environments` | GET, POST | Planned |  | Cloud environments (/code/customize). |
 | `/api/code/environments/[id]` | GET, PATCH, DELETE | Planned |  | As /api/code/environments. |
 | `/api/code/github/branches` | GET | Planned |  | The base-branch list for a cloud run. |
@@ -543,7 +583,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/tasks` | GET, POST | Native | JunoCodeKit |  |
 | `/api/code/tasks/[id]` | GET | Planned |  | One cloud task's detail. |
 | `/api/code/tasks/[id]/auto-fix` | GET, PUT | Planned |  | A pull request's auto-fix switch. |
-| `/api/code/tasks/[id]/cancel` | POST | Native | JunoCodeKit |  |
+| `/api/code/tasks/[id]/cancel` | POST | Native | JunoChatKit, JunoCodeKit |  |
 | `/api/code/tasks/[id]/checks` | GET | Planned |  | CI checks on the pushed branch. |
 | `/api/code/tasks/[id]/claim` | POST | Native | JunoCodeKit |  |
 | `/api/code/tasks/[id]/events` | GET, POST | Native | JunoCodeKit |  |
@@ -565,6 +605,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/code/pairing/deny` | POST | Native | JunoCodeKit | Deny on the iPhone, or in the browser at /pair. |
 | `/api/code/pairing/pairs` | GET | Native | JunoCodeKit | The Mac's paired devices (?deviceId=), or the Macs this iPhone may control. |
 | `/api/code/pairing/pairs/[pairId]` | DELETE | Native | JunoCodeKit | Remove a paired device on the Mac. |
+| `/api/code/v2/link/[deviceId]/agents` | POST | Planned |  | A person's Steer, Stop, Pause, Resume and bounded Top-up of one agent of a Mac-hosted Code run (REA backlog 10), from the web Agents tree. Rate-limited, idempotent and audited; the generic link route refuses these commands. The iPhone's remote can adopt it with its native bearer. |
 | `/api/code/v2/link/[deviceId]/stream` | POST | Native | CodeLinkClient.swift opens /api/code/v2/link/<device>/stream, the iPhone's server-sent event stream, and falls back to the long poll. |  |
 | `/api/code/v2/link/[deviceId]/host` | POST | Native | JunoCodeLocal |  |
 | `/api/provider-keys` | GET, POST | Native | JunoCodeLocal |  |
@@ -579,7 +620,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | Page | Mac | iOS | Native screen | Note |
 |---|---|---|---|---|
 | `/settings` | Native | Native | DesktopSettingsWindow |  |
-| `/customize/instructions` | Native | Native | Settings › Personalization (DesktopSettingsPersonalizationPane) | The web's Customize › Instructions tab renders the same personalization section as Settings. |
+| `/customize/instructions` | Native | Native | Settings › Personalization (DesktopSettingsPersonalizationPane) | The web's Customize › Instructions tab renders the same personalization section as Settings. The tone characteristics (Warm, Enthusiastic, Headers & lists, Emoji, Concise) are web-first: /api/settings and the v1 settings record and settings.update patch carry them (toneWarmth … toneConciseness), and the native panes do not draw them yet. |
 | `/profile` | Native | Native | NativeProfileView (DesktopProfileScreen from the account menu's Profile row; JunoMobileProfileView under Settings › Account) |  |
 
 | Route | Methods | Status | Called from | Note |
@@ -685,14 +726,17 @@ Health, reports, webhooks and runner endpoints no client screen calls, and the d
 | `/api/billing/app-store/webhook` | POST | Internal |  | App Store Server Notifications. |
 | `/api/code/tasks/[id]/controls` | GET | Internal |  | Control events for the host or cloud runner, not a client screen. |
 | `/api/code/tasks/[id]/runner-context` | GET | Internal |  | Served once to the GitHub Actions runner (OIDC only). |
+| `/api/channels/sendblue/webhook` | POST | Internal |  | Sendblue's receive webhook for iMessage, authenticated by the sb-signing-secret header (docs/design/agents-v2/ENABLE_IMESSAGE.md). |
 | `/api/csp-report` | POST | Internal |  | Where the browser's CSP sends violation reports. |
 | `/api/devices/mac-app` | GET | Web only |  | Whether the account has a Mac seen in the last 30 days, so the website's Open in Mac app tries the app's URL scheme instead of the download page. The apps never need to ask whether they are installed. |
 | `/api/downloads` | GET | Native | JunoCore |  |
 | `/api/github/webhook` | POST | Internal |  | The GitHub App's webhook. |
 | `/api/health` | GET | Internal |  | Liveness for the uptime monitor. |
+| `/api/payments/stripe-issuing/webhook` | POST | Internal |  | Stripe Issuing's signed real-time authorization requests for agent payment cards. |
 | `/api/stripe/webhook` | POST | Internal |  | Stripe's signed events. |
 | `/api/v1/billing/app-store/webhook` | POST | Internal |  | App Store Server Notifications (the v1 alias). |
 | `/api/voice/spend` | POST | Internal |  | The voice relay reports what a live call has cost. |
+| `/api/voice/tools` | GET, POST | Internal |  | The voice relay lists a call's tools and runs one on Juno, under its own callback token; no client calls it. A card the call raises is answered by the signed-in client through /api/approvals/[id]. |
 | `/api/work/schedules/[id]/fire` | POST | Internal |  | Fired from outside Juno with the automation's own token. |
 
 <a id="cross-conversation"></a>

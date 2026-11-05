@@ -6,14 +6,7 @@ import { toast } from "sonner";
 import { Loader2, ShieldOff } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { ClientWorkGrant, ClientWorkHost } from "@/lib/work/serializers";
 import type { WorkCapability } from "@/lib/work/domain";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
@@ -322,38 +315,31 @@ export default function HostPermissionsPage() {
         />
       </div>
 
-      <Dialog open={confirmingRevoke} onOpenChange={setConfirmingRevoke}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Revoke access for “{host.displayName}”?</DialogTitle>
-            <DialogDescription>
-              {/* Said plainly, in the order the server does it. The second
-                  sentence is the one people are surprised by: revocation is not
-                  only about the future — the queue is retired in the same write,
-                  because a command left pending for a Mac that is never coming
-                  back sits there for five minutes and then expires with nothing
-                  saying why. */}
-              This Mac stops being able to claim any command, from the moment you confirm. Work
-              already queued for it is cancelled rather than left waiting, and running work on it
-              stops. Anything it has already changed on your disk stays changed — revoking cannot
-              reach back into work that has finished.
-              {workload !== null && ` Right now: ${workload.toLowerCase()}.`}
-              {pendingCommands > 0 &&
-                ` ${pendingCommands === 1 ? "1 instruction is" : `${pendingCommands} instructions are`} waiting to be picked up and will be cancelled.`}
-              {" "}You can restore access from this page afterwards, and the Mac keeps its settings.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirmingRevoke(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={() => void revoke()} disabled={busy}>
-              {busy && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
-              Revoke access
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Said plainly, in the order the server does it. The second sentence is
+          the one people are surprised by: revocation is not only about the
+          future — the queue is retired in the same write, because a command
+          left pending for a Mac that is never coming back sits there for five
+          minutes and then expires with nothing saying why. */}
+      <ConfirmDialog
+        open={confirmingRevoke}
+        onOpenChange={setConfirmingRevoke}
+        busy={busy}
+        title={`Revoke access for “${host.displayName}”?`}
+        description={
+          <>
+            This Mac stops being able to claim any command, from the moment you confirm. Work
+            already queued for it is cancelled rather than left waiting, and running work on it
+            stops. Anything it has already changed on your disk stays changed — revoking cannot
+            reach back into work that has finished.
+            {workload !== null && ` Right now: ${workload.toLowerCase()}.`}
+            {pendingCommands > 0 &&
+              ` ${pendingCommands === 1 ? "1 instruction is" : `${pendingCommands} instructions are`} waiting to be picked up and will be cancelled.`}
+            {" "}You can restore access from this page afterwards, and the Mac keeps its settings.
+          </>
+        }
+        confirmLabel="Revoke access"
+        onConfirm={() => void revoke()}
+      />
     </HostFrame>
   );
 }

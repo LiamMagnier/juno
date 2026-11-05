@@ -65,7 +65,7 @@ if (!DB_URL) {
 
     const all = "concise answers code TypeScript Bristol partner diagnosed ADHD studying law launch Astro pregnant analytics dashboard";
     const read = async (userId: string, opts: Parameters<typeof getMemoryProfile>[1]) => {
-      const profile = await getMemoryProfile(userId, { query: all, budgetTokens: 5_000, ...opts });
+      const profile = await getMemoryProfile(userId, { conversationProvider: null, query: all, budgetTokens: 5_000, ...opts });
       return { facts: profile.recent, summary: profile.summary };
     };
 

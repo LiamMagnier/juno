@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   GOAL_NEXT_STEP_KEY,
+  GOAL_WAITING_ON_EXECUTOR_CHECK,
   MAX_GOAL_MILESTONES,
   goalProgress,
   goalSummarySentence,
@@ -9,9 +10,12 @@ import {
   parseCriteria,
   parseMilestones,
   planGoalStep,
+  planStepNotStarted,
+  withBlocker,
   type GoalTaskView,
   type GoalView,
 } from "../src/lib/agents/goals";
+import { EXECUTOR_UNKNOWN_EXPLANATION } from "../src/lib/work/executor-presence";
 import { boardStateForWorkStatus, boardStateSentence, projectTaskBoard, validateDependencies, MAX_TASK_DEPENDENCIES } from "../src/lib/work/board";
 import { WORK_STATUSES } from "../src/lib/work/domain";
 
@@ -196,4 +200,41 @@ test("Continue on a stopped step retries it once, still inside the run bound", (
   assert.deepEqual(step.kind === "retry" && step.attempt, 2);
   assert.equal(planGoalStep(goal({ runsUsed: 6 }), acted, now, { retryApproved: true }).kind, "ask");
   assert.equal(planGoalStep(goal(), [task({ status: "failed" })], now, { retryApproved: true }).kind, "retry");
+});
+
+test("a step that did not start: a refusal is a decision, a confirmation a question, an unreadable heartbeat neither", () => {
+  const earlier = [{ kind: "overdue", text: "Past its due date.", at: "2026-10-01T00:00:00.000Z" }];
+  // The unattended sweep could not read the cloud heartbeat: nothing is wrong
+  // with the step, so the blockers stay as they are and nothing is said on the
+  // member. It used to read as "No cloud worker is running" and land here as a
+  // needs_decision blocker plus a task_refused line.
+  for (const step of ["start", "retry"] as const) {
+    const later = planStepNotStarted({ step, result: { message: EXECUTOR_UNKNOWN_EXPLANATION, retryLater: true }, blockers: earlier, now });
+    assert.deepEqual(later, { blockers: null, nextAction: GOAL_WAITING_ON_EXECUTOR_CHECK, recordRefusal: false });
+  }
+
+  const message = "Scout's Mac is offline, so nothing was started.";
+  const refused = planStepNotStarted({ step: "start", result: { message }, blockers: earlier, now });
+  assert.deepEqual(refused.blockers?.[0], { kind: "needs_decision", text: message, at: now.toISOString() });
+  assert.equal(refused.blockers?.[1]?.kind, "overdue", "other kinds are kept");
+  assert.equal(refused.nextAction, "Waiting for you: the next step could not start");
+  assert.equal(refused.recordRefusal, true);
+  // The same refusal again is not said on the member twice.
+  assert.equal(planStepNotStarted({ step: "start", result: { message }, blockers: refused.blockers, now }).recordRefusal, false);
+
+  const retry = planStepNotStarted({ step: "retry", result: { message }, blockers: [], now });
+  assert.equal(retry.nextAction, "Waiting for you: the retry could not start");
+  assert.equal(retry.recordRefusal, true);
+
+  const confirm = planStepNotStarted({ step: "start", result: { message: "About $2.00.", needsConfirmation: true }, blockers: [], now });
+  assert.equal(confirm.nextAction, "Waiting for your OK to spend on the next step");
+  assert.equal(confirm.recordRefusal, false, "a question is not a refusal");
+  assert.equal(confirm.blockers?.[0]?.kind, "needs_decision");
+
+  // withBlocker: the new one first, one per kind, at most four.
+  const many = ["run_budget", "spend_budget", "step_failed", "agent_paused", "overdue"].map((kind) => ({ kind, text: kind, at: "" }));
+  const merged = withBlocker(many, { kind: "run_budget", text: "new", at: "" });
+  assert.equal(merged.length, 4);
+  assert.deepEqual(merged[0], { kind: "run_budget", text: "new", at: "" });
+  assert.equal(merged.filter((b) => b.kind === "run_budget").length, 1);
 });

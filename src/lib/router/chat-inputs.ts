@@ -162,7 +162,20 @@ export async function autoRoutingContext({
   );
 }
 
-/** The task class for a turn Auto did not route, so hand-routed turns are evidence too. */
-export function classifyTaskForTelemetry(message: string): TaskClass {
-  return classifyTask({ message, complexity: classifyPromptComplexity(message) }).taskClass;
+/**
+ * The task class for a turn Auto did not route, so hand-routed turns are
+ * evidence too. Takes the same request facts Auto's classification does (web
+ * search, connectors) so a hand-routed web turn lands in the same
+ * (model, task class) cell an Auto-routed one would, not in "everyday".
+ */
+export function classifyTaskForTelemetry(
+  message: string,
+  facts: { wantsWebSearch?: boolean; toolsOffered?: number } = {}
+): TaskClass {
+  return classifyTask({
+    message,
+    complexity: classifyPromptComplexity(message),
+    wantsWebSearch: facts.wantsWebSearch,
+    toolsOffered: facts.toolsOffered,
+  }).taskClass;
 }

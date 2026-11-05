@@ -5,6 +5,7 @@ import { VoiceBeam } from "voice-glow";
 
 import { junoVoicePalette, useEffectTheme } from "@/components/effects/use-effect-theme";
 import type { GlowLevel, VoiceGlowProps } from "@/components/voice/voice-glow-stage";
+import { SCRIPT_COLOR } from "@/lib/design/tokens.generated";
 
 /*
  * The two lab rows drawn by the Libraries.dev package rather than Alevr's
@@ -53,14 +54,14 @@ export function TodayGlow({ props, voices, now }: { props: VoiceGlowProps; voice
 const BEAM_PALETTE = {
   light: {
     you: ["#bc5806", "#c9661a", "#b54f0a", "#d9741f", "#c45c12", "#d06c1a", "#b85308"],
-    juno: ["#2d49c9", "#3c5cdd", "#2a44bb", "#4a67e0", "#3350cf", "#4260d8", "#2d49c9"],
-    thinking: ["#3c5cdd", "#bc5806", "#2d49c9", "#d9741f", "#3c5cdd", "#bc5806", "#2d49c9"],
+    juno: [SCRIPT_COLOR.presence.light, "#3c5cdd", "#2a44bb", "#4a67e0", "#3350cf", "#4260d8", SCRIPT_COLOR.presence.light],
+    thinking: ["#3c5cdd", "#bc5806", SCRIPT_COLOR.presence.light, "#d9741f", "#3c5cdd", "#bc5806", SCRIPT_COLOR.presence.light],
     muted: ["#9a9ca0", "#a4a6aa", "#9a9ca0", "#a4a6aa", "#9a9ca0", "#a4a6aa", "#9a9ca0"],
   },
   dark: {
     you: ["#f3a26b", "#f08f4f", "#f5b080", "#ee9a60", "#f3a26b", "#f08f4f", "#f5b080"],
-    juno: ["#97a6e6", "#8496ec", "#a8b4ee", "#8b9ce9", "#97a6e6", "#8496ec", "#a8b4ee"],
-    thinking: ["#8496ec", "#f3a26b", "#97a6e6", "#f08f4f", "#8496ec", "#f3a26b", "#97a6e6"],
+    juno: [SCRIPT_COLOR.presence.dark, "#8496ec", "#a8b4ee", "#8b9ce9", SCRIPT_COLOR.presence.dark, "#8496ec", "#a8b4ee"],
+    thinking: ["#8496ec", "#f3a26b", SCRIPT_COLOR.presence.dark, "#f08f4f", "#8496ec", "#f3a26b", SCRIPT_COLOR.presence.dark],
     muted: ["#84868a", "#8e9094", "#84868a", "#8e9094", "#84868a", "#8e9094", "#84868a"],
   },
 } as const;

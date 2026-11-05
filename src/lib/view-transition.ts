@@ -25,8 +25,21 @@ import type * as React from "react";
 
 export type ViewTransitionKind = "thread" | "canvas";
 
-/** The longest a route change may hold the page on its snapshot. */
-const ROUTE_WAIT_MS = 450;
+/**
+ * Which way a transition goes, for the moves whose two directions are timed
+ * differently. The canvas opens over the slow rung on out-expo and closes over
+ * the base rung on the accelerate (globals.css, `html[data-vt-dir="close"]`).
+ */
+export type ViewTransitionDirection = "open" | "close";
+
+/**
+ * The longest a route change may hold the page on its snapshot (spec D23,
+ * C18): 80ms. While it waits, the whole window is a frozen picture that does
+ * not answer the pointer, so this is a ceiling on a freeze, not a pacing
+ * choice. It was 450, which on a slow server held the window still for
+ * almost half a second after every sidebar click.
+ */
+export const ROUTE_WAIT_MS = 80;
 
 let running = false;
 const routeWaiters = new Set<(pathname: string) => void>();
@@ -42,27 +55,35 @@ export function viewTransitionActive(): boolean {
 
 /**
  * Runs `update` inside a view transition of `kind`, or plainly where the API is
- * missing or another transition is already running.
+ * missing or another transition is already running. `dir` stamps
+ * `html[data-vt-dir]` for the length of the transition, so a move whose close
+ * is timed apart from its open (the canvas) gets its own exit; without it the
+ * close replayed the open.
  */
-export function withViewTransition(kind: ViewTransitionKind, update: () => void | Promise<void>): Promise<void> {
+export function withViewTransition(
+  kind: ViewTransitionKind,
+  update: () => void | Promise<void>,
+  options: { dir?: ViewTransitionDirection } = {},
+): Promise<void> {
   if (!supportsViewTransitions() || running) return Promise.resolve(update()).then(() => undefined);
   const root = document.documentElement;
+  const clear = () => {
+    running = false;
+    if (root.dataset.vt === kind) delete root.dataset.vt;
+    delete root.dataset.vtDir;
+  };
   root.dataset.vt = kind;
+  if (options.dir) root.dataset.vtDir = options.dir;
+  else delete root.dataset.vtDir;
   running = true;
   let transition: ViewTransition;
   try {
     transition = document.startViewTransition(update);
   } catch {
-    running = false;
-    delete root.dataset.vt;
+    clear();
     return Promise.resolve(update()).then(() => undefined);
   }
-  return transition.finished
-    .catch(() => undefined)
-    .finally(() => {
-      running = false;
-      if (root.dataset.vt === kind) delete root.dataset.vt;
-    });
+  return transition.finished.catch(() => undefined).finally(clear);
 }
 
 /** Called by PageTransition when a pathname has committed. */

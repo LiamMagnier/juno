@@ -68,8 +68,15 @@ function getFileIcon(mime: string, kind: string) {
   return FileText;
 }
 
-/** queued | extracting | ocr | indexing | ready | degraded | failed | stale */
-function indexLabel(state: string | undefined) {
+/**
+ * queued | extracting | ocr | indexing | ready | degraded | failed | stale.
+ * "Indexed" means retrieval has chunks to rank: a ready document with none
+ * is still being prepared by the indexer, and its text is sent whole meanwhile.
+ */
+function indexLabel(state: string | undefined, chunkCount?: number) {
+  if ((state === "ready" || state === "degraded") && chunkCount === 0) {
+    return { label: "Indexing…", tone: "" };
+  }
   switch (state) {
     case "ready":
       return { label: "Indexed", tone: "" };
@@ -164,14 +171,14 @@ export function ProjectSourcesList({
         className={cn(
           // One compact row rather than a 220px slab: the well is an offer,
           // not the page's subject, and the list it fills sits right under it.
-          "group flex w-full items-center gap-4 rounded-card border border-dashed border-foreground/[.12] p-1.5 pr-4 text-left transition-[border-color,background-color] duration-fast ease-out-soft hover:border-foreground/25 hover:bg-foreground/[.02] disabled:cursor-progress motion-reduce:transition-none",
+          "group flex w-full items-center gap-4 rounded-card border border-dashed border-foreground/[.12] p-1.5 pr-4 text-left transition-[border-color,background-color] duration-fast ease-out-soft hover:border-foreground/25 hover:bg-foreground/[.02] disabled:cursor-progress",
           dragging && "border-primary/60 bg-primary/5 hover:border-primary/60 hover:bg-primary/5"
         )}
         {...dropHandlers}
       >
         <span
           className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-xs border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none",
+            "flex size-11 shrink-0 items-center justify-center rounded-xs border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground",
             dragging && "text-primary group-hover:text-primary"
           )}
         >
@@ -260,19 +267,19 @@ export function ProjectSourcesList({
             <section aria-label="Files">
               <p className="pj-annot mb-1 flex items-center gap-2 px-3">
                 Files
-                <span className="text-muted-foreground/70">{filteredFiles.length}</span>
+                <span>{filteredFiles.length}</span>
               </p>
               <ul className="space-y-px">
                 {filteredFiles.map((file, i) => {
                   const Icon = getFileIcon(file.mimeType, file.kind);
-                  const status = indexLabel(file.knowledge?.state);
+                  const status = indexLabel(file.knowledge?.state, file.knowledge?.chunkCount);
                   return (
                     <li
                       key={file.id}
-                      className="group flex w-full items-center gap-3 rounded-field p-1.5 pr-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                      className="group flex w-full items-center gap-3 rounded-field p-1.5 pr-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent [animation-fill-mode:backwards] motion-safe:animate-rise-in"
                       style={staggerDelay(i, "tight")}
                     >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-sm border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-sm border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
                         <Icon className="size-4" aria-hidden="true" />
                       </span>
                       <a
@@ -282,14 +289,14 @@ export function ProjectSourcesList({
                         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
                       >
                         <span className="truncate text-ui font-medium text-foreground">{file.fileName}</span>
-                        <span className="pj-annot flex items-center gap-2">
+                        <span className="pj-annot flex items-center gap-2 group-hover:text-muted-on-fill">
                           <span>{formatBytes(file.size)}</span>
                           {/* The state in words, no coloured pip (no status dots). */}
                           {status && <span className={status.tone || undefined}>· {status.label}</span>}
                         </span>
                       </a>
 
-                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
+                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100">
                         <Pressable kind="icon" size="sm" asChild aria-label={`Download ${file.fileName}`}>
                           <a href={file.url} target="_blank" rel="noopener noreferrer" download title="Download">
                             <ActionIcons.download className="size-3.5" aria-hidden="true" />
@@ -319,7 +326,7 @@ export function ProjectSourcesList({
             <section aria-label="Artifacts">
               <p className="pj-annot mb-1 flex items-center gap-2 px-3">
                 Artifacts
-                <span className="text-muted-foreground/70">{filteredArtifacts.length}</span>
+                <span>{filteredArtifacts.length}</span>
               </p>
               <ul className="space-y-px">
                 {filteredArtifacts.map((art, i) => (
@@ -334,9 +341,9 @@ export function ProjectSourcesList({
                         they had clicked (L27). */}
                     <Link
                       href={artifactPath(art.id)}
-                      className="group flex w-full items-center gap-3 rounded-field p-1.5 pr-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+                      className="group flex w-full items-center gap-3 rounded-field p-1.5 pr-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent"
                     >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-sm border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-sm border border-foreground/[.08] bg-foreground/[.025] text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
                         <AppIcons.artifacts className="size-4" aria-hidden="true" />
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -349,7 +356,7 @@ export function ProjectSourcesList({
                           artifact inside the product. It fades in and nudges
                           the way the row goes. */}
                       <ArrowRight
-                        className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 coarse:opacity-100 motion-reduce:transition-none"
+                        className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 coarse:opacity-100"
                         aria-hidden="true"
                       />
                     </Link>

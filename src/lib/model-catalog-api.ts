@@ -41,10 +41,15 @@ export async function loadAvailableModels(): Promise<ModelInfo[]> {
   //
   // Health did not stop being useful, it stopped being a *filter*. It still
   // reports through /api/health, still alerts an operator on the down/recovered
-  // transition, still marks `available` on the runner catalog below, and
-  // /api/chat still reroutes a request off a dead provider with a visible
-  // warning instead of streaming a guaranteed failure — which is the honest
-  // place to handle it, because that is the moment there is a user to tell.
+  // transition (and mails when the lab serves a default model), still marks
+  // `unavailableReason` on the pickers' catalog (`withAvailability` below) and
+  // `available` on the runner catalog, and Auto still routes around a dead
+  // provider. What /api/chat does NOT do is reroute an explicit choice: a
+  // model the reader picked is a routing contract (model-selection.ts,
+  // `allowSubstitution`), so that turn goes to the chosen lab and fails with
+  // a neutral message, and the error card offers one other model as an
+  // explicit, one-click choice. A brand-new chat whose default is marked
+  // unavailable starts on Auto instead (src/lib/chat/initial-model.ts).
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -66,6 +71,26 @@ export async function loadAvailableModels(): Promise<ModelInfo[]> {
  */
 export async function loadSelectableModels(): Promise<ModelInfo[]> {
   return withSupersededMarked(await loadAvailableModels());
+}
+
+/**
+ * Mark each model the deployment cannot serve right now with
+ * `unavailableReason`, using the same two signals the native manifest turns
+ * into `health_check_failed`: the lab's cached health verdict and the model's
+ * own capability probe. Listed, not removed (see `loadAvailableModels` for why
+ * a lab must never silently vanish); the web picker renders these disabled.
+ */
+export function withAvailability(
+  models: ModelInfo[],
+  verdicts: ReadonlyMap<string, { allowed: boolean }>,
+  isProviderHealthy: (provider: ModelInfo["provider"]) => boolean,
+): ModelInfo[] {
+  return models.map((model) => {
+    if (model.comingSoon) return model;
+    if (!isProviderHealthy(model.provider)) return { ...model, unavailableReason: "provider_unhealthy" as const };
+    if (verdicts.get(model.id)?.allowed === false) return { ...model, unavailableReason: "model_health_check" as const };
+    return model;
+  });
 }
 
 /**

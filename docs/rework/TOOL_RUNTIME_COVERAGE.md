@@ -45,7 +45,7 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 ## Models
 
 <!-- coverage:models:start -->
-54 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
+56 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
 
 | Model | Adapter | roundTrip | parallel | toolImages | runCodeE2E | skillE2E | Compatible |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -73,7 +73,8 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 | `zhipu:glm-4.7-flashx` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `zhipu:glm-4.6v-flashx` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `zhipu:glm-4.6v-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
-| `moonshot:kimi-k3` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `moonshot:kimi-k3.1-pro` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `moonshot:kimi-k3.1-pro-highspeed` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `moonshot:kimi-k2.7-code` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `moonshot:kimi-k2.7-code-highspeed` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `deepseek:deepseek-flash` | openai-compatible | untested | untested | n/a | untested | untested | no |
@@ -91,14 +92,15 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 | `xai:grok-build-0.1` | xai-responses | untested | untested | untested | untested | untested | no |
 | `xai:grok-4.20-multi-agent-0309` | xai-responses | untested | untested | untested | untested | untested | no |
 | `minimax:MiniMax-M3` | openai-compatible | untested | untested | untested | untested | untested | no |
-| `minimax:MiniMax-M3.1-Flash-Preview` | openai-compatible | untested | untested | untested | untested | untested | no |
-| `minimax:MiniMax-M2.7-highspeed` | openai-compatible | untested | untested | n/a | untested | untested | no |
+| `minimax:MiniMax-M3.1-Flash` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mimo:mimo-v2.6-pro` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mimo:mimo-v2.6-pro-ultraspeed` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mimo:mimo-v2.6-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.8-max` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.7-plus` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.8-omni-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `qwen:qwen3.8-27b` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `qwen:qwen3.8-2.4t-a95b` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `qwen:qwen3.8-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen-long` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `longcat:LongCat-2.0` | openai-compatible | untested | untested | n/a | untested | untested | no |
@@ -124,9 +126,12 @@ gallery, which is necessary but is not evidence that a run happened.
 | iOS ChatKit | untested (presentation fixture-tested) | n/a | n/a | n/a |
 <!-- coverage:matrix:end -->
 
-The realtime voice relay has no tool calls at all. Every call's instructions say that it cannot
-run code, make files, browse or use tools, and that it can be done in the chat
-(`relay/src/session.ts`, `VOICE_TOOL_LIMIT`; `relay/tests/voice-tool-limit.test.ts`). Voice-mode
+The realtime voice relay runs no code. A call with no tools says it cannot run code, make files,
+browse or use tools, and that it can be done in the chat (`relay/src/session.ts`,
+`VOICE_TOOL_LIMIT`; `relay/tests/voice-tool-limit.test.ts`). A call in a chat may use the chat's
+search, past-chats, clock, calculator and connector tools, run on Juno through the chat's
+dispatcher and approval broker (`src/lib/voice-tools.ts`, `relay/src/tools.ts`), and is never
+given an execution tool, so it still says it cannot run code (`VOICE_TOOL_LIMIT_WITH_TOOLS`). Voice-mode
 chat turns go through the chat route and can run code there; they speak the outcome, never the
 code or raw output, say one phase for a run longer than four seconds, and name produced files
 once (`src/lib/chat/tool-run-speech.ts`).

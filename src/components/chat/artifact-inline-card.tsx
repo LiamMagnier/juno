@@ -126,6 +126,7 @@ function RuntimePreview({
   mode,
   onStatus,
   onConsole,
+  artifactId,
 }: {
   type: ArtifactType;
   content: string;
@@ -134,6 +135,8 @@ function RuntimePreview({
   mode: ReturnType<typeof runtimeFor>["mode"];
   onStatus: (status: RunStatus) => void;
   onConsole?: (entry: ConsoleEntry) => void;
+  /** The saved artifact, once it has one: its `window.alevr` runs against it. */
+  artifactId?: string | null;
 }) {
   if (type === "MARKDOWN") {
     return (
@@ -157,6 +160,7 @@ function RuntimePreview({
       mode={mode}
       onConsole={onConsole}
       onStatus={onStatus}
+      runtimeTarget={artifactId ? { artifactId } : null}
     />
   );
 }
@@ -405,7 +409,7 @@ export function ArtifactInlineCard({
   const status: { label: string; tone: string } | null = streaming
     ? { label: "Writing", tone: "text-muted-foreground" }
     : justSaved && runStatus !== "error"
-      ? { label: `Saved to ${FEATURE_NAMES.library.label}`, tone: "text-foreground/75" }
+      ? { label: `Saved to ${FEATURE_NAMES.library.label}`, tone: "text-muted-foreground" }
     : runStatus === "error"
       ? { label: "Error", tone: "text-destructive" }
       : runStatus === "running" || runStatus === "loading"
@@ -483,7 +487,7 @@ export function ArtifactInlineCard({
           {!streaming && updated && (
             <>
               <span aria-hidden className="size-1 shrink-0 rounded-full bg-border" />
-              <span className="shrink-0 text-foreground/60">Updated</span>
+              <span className="shrink-0 text-muted-foreground">Updated</span>
             </>
           )}
           {status && (
@@ -666,6 +670,7 @@ export function ArtifactInlineCard({
                     mode={rt.mode}
                     onStatus={setRunStatus}
                     onConsole={handleConsole}
+                    artifactId={artifactId}
                   />
                 </div>
               </div>
@@ -708,6 +713,7 @@ export function ArtifactInlineCard({
                   mode={rt.mode}
                   onStatus={setRunStatus}
                   onConsole={handleConsole}
+                  artifactId={artifactId}
                 />
               </div>
             </div>

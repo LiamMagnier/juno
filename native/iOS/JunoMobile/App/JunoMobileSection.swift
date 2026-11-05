@@ -8,6 +8,8 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable, Sendable {
     case search
     case code
     case work
+    /// Everything live across Work, Code and research (G70, `/activity`).
+    case activity
     case agents
     case tasks
     case projects
@@ -29,6 +31,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable, Sendable {
         // "navigation.work" in the drawer. The literal is its own English
         // default and becomes a key the moment the catalog gains one.
         case .work: "Work"
+        case .activity: "Activity"
         // A literal for the reason Work's is: the catalog has no
         // `navigation.agents` key, and a missing dotted key renders as itself.
         case .agents: "Orbit"
@@ -61,6 +64,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable, Sendable {
         case .search: .search
         case .code: .code
         case .work: .work
+        case .activity: .chartLine
         case .agents: .agents
         case .tasks: .tasks
         case .projects: .projects
@@ -80,6 +84,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable, Sendable {
         case .search: "magnifyingglass"
         case .code: "chevron.left.forwardslash.chevron.right"
         case .work: "macbook.and.iphone"
+        case .activity: "waveform.path.ecg"
         case .agents: "person.2"
         case .tasks: "clock.badge.checkmark"
         case .projects: "folder"
@@ -108,7 +113,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable, Sendable {
     /// another: Artifacts are things in your Library, and Work sessions are
     /// runs you watch from Code. See ``foldedDestinations``.
     static let drawerDestinations: [JunoMobileSection] = [
-        .library, .projects, .code, .agents, .tasks, .connections,
+        .activity, .library, .projects, .code, .agents, .tasks, .connections,
     ]
 
     /// The phone drawer's column: ``drawerDestinations`` without Code.
@@ -163,7 +168,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable, Sendable {
 
         var sections: [JunoMobileSection] {
             switch self {
-            case .workspace: [.chat, .search, .work, .agents, .code, .tasks]
+            case .workspace: [.chat, .search, .activity, .work, .agents, .code, .tasks]
             case .content: [.projects, .library, .artifacts, .connections]
             case .account: [.settings]
             }

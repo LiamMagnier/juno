@@ -151,7 +151,7 @@ function SourceText({ text, language }: { text: string; language: string | null 
         <pre
           aria-hidden
           data-find-skip
-          className="sticky left-0 select-none border-r border-border/60 bg-secondary px-3 py-4 text-right text-muted-foreground/70"
+          className="sticky left-0 select-none border-r border-border/60 bg-secondary px-3 py-4 text-right text-muted-foreground"
         >
           {gutter}
         </pre>

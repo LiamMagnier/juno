@@ -1,0 +1,68 @@
+/*
+ * The palettes' own rules (command-palette.tsx), the ones a Tailwind class
+ * cannot say on its own.
+ *
+ * ── A CHIP STRIP THAT CONTINUES SAYS SO ────────────────────────────────────
+ *
+ * The search filters' type chips scroll sideways. They used to end in a hard
+ * clip 12px inside the dialog, slicing a chip mid-pill, and the only hint that
+ * the strip went on was a scrollbar that macOS and iOS hide. Each end of the
+ * strip now fades over 2rem when there is more to scroll that way, and not
+ * when there is not: the fade widths ride a scroll-driven animation on the
+ * strip's own inline scroller, which is only active when the chips overflow
+ * it. Where scroll timelines are unsupported the far end always fades, which
+ * is the direction a strip at rest continues in.
+ */
+@property --chip-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --chip-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+.chip-scroller {
+  --chip-fade-end: 2rem;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--chip-fade-start),
+    #000 calc(100% - var(--chip-fade-end)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--chip-fade-start),
+    #000 calc(100% - var(--chip-fade-end)),
+    transparent 100%
+  );
+}
+
+@supports (animation-timeline: scroll()) {
+  .chip-scroller {
+    --chip-fade-end: 0px;
+    animation: chip-scroller-edges linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+
+@keyframes chip-scroller-edges {
+  0% {
+    --chip-fade-start: 0px;
+    --chip-fade-end: 2rem;
+  }
+  8% {
+    --chip-fade-start: 2rem;
+  }
+  92% {
+    --chip-fade-end: 2rem;
+  }
+  100% {
+    --chip-fade-start: 2rem;
+    --chip-fade-end: 0px;
+  }
+}

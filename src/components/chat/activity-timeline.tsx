@@ -39,6 +39,7 @@ import { cn, truncate } from "@/lib/utils";
 import { receiptLabelForCall } from "@/lib/chat/tool-receipt";
 import { activeRunId, runReceiptParts } from "@/lib/chat/tool-run";
 import { ToolRunOutputs } from "@/components/chat/tool-run-files";
+import { FaviconStack } from "@/components/chat/run/favicon-stack";
 import type { ClientActivityEvent, ClientAttachment, ClientSource } from "@/types/chat";
 import { reasoningHeadline } from "@/lib/chat/reasoning-headline";
 
@@ -331,34 +332,35 @@ export function ActivityTimeline({
     ...new Set(list.filter((e) => e.kind === "tool" && e.title.startsWith("Using ")).map((e) => e.title.slice(6).trim())),
   ].filter(Boolean);
   /*
-   * THE RESTING LINE IS ONE SENTENCE (INTERACTION_SPEC M4, M5): "Thought for
-   * 12s", or "Worked 12s, searched the web and read 3 sources". Typography,
-   * not a row: no glyph, no fill, no second column for the clock. The figure
-   * is the one formatter's (`formatSpan`), so the line and the panel cannot
-   * disagree about how long the run took.
+   * THE RESTING LINE IS ONE GLANCEABLE LINE (INTERACTION_SPEC M4, M5):
+   * "Thought for 12s", or, when the turn did work, what it did as short
+   * past-tense clauses and the time last: "Searched the web · Read 6 sources
+   * · Used GitHub and Linear · 12s". Typography, not a row: no fill, no
+   * second column for the clock. The figure is the one formatter's
+   * (`formatSpan`), so the line and the panel cannot disagree about how long
+   * the run took. The sources clause leads with the sites' own marks.
    */
   const span = run.elapsedMs === null ? null : formatSpan(run.elapsedMs);
+  const singleRun = runViews.length === 1 ? runReceiptParts(runViews[0]) : null;
   const did = [
-    runViews.length ? (runViews.length === 1 ? [runReceiptParts(runViews[0]).label, runReceiptParts(runViews[0]).object].filter(Boolean).join(" · ") : `completed ${runViews.length} runs`) : null,
-    run.searches ? (run.searches === 1 ? "searched the web" : `searched the web ${run.searches} times`) : null,
-    run.sourceCount ? `read ${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}` : null,
+    singleRun
+      ? [singleRun.label, singleRun.object].filter(Boolean).join(" · ")
+      : runViews.length
+        ? `Ran ${runViews.length} programs`
+        : null,
+    run.searches ? (run.searches === 1 ? "Searched the web" : `Ran ${run.searches} searches`) : null,
+    run.sourceCount ? `Read ${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}` : null,
     toolServers.length
-      ? `used ${toolServers.length > 2 ? `${toolServers.slice(0, 2).join(", ")} and ${toolServers.length - 2} more` : toolServers.join(" and ")}`
+      ? `Used ${toolServers.length > 2 ? `${toolServers.slice(0, 2).join(", ")} +${toolServers.length - 2}` : toolServers.join(" and ")}`
       : toolCalls
-        ? `made ${toolCalls} ${toolCalls === 1 ? "tool call" : "tool calls"}`
+        ? `Made ${toolCalls} ${toolCalls === 1 ? "tool call" : "tool calls"}`
         : null,
   ].filter((part): part is string => !!part);
-  const didSentence = did.length > 1 ? `${did.slice(0, -1).join(", ")} and ${did[did.length - 1]}` : did[0] ?? null;
-  const lead = did.length
-    ? span
-      ? `Worked ${span}`
-      : "Worked"
-    : hasReasoning
-      ? span
-        ? `Thought for ${span}`
-        : "Thought process"
-      : null;
-  const restingLine = [lead, didSentence].filter(Boolean).join(", ");
+  const sourcesClause = run.sourceCount ? did.findIndex((part) => part.startsWith("Read ")) : -1;
+  // Reasoning alone keeps its own sentence; work is listed, then timed.
+  const lead = did.length ? null : hasReasoning ? (span ? `Thought for ${span}` : "Thought process") : null;
+  const restingParts = did.length ? [...did, ...(span ? [span] : [])] : lead ? [lead] : [];
+  const restingLine = restingParts.join(" · ");
   // A settled run with no reasoning, no searches, no sources and no tool calls
   // has nothing to open: the line would invite a reader into an empty panel.
   // ChatGPT and Claude show no trace line for a plain completion, and neither
@@ -408,8 +410,8 @@ export function ActivityTimeline({
           aria-controls={inlineOpen ? inlineDomId : undefined}
           aria-label={label}
           className={cn(
-            "group/thought -ml-2 flex min-h-8 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-md px-2 text-left",
-            "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none coarse:min-h-11",
+            "group/thought -ml-2 flex min-h-8 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-control px-2 text-left",
+            "transition-colors duration-fast ease-out-soft hover:bg-accent coarse:min-h-11",
             (inlineOpen || open) && "bg-accent",
             hasLiveBlocks || inlineOpen ? "mb-0.5" : "mb-1.5"
           )}
@@ -448,16 +450,21 @@ export function ActivityTimeline({
           aria-controls={inlineOpen ? inlineDomId : undefined}
           aria-label={label}
           className={cn(
-            "group/thought -ml-2 inline-flex h-7 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-md pl-2 pr-1.5 text-left text-nav text-muted-foreground",
-            "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:h-11",
+            "group/thought -ml-2 inline-flex h-7 max-w-[calc(100%+0.5rem)] items-center gap-1 rounded-control pl-2 pr-1.5 text-left text-nav text-muted-foreground",
+            "transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground coarse:h-11",
             inlineOpen ? "mb-0.5" : "mb-1.5",
             (inlineOpen || open) && "bg-accent text-foreground"
           )}
         >
-          <span aria-hidden="true" className="min-w-0 truncate">
-            {restingLine}
-            {run.note ? <span className="text-warning">{`. ${run.note}`}</span> : null}
-          </span>
+          <RestingLine
+            did={did}
+            sourcesClause={sourcesClause}
+            sourceCount={run.sourceCount}
+            sources={run.sources}
+            span={span}
+            note={run.note}
+            fallback={restingLine}
+          />
           <ChevronRight
             aria-hidden="true"
             className={cn(
@@ -496,7 +503,7 @@ export function ActivityTimeline({
       <ToolRunOutputs events={list} streaming={!!streaming} attachments={attachments} />
 
       {showSearch && (
-        <div aria-hidden="true" className="mb-3 flex flex-col gap-2.5 pl-2">
+        <div className="mb-3 flex flex-col gap-2.5 pl-2">
           <WebSearchBlock
             query={run.query!}
             sites={searchSites}
@@ -562,6 +569,113 @@ export function ActivityTimeline({
  * button is read as the button's name rather than announced, and separate from
  * the clock, which is never spoken.
  */
+/**
+ * The resting line's clauses, fullest first, as the room runs out: the sources
+ * clause drops its verb ("Read 6 sources" to "6 sources", the sites' marks
+ * still lead it), then whole clauses step out from the end, the sources
+ * clause last. Never a clause cut mid-word: at 360 the line read "Searched
+ * the web · Read 2 so… · 9.0s". The time and the note are not clauses; they
+ * always stay. `sources` is the sources clause's index in `parts`, or -1.
+ */
+export function restingLadder(
+  did: readonly string[],
+  sourcesClause: number,
+  sourceCount: number,
+): { parts: string[]; sources: number }[] {
+  const ladder: { parts: string[]; sources: number }[] = [{ parts: [...did], sources: sourcesClause }];
+  let current = ladder[0];
+  if (sourcesClause >= 0 && sourcesClause < did.length) {
+    const parts = [...did];
+    parts[sourcesClause] = `${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`;
+    current = { parts, sources: sourcesClause };
+    ladder.push(current);
+  }
+  while (current.parts.length > 1) {
+    let drop = current.parts.length - 1;
+    if (drop === current.sources) drop -= 1;
+    const parts = current.parts.filter((_, i) => i !== drop);
+    current = { parts, sources: current.sources > drop ? current.sources - 1 : current.sources };
+    ladder.push(current);
+  }
+  return ladder;
+}
+
+function RestingLine({
+  did,
+  sourcesClause,
+  sourceCount,
+  sources,
+  span,
+  note,
+  fallback,
+}: {
+  did: string[];
+  sourcesClause: number;
+  sourceCount: number;
+  sources: React.ComponentProps<typeof FaviconStack>["sources"];
+  span: string | null;
+  note: string | null | undefined;
+  /** The line when the run did nothing to list ("Thought for 12s"). */
+  fallback: string;
+}) {
+  const lineRef = React.useRef<HTMLSpanElement>(null);
+  const key = `${did.join("\u0000")}|${sourcesClause}|${sourceCount}|${span}|${note ?? ""}`;
+  const ladder = React.useMemo(() => restingLadder(did, sourcesClause, sourceCount), [key]); // eslint-disable-line react-hooks/exhaustive-deps -- `key` spells out `did`.
+  const [fit, setFit] = React.useState({ key, at: 0 });
+  const at = fit.key === key ? Math.min(fit.at, ladder.length - 1) : 0;
+  const last = at === ladder.length - 1;
+  // Step down a rung while the line overflows its room. Every clause holds
+  // its width (shrink-0) until the last rung, so an overflow is measurable;
+  // a layout effect, so the reader never sees a rung that does not fit.
+  React.useLayoutEffect(() => {
+    const line = lineRef.current;
+    if (!line || last) return;
+    if (line.scrollWidth > line.clientWidth + 1) setFit({ key, at: at + 1 });
+  }, [key, at, last]);
+  // The room follows the column: a wider one starts again from the fullest line.
+  React.useEffect(() => {
+    const host = lineRef.current?.closest("button")?.parentElement;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    let width = host.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (host.clientWidth === width) return;
+      width = host.clientWidth;
+      setFit({ key, at: 0 });
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [key]);
+  const { parts, sources: sourcesAt } = ladder[at];
+  return (
+    <span ref={lineRef} aria-hidden="true" className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+      {parts.length ? (
+        <>
+          {parts.map((part, i) => (
+            <React.Fragment key={part}>
+              {i > 0 ? <span className="shrink-0 text-ink-tertiary">·</span> : null}
+              {/* Only a lone clause wider than the whole line may still end
+                  on an ellipsis: there is nothing left to step out. */}
+              <span className={cn("inline-flex items-center gap-1.5", last && i === parts.length - 1 ? "min-w-0" : "shrink-0")}>
+                {i === sourcesAt ? <FaviconStack sources={sources} className="me-0.5" /> : null}
+                <span className={cn(last && i === parts.length - 1 && "truncate")}>{part}</span>
+              </span>
+            </React.Fragment>
+          ))}
+          {span ? (
+            <>
+              <span className="shrink-0 text-ink-tertiary">·</span>
+              <span className="shrink-0 font-mono text-caption tabular-nums">{span}</span>
+            </>
+          ) : null}
+        </>
+      ) : (
+        <span className="truncate">{fallback}</span>
+      )}
+      {note ? <span className="shrink-0 text-warning">{`· ${note}`}</span> : null}
+    </span>
+  );
+}
+
 function PhaseAnnouncer({ text }: { text: string }) {
   const spoken = useHeldPhase(text, 3000);
   return (

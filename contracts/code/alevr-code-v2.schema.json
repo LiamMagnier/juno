@@ -183,6 +183,9 @@
         "turn.steer",
         "agent.message",
         "agent.interrupt",
+        "agent.pause",
+        "agent.resume",
+        "agent.topUp",
         "turn.queue",
         "turn.interrupt",
         "approval.respond",
@@ -1829,6 +1832,17 @@
         },
         "phase": {
           "$ref": "#/definitions/TeamPhase"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "tokenBudget": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "parentAgentId": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -2769,6 +2783,10 @@
                 "text": {
                   "type": "string",
                   "minLength": 1
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -2804,11 +2822,134 @@
                 "agentId": {
                   "type": "string",
                   "minLength": 1
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
                 "sessionId",
                 "agentId"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "agent.pause"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "agentId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "sessionId"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "agent.resume"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "agentId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "sessionId"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "agent.topUp"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "agentId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "tokens": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "usd": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "sessionId"
               ]
             }
           },

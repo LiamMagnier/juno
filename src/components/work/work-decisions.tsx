@@ -65,11 +65,23 @@ export interface OpenQuestion {
  * Matched by id rather than by "was there a later answer event", because a run
  * can have two questions open at once (a subagent and the root agent both
  * asking), and position alone would close the wrong one.
+ *
+ * A question asked by an earlier cloud execution of the run is closed when the
+ * next one starts (`run_started` with `executor: "cloud"`, written each time
+ * the cloud executor picks the run up, including after a park). The restored
+ * run was either handed its answer or asks again under a new id, and the
+ * answer route refuses the old id as no longer open — a card offering it would
+ * be a question nobody is waiting on. A Mac does not write that marker, so its
+ * questions are untouched.
  */
 export function deriveOpenQuestions(events: readonly ClientWorkEvent[]): OpenQuestion[] {
   const open = new Map<string, OpenQuestion>();
   for (const event of events) {
     const payload = readEvent(event);
+    if (event.kind === "run_started" && payload.executor === "cloud") {
+      open.clear();
+      continue;
+    }
     const id = str(payload, "questionId", "id");
     if (id === null) continue;
     if (event.kind === "question_asked") {

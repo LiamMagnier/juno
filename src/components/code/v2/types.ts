@@ -16,6 +16,11 @@ import type {
   UserMessageItem,
 } from "@/lib/code-v2/contracts";
 import type { QueueRow } from "@/lib/code-v2/composer";
+import type { AgentControlResult } from "@/lib/code-v2/contracts";
+import type { AgentControlInput } from "@/lib/code-v2/agent-control-client";
+
+/** One press in the Agents tree; the session is the workspace's own. */
+export type AgentControlRequestInput = Omit<AgentControlInput, "sessionId">;
 import type { DockTab } from "@/lib/code-v2/dock";
 import type { DiffFile, HunkDecision } from "@/lib/code-v2/diff";
 import type { DetailLevel } from "@/lib/code-v2/turns";
@@ -124,6 +129,13 @@ export interface WorkspaceActions {
   commit?(): void;
   messageAgent?(agentId: string, text: string): void | boolean | Promise<boolean | void>;
   stopAgent?(agentId: string): void;
+  /**
+   * The Agents tree (REA backlog 10): a person's Steer, Stop, Pause, Resume or
+   * bounded Top-up of one agent, or of the whole run when `agentId` is
+   * absent. Present only where this reader owns the run's Mac; resolves with
+   * the engine's answer, rejects when it never got there.
+   */
+  controlAgent?(input: AgentControlRequestInput): Promise<AgentControlResult>;
   keepCandidate?(agentId: string): void;
   approvePlan?(itemId: string, approve: boolean): void;
   /** Schedules the next turn for when the limit resets (`at`: the reset the composer shows). */

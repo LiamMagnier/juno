@@ -323,6 +323,18 @@ public actor ComputerUseCoordinator: ScreenControlling {
         await service.discard(sessionID: sessionID, preparedID: preparedID)
     }
 
+    public func setTakeoverScope(sessionID: String, wholeDisplay: Bool) async {
+        await service.setTakeoverScope(sessionID: sessionID, wholeDisplay: wholeDisplay)
+    }
+
+    public func isUnattended(sessionID: String) async -> Bool {
+        await service.isUnattended(sessionID: sessionID)
+    }
+
+    public func recordSkipped(sessionID: String, summary: String, reason: String) async {
+        await service.recordSkipped(sessionID: sessionID, summary: summary, reason: reason)
+    }
+
     public func setImageBudget(sessionID: String, budget: ImageBudget) async {
         await service.setImageBudget(sessionID: sessionID, budget: budget)
     }

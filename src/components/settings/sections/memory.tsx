@@ -9,6 +9,7 @@ import { ChoiceMenu, type ChoiceOption } from "@/components/settings/choice-menu
 import { useSaveStates } from "@/components/settings/save-status";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
+import { CrossConversationGroup } from "@/components/settings/sections/cross-conversation";
 import { SENSITIVE_TOPICS, SENSITIVE_TOPIC_META } from "@/lib/memory-sensitive";
 import type { ClientSettings } from "@/types/app";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -123,14 +124,22 @@ export function MemorySection() {
        * deliberately. A switch that destroys data is a switch people are
        * afraid to touch.
        */}
+      {/* Titled for what ON means. "Sensitive subjects" over a list of
+          switches read as "protected" when on, the opposite of what a switch
+          here does; the title and the hidden verb on each label say it. */}
       <SettingsGroup
-        title="Sensitive subjects"
-        description={`${PRODUCT_NAME} doesn’t learn these on its own. Anything you ask it to remember is always kept.`}
+        title={`Sensitive subjects ${PRODUCT_NAME} may learn`}
+        description={`Off by default, so ${PRODUCT_NAME} won’t pick these up from your chats on its own. Turn one on to let it remember that subject. Anything you ask it to remember is always kept.`}
       >
         {SENSITIVE_TOPICS.map((topic) => (
           <SettingRow
             key={topic}
-            label={SENSITIVE_TOPIC_META[topic].label}
+            label={
+              <>
+                <span className="sr-only">Learn about </span>
+                {SENSITIVE_TOPIC_META[topic].label}
+              </>
+            }
             htmlFor={`memory-sensitive-${topic}`}
             description={SENSITIVE_TOPIC_META[topic].description}
             status={saves.status(`topic:${topic}`)}
@@ -171,6 +180,11 @@ export function MemorySection() {
           }
         />
       </SettingsGroup>
+
+      {/* What one conversation may know of another. It was half of a
+          "Capabilities" section filed under Coding, though its first switch
+          is Chat's. */}
+      <CrossConversationGroup />
     </>
   );
 }

@@ -1,5 +1,6 @@
 import Foundation
 import JunoCodeCore
+import Synchronization
 import JunoCodeLocal
 import JunoCodeRuntime
 
@@ -53,6 +54,14 @@ public struct MCPServerPolicyStore: Sendable {
 }
 
 public extension MCPServerPolicyStore {
+    /// The app's safe mode (docs/rea/designs/reliability-and-native.md §3.3):
+    /// while set, no server starts, whoever declared it. Read at each start,
+    /// so it holds for workspaces opened later in the run too.
+    static var suspendsAllServers: Bool {
+        get { serversSuspended.withLock { $0 } }
+        set { serversSuspended.withLock { $0 = newValue } }
+    }
+
     /// Who may start a server, by where it was declared (§5.8):
     ///
     /// - a project server, only with this workspace's consent for its exact
@@ -62,12 +71,16 @@ public extension MCPServerPolicyStore {
     ///   off in Settings still removes its tools);
     /// - a server imported from Claude Code's `~/.claude.json`, only once the
     ///   reader has turned it on.
+    ///
+    /// `suspended` is safe mode's switch, read at each start; tests pass
+    /// their own rather than flipping the process-wide one.
     static func startupAuthorizer(
         project: MCPServerPolicyStore,
-        imports: UserExtensionPolicyStore?
+        imports: UserExtensionPolicyStore?,
+        suspended: @escaping @Sendable () -> Bool = { MCPServerPolicyStore.suspendsAllServers }
     ) -> MCPServerStartupAuthorizer {
         { configuration in
-            guard configuration.enabled else { return false }
+            guard configuration.enabled, !suspended() else { return false }
             switch configuration.scope {
             case .project:
                 return project.allows(configuration)
@@ -79,3 +92,5 @@ public extension MCPServerPolicyStore {
         }
     }
 }
+
+private let serversSuspended = Mutex(false)

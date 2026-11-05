@@ -184,7 +184,8 @@ export function Onboarding() {
     <Dialog open={show} onOpenChange={(o) => { if (!o) close(); }}>
       <DialogContent
         hideClose
-        className="w-full max-w-[420px] gap-0 overflow-hidden p-0"
+        bare
+        className="w-full max-w-[420px] gap-0 overflow-hidden"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           primaryRef.current?.focus();
@@ -262,7 +263,7 @@ export function Onboarding() {
                       size="lg"
                       role="radio"
                       aria-checked={selected}
-                      aria-label={a.id}
+                      aria-label={a.label}
                       onClick={() => pickAccent(a.id)}
                       // ring-offset-popover: the gap a ring-offset leaves is
                       // filled with a SOLID named colour, and these swatches sit

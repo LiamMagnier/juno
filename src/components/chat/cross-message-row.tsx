@@ -52,7 +52,7 @@ export function CrossMessageRow({ row, className }: { row: CrossMessageRowData; 
         ) : null}
       </p>
       {row.direction !== "notice" && row.text ? (
-        <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-body text-foreground/85">{row.text}</p>
+        <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-body text-foreground">{row.text}</p>
       ) : null}
     </div>
   );

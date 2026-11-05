@@ -149,7 +149,7 @@ public struct NativeTurnStream: Equatable, Sendable {
         case .completed(let message):
             finish(now: now)
             return .completed(message)
-        case .failed(let message, let reason, _, _):
+        case .failed(let message, let reason, _, _, _):
             finish(now: now)
             return .failed(message: message, finishReason: reason)
         case .handoff(let handoff):

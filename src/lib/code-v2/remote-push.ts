@@ -21,6 +21,12 @@ import { codeThreadKey, writeThreadSync, type ThreadSyncStore } from "@/lib/sync
 
 export const APNS_CATEGORY_CODE_APPROVAL = "ALEVR_CODE_APPROVAL";
 export const APNS_CATEGORY_HANDOFF = "ALEVR_HANDOFF";
+/**
+ * The `system_notice` code the Mac adds when a run pauses because the Mac
+ * locked (docs/rea/designs/computer-use.md, lock policy). Alevr never unlocks
+ * a Mac; the phone is told so the person knows why the run stopped.
+ */
+export const SCREEN_LOCKED_NOTICE_CODE = "screen_locked";
 /** The action identifiers the apps register on `ALEVR_CODE_APPROVAL`. */
 export const APPROVAL_ACTION_ALLOW_ONCE = "alevr.approval.allow-once";
 export const APPROVAL_ACTION_DENY = "alevr.approval.deny";
@@ -58,6 +64,45 @@ export function approvalFacts(events: readonly ServerEventEnvelope[]): ApprovalF
     else if (event.type === "session.snapshot" && Array.isArray(event.session?.items)) for (const item of event.session.items) fromItem(envelope.sessionId, item);
   }
   return out;
+}
+
+export interface ScreenLockFact {
+  sessionId: string;
+  /** The notice's id: the same for every call that ran into one lock. */
+  noticeId: string;
+  text: string;
+}
+
+/** The "paused: your Mac locked" notices in a batch of link events. */
+export function screenLockFacts(events: readonly ServerEventEnvelope[]): ScreenLockFact[] {
+  const out: ScreenLockFact[] = [];
+  for (const envelope of events) {
+    if (envelope?.stream !== "session" || !envelope.sessionId || !envelope.event) continue;
+    const event = envelope.event;
+    if (event.type !== "item.added" && event.type !== "item.updated") continue;
+    const item = event.item as TurnItem | undefined;
+    // Read defensively: the Mac's events are not re-validated on the way in.
+    if (!item || item.kind !== "system_notice" || item.code !== SCREEN_LOCKED_NOTICE_CODE || typeof item.id !== "string") continue;
+    out.push({ sessionId: envelope.sessionId, noticeId: item.id, text: typeof item.text === "string" ? item.text : "" });
+  }
+  return out;
+}
+
+export function buildScreenLockPayload(input: { deviceId: string; deviceName: string; fact: ScreenLockFact }): ApnsPayload {
+  return {
+    aps: {
+      alert: {
+        title: `${clamp(input.deviceName, 60)} locked`,
+        body: clamp(input.fact.text || "Alevr paused the task. It never unlocks your Mac; unlock it to let Alevr carry on.", 300),
+      },
+      sound: "default",
+      "thread-id": `code-${input.deviceId}-${input.fact.sessionId}`,
+      "interruption-level": "active",
+    },
+    link: "v2",
+    deviceID: input.deviceId,
+    sessionID: input.fact.sessionId,
+  };
 }
 
 /** Session state changes: "waiting" means it needs the person. */
@@ -223,12 +268,24 @@ export function resetRemotePushMemory(): void {
 export async function noteHostEvents(deps: HostEventDeps, userId: string, deviceId: string, events: readonly ServerEventEnvelope[]): Promise<{ announced: number; cleared: number }> {
   const approvals = approvalFacts(events);
   const waiting = waitingFacts(events);
+  const locks = screenLockFacts(events);
   let rang = 0;
   let withdrawn = 0;
-  if (approvals.length === 0 && waiting.length === 0) return { announced: 0, cleared: 0 };
+  if (approvals.length === 0 && waiting.length === 0 && locks.length === 0) return { announced: 0, cleared: 0 };
 
   let phones: string[] | null = null;
   let name: string | null = null;
+  // One push per lock of the Mac, whichever sessions ran into it.
+  for (const fact of locks) {
+    if (!announced.first(`${userId}:${deviceId}:lock:${fact.noticeId}`)) continue;
+    phones ??= await deps.pairedPhones(userId, deviceId);
+    if (phones.length === 0) continue;
+    name ??= await deps.deviceName(userId, deviceId);
+    await deps.push(userId, { deviceSessionIds: phones, platform: "ios" }, buildScreenLockPayload({ deviceId, deviceName: name, fact }), {
+      collapseId: `lock-${fact.noticeId}`,
+    });
+    rang++;
+  }
   for (const fact of approvals) {
     const key = `${userId}:${deviceId}:${fact.requestId}`;
     if (fact.pending) {

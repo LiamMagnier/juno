@@ -42,6 +42,13 @@ import { DEFAULT_ESTIMATE_MICRO_USD, unattendedRunCeiling } from "@/lib/spend-ce
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { dependenciesSatisfied } from "@/lib/work/board";
 import { PARKED_RUN_TTL_MS } from "@/lib/work/schedule-health";
+import { readExecutorPresence } from "@/lib/work/executor-heartbeat";
+import { handOffEndedRunNotices, type EndedRunRef } from "@/lib/work/notifications";
+import {
+  EXECUTOR_UNAVAILABLE_DETAIL,
+  EXECUTOR_UNAVAILABLE_RESUME_DETAIL,
+  unclaimedCloudRunCutoff,
+} from "@/lib/work/executor-presence";
 
 /**
  * The session and run lifecycle: create, append, claim, finish.
@@ -953,8 +960,27 @@ export interface AppendEventsInput {
  * All of it in one transaction, because the increment and the inserts are the
  * same fact: a reader that saw the new `lastSeq` and then queried the events
  * would otherwise find the run claiming events it cannot yet see.
+ *
+ * Two appends carrying the same key at the same moment (two devices answering
+ * one question) both pass the dedupe read, which runs before the run's row
+ * lock, and the unique index stops the second insert. Its transaction rolls
+ * back whole, `lastSeq` included, so no hole is left; it is then tried again,
+ * and the read now sees the first one's committed row and drops the duplicate
+ * exactly as a sequential retry would — rather than failing the request.
  */
 export async function appendEvents(input: AppendEventsInput): Promise<AppendEventsResult> {
+  const keyed = input.events.some((event) => typeof event.key === "string" && event.key.length > 0);
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await appendEventsOnce(input);
+    } catch (error) {
+      const conflict = uniqueConflict(error);
+      if (!keyed || attempt >= 3 || !conflict?.some((field) => field.includes("eventKey"))) throw error;
+    }
+  }
+}
+
+async function appendEventsOnce(input: AppendEventsInput): Promise<AppendEventsResult> {
   return prisma.$transaction(async (tx) => {
     const keyed = input.events.filter(
       (event): event is WorkEventInput & { key: string } =>
@@ -1226,13 +1252,19 @@ export async function parkRun(input: ParkRunInput): Promise<boolean> {
 
     const run = await tx.workRun.findFirst({
       where: { id: input.runId, userId: input.userId },
-      select: { sessionId: true },
+      select: { sessionId: true, pauseReason: true },
     });
     if (run) {
       // Keep the denormalised session row in the same transaction as the
       // lease release. The status predicate matters: if Resume wins the race
       // after the run update, it changes the session to queued and this update
       // must not put it back into paused attention.
+      //
+      // Only the executor's own wait asks the person for something, so only
+      // it puts the task in Needs you. A run the person paused
+      // (`pauseReason: "user"`) is asking nothing and no answer continues
+      // it: it stays out of Needs you and reads "Paused", as the control
+      // route left it (`statusNeedsAttention("paused")` is false).
       await tx.workSession.updateMany({
         where: {
           id: run.sessionId,
@@ -1241,12 +1273,80 @@ export async function parkRun(input: ParkRunInput): Promise<boolean> {
         },
         data: {
           status: "paused",
-          needsAttention: true,
+          needsAttention: run.pauseReason === "waiting",
           lastActivityAt: new Date(),
         },
       });
     }
     return true;
+  });
+}
+
+export interface RequeueParkedRunInput {
+  runId: string;
+  userId: string;
+  now?: Date;
+}
+
+export type RequeueParkedRunResult =
+  | { requeued: true; run: WorkRun }
+  /** `run` is the row as it is now, so the caller can say why nothing moved. */
+  | { requeued: false; run: WorkRun | null };
+
+/**
+ * Puts a cloud run that was parked waiting for a person back in the queue,
+ * because the person has now answered or decided.
+ *
+ * Compare-and-set, in one statement: only a `paused` run whose pause is the
+ * executor's wait (`pauseReason: "waiting"`), on the cloud, with no lease,
+ * moves to `queued`. Everything else is left exactly as it is, and that is
+ * what makes this idempotent: a second answer, a retried request, the
+ * decision route and the answer route racing each other, or a person pressing
+ * Resume at the same moment all find the run already `queued` (or further
+ * along) and change nothing. A run the person paused themselves
+ * (`pauseReason: "user"`) is theirs to resume: an answer does not overrule a
+ * pause.
+ *
+ * The session keeps `needsAttention` while the run waits for an executor, so
+ * "Needs you" shows it as resuming rather than dropping it the moment the
+ * person answers; `claimRun` clears it when the run is picked up.
+ */
+export async function requeueParkedRun(input: RequeueParkedRunInput): Promise<RequeueParkedRunResult> {
+  const now = input.now ?? new Date();
+  return prisma.$transaction(async (tx): Promise<RequeueParkedRunResult> => {
+    const moved = await tx.workRun.updateMany({
+      where: {
+        id: input.runId,
+        userId: input.userId,
+        status: "paused",
+        pauseReason: "waiting",
+        effectiveTarget: "cloud",
+        claimedBy: null,
+      },
+      data: {
+        status: "queued",
+        pauseReason: null,
+        claimedBy: null,
+        claimedAt: null,
+        leaseExpiresAt: null,
+      },
+    });
+    const run = await tx.workRun.findFirst({ where: { id: input.runId, userId: input.userId } });
+    if (moved.count !== 1 || !run) return { requeued: false, run };
+
+    // Only while this is the session's newest attempt, as `commitRunEnding`
+    // does: a superseded attempt must not drag its session back to queued.
+    const newer = await tx.workRun.findFirst({
+      where: { sessionId: run.sessionId, userId: input.userId, attempt: { gt: run.attempt } },
+      select: { id: true },
+    });
+    if (!newer) {
+      await tx.workSession.updateMany({
+        where: { id: run.sessionId, userId: input.userId },
+        data: { status: "queued", needsAttention: true, lastActivityAt: now },
+      });
+    }
+    return { requeued: true, run };
   });
 }
 
@@ -1270,6 +1370,13 @@ export interface FinishRunInput {
   usage?: WorkRunUsage;
   /** Expiry must still match the parked wait read by the sweep. */
   parkedBefore?: Date;
+  /**
+   * Only end it if it is still `queued`, unclaimed, and has not been touched
+   * since this instant, so an executor that claims the run between the
+   * sweep's read and this write keeps it, and so does a run a resume put back
+   * into `queued` in between.
+   */
+  queuedBefore?: Date;
 }
 
 export type FinishRunResult =
@@ -1292,12 +1399,27 @@ export type FinishRunResult =
  * The session's copy of the status is only updated when no later attempt
  * exists. A superseded run finishing after its replacement started would
  * otherwise stamp `cancelled` over a session that is busy running.
+ *
+ * Two writes, in order: the terminal row (`commitRunEnding`), then, only for
+ * the writer that ended it, the billing (`settleRunEnding`). A caller that
+ * must act on the ending whatever the billing does (the queued-run expiry
+ * sweep, which owes the owner a notice) calls the two itself.
  */
 export async function finishRun(input: FinishRunInput): Promise<FinishRunResult> {
+  const result = await commitRunEnding(input);
+  if (result.finished) await settleRunEnding(input, result);
+  return result;
+}
+
+/**
+ * The terminal write of `finishRun`, alone: ends the run once, and its session
+ * when no later attempt exists. Nothing is billed; `settleRunEnding` does that.
+ */
+export async function commitRunEnding(input: FinishRunInput): Promise<FinishRunResult> {
   const now = input.now ?? new Date();
   const status = statusForTerminalReason(input.reason);
 
-  const result = await prisma.$transaction(async (tx): Promise<FinishRunResult> => {
+  return prisma.$transaction(async (tx): Promise<FinishRunResult> => {
     const moved = await tx.workRun.updateMany({
       where: {
         id: input.runId,
@@ -1308,6 +1430,11 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
           status: "paused",
           pauseReason: "waiting",
           updatedAt: { lt: input.parkedBefore },
+        } : {}),
+        ...(input.queuedBefore ? {
+          status: "queued",
+          claimedBy: null,
+          updatedAt: { lt: input.queuedBefore },
         } : {}),
       },
       data: {
@@ -1359,24 +1486,29 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
 
     return { finished: true, run, status };
   });
+}
 
-  // Billing and reservation settlement happen after the terminal row commits.
-  // This makes every terminal writer — runner, host relay, cancel route and
-  // lease sweeper — close the same hold exactly once, while the idempotent
-  // spend keys make a runner's follow-up billing call harmless.
-  if (result.finished) {
-    await recordWorkRunSpend({
-      userId: input.userId,
-      runId: input.runId,
-      model: result.run.effectiveModel ?? result.run.requestedModel,
-      cumulativeCostMicroUsd: input.usage?.costMicroUsd ?? result.run.costMicroUsd,
-      inputTokens: input.usage?.inputTokens ?? result.run.inputTokens,
-      outputTokens: input.usage?.outputTokens ?? result.run.outputTokens,
-      reservationRef: result.run.spendReservationRef,
-      terminal: true,
-    });
-  }
-  return result;
+/**
+ * Billing and reservation settlement for a run `commitRunEnding` just ended,
+ * after the terminal row commits. This makes every terminal writer — runner,
+ * host relay, cancel route and lease sweeper — close the same hold exactly
+ * once, while the idempotent spend keys make a runner's follow-up billing call
+ * harmless. Throws when the spend write fails; the run is terminal regardless.
+ */
+export async function settleRunEnding(
+  input: Pick<FinishRunInput, "runId" | "userId" | "usage">,
+  ended: Extract<FinishRunResult, { finished: true }>
+): Promise<void> {
+  await recordWorkRunSpend({
+    userId: input.userId,
+    runId: input.runId,
+    model: ended.run.effectiveModel ?? ended.run.requestedModel,
+    cumulativeCostMicroUsd: input.usage?.costMicroUsd ?? ended.run.costMicroUsd,
+    inputTokens: input.usage?.inputTokens ?? ended.run.inputTokens,
+    outputTokens: input.usage?.outputTokens ?? ended.run.outputTokens,
+    reservationRef: ended.run.spendReservationRef,
+    terminal: true,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1472,7 +1604,8 @@ export const PARKED_ROUTINE_RUN_EXPIRED_DETAIL =
  * routine on the account, indefinitely. Only unattended runs (a schedule or a
  * trigger fired them, `attended: false`) untouched for 24 hours are ended, as
  * `interrupted` with a sentence saying why; a run a person started by hand is
- * left alone.
+ * left alone. Goal steps parked as long are ended as well, with their own
+ * sentence (`expireParkedGoalSteps`), and their ids are returned with the rest.
  */
 export async function expireParkedRoutineRuns(input: { now?: Date; limit?: number } = {}): Promise<string[]> {
   const now = input.now ?? new Date();
@@ -1501,6 +1634,188 @@ export async function expireParkedRoutineRuns(input: { now?: Date; limit?: numbe
     }).catch(() => null);
     if (ended?.finished) expired.push(run.id);
   }
+  return [...expired, ...(await expireParkedGoalSteps({ now, cutoff, limit: input.limit ?? 100 }))];
+}
+
+/**
+ * The sentence a goal step parked past `PARKED_ROUTINE_RUN_TTL_MS` ends with.
+ * `src/lib/agents/goal-runner.ts` reads it back to tell a step that waited out
+ * its answer from one that was interrupted, so the goal asks the person instead
+ * of retrying a step that would only stop on the same question again.
+ */
+export const PARKED_GOAL_STEP_EXPIRED_DETAIL =
+  "Stopped after waiting 24 hours for an answer or approval that never came. Nothing more was done; continue the goal when you're ready and this step starts again.";
+
+/**
+ * Ends goal steps parked for an answer for longer than a routine run may be.
+ *
+ * A goal step carries no schedule, so the routine expiry above never reached
+ * it: a step that stopped to ask held its goal "in flight" for ever, and the
+ * goal froze with it. Ended the same way, `interrupted` with a sentence that
+ * says why, through the fenced terminal write (`parkedBefore`), and the owner
+ * is told, as the queued-run expiry tells them (`handOffEndedRunNotices`): a
+ * goal step is an agent's task, so its notice follows the agent's own
+ * "tell me when it's done".
+ */
+async function expireParkedGoalSteps(input: { now: Date; cutoff: Date; limit: number }): Promise<string[]> {
+  const stale = await prismaUnguarded.workRun.findMany({
+    where: {
+      status: "paused",
+      pauseReason: "waiting",
+      scheduleId: null,
+      updatedAt: { lt: input.cutoff },
+      session: { goalId: { not: null } },
+    },
+    select: { id: true, userId: true },
+    orderBy: { updatedAt: "asc" },
+    take: input.limit,
+  });
+  const expired: string[] = [];
+  const toNotify: EndedRunRef[] = [];
+  for (const run of stale) {
+    const ending: FinishRunInput = {
+      runId: run.id,
+      userId: run.userId,
+      reason: "interrupted",
+      detail: PARKED_GOAL_STEP_EXPIRED_DETAIL,
+      parkedBefore: input.cutoff,
+      now: input.now,
+    };
+    const ended = await commitRunEnding(ending).catch(() => null);
+    if (!ended?.finished) continue;
+    expired.push(run.id);
+    toNotify.push({ runId: run.id, userId: run.userId });
+    await settleRunEnding(ending, ended).catch((error: unknown) => {
+      console.error("[work] could not settle the spend of an expired goal step", {
+        runId: run.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+  handOffEndedRunNotices(toNotify, async (run) => {
+    const { deliverRunNotification } = await import("@/lib/work/notify/deliver");
+    await deliverRunNotification(run);
+  });
+  return expired;
+}
+
+/**
+ * Ends cloud runs queued past their TTL while no cloud executor is alive.
+ *
+ * A queued run is not leased, so `reclaimStalledRuns` never sees it: with no
+ * runner at all it stayed `queued` for ever, drawn as live in the chat and
+ * counted against the account's concurrency cap. This is the other half of the
+ * heartbeat gate in dispatch: runs queued before the executor died (or by a
+ * scheduler that does not ask) end as `executor_unavailable`.
+ *
+ * It ends runs for good, so it acts only on positive evidence of a long outage
+ * (`unclaimedCloudRunCutoff`): the heartbeat row read directly, with no cache
+ * and no WORK_CLOUD_AVAILABLE override, the last beat older than the TTL, and
+ * the run in `queued` for longer than the TTL. A failed read ends nothing. A
+ * live runner owns its queue, and a run queued behind a dependency
+ * (src/lib/work/board.ts) or a full slot can legitimately wait longer than the
+ * TTL; so can one queued an hour before a runner restart, which is why a lapse
+ * of a few minutes is ridden out rather than measured from `createdAt`.
+ *
+ * "In `queued` for longer than the TTL" is `updatedAt`, not `createdAt`: the
+ * control route's resume puts a paused run back to `queued` on the same row,
+ * and its `createdAt` is from before the pause. A run that comes back with a
+ * checkpoint has already worked, so it ends `interrupted` (resumable) with its
+ * checkpoint kept, never `executor_unavailable`, whose ending drops it.
+ *
+ * A team's lead run is left alone, as the runner's `findQueuedRuns` leaves it:
+ * it is coordinated by `advanceTeams`, not claimed like a task.
+ *
+ * Hosted by the scheduler (scripts/work-scheduler.ts) because the runner is
+ * the process whose absence this is about, and called scoped to one account by
+ * dispatch while cloud is closed, so a cap filled by dead runs frees itself.
+ *
+ * Each run it ends is then notified, as the runner notifies a run it ends:
+ * `deliverRunNotification` follows the run's own notify policy (a routine's
+ * setting, an agent's "tell me when it's done") and says "did not start".
+ * Only runs this call actually ended (the fenced `commitRunEnding` said so),
+ * whether or not the billing written after it (`settleRunEnding`) then fails.
+ * Through `finishRun`, a spend write that failed after the run had committed
+ * terminal threw, and the run was left ended with no notice. Notified after
+ * all of them are ended, and handed off rather than awaited
+ * (`handOffEndedRunNotices`): the sweep returns as soon as the runs are ended,
+ * so neither the scheduler's tick (which fires every account's routines) nor
+ * a person's dispatch (which sweeps before it picks their Mac) waits on a push
+ * service or a mail provider. The notices go out one at a time behind it, each
+ * waited on for at most `ENDED_RUN_NOTICE_TIMEOUT_MS`, and never throw: a
+ * failed notice cannot leave a run queued or make the sweep run again, and
+ * the delivery record keeps a run from being told twice.
+ */
+export async function expireUnclaimedCloudRuns(
+  input: { now?: Date; userId?: string; limit?: number; ttlMs?: number } = {}
+): Promise<string[]> {
+  const now = input.now ?? new Date();
+  const cutoff = unclaimedCloudRunCutoff(await readExecutorPresence(now), now, input.ttlMs);
+  if (!cutoff) return [];
+  const query = {
+    where: {
+      status: "queued",
+      claimedBy: null,
+      effectiveTarget: "cloud",
+      updatedAt: { lt: cutoff },
+      session: { OR: [{ teamRole: null }, { teamRole: { not: "lead" } }] },
+      ...(input.userId ? { userId: input.userId } : {}),
+    },
+    select: { id: true, userId: true },
+    orderBy: { updatedAt: "asc" },
+    take: Math.min(Math.max(input.limit ?? 100, 1), 1_000),
+  } satisfies Prisma.WorkRunFindManyArgs;
+  // Two monomorphic calls, for the reason `reclaimStalledRuns` gives.
+  const stale = input.userId ? await prisma.workRun.findMany(query) : await prismaUnguarded.workRun.findMany(query);
+  if (stale.length === 0) return [];
+  // Which of them carry a checkpoint, by id rather than by selecting the
+  // column: a checkpoint is a whole provider transcript.
+  const ids = stale.map((run) => run.id);
+  const checkpointed = new Set(
+    (input.userId
+      ? await prisma.workRun.findMany({
+          where: { id: { in: ids }, userId: input.userId, checkpoint: { not: Prisma.DbNull } },
+          select: { id: true },
+        })
+      : await prismaUnguarded.workRun.findMany({
+          where: { id: { in: ids }, checkpoint: { not: Prisma.DbNull } },
+          select: { id: true },
+        })
+    ).map((run) => run.id)
+  );
+  const expired: string[] = [];
+  const toNotify: EndedRunRef[] = [];
+  for (const run of stale) {
+    const resumed = checkpointed.has(run.id);
+    const ending: FinishRunInput = {
+      runId: run.id,
+      userId: run.userId,
+      reason: resumed ? "interrupted" : "executor_unavailable",
+      detail: resumed ? EXECUTOR_UNAVAILABLE_RESUME_DETAIL : EXECUTOR_UNAVAILABLE_DETAIL,
+      queuedBefore: cutoff,
+      now,
+    };
+    const ended = await commitRunEnding(ending).catch(() => null);
+    if (ended?.finished) {
+      expired.push(run.id);
+      toNotify.push({ runId: run.id, userId: run.userId });
+      // The notice above no longer depends on this write: the run is ended
+      // whether or not its hold is released here.
+      await settleRunEnding(ending, ended).catch((error: unknown) => {
+        console.error("[work] could not settle the spend of an expired queued run", {
+          runId: run.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+  }
+  // Not awaited: see the comment above. Imported here, as team-store.ts does,
+  // so this module's import graph does not take on the inbox, push and email
+  // transports.
+  handOffEndedRunNotices(toNotify, async (run) => {
+    const { deliverRunNotification } = await import("@/lib/work/notify/deliver");
+    await deliverRunNotification(run);
+  });
   return expired;
 }
 

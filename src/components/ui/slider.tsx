@@ -66,7 +66,7 @@ const Slider = React.forwardRef<
   return (
     <SliderPrimitive.Root
       ref={ref}
-      className={cn("relative flex w-full touch-none select-none items-center py-2", className)}
+      className={cn("glass-slider relative flex w-full touch-none select-none items-center py-2", className)}
       {...props}
     >
       <SliderPrimitive.Track className="surface-inset relative h-2 w-full grow overflow-hidden rounded-full">
@@ -77,7 +77,7 @@ const Slider = React.forwardRef<
           key={i}
           aria-label={thumbName(i)}
           aria-labelledby={ariaLabel ? undefined : ariaLabelledBy}
-          className="block size-4 cursor-grab rounded-full border border-border bg-card shadow-raised-lg ring-0 ring-primary/20 transition-[box-shadow,transform,border-color] duration-fast ease-out-soft hover:border-foreground/40 active:cursor-grabbing active:scale-110 active:border-primary/60 active:ring-4 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 dark:bg-foreground coarse:size-5"
+          className="block size-4 cursor-grab rounded-full border border-border bg-card shadow-raised-lg ring-0 ring-primary/20 transition-[box-shadow,transform,border-color] duration-fast ease-out-soft hover:border-foreground/40 active:cursor-grabbing active:scale-110 active:border-primary/60 active:ring-4 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100 dark:bg-foreground coarse:size-5"
         />
       ))}
     </SliderPrimitive.Root>

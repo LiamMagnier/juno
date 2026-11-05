@@ -110,8 +110,13 @@ export function questionState(status: string): string {
   }
 }
 
-/** An audit with unverified claims must never get a clean shield. */
+/**
+ * An audit with unverified claims must never get a clean shield — nor one with
+ * a claim other evidence disagrees with, or a citation to a source the
+ * research does not contain.
+ */
 export function researchAuditClean(audit: NonNullable<ResearchRunView["auditSummary"]>): boolean {
   return audit.claims > 0 && audit.supported === audit.claims &&
-    audit.partiallySupported + audit.unsupported + audit.contradicted + audit.unverified === 0;
+    audit.partiallySupported + audit.unsupported + audit.contradicted + audit.unverified === 0 &&
+    (audit.contested ?? 0) + (audit.unresolvedCitations ?? 0) === 0;
 }

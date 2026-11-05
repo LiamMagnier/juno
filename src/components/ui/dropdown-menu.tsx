@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { ChevronRight, Circle } from "@/components/ui/icons";
+import { ChevronRight } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import {
   menuGlyphInkClass,
@@ -176,13 +176,13 @@ const DropdownMenuRadioItem = React.forwardRef<
     {...props}
   >
     <span className="absolute left-2 flex size-4 items-center justify-center">
-      {/* The dot is the `fill` cut because it IS the on state — the one place
-          a filled glyph belongs (ICONS_AND_MOTION.md §1.2). */}
+      {/* The dot IS the on state, so it is solid (ICONS_AND_MOTION.md §1.2).
+          A plain disc in the label's own ink, not the icon family's circle:
+          that glyph has no filled drawing, so `weight="fill"` fell back to its
+          one line and the chosen row showed a hollow ring at 8px, the mark of
+          a radio that is NOT chosen. */}
       <DropdownMenuPrimitive.ItemIndicator forceMount className={menuIndicator}>
-        {/* `text-current` opts out of the row's muted glyph ink (the recipe's
-            guard skips any glyph that states a `text-*`): the chosen dot is in
-            the label's own ink, as it was. */}
-        <Circle weight="fill" className="size-2 text-current" />
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}

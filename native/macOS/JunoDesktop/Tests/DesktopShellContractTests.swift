@@ -41,8 +41,8 @@ import Testing
     @Test func chatsRowsAreTheContractsWithNoneDropped() {
         #expect(DesktopDestination.sidebarCases.count == JunoShellChatSidebar.destinations.count)
         #expect(DesktopDestination.sidebarCases.compactMap(\.shell) == JunoShellChatSidebar.destinations)
-        // Contract v2 (the V3 shell): Projects, Library, Customize.
-        #expect(DesktopDestination.sidebarCases == [.projects, .library, .connections])
+        // Contract v2 (the V3 shell): Activity (G70), Projects, Library, Customize.
+        #expect(DesktopDestination.sidebarCases == [.activity, .projects, .library, .connections])
         #expect(DesktopDestination.sidebarCases.map(\.label) == JunoShellChatSidebar.destinations.map(\.label))
         #expect(DesktopDestination.sidebarCases.map(\.junoIcon) == JunoShellChatSidebar.destinations.map(\.icon))
     }
@@ -88,8 +88,9 @@ import Testing
         // Contract v2 moved Notifications out of the column into headerActions.
         #expect(JunoShellChatSidebar.Action.allCases == [.new, .search])
         #expect(JunoShellChatSidebar.Action.new.label == "New chat")
+        // No "Pinned chats": the pinned chats lead Recent (owner, 2026-10-26).
         #expect(JunoShellChatSidebar.Heading.allCases.map(\.label) == [
-            "Needs you", "Orbit", "Pinned projects", "Pinned chats", "Recent",
+            "Needs you", "Orbit", "Pinned projects", "Recent",
         ])
         #expect(JunoShellChatSidebar.emptyLines.count == 2)
     }
@@ -98,15 +99,16 @@ import Testing
 
     @Test func thePlusMenusRowsAreTheContractsInTitleCase() {
         #expect(JunoShellPlusMenu.chat == [
-            [.files, .screenshot, .sketch, .library],
+            [.files, .screenshot, .sketch, .library, .googleDrive, .onedrive],
             [.mention, .skill],
-            [.research, .search, .memory],
+            [.image, .research, .search, .memory],
             [.project, .connectors],
         ])
         #expect(JunoShellPlusMenu.chat.joined().map(\.title) == [
             "Add Photos and Files", "Take a Screenshot", "Sketch", "Add from Library",
+            "Add from Google Drive", "Add from OneDrive",
             "Mention a File, App or Agent", "Run a Skill",
-            "Deep Field", "Web Search", "Memory",
+            "Create Image", "Deep Research", "Web Search", "Memory",
             "Add to Project", "Apps",
         ])
         #expect(JunoShellPlusMenu.label == "Add")

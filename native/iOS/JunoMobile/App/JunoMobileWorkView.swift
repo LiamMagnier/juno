@@ -622,7 +622,13 @@ private struct JunoMobileWorkThread: View {
 
     @ViewBuilder
     private func header(_ session: WorkSessionSummary) -> some View {
-        let style = JunoMobileWorkStatusStyle.of(model.displayStatus(of: session))
+        let shown = model.displayStatus(of: session)
+        let style = JunoMobileWorkStatusStyle.of(shown)
+        // A queued cloud run that expired unclaimed is `interrupted`, but it
+        // never began: its timeline says nothing was done, so the header must
+        // not warn that it may have changed something.
+        let statusWords = JunoWorkVocabulary.endingSentence(status: shown, terminalReason: run?.terminalReason)
+            ?? style.sentence
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                 Text(session.title)
@@ -639,7 +645,7 @@ private struct JunoMobileWorkThread: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
 
-            Text(style.sentence)
+            Text(statusWords)
                 .font(.caption)
                 .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)

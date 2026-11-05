@@ -32,6 +32,8 @@ const byId = (facts: ModelFact[]) => new Map(facts.map((f) => [f.id, f]));
 test("table helpers read prices, dates and both table shapes without guessing", () => {
   assert.equal(usd("$0.10 / MTok"), 0.1);
   assert.equal(usd("\\$1.4"), 1.4);
+  // Anthropic's fast-mode table, 2026-10-18: misread, it stripped every fast tier.
+  assert.equal(usd("$8 USD / MTok"), 8);
   assert.equal(usd("From $0.10 / MTok"), null, "a 'from' price is not a rate");
   assert.equal(usd("Free"), null);
   assert.equal(usd("$0.75 through December 31, 2026. $1.50 starting January 1, 2027."), null);

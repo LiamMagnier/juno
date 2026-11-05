@@ -97,8 +97,10 @@ export function BillingSection() {
   const eurPerUsd = spend.eurPerUsd > 0 ? spend.eurPerUsd : 1;
   const spentEur = (spend.spentMicroUsd / 1_000_000) * eurPerUsd;
   const budgetEur = spend.budgetMicroUsd == null ? null : (spend.budgetMicroUsd / 1_000_000) * eurPerUsd;
+  const planCeilingEur = spend.planBudgetMicroUsd == null ? null : (spend.planBudgetMicroUsd / 1_000_000) * eurPerUsd;
   const heldEur = (spend.reservedMicroUsd / 1_000_000) * eurPerUsd;
-  const remainingEur = budgetEur == null ? null : Math.max(0, budgetEur - spentEur - heldEur);
+  // What the meter fills with: spent plus what running work holds.
+  const usedEur = spentEur + heldEur;
   const monthShare = budgetEur && budgetEur > 0 ? Math.min(1, (spentEur + heldEur) / budgetEur) : 0;
 
   const saveSpendCap = React.useCallback(
@@ -146,7 +148,17 @@ export function BillingSection() {
               )}
               {renewsAtMs != null && (
                 <>
-                  {" "}
+                  {/* Two facts, kept apart: the price, then the date. A dot
+                      to the eye, a full stop to a screen reader. The free
+                      plan's line is already a sentence. */}
+                  {plan.price > 0 ? (
+                    <>
+                      <span aria-hidden="true"> · </span>
+                      <span className="sr-only">. </span>
+                    </>
+                  ) : (
+                    " "
+                  )}
                   <span>{spend.billing.cancelAtPeriodEnd ? "Access ends" : "Renews"}</span>{" "}
                   <span>{formatDate(renewsAtMs, formatAt)}</span>.
                 </>
@@ -173,12 +185,10 @@ export function BillingSection() {
           )}
         </div>
         {/* Résiliation en ligne (L215-1-1, D215-1): a named "Cancel subscription"
-            control in the app, not only inside Stripe's portal. */}
-        {features.billing && quota.plan !== "FREE" && quota.plan !== "OWNER" && (
-          <div className="pb-4">
-            <CancelSubscription />
-          </div>
-        )}
+            control in the app, not only inside Stripe's portal. It draws its
+            own row, and nothing at all (no hairline, no band) when there is
+            no paid subscription to cancel. */}
+        {features.billing && quota.plan !== "FREE" && quota.plan !== "OWNER" && <CancelSubscription />}
       </SettingsGroup>
 
       <SettingsGroup title="Usage">
@@ -191,10 +201,12 @@ export function BillingSection() {
             {budgetEur != null && (
               <WindowRow
                 label={quota.plan === "FREE" ? "Free allowance" : "This month"}
+                // Said the way the meter and its percentage count: used, not
+                // left. It read "€28.94 left of €46.00" beside a 37% bar.
                 description={
                   <>
-                    <span className="tabular-nums">{formatEur(remainingEur ?? 0, formatAt)}</span> <span>left of</span>{" "}
-                    <span className="tabular-nums">{formatEur(budgetEur, formatAt)}</span>
+                    <span className="tabular-nums">{formatEur(usedEur, formatAt)}</span>{" "}
+                    <span>used of</span> <span className="tabular-nums">{formatEur(budgetEur, formatAt)}</span>
                   </>
                 }
                 share={monthShare}
@@ -248,6 +260,7 @@ export function BillingSection() {
         ) : (
           <SpendCeilingRow
             ceilingEur={budgetEur}
+            defaultEur={planCeilingEur}
             storedCapEur={spend.userCapEur}
             sourceNote={describeCapSource(spend.capSource)}
             status={saves.status("cap")}
@@ -271,12 +284,15 @@ export function BillingSection() {
  */
 function SpendCeilingRow({
   ceilingEur,
+  defaultEur = null,
   storedCapEur,
   sourceNote,
   status,
   onSave,
 }: {
   ceilingEur: number | null;
+  /** The plan's own figure: what an empty field means, shown as its placeholder. */
+  defaultEur?: number | null;
   storedCapEur: number | null;
   sourceNote: string;
   status: SaveState;
@@ -324,19 +340,36 @@ function SpendCeilingRow({
       status={status}
       control={
         <form onSubmit={submit} className="flex w-full items-center gap-2 @[34rem]/pane:w-auto">
-          <Input
-            id="spend-cap"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            max={100000}
-            step={1}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Default"
-            aria-invalid={!valid}
-            className="min-w-0 flex-1 @[34rem]/pane:w-32 @[34rem]/pane:flex-none"
-          />
+          {/* The unit sits in the field, and an empty field shows the
+              figure it stands for: "Default" alone did not say what number
+              to type, or in what. */}
+          <div className="relative min-w-0 flex-1 @[34rem]/pane:w-32 @[34rem]/pane:flex-none">
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ui text-muted-foreground"
+            >
+              €
+            </span>
+            <Input
+              id="spend-cap"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={100000}
+              step={1}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              // "· plan" so the plan's figure reads as what an empty field
+              // means, not as a value already typed in.
+              placeholder={defaultEur != null ? `${Math.round(defaultEur)} · plan` : "Default"}
+              aria-invalid={!valid}
+              aria-describedby="spend-cap-unit"
+              className="pl-7 tabular-nums"
+            />
+            <span id="spend-cap-unit" className="sr-only">
+              In euros
+            </span>
+          </div>
           <Button type="submit" variant="outline" disabled={!valid || !dirty} loading={saving}>
             Save
           </Button>

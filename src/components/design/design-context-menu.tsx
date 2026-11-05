@@ -229,7 +229,7 @@ export function DesignContextMenu({
               onSelect={() => onApply([{ op: "deleteNodes", nodeIds: unlocked.map((node) => node.id) }], "Delete")}
             >
               Delete
-              <Hint keys="⌫" className="text-destructive/70" />
+              <Hint keys="⌫" className="text-destructive" />
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!renameable} onSelect={() => renameable && onRename(renameable.id)}>
               Rename…

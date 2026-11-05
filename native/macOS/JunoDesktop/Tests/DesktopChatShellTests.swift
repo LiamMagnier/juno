@@ -41,10 +41,10 @@ struct DesktopChatShellTests {
         #expect(DesktopSidebarMetrics.prominentRowHeight > DesktopSidebarMetrics.rowHeight)
     }
 
-    /// Recent is one list, newest first, with no date folds: pinned chats and
-    /// Needs you stay out of it.
+    /// Recent is one list with no date folds: the pinned chats lead it, then
+    /// the rest newest first (owner, 2026-10-26). Needs you stays out of it.
     @Test
-    func recentIsOneListNewestFirst() {
+    func recentIsOneListPinnedFirstThenNewestFirst() {
         func chat(_ id: String, hoursAgo: Double, pinned: Bool = false) -> NativeConversation {
             conversation(id, minutesAgo: hoursAgo * 60, pinned: pinned)
         }
@@ -56,7 +56,7 @@ struct DesktopChatShellTests {
             chat("waiting", hoursAgo: 3),
         ])
         let recent = DesktopChatSidebarContent.recent(from: all, excluding: ["waiting"])
-        #expect(recent.map(\.id) == ["today", "yesterday", "old"])
+        #expect(recent.map(\.id) == ["pinned", "today", "yesterday", "old"])
     }
 
     // MARK: - The column's data
@@ -76,10 +76,11 @@ struct DesktopChatShellTests {
         #expect(chats.map(\.id) == ["new", "old"])
     }
 
-    /// Pinned chats leave Recent; Needs you takes a row from both, because a
-    /// row can be in only one place and that is the one with a person waiting.
+    /// Pinned chats lead Recent, newest first among themselves; Needs you
+    /// takes a row from it, because a row can be in only one place and that
+    /// is the one with a person waiting.
     @Test
-    func pinnedAndRecentSplitTheChatsAndNeedsYouWins() {
+    func pinnedChatsLeadRecentAndNeedsYouWins() {
         let chats = [
             conversation("a", minutesAgo: 1, pinned: true),
             conversation("b", minutesAgo: 2),
@@ -87,11 +88,29 @@ struct DesktopChatShellTests {
             conversation("d", minutesAgo: 4),
         ]
         #expect(DesktopChatSidebarContent.pinned(from: chats).map(\.id) == ["a", "c"])
-        #expect(DesktopChatSidebarContent.recent(from: chats).map(\.id) == ["b", "d"])
+        #expect(DesktopChatSidebarContent.recent(from: chats).map(\.id) == ["a", "c", "b", "d"])
 
         let waiting: Set = ["a", "b"]
         #expect(DesktopChatSidebarContent.pinned(from: chats, excluding: waiting).map(\.id) == ["c"])
-        #expect(DesktopChatSidebarContent.recent(from: chats, excluding: waiting).map(\.id) == ["d"])
+        #expect(DesktopChatSidebarContent.recent(from: chats, excluding: waiting).map(\.id) == ["c", "d"])
+    }
+
+    /// Unpinning a chat drops it out of the pinned head into its place by
+    /// date; there is no section for it to leave.
+    @Test
+    func anUnpinnedChatFallsIntoDateOrder() {
+        let pinned = [
+            conversation("b", minutesAgo: 2),
+            conversation("d", minutesAgo: 4, pinned: true),
+            conversation("f", minutesAgo: 6),
+        ]
+        #expect(DesktopChatSidebarContent.recent(from: pinned).map(\.id) == ["d", "b", "f"])
+        let unpinned = [
+            conversation("b", minutesAgo: 2),
+            conversation("d", minutesAgo: 4),
+            conversation("f", minutesAgo: 6),
+        ]
+        #expect(DesktopChatSidebarContent.recent(from: unpinned).map(\.id) == ["b", "d", "f"])
     }
 
     /// A project's chats stay in Recent as well as under the project: a

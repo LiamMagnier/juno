@@ -38,7 +38,7 @@ final class CommandClassifierTests: XCTestCase {
         XCTAssertEqual(risk("swift script.swift"), .critical)
     }
 
-    func testInlineInterpreterProgramsEscapeTheClassifier() {
+    func testInlineInterpreterProgramsAreClassifiedByWhatTheyRun() {
         // Running a file from the workspace is ordinary development: the code is
         // from the folder the session was granted, which is what `critical`
         // means and why full access proceeds without asking.
@@ -46,19 +46,31 @@ final class CommandClassifierTests: XCTestCase {
         XCTAssertEqual(risk("node build.js --watch"), .critical)
         XCTAssertEqual(risk("bash scripts/deploy.sh"), .critical)
 
-        // An INLINE program is different in kind. The string is written by the
-        // model, not read from the workspace, and every rule in the classifier
-        // is blind to its contents — an rm -rf, a chmod, a curl | sh inside it
-        // is never seen. That escapes the workspace boundary, so it is
-        // `destructive` and asks in every mode, full access included.
-        XCTAssertEqual(risk("python3 -c 'import os; os.system(\"rm -rf /\")'"), .destructive)
-        XCTAssertEqual(risk("node -e 'require(\"child_process\").exec(\"whoami\")'"), .destructive)
-        XCTAssertEqual(risk("bash -c 'rm -rf ~'"), .destructive)
-        XCTAssertEqual(risk("ruby -e 'puts 1'"), .destructive)
-        XCTAssertEqual(risk("perl -e 'print 1'"), .destructive)
-        XCTAssertEqual(risk("sh -lc 'echo hi'"), .destructive)
-        XCTAssertEqual(risk("deno --eval 'console.log(1)'"), .destructive)
-        XCTAssertEqual(risk("node --eval=\'console.log(1)\'"), .destructive)
+        // An INLINE program used to be `destructive`, which asked in every
+        // mode and stopped Full access on nearly every turn. A shell's `-c`
+        // string is a command line and is classified as one, so what it runs
+        // still decides; other interpreters' strings rate as the script they
+        // stand in for.
+        XCTAssertEqual(risk("python3 -c 'import json; print(1)'"), .critical)
+        XCTAssertEqual(risk("node -e 'console.log(process.version)'"), .critical)
+        XCTAssertEqual(risk("ruby -e 'puts 1'"), .critical)
+        XCTAssertEqual(risk("perl -e 'print 1'"), .critical)
+        XCTAssertEqual(risk("deno --eval 'console.log(1)'"), .critical)
+        XCTAssertEqual(risk("node --eval=\'console.log(1)\'"), .critical)
+        XCTAssertEqual(risk("bash -c 'npm test && npm run lint'"), .critical)
+        XCTAssertEqual(risk("sh -lc 'echo hi'"), .critical)
+        XCTAssertEqual(risk("zsh --command='git status'"), .critical)
+
+        // What a shell string runs is still seen.
+        XCTAssertTrue(isForbidden("bash -c 'rm -rf ~'"))
+        XCTAssertTrue(isForbidden("sh -c 'sudo id'"))
+        XCTAssertTrue(isForbidden("bash -c \"bash -c 'sudo id'\""))
+        XCTAssertEqual(risk("bash -c 'ssh host ls'"), .destructive)
+        XCTAssertEqual(risk("bash -c 'git push --force origin main'"), .destructive)
+        XCTAssertEqual(risk("bash -c 'cat ~/.ssh/config'"), .destructive)
+        XCTAssertEqual(risk("sh -c 'echo $(chmod 777 x)'"), .destructive)
+        // A `-c` with no string to read stays unreviewable.
+        XCTAssertEqual(risk("bash -c"), .destructive)
     }
 
     /// The same letters mean unrelated things to different interpreters, and
@@ -81,7 +93,7 @@ final class CommandClassifierTests: XCTestCase {
 
         // Still caught when a value-taking flag comes first, which a scan that
         // stopped at the leading flag run would walk straight past.
-        XCTAssertEqual(risk("python3 -W ignore -c 'import os'"), .destructive)
+        XCTAssertEqual(risk("python3 -W ignore -c 'import os'"), .critical)
     }
 
     func testForbiddenProgramsAreRejectedEverywhere() {
@@ -144,9 +156,31 @@ final class CommandClassifierTests: XCTestCase {
 
         XCTAssertEqual(risk("ssh host ls"), .destructive)
         XCTAssertEqual(risk("brew install jq"), .destructive)
-        XCTAssertEqual(risk("gh pr view"), .destructive)
         XCTAssertEqual(risk("docker compose up"), .destructive)
         XCTAssertEqual(risk("terraform apply"), .destructive)
+
+        // Reading from GitHub is network, not infrastructure control.
+        XCTAssertEqual(risk("gh pr view"), .critical)
+        XCTAssertEqual(risk("gh pr view 123 --json title"), .critical)
+        XCTAssertEqual(risk("gh run list --limit 5"), .critical)
+        XCTAssertEqual(risk("gh pr checks"), .critical)
+        XCTAssertEqual(risk("gh search code foo"), .critical)
+        XCTAssertEqual(risk("gh status"), .critical)
+        // Writing to GitHub, or any method through `gh api`, still asks.
+        XCTAssertEqual(risk("gh pr merge 12"), .destructive)
+        XCTAssertEqual(risk("gh pr create --fill"), .destructive)
+        XCTAssertEqual(risk("gh repo delete x"), .destructive)
+        XCTAssertEqual(risk("gh api repos/x/y"), .destructive)
+        XCTAssertEqual(risk("gh"), .destructive)
+
+        // Opening the dev server in a browser; any other target is system-facing.
+        XCTAssertEqual(risk("open http://localhost:3000"), .critical)
+        XCTAssertEqual(risk("open http://127.0.0.1:8080/settings"), .critical)
+        XCTAssertEqual(risk("open https://app.localhost/"), .critical)
+        XCTAssertEqual(risk("open https://example.com"), .destructive)
+        XCTAssertEqual(risk("open -a Terminal"), .destructive)
+        XCTAssertEqual(risk("open http://localhost:3000 /Applications/Calculator.app"), .destructive)
+        XCTAssertEqual(risk("open"), .destructive)
     }
 
     /// Substitution hides code but runs it here; an inline interpreter program
@@ -155,16 +189,14 @@ final class CommandClassifierTests: XCTestCase {
     func testShellEscapes() {
         XCTAssertEqual(risk("echo $(git rev-parse HEAD)"), .critical)
         XCTAssertEqual(risk("echo `id`"), .critical)
-        // Was .critical. The `rm -rf` inside the quoted string is invisible to
-        // every rule in the classifier, which is the whole reason an inline
-        // program is now .destructive — see
-        // testInlineInterpreterProgramsEscapeTheClassifier.
-        XCTAssertEqual(risk("bash -c 'rm -rf x'"), .destructive)
+        // The string is classified as a line: `rm -rf x` in the workspace is
+        // what `rm -rf node_modules` is.
+        XCTAssertEqual(risk("bash -c 'rm -rf x'"), .critical)
         XCTAssertEqual(risk("eval ls"), .critical)
         // Both were .critical: the substitution's own verdict was never read.
         // See testASubstitutionIsNoBetterThanWhatItRuns.
         XCTAssertEqual(risk("echo $(cat /etc/passwd)"), .destructive)
-        XCTAssertEqual(risk("cat <(python3 -c 'print(1)')"), .destructive)
+        XCTAssertEqual(risk("cat <(python3 -c 'print(1)')"), .critical)
 
         XCTAssertEqual(risk("chmod +x script.sh"), .destructive)
         XCTAssertEqual(risk("kill -9 1234"), .destructive)
@@ -185,7 +217,7 @@ final class CommandClassifierTests: XCTestCase {
         XCTAssertTrue(isForbidden("sudo ls $(pwd)"))
 
         XCTAssertEqual(risk("echo $(ssh host cat .env)"), .destructive)
-        XCTAssertEqual(risk("echo $(bash -c 'rm -rf x')"), .destructive)
+        XCTAssertEqual(risk("echo $(bash -c 'rm -rf ~')"), nil)
         XCTAssertEqual(risk("x=$(chmod 777 script.sh)"), .destructive)
         XCTAssertEqual(risk("echo $(ls; git push --force)"), .destructive)
         XCTAssertEqual(risk("(cd sub && echo $(git push --force))"), .destructive)

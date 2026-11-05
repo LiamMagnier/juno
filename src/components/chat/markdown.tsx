@@ -39,7 +39,7 @@ const MermaidBlock = nextDynamic(
   { ssr: false },
 );
 import { SourceChip } from "@/components/chat/source-chip";
-import { PhraseWithArgs } from "@/lib/i18n-phrase";
+import { PhraseWithArgs, usePhrase } from "@/lib/i18n-phrase";
 import { DEMOTED_HEADINGS } from "@/lib/markdown-headings";
 import { cn } from "@/lib/utils";
 import { allowedImageKeys, imageDecision } from "@/lib/web/image-policy";
@@ -52,6 +52,8 @@ import { isLegacyVisualFence, legacyVisualSource } from "@/lib/live-ui/legacy/co
 export const MARKDOWN_COPY = {
   /** Followed by the image's host: "Image from example.com". */
   imageFrom: "Image from",
+  /** The name of a table wide enough to scroll sideways (`ScrollTable`). */
+  tableRegion: "Scrollable table",
 } as const;
 
 /** Pull the `language-xxx` hint rehype-highlight writes onto the inner <code>. */
@@ -61,6 +63,30 @@ function langOf(children: React.ReactNode): string {
     | undefined;
   const cls = child?.props?.className ?? "";
   return /language-([\w-]+)/.exec(cls)?.[1] ?? "";
+}
+
+/**
+ * A figure's leading sign, set outside the tabular figures. Figure columns
+ * (right or centre aligned) take `tabular-nums` (globals.css), and that made
+ * Inter's hyphen-minus as wide as a digit, so "-25%" read "- 25%". The sign
+ * keeps its proportional width; the text is untouched, so a copied cell is
+ * still "-25%".
+ */
+export function tightLeadingSign(children: React.ReactNode): React.ReactNode {
+  const parts = React.Children.toArray(children);
+  const first = parts[0];
+  if (typeof first !== "string") return children;
+  const match = /^(\s*)([-+\u2212])(?=\s?[\d$€£¥.])/u.exec(first);
+  if (!match) return children;
+  const [lead, space, sign] = match;
+  return [
+    space,
+    <span key="sign" className="[font-variant-numeric:normal]">
+      {sign}
+    </span>,
+    first.slice(lead.length),
+    ...parts.slice(1),
+  ];
 }
 
 function textOf(node: React.ReactNode): string {
@@ -246,12 +272,12 @@ function WrittenFileFence({ filename, children }: { filename: string; children: 
   return (
     <p className="my-3 flex min-w-0 items-baseline gap-2 text-caption text-muted-foreground">
       <span className="min-w-0 truncate">
-        <span className="font-mono text-foreground/80">{filename}</span> is in the changes above.
+        <span className="font-mono text-muted-foreground">{filename}</span> is in the changes above.
       </span>
       <button
         type="button"
         onClick={() => setShown(true)}
-        className="shrink-0 underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+        className="shrink-0 underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
       >
         Show file
       </button>
@@ -555,8 +581,20 @@ function remarkCitations(sourceCount: number) {
  * canvas preview and on its public page. Only a node that is nothing but
  * whole comments goes; one still open (mid-stream) stays text until it closes.
  */
-function isOnlyComments(value: string | undefined): boolean {
-  return !!value && value.includes("<!--") && value.replace(/<!--[\s\S]*?-->/g, "").trim() === "";
+export function isOnlyComments(value: string | undefined): boolean {
+  // Walked, not stripped with a regex: each step must find a whole comment
+  // (`<!--` up to the first `-->` after it) and only whitespace between them,
+  // so nothing a removal could stitch back together ("<!<!---->--") counts.
+  if (!value) return false;
+  let rest = value.trim();
+  if (!rest.startsWith("<!--")) return false;
+  while (rest.length > 0) {
+    if (!rest.startsWith("<!--")) return false;
+    const end = rest.indexOf("-->", 4);
+    if (end < 0) return false;
+    rest = rest.slice(end + 3).trimStart();
+  }
+  return true;
 }
 
 function remarkDropComments() {
@@ -874,10 +912,58 @@ function GuardedImage({
       referrerPolicy="no-referrer"
       title={alt || undefined}
       data-image-link=""
-      className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-[0.85em] text-muted-foreground no-underline hover:text-foreground"
+      className="inline-flex max-w-full items-center gap-1 rounded-control border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-[0.85em] text-muted-foreground no-underline hover:text-foreground"
     >
       <PhraseWithArgs spec={{ parts: [{ phrase: MARKDOWN_COPY.imageFrom }, { kind: "domain", value: decision.host }] }} />
     </a>
+  );
+}
+
+/**
+ * A table's own sideways scroller.
+ *
+ * Wide tables scroll inside this box instead of stretching the message column
+ * past the viewport on phones. Under 640px the label column (sticky,
+ * globals.css) holds about twenty characters before it wraps, capped at half
+ * the screen: the table already scrolls there, and at 14ch a label stacked
+ * three lines tall ("Support bot, / 40k-token / handbook") beside a
+ * single-line row of figures.
+ *
+ * A box that scrolls has to be reachable without a pointer, or a keyboard user
+ * can never read its right-hand columns (WCAG 2.1.1; axe
+ * scrollable-region-focusable). So while the table is wider than the box, the
+ * box is a named region in the tab order and the arrow keys scroll it; its
+ * focus ring is the global keyboard ring (globals.css `:focus-visible`, shown
+ * only for keyboard focus), outside the edge: drawn inside, the sticky label
+ * column painted over its left side. A table that fits stays out of the tab
+ * order: a stop that does nothing is noise.
+ */
+function ScrollTable({ children }: { children: React.ReactNode }) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [scrolls, setScrolls] = React.useState(false);
+  const label = usePhrase(MARKDOWN_COPY.tableRegion);
+  React.useEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    const measure = () => setScrolls(box.scrollWidth > box.clientWidth + 1);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    if (box.firstElementChild) observer.observe(box.firstElementChild);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div
+      ref={ref}
+      data-table-scroll=""
+      tabIndex={scrolls ? 0 : undefined}
+      role={scrolls ? "region" : undefined}
+      aria-label={scrolls ? label : undefined}
+      className="overflow-x-auto rounded-xs max-sm:[&_td:first-child]:min-w-[min(20ch,48vw)]"
+    >
+      {children}
+    </div>
   );
 }
 
@@ -923,13 +1009,14 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
       ...DEMOTED_HEADINGS,
       // Stable across the stream's end: see StreamingContext.
       pre: CodeBlock as Components["pre"],
-      // Wide tables scroll inside their own container instead of stretching the
-      // message column past the viewport on phones.
+      // Wide tables scroll inside their own box, which a keyboard can reach
+      // while it scrolls (ScrollTable).
       table: ({ node: _node, ...props }) => (
-        <div className="overflow-x-auto">
+        <ScrollTable>
           <table {...props} />
-        </div>
+        </ScrollTable>
       ),
+      td: ({ node: _node, children, ...props }) => <td {...props}>{tightLeadingSign(children)}</td>,
       a: ({ children, node: _node, ...props }) => (
         <a {...props} target="_blank" rel="noopener noreferrer">
           {children}

@@ -107,7 +107,7 @@ export default function KnowledgeDocumentPage() {
   if (failed) {
     return (
       <AppPage measure="reading">
-          <Link href="/library" className="inline-flex items-center gap-2 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none">
+          <Link href="/library" className="inline-flex items-center gap-2 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground">
             <ArrowLeft className="size-4" /> Library
           </Link>
           <EmptyState
@@ -186,7 +186,7 @@ export default function KnowledgeDocumentPage() {
                 href={document.sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
+                className="underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground"
               >
                 Download original
               </a>

@@ -28,13 +28,13 @@ export const EASE_IN: [number, number, number, number] = [0.4, 0, 1, 1];
 
 export const T = {
   /** Menus, palettes, popovers: in. */
-  menuIn: { duration: 0.14, ease: EASE_OUT } satisfies Transition,
+  menuIn: { duration: 0.16, ease: EASE_OUT } satisfies Transition,
   /** Menus: out (quicker than in). */
-  menuOut: { duration: 0.1, ease: EASE_IN } satisfies Transition,
+  menuOut: { duration: 0.12, ease: EASE_IN } satisfies Transition,
   /** A panel growing from its token. */
-  panelIn: { duration: 0.2, ease: EASE_OUT } satisfies Transition,
+  panelIn: { duration: 0.22, ease: EASE_OUT } satisfies Transition,
   /** An object travelling (a mark into its chip, the composer to the dock). */
-  travel: { duration: 0.32, ease: EASE_OUT } satisfies Transition,
+  travel: { duration: 0.36, ease: EASE_OUT } satisfies Transition,
   /** Quiet fades for content arriving. */
   fade: { duration: 0.22, ease: EASE_OUT } satisfies Transition,
   instant: { duration: 0 } satisfies Transition,

@@ -637,7 +637,32 @@
       }
     },
     {
-      "id": "moonshot:kimi-k3",
+      "id": "moonshot:kimi-k3.1-pro",
+      "provider": "moonshot",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "moonshot:kimi-k3.1-pro-highspeed",
       "provider": "moonshot",
       "adapter": "openai-compatible",
       "vision": true,
@@ -1095,7 +1120,7 @@
       }
     },
     {
-      "id": "minimax:MiniMax-M3.1-Flash-Preview",
+      "id": "minimax:MiniMax-M3.1-Flash",
       "provider": "minimax",
       "adapter": "openai-compatible",
       "vision": true,
@@ -1110,32 +1135,6 @@
         },
         "toolImages": {
           "verdict": "untested"
-        },
-        "runCodeE2E": {
-          "verdict": "untested"
-        },
-        "skillE2E": {
-          "verdict": "untested"
-        }
-      }
-    },
-    {
-      "id": "minimax:MiniMax-M2.7-highspeed",
-      "provider": "minimax",
-      "adapter": "openai-compatible",
-      "vision": false,
-      "catalogAgenticTools": true,
-      "compatible": false,
-      "verdicts": {
-        "roundTrip": {
-          "verdict": "untested"
-        },
-        "parallel": {
-          "verdict": "untested"
-        },
-        "toolImages": {
-          "verdict": "not_applicable",
-          "note": "No vision."
         },
         "runCodeE2E": {
           "verdict": "untested"
@@ -1286,6 +1285,57 @@
         },
         "toolImages": {
           "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "qwen:qwen3.8-27b",
+      "provider": "qwen",
+      "adapter": "openai-compatible",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "qwen:qwen3.8-2.4t-a95b",
+      "provider": "qwen",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
         },
         "runCodeE2E": {
           "verdict": "untested"
@@ -1593,7 +1643,7 @@
       "verdict": "unsupported",
       "presentation": "not_applicable",
       "evidence": "relay/tests/voice-tool-limit.test.ts",
-      "note": "The relay has no tool calls; every call says it cannot run code and that it can be done in the chat."
+      "note": "A realtime call is never given an execution tool (src/lib/voice-tools.ts), only the chat's search, clock and connector tools; every call says it cannot run code and that it can be done in the chat."
     },
     {
       "surface": "voice_realtime",
@@ -1601,7 +1651,7 @@
       "verdict": "unsupported",
       "presentation": "not_applicable",
       "evidence": "relay/tests/voice-tool-limit.test.ts",
-      "note": "The relay has no tool calls; every call says it cannot run code and that it can be done in the chat."
+      "note": "A realtime call is never given an execution tool (src/lib/voice-tools.ts), only the chat's search, clock and connector tools; every call says it cannot run code and that it can be done in the chat."
     },
     {
       "surface": "voice_realtime",
@@ -1609,7 +1659,7 @@
       "verdict": "unsupported",
       "presentation": "not_applicable",
       "evidence": "relay/tests/voice-tool-limit.test.ts",
-      "note": "The relay has no tool calls; every call says it cannot run code and that it can be done in the chat."
+      "note": "A realtime call is never given an execution tool (src/lib/voice-tools.ts), only the chat's search, clock and connector tools; every call says it cannot run code and that it can be done in the chat."
     },
     {
       "surface": "voice_realtime",
@@ -1617,7 +1667,7 @@
       "verdict": "unsupported",
       "presentation": "not_applicable",
       "evidence": "relay/tests/voice-tool-limit.test.ts",
-      "note": "The relay has no tool calls; every call says it cannot run code and that it can be done in the chat."
+      "note": "A realtime call is never given an execution tool (src/lib/voice-tools.ts), only the chat's search, clock and connector tools; every call says it cannot run code and that it can be done in the chat."
     },
     {
       "surface": "native_macos",

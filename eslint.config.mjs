@@ -3,14 +3,26 @@ import { fileURLToPath } from "node:url";
 import { FlatCompat } from "@eslint/eslintrc";
 
 import designSystem from "./eslint-rules/design-system.mjs";
+import { loadEnforce } from "./eslint-rules/enforce.mjs";
+import { DEFAULT_HEX_ALLOW, wave2Configs } from "./eslint-rules/wave2.mjs";
 import noArbitraryText from "./eslint-rules/no-arbitrary-text.js";
 import noRawReducedMotion from "./eslint-rules/no-raw-reduced-motion.mjs";
 import noCodename from "./eslint-rules/no-codename.js";
 import noRawTextSize from "./eslint-rules/no-raw-text-size.js";
 
+const root = dirname(fileURLToPath(import.meta.url));
+
 const compat = new FlatCompat({
-  baseDirectory: dirname(fileURLToPath(import.meta.url)),
+  baseDirectory: root,
 });
+
+/*
+ * The wave 2 design rules (eslint-rules/wave2.mjs, spec §9 "Lint") warn
+ * everywhere, and the globs each package lists in eslint-rules/enforce/*.json
+ * turn them into errors. Every enforce file is read here, at startup, so a
+ * package enforces its own files without editing this one.
+ */
+const enforce = loadEnforce(root);
 
 const config = [
   {
@@ -36,6 +48,12 @@ const config = [
       // reported thousands of errors from a copy of code it had already linted.
       ".claude/**",
       "**/.claude/**",
+      // Workflow benchmark inputs (frozen fixtures, deliberately buggy code a
+      // product is asked to fix), held-out tests and recorded run outputs
+      // (including code delivered by other products) are data, not source.
+      "bench/workflows/fixtures/**",
+      "bench/workflows/hidden/**",
+      "bench/workflows/results/**",
       ".worktrees/**",
       "**/.worktrees/**",
       "runner/**",
@@ -230,6 +248,28 @@ const config = [
     files: ["scripts/**/*.js"],
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
+  ...wave2Configs({ enforce }),
+  (() => {
+    /*
+     * Where presence may still be typed as hex, with the reason. The first four
+     * are the places tests/presence-token.test.ts registers; the dev pair is
+     * the same two cases inside the galleries. Scoped to these files only, so
+     * no enforce glob is downgraded.
+     */
+    const PRESENCE_HEX_ALLOWED = {
+      "src/lib/sketch/sketch-core.ts": "the Blue pen in the sketch palette: drawing content, not interface",
+      "src/components/chat/sketch/sketch.css": "the hue wheel and the caret on the always-white paper",
+      "src/components/home/alv-base.css": "the sign-in panel's forced-dark deep ground",
+      "src/components/home/dot-construction.css": "the forced-dark deep ground (.alv-deep)",
+      "src/app/dev/ascii/ascii.css": "the gallery's forced-dark sign-in panel copies",
+      "src/app/dev/design/juno/tokens.css": "the .jn gallery's own token source, which defines its --presence",
+    };
+    const paths = Object.keys(PRESENCE_HEX_ALLOWED);
+    return {
+      files: paths.map((path) => (path.endsWith(".css") ? `${path}/*.js` : path)),
+      rules: { "wave2/no-raw-presence-hex": ["warn", { allow: [...DEFAULT_HEX_ALLOW, ...paths] }] },
+    };
+  })(),
 ];
 
 export default config;

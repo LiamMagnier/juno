@@ -149,7 +149,11 @@ test("patch paths are read from every header and normalized strictly", () => {
 // ── Resume at reset ─────────────────────────────────────────────────────────
 
 test("schedule: a limited turn resumes at the reset by itself; a schedule can be cancelled; a manual turn supersedes it", async () => {
-  const { client } = await boot();
+  const { client, server } = await boot();
+  // Whether each turn that ended had anybody watching it (computer use on
+  // the Mac reads the same flag).
+  const watched: boolean[] = [];
+  server.sessions.onTurnEnded((id) => watched.push(!server.sessions.isUnattended(id)));
   const sid = await open(client, tempDir("rt-cwd"));
   const limited = await turn(client, sid, "please limit");
   assert.equal(limited.outcome, "limited");
@@ -177,6 +181,9 @@ test("schedule: a limited turn resumes at the reset by itself; a schedule can be
   );
   assert.ok(resumed);
   await client.waitFor(() => client.snapshot(sid).state === "idle" && client.snapshot(sid).scheduledResume === undefined, 8000, "idle again");
+  assert.equal(watched.at(-1), false, "the turn the timer started had nobody watching");
+  assert.equal(watched[0], true, "the person's own turn was watched");
+  assert.equal(server.sessions.isUnattended(sid), false, "the flag ends with its turn");
 
   // A manual turn clears a pending schedule.
   await client.command("turn.schedule", { sessionId: sid, at: new Date(Date.now() + 60_000).toISOString(), input: { text: "custom resume" } });

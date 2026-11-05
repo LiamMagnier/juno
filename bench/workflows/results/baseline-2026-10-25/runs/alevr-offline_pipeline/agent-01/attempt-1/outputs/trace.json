@@ -1,0 +1,64 @@
+{
+  "callOrder": [
+    "call-1",
+    "call-2",
+    "call-3",
+    "call-4",
+    "call-5"
+  ],
+  "executions": [
+    {
+      "name": "lookup_invoice",
+      "callId": "call-1",
+      "startedAt": 1.331
+    },
+    {
+      "name": "lookup_invoice",
+      "callId": "call-2",
+      "startedAt": 1.481
+    }
+  ],
+  "authorizationRequests": [
+    {
+      "toolName": "publish_note"
+    }
+  ],
+  "results": [
+    {
+      "callId": "call-1",
+      "status": "succeeded",
+      "error": null
+    },
+    {
+      "callId": "call-2",
+      "status": "succeeded",
+      "error": null
+    },
+    {
+      "callId": "call-3",
+      "status": "denied",
+      "error": {
+        "code": "denied"
+      }
+    },
+    {
+      "callId": "call-4",
+      "status": "failed",
+      "error": {
+        "code": "invalid_args"
+      }
+    },
+    {
+      "callId": "call-5",
+      "status": "failed",
+      "error": {
+        "code": "unknown_tool"
+      }
+    }
+  ],
+  "brokerless": {
+    "executed": false,
+    "status": "failed",
+    "errorCode": "not_permitted"
+  }
+}

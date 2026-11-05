@@ -8,6 +8,12 @@
  */
 
 .home-starters {
+  /* Positioned, so the row paints in the same layer as the composer's
+     stacking context (`.chat-home__composer`, relative + isolate) and, coming
+     after it, over it. Unpositioned, the row painted first and the home field
+     (z-index -1 INSIDE that context, 640px tall) drew its dots over the chips'
+     faces and labels. Decoration never draws over a control. */
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -20,6 +26,15 @@
 .home-starters[data-shown] {
   opacity: 1;
   transition: opacity var(--dur-base) var(--ease-out-soft);
+}
+
+/* A chip's prompts are open: the home field (empty-state.tsx, HomeField)
+   steps out on its own slow fade (composer.css), so no orbit runs through a
+   line of text or tangles with the list's hairlines, and the hover fill never
+   knocks a rectangle out of a drawing. It returns when the list closes.
+   Higher than the field's own opacity utility, (0,3,0) to (0,1,0). */
+.chat-home:has(.home-starters[data-open]) .chat-home__field {
+  opacity: 0;
 }
 
 .home-starters__chips {
@@ -64,6 +79,36 @@
 .home-starters__prompt:active {
   background-color: hsl(var(--accent));
 }
+
+/* Desktop: the list hangs under the chips OUT of the grid's sizing. In flow,
+   it grew the third track, and since the home's two outer tracks share the
+   free space (composer.css `.chat-home`, minmax(0,1fr) auto minmax(0,1fr))
+   the first track grew with it: on a laptop-height window, opening Write
+   pushed the greeting, the composer and the chip just pressed down ~37px.
+   Out of flow nothing above it moves; on a short window the column scrolls
+   to the last prompt, with the track's own breathing room under it. */
+@media (min-width: 761px) {
+  .home-starters__prompts {
+    position: absolute;
+    top: calc(100% + 14px);
+    left: 50%;
+    translate: -50% 0;
+    padding-bottom: 32px;
+  }
+}
+/* A short laptop window (composer.css, the same query): the list hangs 8px
+   under the chips on 34px rows, so Write's four prompts end on screen at
+   1280×640 and 1024×600 (they reached 659 against a 631 fold). */
+@media (max-height: 700px) and (min-width: 761px) {
+  .home-starters__prompts {
+    top: calc(100% + 8px);
+    padding-bottom: 12px;
+  }
+  .home-starters__prompt {
+    min-height: 34px;
+    padding-block: 7px;
+  }
+}
 @media (pointer: coarse) {
   .home-starters__chip {
     min-height: 44px;
@@ -88,11 +133,56 @@
     flex-wrap: nowrap;
     justify-content: flex-start;
     overflow-x: auto;
-    /* Let the first and last chips scroll to the gutter's edge, not under it. */
+    /* Let the first and last chips scroll to the gutter's edge, not under it.
+       Full bleed, so no max-width: capped at 100% the row kept the column's
+       width while the margins pulled it left, and it ended a gutter short of
+       the screen, slicing the last visible chip mid-word. */
+    max-width: none;
     margin-inline: calc(-1 * var(--page-gutter, 1rem));
     padding-inline: var(--page-gutter, 1rem);
     scroll-padding-inline: var(--page-gutter, 1rem);
     scroll-snap-type: x proximity;
+    /* A sideways scroller clips vertically too (overflow-x: auto makes
+       overflow-y auto), which cut the keyboard ring (2px, offset 2px:
+       globals.css :focus-visible) off a focused chip's top and bottom. Room
+       for it inside the box, given back outside, so nothing moves. */
+    padding-block: 4px;
+    margin-block: -4px;
+    /* The row runs off the screen's edge on purpose (there is more to
+       scroll), so what reaches the edge dissolves instead of ending in a
+       hard sliver of a chip's border or on cut letters ("Pla" at 360 when
+       only the 16px gutter faded). While more lies past an edge
+       (home-starters.tsx sets data-more-start / data-more-end) that edge
+       fades over 56px, eased, so the half-shown chip reads as more to
+       scroll, not as a word cut short. At an end, only the gutter fades:
+       a chip scrolled into view (scroll-padding above) and its ring stay at
+       full ink. */
+    --chips-fade-start: var(--page-gutter, 1rem);
+    --chips-fade-end: var(--page-gutter, 1rem);
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      rgb(0 0 0 / 0.35) calc(var(--chips-fade-start) * 0.5),
+      #000 var(--chips-fade-start),
+      #000 calc(100% - var(--chips-fade-end)),
+      rgb(0 0 0 / 0.35) calc(100% - var(--chips-fade-end) * 0.5),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      rgb(0 0 0 / 0.35) calc(var(--chips-fade-start) * 0.5),
+      #000 var(--chips-fade-start),
+      #000 calc(100% - var(--chips-fade-end)),
+      rgb(0 0 0 / 0.35) calc(100% - var(--chips-fade-end) * 0.5),
+      transparent
+    );
+  }
+  .home-starters__chips[data-more-start] {
+    --chips-fade-start: 56px;
+  }
+  .home-starters__chips[data-more-end] {
+    --chips-fade-end: 56px;
   }
   .home-starters__chip {
     scroll-snap-align: start;

@@ -564,7 +564,7 @@ export function LinksAdmin() {
                           // sent it — the thing to read before a Restore.
                           <div className="mt-1.5 max-w-72 text-caption text-muted-foreground">
                             {s.takedownReason && (
-                              <p className="line-clamp-3 break-words text-foreground/85">{s.takedownReason}</p>
+                              <p className="line-clamp-3 break-words text-foreground">{s.takedownReason}</p>
                             )}
                             <p className="mt-0.5 font-mono">
                               {s.takenDownBy ?? "Unknown"}
@@ -731,7 +731,7 @@ export function LinksAdmin() {
                           {r.detail ? (
                             <p
                               className={cn(
-                                "whitespace-pre-line break-words text-foreground/85",
+                                "whitespace-pre-line break-words text-foreground",
                                 !isExpanded && long && "line-clamp-3"
                               )}
                             >
@@ -747,7 +747,7 @@ export function LinksAdmin() {
                               type="button"
                               onClick={() => toggleExpanded(r.id)}
                               aria-expanded={isExpanded}
-                              className="mt-1 inline-flex items-center gap-1 rounded-sm text-caption font-medium text-foreground/80 underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
+                              className="mt-1 inline-flex items-center gap-1 rounded-sm text-caption font-medium text-muted-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
                             >
                               {isExpanded ? "Show less" : "Show more"}
                               <ChevronDown
@@ -765,7 +765,7 @@ export function LinksAdmin() {
                                 Reply to{" "}
                                 <a
                                   href={`mailto:${r.contact}`}
-                                  className="rounded-xs break-all text-foreground/85 underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground"
+                                  className="rounded-xs break-all text-foreground underline underline-offset-2 transition-colors duration-fast ease-out-soft"
                                 >
                                   {r.contact}
                                 </a>

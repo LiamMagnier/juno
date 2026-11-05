@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "sonner";
 import { Folder, Pin, NotebookPen, Plus } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { AppPageHeader } from "@/components/app/app-page";
@@ -102,6 +103,11 @@ export function ProjectWorkspaceHeader({
     try {
       await onRename(next);
       setRenameOpen(false);
+    } catch {
+      // `onRename` throws on a failed write. With no catch here the rejection
+      // went unhandled: the spinner stopped and nothing said why. The dialog
+      // stays open with the typed name in it, so a retry is one click.
+      toast.error("Couldn’t rename this project.");
     } finally {
       setRenaming(false);
     }
@@ -131,13 +137,15 @@ export function ProjectWorkspaceHeader({
     ...(stats.workCount ? [plural(stats.workCount, "task")] : []),
     ...(stats.codeCount ? [plural(stats.codeCount, "code session")] : []),
   ];
-  // Mono, like every count in the editorial pages: figures read at a glance.
+  // One line of the interface face at the `ui` rung, the same voice as the
+  // Projects list's totals line: this is the page's lede, read as a sentence,
+  // not a column of mono identifiers (it was 11px mono). Figures stay tabular.
+  // Each part keeps its words together, so a narrow column wraps between
+  // parts, never inside "5 sources".
   const lede = (
-    <span className="pj-annot flex flex-wrap gap-x-4 gap-y-1">
-      {counts.map((count) => (
-        <span key={count}>{count}</span>
-      ))}
-      <span>Updated {timeAgo(project.updatedAt)}</span>
+    // `leading-6`: the 24px line box ProjectPageSkeleton reserves for it.
+    <span className="block text-ui leading-6 tabular-nums text-muted-foreground">
+      {[...counts, `Updated ${timeAgo(project.updatedAt)}`].map((part) => part.replace(/ /g, " ")).join(" · ")}
     </span>
   );
   const parent = breadcrumbs[breadcrumbs.length - 1];
@@ -145,7 +153,9 @@ export function ProjectWorkspaceHeader({
   return (
     <>
       <AppPageHeader
-        className={className}
+        // `pj-head` (projects.css): a long name wraps beside the actions
+        // instead of claiming a row of its own above them.
+        className={cn("pj-head", className)}
         backdrop
         backHref={parent ? `/projects/${parent.id}` : "/projects"}
         backLabel={parent ? `Back to ${parent.name}` : "Back to projects"}
@@ -157,7 +167,9 @@ export function ProjectWorkspaceHeader({
             accept={acceptOnCrumb}
           />
         }
-        heading={<span className="block min-w-0 truncate tracking-[-0.03em]">{project.name}</span>}
+        // Wraps, never truncates: a heading cut mid-word ("…communications
+        // f…") is the page failing to say where you are.
+        heading={<span className="block min-w-0 break-words tracking-[-0.03em]">{project.name}</span>}
         lede={lede}
         actions={
           <>

@@ -9,6 +9,8 @@
  * Pure and client-safe: no React, no DOM.
  */
 
+import { DURATION, EASING } from "@/lib/design/tokens.generated";
+
 export type GenerationModality = "image" | "video" | "audio";
 
 /** Width over height when the request named no ratio (or said "auto"). */
@@ -81,7 +83,11 @@ export function formatElapsed(seconds: number): string {
 export const TILE_STAGGER_MS = 120;
 /** The top-down resolve, from first blur to last sharp row, in ms. */
 export const REVEAL_MS = 1500;
-/** The frame's shape change from the requested ratio to the real one, in ms. */
-export const MORPH_MS = 640;
-/** cubic-bezier(.16, 1, .3, 1): the homepage's arrival curve (--alv-ease, --ease-out-expo). */
-export const EXPO = "cubic-bezier(0.16, 1, 0.3, 1)";
+/**
+ * The frame's shape change from the requested ratio to the real one, in ms:
+ * the emphasis rung, a change the reader did not cause. It was 640, a length
+ * the closed ladder (70/120/160/220/360/560) does not have.
+ */
+export const MORPH_MS = DURATION.emphasis;
+/** `--ease-out-expo` (.16, 1, .3, 1), read from the token table. */
+export const EXPO = `cubic-bezier(${EASING.outExpo.join(", ")})`;

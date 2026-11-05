@@ -17,20 +17,30 @@ import "server-only";
 
 import { createAgentTransaction } from "@/lib/agents/creation";
 import type { Agent, AgentGoal, Prisma } from "@prisma/client";
-import { goalProgress, parseCriteria, parseMilestones } from "@/lib/agents/goals";
+import { GOAL_UNVERIFIED, goalProgress, parseCriteria, parseMilestones } from "@/lib/agents/goals";
 import { prisma } from "@/lib/prisma";
 import { decryptField, encryptField, FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto";
 import { DEFAULT_MODEL } from "@/lib/models";
 import { canUseModel } from "@/lib/plans";
+import { agentHiringGate } from "@/lib/agents/plan-gate";
+import { agentNoteStatusOf, screenAgentNote } from "@/lib/agents/note-review";
 import { getUserPlan } from "@/lib/usage";
 import { isUserMcpConnectorId, userMcpConnectorId, userMcpRowId } from "@/lib/user-mcp";
 import { normalizeAgentAvatar } from "@/lib/agents/avatar";
+import { PRODUCT_NAME } from "@/lib/brand/names";
+import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
+import { isRetryLaterRefusal } from "@/lib/work/executor-presence";
+import { resolveAgentDispatchTarget } from "@/lib/agents/run-context";
 import {
   AGENT_ROUTINE_CADENCE_LABEL,
   MAX_AGENTS_PER_ACCOUNT,
   MAX_AGENT_GOALS,
   MAX_AGENT_NOTES,
+  MAX_AGENT_NOTE_CHARS,
   agentApprovalMode,
+  agentExecutionTarget,
+  agentRoutineHost,
+  agentWorkTarget,
   AGENT_BLOCKED_WINDOW_MS,
   agentStateSentence,
   agentTaskKeys,
@@ -58,6 +68,7 @@ import {
 } from "@/lib/agents/types";
 import { AGENT_PROMPT_TEAMMATES, buildAgentPromptBlock } from "@/lib/agents/prompt";
 import { CONVERSATION_LIVE_STATUSES as LIVE_TASK_STATUSES } from "@/lib/work/conversation-tasks";
+import { WORK_TERMINAL_STATUSES } from "@/lib/work/domain";
 
 export interface AgentActor {
   id: string;
@@ -293,8 +304,14 @@ const NO_DERIVED: AgentDerived = {
 };
 
 export async function serializeAgents(userId: string, agents: readonly Agent[], now = new Date()): Promise<ClientAgent[]> {
-  const derived = await deriveForAgents(userId, agents, now);
-  return agents.map((agent) => serializeAgent(agent, derived.get(agent.id) ?? NO_DERIVED));
+  const [derived, cloudAvailable] = await Promise.all([
+    deriveForAgents(userId, agents, now),
+    agents.length > 0 ? cloudWorkAvailable(now) : Promise.resolve(true),
+  ]);
+  return agents.map((agent) => ({
+    ...serializeAgent(agent, derived.get(agent.id) ?? NO_DERIVED),
+    cloudWorkAvailable: cloudAvailable,
+  }));
 }
 
 export async function listAgentsForUser(userId: string, now = new Date()): Promise<ClientAgent[]> {
@@ -382,6 +399,7 @@ export async function loadAgentDetail(userId: string, agentId: string, now = new
       orderBy: { createdAt: "desc" },
       take: 12,
     }),
+    // Kept and pending together: the profile lists both, apart.
     prisma.agentNote.findMany({
       where: { userId, agentId, deletedAt: null },
       orderBy: { createdAt: "desc" },
@@ -397,10 +415,13 @@ export async function loadAgentDetail(userId: string, agentId: string, now = new
   ]);
   const { loadAgentComputerStatusPayload } = await import("@/lib/computer/store");
   const { isAgentComputerConfigured } = await import("@/lib/computer/provider");
+  const { computerAccessFor, publicComputerAccess } = await import("@/lib/computer/access");
   const { agentBudgetLineFor } = await import("@/lib/budgets-store");
-  const [computer, computerConfigured, budget] = await Promise.all([
+  const [computer, computerConfigured, computerAccess, budget] = await Promise.all([
     loadAgentComputerStatusPayload(userId, agentId),
     isAgentComputerConfigured(),
+    // The panel's one line when computers are off, not open, or not in the plan.
+    computerAccessFor(userId).then(publicComputerAccess),
     // A failed read leaves the line out rather than failing the profile.
     agentBudgetLineFor(userId, { id: agent.id, name: agent.name, budgetMicroUsd: agent.budgetMicroUsd ?? null }).catch(() => null),
   ]);
@@ -408,11 +429,15 @@ export async function loadAgentDetail(userId: string, agentId: string, now = new
     agent: serialized[0],
     goals: goals.map(serializeGoal),
     ideas: ideas.map(serializeIdea),
-    notes: notes.map((note) => serializeNote(readNote(note))),
+    // `notes` stays the kept ones, as every client written before review
+    // reads it; a note waiting for the person is only ever in `pendingNotes`.
+    notes: notes.filter((note) => agentNoteStatusOf(note.status) === "kept").map((note) => serializeNote(readNote(note))),
+    pendingNotes: notes.filter((note) => agentNoteStatusOf(note.status) === "pending").map((note) => serializeNote(readNote(note))),
     routines,
     tasks: tasks.map(toTask),
     computer,
     computerConfigured,
+    computerAccess,
     budget,
   };
 }
@@ -668,6 +693,17 @@ async function modelInPlan(userId: string, model: string | null | undefined): Pr
 
 const MODEL_NOT_IN_PLAN = "Your plan does not include that model. Pick another one, or keep your default.";
 
+/**
+ * The refusal for a plan without agents (src/lib/agents/plan-gate.ts), or null.
+ * 402 with the plan that includes them, the status dispatch already uses for
+ * the same rule, so every client reads it as an upgrade rather than a failure.
+ */
+async function hiringRefusal(userId: string): Promise<AgentResult<never> | null> {
+  const gate = agentHiringGate(await getUserPlan(userId));
+  if (gate.allowed) return null;
+  return { status: 402, body: { error: "plan_locked", message: gate.message, upgradePlan: gate.neededPlan } };
+}
+
 async function ownedProjectId(userId: string, projectId: string | null | undefined): Promise<string | null | undefined> {
   if (projectId === undefined) return undefined;
   if (projectId === null) return null;
@@ -675,9 +711,143 @@ async function ownedProjectId(userId: string, projectId: string | null | undefin
   return project ? project.id : undefined;
 }
 
+/**
+ * A Mac (WorkHost) id the account owns and has not revoked, null for "any
+ * Mac", or undefined when it is not theirs (or was revoked).
+ *
+ * `revokedAt: null` because revoking keeps the row: without it a revoked Mac
+ * could be chosen, or restored by Undo, and every routine placement then
+ * refused with "no Mac is switched on". A Mac only switched off for Work still
+ * counts, as `resolveAgentDispatchTarget` explains.
+ */
+async function ownedHostId(userId: string, hostId: string | null | undefined): Promise<string | null | undefined> {
+  if (hostId === undefined) return undefined;
+  if (hostId === null) return null;
+  const host = await prisma.workHost.findFirst({ where: { id: hostId, userId, revokedAt: null }, select: { id: true } });
+  return host ? host.id : undefined;
+}
+
+const HOST_NOT_FOUND = "That Mac is not connected to your account any more. Pick another, or let it use any Mac.";
+
+/** The account's Macs that can take a routine: switched on for Work and not revoked. */
+async function enabledWorkHostIds(userId: string): Promise<string[]> {
+  const hosts = await prisma.workHost.findMany({
+    where: { userId, revokedAt: null, enabled: true },
+    select: { id: true },
+  });
+  return hosts.map((host) => host.id);
+}
+
+/** One of an agent's routines moving to where the agent now runs. */
+interface RoutineMove {
+  scheduleId: string;
+  sessionId: string;
+  target: "cloud" | "local";
+  hostId: string | null;
+  /** Where it was, recorded on the change event so Undo can put it back. */
+  from: { target: string; hostId: string | null };
+}
+
+/**
+ * Where each of an agent's routines goes when where the agent runs changes.
+ *
+ * The scheduler, the trigger poller and "Run now" all read the routine's own
+ * `target` and `hostId`, so a "Runs on" change that left them alone kept a
+ * routine firing in the cloud for an agent moved to the Mac (or pinned to a
+ * Mac for one moved to the cloud). They follow the agent here, placed by
+ * `agentRoutineHost` exactly as `createAgentRoutine` places a new one; when a
+ * Mac routine has no Mac to name, the whole change is refused in words rather
+ * than half made. `previousHostIds` (from an undone change) is where each
+ * routine was before, preferred over where it is now.
+ */
+async function planAgentRoutineMoves(
+  userId: string,
+  agent: { id: string; name: string },
+  next: { executionTarget: string | null | undefined; preferredHostId: string | null | undefined },
+  previousHostIds?: ReadonlyMap<string, string | null>
+): Promise<{ ok: true; moves: RoutineMove[] } | { ok: false; refusal: AgentResult<never> }> {
+  const routines = await prisma.workSchedule.findMany({
+    where: { userId, runKind: "work", session: { agentId: agent.id, userId, deletedAt: null } },
+    select: { id: true, sessionId: true, target: true, hostId: true },
+  });
+  if (routines.length === 0) return { ok: true, moves: [] };
+
+  const dispatch = await resolveAgentDispatchTarget(userId, next);
+  const enabledHostIds = dispatch.requestedTarget === "local" ? await enabledWorkHostIds(userId) : [];
+  const moves: RoutineMove[] = [];
+  for (const routine of routines) {
+    const placed = agentRoutineHost({
+      target: dispatch.requestedTarget,
+      preferredHostId: dispatch.preferredHostId ?? null,
+      enabledHostIds,
+      currentHostId: previousHostIds?.has(routine.id)
+        ? previousHostIds.get(routine.id)
+        : routine.target === "local"
+          ? routine.hostId
+          : null,
+    });
+    if (!placed.ok) {
+      const routinesWord = routines.length === 1 ? "a routine" : "routines";
+      return {
+        ok: false,
+        refusal: refusal(
+          409,
+          "host_required",
+          placed.reason === "pick_mac"
+            ? `${agent.name} has ${routinesWord}, and a routine on a Mac has to name its Mac. Pick which Mac ${agent.name} uses. Nothing was changed.`
+            : placed.reason === "preferred_off"
+              ? `${agent.name} has ${routinesWord}, and the Mac picked for ${agent.name} is switched off for ${PRODUCT_NAME} Work. Turn on Allow ${PRODUCT_NAME} Work on that Mac, or pick another Mac. Nothing was changed.`
+              : `${agent.name} has ${routinesWord}, and no Mac is switched on for ${PRODUCT_NAME} Work to run ${routines.length === 1 ? "it" : "them"}. Open the ${PRODUCT_NAME} Mac app and turn on Allow ${PRODUCT_NAME} Work on this Mac first. Nothing was changed.`
+        ),
+      };
+    }
+    if (routine.target !== dispatch.requestedTarget || routine.hostId !== placed.hostId) {
+      moves.push({
+        scheduleId: routine.id,
+        sessionId: routine.sessionId,
+        target: dispatch.requestedTarget,
+        hostId: placed.hostId,
+        from: { target: routine.target, hostId: routine.hostId },
+      });
+    }
+  }
+  return { ok: true, moves };
+}
+
+/** Writes the moves inside the caller's transaction: the schedule, and its session's target to match. */
+async function applyRoutineMoves(tx: Prisma.TransactionClient, userId: string, moves: readonly RoutineMove[]): Promise<void> {
+  for (const move of moves) {
+    await tx.workSchedule.updateMany({
+      where: { id: move.scheduleId, userId },
+      data: { target: move.target, hostId: move.hostId },
+    });
+    await tx.workSession.updateMany({
+      where: { id: move.sessionId, userId },
+      data: { requestedTarget: move.target, preferredHostId: move.hostId },
+    });
+  }
+}
+
+/** Whether a change to these two settings changes where the agent's work goes. */
+function placementChanges(
+  agent: { executionTarget: string; preferredHostId: string | null },
+  next: { executionTarget: string; preferredHostId: string | null }
+): boolean {
+  const target = agentWorkTarget(next.executionTarget);
+  if (target !== agentWorkTarget(agent.executionTarget)) return true;
+  return target === "local" && next.preferredHostId !== agent.preferredHostId;
+}
+
 export async function createAgentForUser(user: AgentActor, input: CreateAgentInput): Promise<AgentResult<ClientAgent>> {
+  // The plan first: a Free or Lite account is told before anything is made,
+  // not after it set an agent up whose every task dispatch would refuse.
+  const hiring = await hiringRefusal(user.id);
+  if (hiring) return hiring;
   const projectId = await ownedProjectId(user.id, input.projectId);
   if (input.projectId && projectId === undefined) return refusal(404, "project_not_found", "That project no longer exists.");
+  const preferredHostId = await ownedHostId(user.id, input.preferredHostId);
+  if (input.preferredHostId && preferredHostId === undefined) return refusal(404, "host_not_found", HOST_NOT_FOUND);
+  input = { ...input, preferredHostId: preferredHostId ?? null };
   if (!(await modelInPlan(user.id, input.model))) return refusal(403, "plan_locked", MODEL_NOT_IN_PLAN);
   const connectorIds = await linkedConnectorIds(user.id, input.connectorIds);
   const settings = await prisma.settings.findFirst({ where: { userId: user.id }, select: { defaultModel: true } });
@@ -771,6 +941,22 @@ export async function updateAgentForUser(
   const modelChanged = patch.model !== undefined && patch.model !== agent.model;
   if (modelChanged && !(await modelInPlan(user.id, patch.model))) return refusal(403, "plan_locked", MODEL_NOT_IN_PLAN);
   const connectorIds = patch.connectorIds ? await linkedConnectorIds(user.id, patch.connectorIds) : undefined;
+  const preferredHostId = await ownedHostId(user.id, patch.preferredHostId);
+  if (patch.preferredHostId && preferredHostId === undefined) return refusal(404, "host_not_found", HOST_NOT_FOUND);
+
+  // "Runs on" governs its routines as well as its tasks: they move with it, in
+  // the same transaction as the agent, or the change is refused before
+  // anything is written (a Mac routine with no Mac to name).
+  const nextPlacement = {
+    executionTarget: patch.executionTarget ?? agent.executionTarget,
+    preferredHostId: preferredHostId !== undefined ? preferredHostId : agent.preferredHostId,
+  };
+  let routineMoves: RoutineMove[] = [];
+  if (placementChanges(agent, nextPlacement)) {
+    const planned = await planAgentRoutineMoves(user.id, agent, nextPlacement);
+    if (!planned.ok) return planned.refusal;
+    routineMoves = planned.moves;
+  }
 
   const rawAgent = agent as Agent & { notify?: string | null; pinnedAt?: Date | null };
   const before: Record<string, unknown> = {};
@@ -831,6 +1017,14 @@ export async function updateAgentForUser(
     before.budgetMicroUsd = agent.budgetMicroUsd;
     after.budgetMicroUsd = patch.budgetMicroUsd;
   }
+  if (patch.executionTarget !== undefined && patch.executionTarget !== agent.executionTarget) {
+    before.executionTarget = agent.executionTarget;
+    after.executionTarget = patch.executionTarget;
+  }
+  if (preferredHostId !== undefined && preferredHostId !== agent.preferredHostId) {
+    before.preferredHostId = agent.preferredHostId;
+    after.preferredHostId = preferredHostId;
+  }
   if (patch.pinned !== undefined && Boolean(rawAgent.pinnedAt) !== patch.pinned) {
     before.pinnedAt = rawAgent.pinnedAt ? rawAgent.pinnedAt.toISOString() : null;
     after.pinnedAt = patch.pinned ? new Date().toISOString() : null;
@@ -843,27 +1037,41 @@ export async function updateAgentForUser(
         ? rawAgent.pinnedAt ?? new Date()
         : null;
 
-  const updated = await prisma.agent.update({
-    where: { id: agent.id, userId: user.id },
-    data: {
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.role !== undefined ? { role: patch.role } : {}),
-      ...(patch.avatar !== undefined ? { avatar: { ...patch.avatar } } : {}),
-      ...(patch.style !== undefined ? { style: patch.style } : {}),
-      ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
-      ...(patch.model !== undefined ? { model: patch.model } : {}),
-      ...(patch.reasoningEffort !== undefined ? { reasoningEffort: patch.reasoningEffort } : {}),
-      ...(patch.approvalMode !== undefined ? { approvalMode: patch.approvalMode } : {}),
-      ...(connectorIds !== undefined ? { connectorIds } : {}),
-      ...(projectId !== undefined ? { projectId } : {}),
-      ...(patch.status !== undefined ? { status: patch.status } : {}),
-      ...(patch.proactive !== undefined ? { proactive: patch.proactive } : {}),
-      ...(patch.notify !== undefined ? { notify: patch.notify } : {}),
-      ...(nextPinnedAt !== undefined ? { pinnedAt: nextPinnedAt } : {}),
-      ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
-      ...(patch.budgetMicroUsd !== undefined ? { budgetMicroUsd: patch.budgetMicroUsd } : {}),
-    },
-  });
+  const agentWhere = { id: agent.id, userId: user.id };
+  const agentData = {
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.role !== undefined ? { role: patch.role } : {}),
+    ...(patch.avatar !== undefined ? { avatar: { ...patch.avatar } } : {}),
+    ...(patch.style !== undefined ? { style: patch.style } : {}),
+    ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
+    ...(patch.model !== undefined ? { model: patch.model } : {}),
+    ...(patch.reasoningEffort !== undefined ? { reasoningEffort: patch.reasoningEffort } : {}),
+    ...(patch.approvalMode !== undefined ? { approvalMode: patch.approvalMode } : {}),
+    ...(connectorIds !== undefined ? { connectorIds } : {}),
+    ...(projectId !== undefined ? { projectId } : {}),
+    ...(patch.status !== undefined ? { status: patch.status } : {}),
+    ...(patch.proactive !== undefined ? { proactive: patch.proactive } : {}),
+    ...(patch.notify !== undefined ? { notify: patch.notify } : {}),
+    ...(nextPinnedAt !== undefined ? { pinnedAt: nextPinnedAt } : {}),
+    ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
+    ...(patch.budgetMicroUsd !== undefined ? { budgetMicroUsd: patch.budgetMicroUsd } : {}),
+    ...(patch.executionTarget !== undefined ? { executionTarget: patch.executionTarget } : {}),
+    ...(preferredHostId !== undefined ? { preferredHostId } : {}),
+  };
+  const updated =
+    routineMoves.length === 0
+      ? await prisma.agent.update({ where: agentWhere, data: agentData })
+      : await prisma.$transaction(async (tx) => {
+          const client = tx as unknown as Prisma.TransactionClient;
+          const row = await client.agent.update({ where: agentWhere, data: agentData });
+          await applyRoutineMoves(client, user.id, routineMoves);
+          return row;
+        });
+  // Where each moved routine was, so Undo puts it back rather than re-placing it.
+  const movedDetail =
+    routineMoves.length > 0
+      ? { routinesMoved: routineMoves.map((move) => ({ scheduleId: move.scheduleId, from: move.from })) }
+      : {};
 
   // The thread follows the agent it belongs to: its title is the agent's name,
   // the apps switched on in it are the apps the agent may use, and its picker
@@ -924,7 +1132,7 @@ export async function updateAgentForUser(
             agentId: agent.id,
             kind: "paused",
             title: `${updated.name} was paused`,
-            detail: { routineIds, before, after },
+            detail: { routineIds, before, after, ...movedDetail },
           },
         })
         .catch(() => null);
@@ -938,7 +1146,7 @@ export async function updateAgentForUser(
             agentId: agent.id,
             kind: "resumed",
             title: `${updated.name} is back`,
-            detail: { before, after },
+            detail: { before, after, ...movedDetail },
           },
         })
         .catch(() => null);
@@ -954,7 +1162,7 @@ export async function updateAgentForUser(
             agentId: agent.id,
             kind: "updated",
             title: "Profile updated",
-            detail: { fields: changed, before, after },
+            detail: { fields: changed, before, after, ...movedDetail },
           },
         })
         .catch(() => null);
@@ -969,6 +1177,25 @@ export async function updateAgentForUser(
     value: serialized,
     eventId,
   };
+}
+
+/**
+ * Where each routine a change moved had been, read back off the change event
+ * (`routinesMoved`, written by `updateAgentForUser`). Tolerant: an entry it
+ * cannot read is left out, and that routine is placed by the restored setting.
+ */
+function routinesMovedBy(detail: Record<string, unknown>): Map<string, string | null> {
+  const previous = new Map<string, string | null>();
+  if (!Array.isArray(detail.routinesMoved)) return previous;
+  for (const entry of detail.routinesMoved) {
+    if (!entry || typeof entry !== "object") continue;
+    const { scheduleId, from } = entry as { scheduleId?: unknown; from?: unknown };
+    if (typeof scheduleId !== "string" || !from || typeof from !== "object") continue;
+    const hostId = (from as { target?: unknown; hostId?: unknown }).hostId;
+    const target = (from as { target?: unknown }).target;
+    previous.set(scheduleId, target === "local" && typeof hostId === "string" ? hostId : null);
+  }
+  return previous;
 }
 
 export async function undoAgentEventForUser(
@@ -1019,6 +1246,11 @@ export async function undoAgentEventForUser(
         where: { id: before.noteId, userId: user.id, agentId: agent.id },
         data: { deletedAt: new Date() },
       });
+    } else if (entity === "note_kept" && typeof before.noteId === "string") {
+      await prisma.agentNote.updateMany({
+        where: { id: before.noteId, userId: user.id, agentId: agent.id, deletedAt: null },
+        data: { status: "pending" },
+      });
     } else if (entity === "note_deleted" && typeof before.noteId === "string") {
       await prisma.agentNote.updateMany({
         where: { id: before.noteId, userId: user.id, agentId: agent.id },
@@ -1061,11 +1293,48 @@ export async function undoAgentEventForUser(
     if ("pinnedAt" in before) {
       agentUpdate.pinnedAt = typeof before.pinnedAt === "string" ? new Date(before.pinnedAt) : null;
     }
+    // Where it runs. The Mac it preferred is checked again, as on any edit: a
+    // Mac revoked since then is not restored as a dangling id, it becomes "any
+    // of your Macs", which is what dispatch would make of it anyway.
+    if ("executionTarget" in before) {
+      agentUpdate.executionTarget = agentExecutionTarget(
+        typeof before.executionTarget === "string" ? before.executionTarget : null
+      );
+    }
+    if ("preferredHostId" in before) {
+      const previous = typeof before.preferredHostId === "string" ? before.preferredHostId : null;
+      agentUpdate.preferredHostId = (await ownedHostId(user.id, previous)) ?? null;
+    }
+    // Its routines go back with it: to where each one was before the change
+    // when that is still possible, else wherever the restored setting places
+    // them. Refused, before anything is written, when a Mac routine would have
+    // no Mac to name.
+    let routineMoves: RoutineMove[] = [];
+    if ("executionTarget" in agentUpdate || "preferredHostId" in agentUpdate) {
+      const restored = {
+        executionTarget: (agentUpdate.executionTarget as string | undefined) ?? agent.executionTarget,
+        preferredHostId:
+          "preferredHostId" in agentUpdate ? (agentUpdate.preferredHostId as string | null) : agent.preferredHostId,
+      };
+      if (placementChanges(agent, restored)) {
+        const planned = await planAgentRoutineMoves(user.id, agent, restored, routinesMovedBy(detail));
+        if (!planned.ok) return planned.refusal;
+        routineMoves = planned.moves;
+      }
+    }
     if (Object.keys(agentUpdate).length > 0) {
-      await prisma.agent.update({
-        where: { id: agent.id, userId: user.id },
-        data: agentUpdate,
-      });
+      if (routineMoves.length === 0) {
+        await prisma.agent.update({
+          where: { id: agent.id, userId: user.id },
+          data: agentUpdate,
+        });
+      } else {
+        await prisma.$transaction(async (tx) => {
+          const client = tx as unknown as Prisma.TransactionClient;
+          await client.agent.update({ where: { id: agent.id, userId: user.id }, data: agentUpdate });
+          await applyRoutineMoves(client, user.id, routineMoves);
+        });
+      }
     }
   }
 
@@ -1099,6 +1368,9 @@ export async function duplicateAgentForUser(
 ): Promise<AgentResult<ClientAgent>> {
   const source = await findAgent(user.id, agentId);
   if (!source) return refusal(404, "not_found", "That agent no longer exists.");
+  // A copy is a hire: the same plan rule as `createAgentForUser`.
+  const hiring = await hiringRefusal(user.id);
+  if (hiring) return hiring;
 
   const count = await prisma.agent.count({ where: { userId: user.id, deletedAt: null } });
   if (count >= MAX_AGENTS_PER_ACCOUNT) {
@@ -1133,6 +1405,8 @@ export async function duplicateAgentForUser(
       proactive: source.proactive,
       notify: rawSource.notify ?? "results",
       template: source.template,
+      executionTarget: source.executionTarget,
+      preferredHostId: source.preferredHostId,
       sortOrder: count,
     },
   });
@@ -1177,6 +1451,9 @@ export async function retireAgentForUser(user: AgentActor, agentId: string): Pro
   await pauseRoutines(user.id, agent.id);
   const { disableComputer } = await import("@/lib/computer/store");
   await disableComputer(user.id, agent.id).catch(() => {});
+  // Its saved logins go with its computer: nothing could fill them any more
+  // (docs/design/agents-v2/VAULT.md).
+  await prisma.agentCredential.deleteMany({ where: { userId: user.id, agentId: agent.id } }).catch(() => {});
   await prisma.agent.updateMany({
     where: { id: agent.id, userId: user.id },
     data: { deletedAt: new Date(), status: "paused" },
@@ -1209,6 +1486,11 @@ export type StartAgentTaskOutcome =
  * put every start in front of a person (a handoff from another agent's thread,
  * src/lib/chat/handoff-tool.ts). The confirmation lands on the same key, so
  * answering it starts the draft that was asked about rather than a second one.
+ *
+ * `unattended` is for a caller with nobody watching (the goal runner's sweep):
+ * dispatch reads the cloud heartbeat as three answers, and a read that failed
+ * comes back as a `retryLater` refusal (`isRetryLaterRefusal`). Its draft is
+ * kept, like a `confirm`'s, so the next attempt on the same key lands on it.
  */
 export async function startAgentTask(
   user: AgentActor,
@@ -1219,6 +1501,8 @@ export async function startAgentTask(
     idempotencyKey: string;
     confirmExpensive?: boolean;
     askFirst?: boolean;
+    /** Nobody is watching: a heartbeat that could not be read means "later", not "no executor". */
+    unattended?: boolean;
     /**
      * Where the task came from when another crew member handed it over: the
      * delegation link (`WorkSession.parentSessionId` and friends). Stamped with
@@ -1244,10 +1528,15 @@ export async function startAgentTask(
   const connectorIds = await linkedConnectorIds(user.id, agent.connectorIds);
   const keys = agentTaskKeys(agent.id, input.idempotencyKey);
 
+  // Where the person set this member to run: the cloud, or their Mac through
+  // the relay. A Mac that is offline is the dispatcher's honest 409, returned
+  // to the caller as-is; it is never moved to the cloud instead. A preferred
+  // Mac that has since been removed is dropped (any Mac), not a 404.
+  const target = await resolveAgentDispatchTarget(user.id, agent);
   const body = protocol.createSessionSchema.safeParse({
     goal: input.goal,
     title: input.title,
-    requestedTarget: "cloud",
+    ...target,
     ...(agent.projectId ? { projectId: agent.projectId } : {}),
     conversationId,
     ...(agent.model ? { model: agent.model } : {}),
@@ -1280,16 +1569,18 @@ export async function startAgentTask(
 
   const runBody = protocol.startRunSchema.parse({
     origin: "manual",
-    requestedTarget: "cloud",
+    requestedTarget: target.requestedTarget,
     idempotencyKey: keys.run,
     ...(input.confirmExpensive ? { confirmExpensive: true } : {}),
   });
-  const preflight = await dispatch.startWorkRunForUser(user, session, runBody, { preflightOnly: true });
+  const unattended = input.unattended === true;
+  const preflight = await dispatch.startWorkRunForUser(user, session, runBody, { preflightOnly: true, unattended });
   if (preflight.run) {
     return { kind: "started", sessionId: session.id, conversationId, replay: true };
   }
   if (!preflight.preflight || preflight.status >= 400) {
-    await discardDraft(user.id, session.id);
+    // "Try again later" keeps the draft for the retry on the same key.
+    if (!isRetryLaterRefusal(preflight.body)) await discardDraft(user.id, session.id);
     return { kind: "refused", status: preflight.status, body: preflight.body };
   }
   if ((preflight.preflight.requiresConfirmation || input.askFirst) && !input.confirmExpensive) {
@@ -1297,9 +1588,9 @@ export async function startAgentTask(
     // and so on this session, rather than making a second one.
     return { kind: "confirm", sessionId: session.id, estimatedCostMicroUsd: preflight.preflight.estimatedCostMicroUsd };
   }
-  const dispatched = await dispatch.startWorkRunForUser(user, session, runBody);
+  const dispatched = await dispatch.startWorkRunForUser(user, session, runBody, { unattended });
   if (!dispatched.run) {
-    await discardDraft(user.id, session.id);
+    if (!isRetryLaterRefusal(dispatched.body)) await discardDraft(user.id, session.id);
     return { kind: "refused", status: dispatched.status, body: dispatched.body };
   }
   await recordAgentEvent({
@@ -1338,9 +1629,12 @@ export async function discardAgentTaskDraft(userId: string, sessionId: string): 
  * the project defaults and the connector ownership check all apply) and the
  * schedule is written with the parser's own trigger output and bounds
  * (`createScheduleSchema`, `normalizeTriggerDrafts`), as
- * `POST /api/work/schedules` writes one. It is a cloud routine: an agent's
- * page offers the clocks, and a routine on a Mac or on an event is one step
- * away in Automations, where the full editor already lives.
+ * `POST /api/work/schedules` writes one. It runs where the agent is set to
+ * run: the cloud, or (for a `mac` agent) its preferred Mac, or the one Mac the
+ * account has switched on for Work. A local schedule has to name its Mac, so
+ * with several and no preference the person is asked to pick one rather than
+ * one being picked for them. An agent's page offers the clocks; a routine on
+ * an event is one step away in Automations, where the full editor lives.
  */
 export async function createAgentRoutine(
   user: AgentActor,
@@ -1356,11 +1650,33 @@ export async function createAgentRoutine(
   if (!schedule.isValidTimeZone(input.timezone)) {
     return refusal(400, "invalid_timezone", `Unknown timezone "${input.timezone}".`);
   }
+  const target = await resolveAgentDispatchTarget(user.id, agent);
+  let hostId: string | null = null;
+  if (target.requestedTarget === "local") {
+    const placed = agentRoutineHost({
+      target: "local",
+      preferredHostId: target.preferredHostId ?? null,
+      enabledHostIds: await enabledWorkHostIds(user.id),
+    });
+    if (!placed.ok) {
+      return refusal(
+        409,
+        "host_required",
+        placed.reason === "no_mac"
+          ? `${agent.name} runs on your Mac. Open the ${PRODUCT_NAME} Mac app and turn on Allow ${PRODUCT_NAME} Work on this Mac first.`
+          : placed.reason === "preferred_off"
+            ? `${agent.name} runs on a Mac that is switched off for ${PRODUCT_NAME} Work. Turn on Allow ${PRODUCT_NAME} Work on that Mac, or pick another Mac in its settings first.`
+            : `${agent.name} runs on your Mac. Pick which Mac in its settings first.`
+      );
+    }
+    hostId = placed.hostId;
+  }
   const parsed = schedule.createScheduleSchema.safeParse({
     name: input.name,
     instructions: input.instructions,
     timezone: input.timezone,
-    target: "cloud",
+    target: target.requestedTarget,
+    hostId,
     triggers: [routineTrigger(input)],
     ...(agent.model ? { model: agent.model } : {}),
   });
@@ -1373,7 +1689,7 @@ export async function createAgentRoutine(
   const sessionBody = protocol.createSessionSchema.safeParse({
     goal: parsed.data.instructions,
     title: parsed.data.name,
-    requestedTarget: "cloud",
+    ...target,
     ...(agent.projectId ? { projectId: agent.projectId } : {}),
     conversationId,
     ...(agent.model ? { model: agent.model } : {}),
@@ -1400,7 +1716,7 @@ export async function createAgentRoutine(
       enabled: agent.status === "active",
       instructions: body.instructions,
       target: body.target,
-      hostId: null,
+      hostId,
       timezone: body.timezone,
       runKind: "work",
       codeConfig: {},
@@ -1555,15 +1871,18 @@ export async function agentChatContext(
   if (!agent) return null;
   const paused = agent.status !== "active";
   const [goals, notes, teammates, routinesCount, recentSessions] = await Promise.all([
+    // Active, and unverified (every step ran, nothing showed it met): the
+    // prompt names those apart so the agent never calls one met.
     prisma.agentGoal.findMany({
-      where: { userId: user.id, agentId, status: "active" },
+      where: { userId: user.id, agentId, status: { in: ["active", GOAL_UNVERIFIED] } },
       orderBy: { createdAt: "asc" },
       take: 8,
-      select: { title: true, status: true, lastCheckInNote: true },
+      select: { title: true, status: true, lastCheckInNote: true, nextAction: true },
     }),
     prisma.agentNote
       .findMany({
-        where: { userId: user.id, agentId, deletedAt: null },
+        // Kept only: a note waiting for the person reaches nothing yet.
+        where: { userId: user.id, agentId, deletedAt: null, status: "kept" },
         orderBy: { createdAt: "desc" },
         take: 24,
         select: { content: true, source: true },
@@ -1588,9 +1907,12 @@ export async function agentChatContext(
         title: true,
         status: true,
         runs: {
+          // Every terminal status: a newest attempt that timed out, was
+          // interrupted or lost its Mac is the task's latest result, not an
+          // older attempt's answer read under the new status.
           where: {
             userId: user.id,
-            status: { in: ["completed", "failed", "cancelled", "budget_exceeded"] },
+            status: { in: [...WORK_TERMINAL_STATUSES] },
           },
           orderBy: { finishedAt: "desc" },
           take: 1,
@@ -1663,16 +1985,22 @@ interface DurableGoalData {
   budgetMicroUsd?: number | null;
 }
 
-function durableGoalData(input: DurableGoalInput, existing?: AgentGoal): DurableGoalData {
+/** The milestones a patch leaves, keeping what each one with the same id and title already finished. */
+function patchedMilestones(input: DurableGoalInput, existing?: AgentGoal) {
+  if (input.milestones === undefined) return null;
+  const previous = new Map(parseMilestones(existing?.milestones).map((m) => [m.id, m]));
+  return parseMilestones(input.milestones).map((m) => {
+    const before = previous.get(m.id);
+    return before && before.title === m.title ? { ...m, done: m.done || before.done, sessionId: before.sessionId, doneAt: before.doneAt } : m;
+  });
+}
+
+function durableGoalData(input: DurableGoalInput, existing?: AgentGoal, status?: string): DurableGoalData {
   const data: DurableGoalData = {};
-  if (input.milestones !== undefined) {
-    const previous = new Map(parseMilestones(existing?.milestones).map((m) => [m.id, m]));
-    const milestones = parseMilestones(input.milestones).map((m) => {
-      const before = previous.get(m.id);
-      return before && before.title === m.title ? { ...m, done: m.done || before.done, sessionId: before.sessionId, doneAt: before.doneAt } : m;
-    });
+  const milestones = patchedMilestones(input, existing);
+  if (milestones) {
     data.milestones = milestones as unknown as Prisma.InputJsonValue;
-    data.progress = goalProgress(milestones, existing?.status ?? "active");
+    data.progress = goalProgress(milestones, status ?? existing?.status ?? "active");
   }
   if (input.successCriteria !== undefined) data.successCriteria = parseCriteria(input.successCriteria);
   if (input.maxRuns !== undefined) data.maxRuns = input.maxRuns;
@@ -1685,8 +2013,10 @@ export async function createAgentGoal(
   agent: Agent,
   input: { title: string; detail: string; cadence: string; dueAt?: string | null } & DurableGoalInput
 ): Promise<AgentResult> {
+  // Open: still going, paused, or every step ran and it waits for the person
+  // to mark it met or keep it going (`unverified`).
   const count = await prisma.agentGoal.count({
-    where: { userId: user.id, agentId: agent.id, status: { in: ["active", "paused"] } },
+    where: { userId: user.id, agentId: agent.id, status: { in: ["active", "paused", GOAL_UNVERIFIED] } },
   });
   if (count >= MAX_AGENT_GOALS) {
     return refusal(409, "too_many_goals", `${agent.name} already has ${MAX_AGENT_GOALS} open goals. Finish or drop one first.`);
@@ -1734,30 +2064,39 @@ export async function updateAgentGoal(
     status: goal.status,
     dueAt: goal.dueAt,
   };
+  // An unverified goal ("Every step ran. Check the result.") given steps it
+  // has not run is no longer that: it goes back to work, so the driver runs
+  // them and the row stops saying every step ran.
+  const reopened =
+    patch.status === undefined &&
+    goal.status === GOAL_UNVERIFIED &&
+    (patchedMilestones(patch, goal)?.some((m) => !m.done) ?? false);
+  const nextStatus = patch.status ?? (reopened ? "active" : undefined);
   const updated = await prisma.agentGoal.update({
     where: { id: goal.id, userId: user.id },
     data: {
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.detail !== undefined ? { detail: patch.detail } : {}),
       ...(patch.cadence !== undefined ? { cadence: patch.cadence } : {}),
-      ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(nextStatus !== undefined ? { status: nextStatus } : {}),
       ...(patch.dueAt !== undefined ? { dueAt: patch.dueAt ? new Date(patch.dueAt) : null } : {}),
-      ...durableGoalData(patch, goal),
+      ...durableGoalData(patch, goal, nextStatus),
       // A goal the person resumes starts clean: whatever stopped it is theirs to have resolved.
-      ...(patch.status === "active" && goal.status !== "active" ? { blockers: [] } : {}),
+      ...(nextStatus === "active" && goal.status !== "active" ? { blockers: [] } : {}),
+      ...(reopened ? { nextAction: "New steps added; back to work on them." } : {}),
     },
   });
   let eventId: string | undefined;
-  if (patch.status && patch.status !== goal.status) {
+  if (nextStatus && nextStatus !== goal.status) {
     const verb =
-      patch.status === "achieved" ? "Achieved" : patch.status === "dropped" ? "Dropped" : patch.status === "paused" ? "Paused" : "Resumed";
+      nextStatus === "achieved" ? "Achieved" : nextStatus === "dropped" ? "Dropped" : nextStatus === "paused" ? "Paused" : "Resumed";
     eventId = await recordAgentEvent({
       userId: user.id,
       agentId: agent.id,
       kind: "goal_updated",
       title: `${verb}: ${updated.title}`,
       detail: {
-        status: patch.status,
+        status: nextStatus,
         before: { __entity: "goal_updated", goalId: goal.id, fields: beforeFields },
         after: { goalId: goal.id, status: updated.status },
       },
@@ -1787,9 +2126,10 @@ export async function deleteAgentGoal(user: AgentActor, agent: Agent, goalId: st
   return { status: 200, body: { ok: true } };
 }
 
+/** The notes it keeps. A note waiting for the person is not one of them yet (`loadAgentDetail` lists those apart). */
 export async function listAgentNotes(user: AgentActor, agent: Agent) {
   const notes = await prisma.agentNote.findMany({
-    where: { userId: user.id, agentId: agent.id, deletedAt: null },
+    where: { userId: user.id, agentId: agent.id, deletedAt: null, status: "kept" },
     orderBy: { createdAt: "desc" },
     take: MAX_AGENT_NOTES,
   });
@@ -1802,12 +2142,17 @@ export async function createAgentNote(
   content: string,
   source: AgentNoteSource = "user"
 ): Promise<AgentResult> {
+  // Never a secret, whoever writes it (src/lib/agents/note-review.ts): a
+  // value next to "password" is refused, a key or token is masked.
+  const screened = screenAgentNote(content, { maxChars: MAX_AGENT_NOTE_CHARS });
+  if (!screened.ok) return refusal(422, screened.reason === "secret" ? "note_secret" : "invalid_note", screened.message);
+  if (screened.redacted > 0) content = screened.content;
   const count = await prisma.agentNote.count({ where: { userId: user.id, agentId: agent.id, deletedAt: null } });
   if (count >= MAX_AGENT_NOTES) {
     return refusal(409, "too_many_notes", `${agent.name} already keeps ${MAX_AGENT_NOTES} notes. Delete some it no longer needs.`);
   }
   const note = await prisma.agentNote.create({
-    data: { userId: user.id, agentId: agent.id, content: encryptField(content), source },
+    data: { userId: user.id, agentId: agent.id, content: encryptField(content), source, status: "kept" },
   });
   // The log says THAT it learned something, never what: the note is encrypted
   // at rest and the log is not, so copying it there would undo the one and
@@ -1832,12 +2177,51 @@ export async function createAgentNote(
 export async function updateAgentNote(user: AgentActor, agent: Agent, noteId: string, content: string): Promise<AgentResult> {
   const note = await prisma.agentNote.findFirst({ where: { id: noteId, userId: user.id, agentId: agent.id, deletedAt: null } });
   if (!note) return refusal(404, "not_found", "That note no longer exists.");
-  // An edited note is the person's words now, whoever wrote it first.
+  const screened = screenAgentNote(content, { maxChars: MAX_AGENT_NOTE_CHARS });
+  if (!screened.ok) return refusal(422, screened.reason === "secret" ? "note_secret" : "invalid_note", screened.message);
+  if (screened.redacted > 0) content = screened.content;
+  // An edited note is the person's words now, whoever wrote it first, and
+  // editing one that was waiting for review is reviewing it: it is kept.
   const updated = await prisma.agentNote.update({
     where: { id: note.id, userId: user.id },
-    data: { content: encryptField(content), source: "user" },
+    data: { content: encryptField(content), source: "user", status: "kept" },
   });
   return { status: 200, body: { note: serializeNote({ ...updated, content }) } };
+}
+
+/**
+ * Keeps a note an agent saved in one of its tasks and that waited for the
+ * person (src/lib/agents/run-notes.ts). From here its turns and tasks read it
+ * like any other note. Keeping one already kept is a replay, not an error.
+ */
+export async function keepAgentNote(user: AgentActor, agent: Agent, noteId: string): Promise<AgentResult> {
+  const note = await prisma.agentNote.findFirst({ where: { id: noteId, userId: user.id, agentId: agent.id, deletedAt: null } });
+  if (!note) return refusal(404, "not_found", "That note no longer exists.");
+  if (agentNoteStatusOf(note.status) === "kept") {
+    return { status: 200, body: { note: serializeNote(readNote(note)), replay: true } };
+  }
+  const kept = await prisma.agentNote.updateMany({
+    where: { id: note.id, userId: user.id, agentId: agent.id, deletedAt: null, status: "pending" },
+    data: { status: "kept" },
+  });
+  // Forgotten in between: gone, not kept.
+  const fresh = await prisma.agentNote.findFirst({ where: { id: note.id, userId: user.id, deletedAt: null } });
+  if (!fresh) return refusal(404, "not_found", "That note no longer exists.");
+  let eventId: string | undefined;
+  if (kept.count === 1) {
+    // Said, never quoted: the note is encrypted and this log is not.
+    eventId = await recordAgentEvent({
+      userId: user.id,
+      agentId: agent.id,
+      kind: "note_added",
+      title: `You kept something ${agent.name} learned`,
+      detail: {
+        before: { __entity: "note_kept", noteId: note.id },
+        after: { noteId: note.id, status: "kept" },
+      },
+    });
+  }
+  return { status: 200, body: { note: serializeNote(readNote(fresh)), ...(eventId ? { eventId } : {}) }, eventId };
 }
 
 /** Deleted means gone from every later turn, which reads notes with `deletedAt: null`. */

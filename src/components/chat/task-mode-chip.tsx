@@ -63,8 +63,12 @@ export function TaskModeChip({
   return (
     <DropdownMenu open={open && !disabled} onOpenChange={setOpen}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild disabled={disabled}>
+        {/* The menu's trigger outside the tooltip's, as on the + button: the
+            outer Radix trigger's data-state wins, so an open menu reads
+            data-state="open" and the chip takes its open tone and turns its
+            chevron. The other way round it said "closed" while open. */}
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <TooltipTrigger asChild>
             <button
               type="button"
               disabled={disabled}
@@ -90,8 +94,8 @@ export function TaskModeChip({
               )}
               <ChevronDown aria-hidden="true" className={cn(composerChevronClass, !offDefault && "hidden sm:block")} motion="none" />
             </button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
         <TooltipContent>
           <span>Tasks from this chat</span>: <span>{label}</span>
         </TooltipContent>
@@ -151,10 +155,10 @@ export function TaskModeChip({
           {/* Why the mode in the chip is not the one ticked above. Each reason
               is one whole sentence, so it is translated as one. */}
           {narrowedBy === "project" && (
-            <p className="text-foreground/80">This project’s settings hold its tasks to a stricter mode than the one you picked.</p>
+            <p className="text-muted-foreground">This project’s settings hold its tasks to a stricter mode than the one you picked.</p>
           )}
           {narrowedBy === "agent" && (
-            <p className="text-foreground/80">This agent is set to ask more often, so its tasks follow its setting.</p>
+            <p className="text-muted-foreground">This agent is set to ask more often, so its tasks follow its setting.</p>
           )}
           <p>Sending, publishing, paying and deleting always ask, whichever mode you pick.</p>
         </div>

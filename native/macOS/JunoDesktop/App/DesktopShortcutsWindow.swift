@@ -130,6 +130,14 @@ private struct DesktopShortcutGroupView: View {
 /// by VoiceOver as one element — "Search, Shift Command F".
 private struct DesktopShortcutRowView: View {
     let row: JunoShortcutListRow
+    /// Quick Entry's chord is the reader's (Settings › General), not the
+    /// registry's default.
+    @AppStorage(DesktopQuickEntryHotkey.storageKey) private var quickEntryHotkey = ""
+
+    private var chords: [[String]] {
+        guard row.ids == [.askJuno] else { return row.chords }
+        return [DesktopQuickEntryHotkey.hotkey(storage: quickEntryHotkey).keys]
+    }
 
     var body: some View {
         HStack(spacing: JunoSpace.cozy) {
@@ -141,7 +149,7 @@ private struct DesktopShortcutRowView: View {
                 .layoutPriority(1)
             Spacer(minLength: 0)
             HStack(spacing: JunoSpace.snug) {
-                ForEach(Array(row.chords.enumerated()), id: \.offset) { index, chord in
+                ForEach(Array(chords.enumerated()), id: \.offset) { index, chord in
                     if index > 0 {
                         Text("or")
                             .junoType(.caption)
@@ -154,7 +162,7 @@ private struct DesktopShortcutRowView: View {
         }
         .frame(height: DesktopShortcutsLayout.rowHeight)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(row.accessibilityLabel)
+        .accessibilityLabel("\(row.label), \(chords.map(JunoShortcutKeys.spoken).joined(separator: ", or "))")
     }
 }
 

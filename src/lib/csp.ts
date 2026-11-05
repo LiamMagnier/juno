@@ -15,6 +15,12 @@ export interface CspOptions {
   /** wss:// origin of the voice relay, when one is configured. */
   relayUrl?: string;
   /**
+   * The relay the agent computer's live view uses when it is not the voice
+   * relay (COMPUTER_VIEW_RELAY_URL, server-only). Its WebSocket origin is
+   * added to connect-src; nothing changes when it is unset.
+   */
+  computerRelayUrl?: string;
+  /**
    * Origin that serves artifact previews (NEXT_PUBLIC_SANDBOX_ORIGIN), when it
    * is not this one. Previews are loaded by URL precisely so they do NOT run
    * under this policy — see src/lib/sandbox-policy.ts — and the frame has to be
@@ -34,9 +40,21 @@ export interface CspOptions {
 export const STRIPE_CONNECT = ["https://api.stripe.com", "https://checkout.stripe.com"];
 export const STRIPE_FRAMES = ["https://js.stripe.com", "https://*.js.stripe.com", "https://checkout.stripe.com", "https://hooks.stripe.com"];
 
-export function buildCsp({ nonce, relayUrl, sandboxOrigin, isDev }: CspOptions): string {
+/** The ws(s):// origin of a relay URL given as http(s) or ws(s); null when it is not a URL. */
+export function webSocketOrigin(raw: string | undefined): string | null {
+  if (!raw || !raw.trim()) return null;
+  try {
+    const url = new URL(raw.trim());
+    const scheme = url.protocol === "https:" || url.protocol === "wss:" ? "wss:" : url.protocol === "http:" || url.protocol === "ws:" ? "ws:" : null;
+    return scheme ? `${scheme}//${url.host}` : null;
+  } catch {
+    return null;
+  }
+}
+
+export function buildCsp({ nonce, relayUrl, computerRelayUrl, sandboxOrigin, isDev }: CspOptions): string {
   const allowEval = isDev ?? (process.env.NODE_ENV === "development");
-  const connect = ["'self'", relayUrl || null, ...STRIPE_CONNECT].filter(Boolean).join(" ");
+  const connect = ["'self'", relayUrl || null, webSocketOrigin(computerRelayUrl), ...STRIPE_CONNECT].filter(Boolean).join(" ");
   const frames = ["'self'", "blob:", sandboxOrigin || null, ...STRIPE_FRAMES].filter(Boolean).join(" ");
   return [
     "default-src 'self'",

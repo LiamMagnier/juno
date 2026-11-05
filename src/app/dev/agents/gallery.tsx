@@ -7,13 +7,25 @@ import { AgentGreeting, AgentThreadHeader } from "@/components/agents/agent-thre
 import { AgentPanel } from "@/components/agents/agent-panel";
 import { AgentComputerOverlay } from "@/components/agents/agent-computer";
 import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
+import { AgentHire } from "@/components/agents/agent-hire";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { FaceBuilder, FacePreview } from "@/components/agents/agent-profile-fields";
 import { AgentChangeCard } from "@/components/chat/agent-change-card";
 import { ApprovalCard } from "@/components/chat/approval-card";
 import { ArrowUp } from "@/components/ui/icons";
+import { AppProvider } from "@/components/app/app-provider";
+import { bootstrap } from "@/app/dev/pages/fixtures";
 import type { ClientAgent, ClientAgentComputer, ClientAgentDetail } from "@/lib/agents/types";
 import type { ClientActionApproval } from "@/lib/action-approval";
 
 const NOW = "2026-09-27T06:00:00.000Z";
+/** 09:00 UTC two days from now (the same on the server and the client), so a routine is always a weekday ahead. */
+function nextRun() {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + 2);
+  d.setUTCHours(9, 0, 0, 0);
+  return d.toISOString();
+}
 
 function agent(overrides: Partial<ClientAgent>): ClientAgent {
   return {
@@ -49,9 +61,11 @@ function agent(overrides: Partial<ClientAgent>): ClientAgent {
   };
 }
 
+// The state sentences are the server's own (lib/agents/domain.ts
+// agentStateSentence), so the dev page shows the copy people really get.
 const MIRA = agent({
   state: "waiting",
-  stateSentence: "Waiting on you",
+  stateSentence: "Has a question about Reply to the Acme renewal",
   needsYou: 1,
   pinnedAt: NOW,
   task: {
@@ -70,7 +84,7 @@ const SCOUT = agent({
   avatar: { shape: "pebble", tone: "teal", eyes: "round", mark: "antenna" },
   conversationId: "conv-scout",
   state: "working",
-  stateSentence: "Working on Competitor pricing brief",
+  stateSentence: "Working on the competitor pricing brief",
   task: {
     sessionId: "s2",
     title: "Competitor pricing brief",
@@ -81,6 +95,25 @@ const SCOUT = agent({
   },
   computer: { enabled: true, status: "awake" },
 });
+const ATLAS = agent({
+  id: "agent-atlas",
+  name: "Atlas",
+  role: "Bookkeeper",
+  avatar: { shape: "tile", tone: "violet", eyes: "wide", mark: "none" },
+  conversationId: "conv-atlas",
+  state: "blocked",
+  stateSentence: "Blocked before finishing Reconcile October payouts",
+  needsYou: 1,
+  task: {
+    sessionId: "s3",
+    title: "Reconcile October payouts",
+    status: "failed",
+    needsAttention: false,
+    lastActivityAt: "2026-09-27T05:18:00.000Z",
+    conversationId: "conv-atlas",
+  },
+  computer: null,
+});
 const LEDGER = agent({
   id: "agent-ledger",
   name: "Ledger",
@@ -88,7 +121,8 @@ const LEDGER = agent({
   avatar: { shape: "capsule", tone: "sage", eyes: "tall", mark: "leaf" },
   conversationId: "conv-ledger",
   state: "idle",
-  stateSentence: "Next: Monday 09:00, Weekly spend review",
+  stateSentence: "Next: Weekly spend review, Mon at 09:00",
+  nextRoutine: { scheduleId: "r-ledger", name: "Weekly spend review", nextRunAt: nextRun() },
   computer: null,
 });
 const ROVE = agent({
@@ -112,7 +146,9 @@ const FRESH = agent({
   connectorIds: [],
   computer: null,
 });
-const AGENTS = [MIRA, SCOUT, LEDGER, ROVE];
+const AGENTS = [MIRA, SCOUT, ATLAS, LEDGER, ROVE];
+/** `&g=home-calm`: nothing needs you, one agent at work. */
+const CALM = [{ ...SCOUT }, LEDGER, ROVE, agent({ id: "agent-wren", name: "Wren", role: "Inbox", avatar: { shape: "bloom", tone: "teal", eyes: "round", mark: "none" }, conversationId: "conv-wren", computer: null })];
 
 function detailFor(a: ClientAgent, computer: Partial<ClientAgentComputer> | null = {}): ClientAgentDetail {
   return {
@@ -256,7 +292,10 @@ function useFetchShim() {
 
 export function AgentsGallery() {
   useFetchShim();
-  const view = useSearchParams()?.get("view") ?? "home";
+  // `?view=gallery` routes here (page.tsx); the sub-view is `&g=`.
+  const params = useSearchParams();
+  const sub = params?.get("g") ?? params?.get("view");
+  const view = !sub || sub === "gallery" ? "home" : sub;
 
   // The app shell names the `page` container; the gallery has no shell.
   if (view === "home")
@@ -265,11 +304,19 @@ export function AgentsGallery() {
         <AgentsHome initialAgents={AGENTS} />
       </div>
     );
-  if (view === "home-empty")
+  if (view === "home-calm")
     return (
       <div className="@container/page h-dvh">
-        <AgentsHome initialAgents={[]} />
+        <AgentsHome initialAgents={CALM} />
       </div>
+    );
+  if (view === "home-empty")
+    return (
+      <AppProvider bootstrap={bootstrap()}>
+        <div className="@container/page flex h-dvh flex-col">
+          <AgentsHome initialAgents={[]} />
+        </div>
+      </AppProvider>
     );
   if (view === "thread") return <ThreadMock a={MIRA} />;
   if (view === "thread-fresh") return <ThreadMock a={FRESH} empty />;
@@ -283,9 +330,32 @@ export function AgentsGallery() {
       </div>
     );
   if (view === "studio") return <AgentFaceStudio agent={MIRA} open onOpenChange={() => {}} />;
+  if (view === "builder") return <BuilderMock />;
+  if (view === "hire")
+    return (
+      <AppProvider bootstrap={bootstrap()}>
+        <TooltipProvider>
+          <div className="@container/page h-dvh overflow-auto">
+            <AgentHire initialTemplate={null} />
+          </div>
+        </TooltipProvider>
+      </AppProvider>
+    );
   if (view === "computer")
     return <AgentComputerOverlay agent={MIRA} open initialMode="watch" onClose={() => {}} />;
   return null;
+}
+
+/** `&g=builder`: the hire flow's face builder (agent-profile-fields.tsx), as `/agents/new` shows it. */
+function BuilderMock() {
+  const [avatar, setAvatar] = React.useState(MIRA.avatar);
+  return (
+    <div className="mx-auto max-w-xl space-y-6 bg-background px-6 py-10">
+      <FacePreview avatar={avatar} name={MIRA.name} />
+      <FaceBuilder avatar={avatar} onChange={setAvatar} />
+      <p className="font-mono text-caption text-muted-foreground">{JSON.stringify(avatar)}</p>
+    </div>
+  );
 }
 
 function ThreadMock({ a, empty = false }: { a: ClientAgent; empty?: boolean }) {

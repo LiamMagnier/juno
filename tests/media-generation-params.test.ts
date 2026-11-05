@@ -363,9 +363,13 @@ test("several outputs get numbered names", () => {
 });
 
 test("/api/generate takes params, plans them, bills per output and cleans up every file", () => {
-  const route = readFileSync(new URL("../src/app/api/generate/route.ts", import.meta.url), "utf8");
+  // The route takes the params; the shared media pipeline plans, bills and cleans up.
+  const route =
+    readFileSync(new URL("../src/app/api/generate/route.ts", import.meta.url), "utf8") +
+    readFileSync(new URL("../src/lib/media/generation-pipeline.ts", import.meta.url), "utf8");
   assert.match(route, /params: z\s*\.record/);
-  assert.match(route, /planGeneration\(model\.id, parsed\.data\.params, \{ edit: !!edit \}\)/);
+  assert.match(route, /params: parsed\.data\.params/);
+  assert.match(route, /planGeneration\(model\.id, req\.params, \{ edit: !!edit \}\)/);
   assert.match(route, /for \(let i = 0; i < outputs\.length; i \+= 1\)/);
   assert.match(route, /for \(const key of outputStorageKeys\) await deleteObject\(key\)/);
   assert.match(route, /cost\.estimateMicroUsd > budget\.remainingMicroUsd/);

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Loader2, Play, Square } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { IconSwap } from "@/components/ui/icon-swap";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useApp } from "@/components/app/app-provider";
 import { ChoiceMenu } from "@/components/settings/choice-menu";
@@ -28,13 +29,63 @@ import {
   voiceModelLabel,
   type VoiceReasoningEffort,
 } from "@/lib/voice-relay-protocol";
-import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 
-/** The rungs as the composer's thinking panel takes them. */
-const rungOptions = (rungs: readonly VoiceReasoningEffort[]) =>
-  rungs.map((value) => ({ value, label: VOICE_REASONING_EFFORT_LABELS[value] }));
-const OPENAI_RUNGS = rungOptions(VOICE_REASONING_EFFORTS);
-const GEMINI_RUNGS = rungOptions(["low", "medium", "high"]);
+/** Gemini Live's dial stops at High (relay `geminiVoicePlan`). */
+const GEMINI_RUNGS: readonly VoiceReasoningEffort[] = ["low", "medium", "high"];
+
+/**
+ * One voice model's thinking effort: Models' "Thinking effort" row, the same
+ * Select at the same width, with the voice's own sentence. Each Select is
+ * named by its row, so the two on this page announce apart.
+ */
+function EffortRow({
+  id,
+  label,
+  delegate,
+  rungs,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  /** The model harder questions are handed to, by its display name (voiceModelLabel: null for none). */
+  delegate: string | null;
+  rungs: readonly VoiceReasoningEffort[];
+  value: VoiceReasoningEffort;
+  onChange: (effort: VoiceReasoningEffort) => void;
+}) {
+  // A rung this voice does not offer (Extra high saved before Gemini's dial
+  // stopped at High) shows as the top rung it does, which is what it runs at.
+  const shown = rungs.includes(value) ? value : rungs[rungs.length - 1];
+  return (
+    <SettingRow
+      label={label}
+      htmlFor={id}
+      description={`${delegate ? `Hands harder questions to ${delegate}, which can search the web. ` : ""}Higher thinks longer before it answers. On this device.`}
+      wide
+      control={
+        <Select
+          value={shown}
+          onValueChange={(next) => {
+            const effort = parseVoiceReasoningEffort(next);
+            if (effort) onChange(effort);
+          }}
+        >
+          <SelectTrigger id={id} className="w-full @[34rem]/pane:w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {rungs.map((rung) => (
+              <SelectItem key={rung} value={rung}>
+                {VOICE_REASONING_EFFORT_LABELS[rung]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      }
+    />
+  );
+}
 
 // Short on purpose: a preview is billed per character and the reader may
 // audition a dozen voices in a row. Long enough to hear timbre.
@@ -199,59 +250,56 @@ export function VoiceSection() {
           label="Voice sounds"
           htmlFor="voice-sounds"
           description="A soft chime when a call can hear you, and another when it ends. On this device."
+          // Glyph and switch stay on the right on a 360px phone, as every
+          // other switch in Settings does.
+          inline
           control={
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  playVoiceCue("start");
-                  window.setTimeout(() => playVoiceCue("end"), 700);
-                }}
-              >
-                Preview
-              </Button>
+              {/* A glyph with its name in a tooltip, not a "Preview" word: a
+                  word beside the switch read as the switch's own label. */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Play the chimes"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      playVoiceCue("start");
+                      window.setTimeout(() => playVoiceCue("end"), 700);
+                    }}
+                  >
+                    <Play className="size-4" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Play the chimes</TooltipContent>
+              </Tooltip>
               <Switch id="voice-sounds" checked={voiceSounds} onCheckedChange={setVoiceSounds} />
             </div>
           }
         />
-        <SettingRow
+        {/* Thinking effort is a menu here, as it is in Models: the same idea
+            in the same control. It used to be the call panel's pill dial (a
+            36px near-black track with a floating reset), built for a popover
+            beside a model button, the heaviest object in Settings and fixed
+            at 288px on a phone. Both rows say what higher MEANS, in one
+            shape; which model answers at each rung is the call panel's line,
+            shown for the rung in use. */}
+        <EffortRow
+          id="voice-effort-openai"
           label={`${voiceModelLabel(VOICE_PROVIDER_MODELS.openai)} thinking`}
-          description={`Hands harder questions to ${voiceModelLabel(
-            VOICE_OPENAI_DELEGATE_MODEL
-          )}, which can search the web. Higher thinks longer before it answers. On this device.`}
-          control={
-            <ReasoningSlider
-              variant="panel"
-              className="w-72"
-              options={OPENAI_RUNGS}
-              value={voiceEffort}
-              defaultValue="high"
-              onChange={(next) => {
-                const effort = parseVoiceReasoningEffort(next);
-                if (effort) setVoiceEffort(effort);
-              }}
-            />
-          }
+          delegate={voiceModelLabel(VOICE_OPENAI_DELEGATE_MODEL)}
+          rungs={VOICE_REASONING_EFFORTS}
+          value={voiceEffort}
+          onChange={setVoiceEffort}
         />
-        <SettingRow
+        <EffortRow
+          id="voice-effort-gemini"
           label={`${voiceModelLabel(VOICE_PROVIDER_MODELS.gemini)} thinking`}
-          description={`Low answers on ${voiceModelLabel("gemini-3.8-live")}; Medium and High on ${voiceModelLabel(
-            "gemini-3.8-live-extended-thinking"
-          )}. ${voiceModelLabel(VOICE_GEMINI_DELEGATE_MODEL)} takes the harder questions, at low on Low and high above. On this device.`}
-          control={
-            <ReasoningSlider
-              variant="panel"
-              className="w-72"
-              options={GEMINI_RUNGS}
-              value={geminiEffort}
-              defaultValue="low"
-              onChange={(next) => {
-                const effort = parseVoiceReasoningEffort(next);
-                if (effort) setGeminiEffort(effort);
-              }}
-            />
-          }
+          delegate={voiceModelLabel(VOICE_GEMINI_DELEGATE_MODEL)}
+          rungs={GEMINI_RUNGS}
+          value={geminiEffort}
+          onChange={setGeminiEffort}
         />
       </SettingsGroup>
 

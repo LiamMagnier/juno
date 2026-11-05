@@ -74,10 +74,34 @@ public enum CodeV2AlevrCatalog {
                 id: option.modelID,
                 label: option.displayName,
                 contextTiers: tiers(option),
-                effortLevels: option.supportedReasoningEfforts.compactMap { CodeV2.EffortLevel(rawValue: $0.rawValue) },
+                effortLevels: effortLevels(option),
+                defaultEffort: defaultEffort(option),
                 isDefault: nil
             )
         }
+    }
+
+    /// The model's levels, straight from the manifest: Instant (`none`, which
+    /// the engine sends as no thinking parameter) where the model can switch
+    /// thinking off, then its published depths. An on/off model's one "on"
+    /// stop is `high`. Never a fixed ladder.
+    static func effortLevels(_ option: ModelOption) -> [CodeV2.EffortLevel] {
+        let depths = option.supportedReasoningEfforts
+            .sorted { $0.junoDepth < $1.junoDepth }
+            .compactMap { CodeV2.EffortLevel(rawValue: $0.rawValue) }
+        guard !depths.isEmpty else { return [] }
+        return option.canDisableThinking ? [.none] + depths : depths
+    }
+
+    /// The level a freshly chosen model starts on: its declared default (the
+    /// web's `defaultReasoning`, e.g. Medium on Claude Haiku 5.5), else
+    /// Instant where the model offers it — the manifest declares no default
+    /// for exactly those. Nil leaves the composer's own fallback.
+    static func defaultEffort(_ option: ModelOption) -> CodeV2.EffortLevel? {
+        if let declared = option.defaultReasoningEffort {
+            return CodeV2.EffortLevel(rawValue: declared.rawValue)
+        }
+        return option.canDisableThinking && !option.supportedReasoningEfforts.isEmpty ? CodeV2.EffortLevel.none : nil
     }
 
     /// The manifest's tiers, or one tier from its window and list price.

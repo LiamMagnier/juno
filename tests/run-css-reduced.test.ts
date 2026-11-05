@@ -45,9 +45,11 @@ function compiled(): string {
 const REDUCED_SCOPE = ':where([data-motion^="reduce"], [data-motion^="reduce"] *)';
 
 test("the run tokens, the z rung and the print rule landed", () => {
-  for (const token of ["--loop-beat: 1.2s;", "--loop: 2.4s;", "--loop-calm: 4.8s;", "--z-panel: 30;", "--spring-pop-dur: 370ms;"]) {
+  // `--spring-pop` is retired onto the reward spring (wave 2 D28) and no longer declared.
+  for (const token of ["--loop-beat: 1.2s;", "--loop: 2.4s;", "--loop-calm: 4.8s;", "--z-panel: 30;", "--spring-reward-dur:"]) {
     assert.ok(css.includes(token), `${token} is missing`);
   }
+  assert.ok(!/--spring-pop\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, "")), "--spring-pop is retired");
   assert.ok(css.indexOf("--z-panel: 30;") < css.indexOf("--z-aura: 40;"));
   assert.match(css, /@media print \{ \[data-print-document\] a\[href\^="http"\]::after \{ content: " \(" attr\(href\) "\)"; \} \}/);
 });

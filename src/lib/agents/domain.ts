@@ -20,7 +20,8 @@ import { resolveModel } from "@/lib/models";
 import { MAX_MEMBER_BUDGET_MICRO_USD } from "@/lib/agents/budget";
 import { REASONING_TIERS } from "@/lib/model-metrics";
 import type { ReasoningEffort } from "@/types/chat";
-import { AGENT_STATE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
+import { PRODUCT_NAME } from "@/lib/brand/names";
+import type { AgentState, AgentTaskGlance } from "@/lib/agents/state-labels";
 
 // ---------------------------------------------------------------------------
 // Vocabulary
@@ -58,39 +59,46 @@ export const AGENT_STATUSES = ["active", "paused"] as const;
 export type AgentStatus = (typeof AGENT_STATUSES)[number];
 
 /**
- * What the face shows (docs/design/AGENTS.md §4.2).
- *
- * Six are derived on the server from the agent and its newest task. Two —
- * `thinking` (a reply is streaming) and `listening` (voice is open) — exist
- * only on a client that is watching it happen, and the server never reports
- * them.
+ * Why an attempt may not start under this agent's name, or null when it may.
+ * Anything but `active` starts nothing. Null for a task with no agent (or one
+ * whose agent was retired, which `findFirst` with `deletedAt: null` reads as
+ * none). The dispatcher (`startWorkRunForUser`) asks this for every attempt,
+ * so Retry, Run again and Continue in a paused agent's thread are refused like
+ * `start_task` is. The sentence is `startAgentTask`'s.
  */
-export const AGENT_STATES = [
-  "idle",
-  "thinking",
-  "working",
-  "waiting",
-  "blocked",
-  "done",
-  "sleeping",
-  "listening",
-] as const;
-export type AgentState = (typeof AGENT_STATES)[number];
+export function pausedAgentRunRefusal(
+  agent: { name: string; status: string } | null
+): { error: "agent_paused"; message: string } | null {
+  if (!agent || agent.status === "active") return null;
+  return { error: "agent_paused", message: `${agent.name} is paused. Resume it to start something new.` };
+}
 
-/** The words for each state, from the Orbit state vocabulary (src/lib/brand/names.ts). */
-export const AGENT_STATE_LABEL: Record<AgentState, string> = {
-  idle: AGENT_STATE_NAMES.ready,
-  thinking: AGENT_STATE_NAMES.thinking,
-  working: AGENT_STATE_NAMES.working,
-  waiting: AGENT_STATE_NAMES.needsAnswer,
-  blocked: AGENT_STATE_NAMES.blocked,
-  done: AGENT_STATE_NAMES.finished,
-  sleeping: "Paused",
-  listening: "Listening",
-};
+/*
+ * The face's states, their words, the task glance and the sentence beside the
+ * face live in `src/lib/agents/state-labels.ts`, which imports no zod: the
+ * shared shell draws them on every page (tests/shell-weight.test.ts). They
+ * are re-exported here so every caller keeps one import.
+ */
+export {
+  AGENT_STATES,
+  AGENT_STATE_LABEL,
+  agentStateSentence,
+  formatAgentWhen,
+  type AgentState,
+  type AgentTaskGlance,
+} from "@/lib/agents/state-labels";
 
+/** The statuses a person (or their chat) may set on a goal. */
 export const AGENT_GOAL_STATUSES = ["active", "paused", "achieved", "dropped"] as const;
-export type AgentGoalStatus = (typeof AGENT_GOAL_STATUSES)[number];
+export type AgentGoalSettableStatus = (typeof AGENT_GOAL_STATUSES)[number];
+/**
+ * Every status a goal can be in. `unverified` is set only by the goal driver:
+ * every milestone ran, but a check of its success criteria did not pass or
+ * could not run (src/lib/agents/goals.ts `planGoalCompletion`). The person
+ * then marks it met (`achieved`) or keeps it going (`active`).
+ */
+export const AGENT_GOAL_ALL_STATUSES = [...AGENT_GOAL_STATUSES, "unverified"] as const;
+export type AgentGoalStatus = (typeof AGENT_GOAL_ALL_STATUSES)[number];
 
 export const AGENT_GOAL_CADENCES = ["none", "daily", "weekly"] as const;
 export type AgentGoalCadence = (typeof AGENT_GOAL_CADENCES)[number];
@@ -107,8 +115,88 @@ export type AgentIdeaStatus = (typeof AGENT_IDEA_STATUSES)[number];
 export const AGENT_NOTE_SOURCES = ["user", "agent", "reflection"] as const;
 export type AgentNoteSource = (typeof AGENT_NOTE_SOURCES)[number];
 
+/**
+ * Where an agent's work runs. `cloud`: the cloud executor, which keeps going
+ * with the laptop closed. `mac`: the person's own Mac through the Work relay
+ * (Work's `local` target), refused rather than moved to the cloud when that
+ * Mac is offline.
+ */
+export const AGENT_EXECUTION_TARGETS = ["cloud", "mac"] as const;
+export type AgentExecutionTarget = (typeof AGENT_EXECUTION_TARGETS)[number];
+
+/** A stored value read back; anything unknown is the default, `cloud`. */
+export function agentExecutionTarget(value: string | null | undefined): AgentExecutionTarget {
+  return value === "mac" ? "mac" : "cloud";
+}
+
+/**
+ * The Work target vocabulary (`WORK_TARGETS`) for an agent's setting. Never
+ * `automatic`: an agent's work goes where its person put it, and `automatic`
+ * is what lets work move between machines on its own.
+ */
+export function agentWorkTarget(value: string | null | undefined): "cloud" | "local" {
+  return agentExecutionTarget(value) === "mac" ? "local" : "cloud";
+}
+
+/**
+ * The Work dispatch fields for an agent's task: its target, and its preferred
+ * Mac when it runs on one and has named one. Cloud agents never carry a host.
+ */
+export function agentDispatchTarget(agent: {
+  executionTarget?: string | null;
+  preferredHostId?: string | null;
+}): { requestedTarget: "cloud" | "local"; preferredHostId?: string } {
+  const requestedTarget = agentWorkTarget(agent.executionTarget);
+  return requestedTarget === "local" && agent.preferredHostId
+    ? { requestedTarget, preferredHostId: agent.preferredHostId }
+    : { requestedTarget };
+}
+
+/**
+ * The Mac an agent's routine is pinned to, for where the agent runs.
+ *
+ * A routine is a `WorkSchedule`, and a local schedule has to name its Mac
+ * (`hostId`), where a task only carries a preference. So: a cloud routine
+ * names none; a Mac routine takes the agent's preferred Mac when that Mac is
+ * switched on for Work, else the Mac it is already pinned to when that one
+ * still is (`currentHostId`), else the only switched-on Mac. With several and
+ * no way to choose, it is `pick_mac`; with none it is `no_mac`; and with a
+ * preferred Mac that is switched off while others are on it is
+ * `preferred_off`, so the refusal names the chosen Mac rather than claiming no
+ * Mac is on. A Mac is never picked for the person, and the routine is never
+ * left in the cloud instead. Used by `createAgentRoutine` and by every change
+ * to where an agent runs, so its routines go where it goes.
+ */
+export function agentRoutineHost(input: {
+  target: "cloud" | "local";
+  preferredHostId?: string | null;
+  /** The account's Macs that are switched on for Work and not revoked. */
+  enabledHostIds: readonly string[];
+  currentHostId?: string | null;
+}): { ok: true; hostId: string | null } | { ok: false; reason: "no_mac" | "pick_mac" | "preferred_off" } {
+  if (input.target === "cloud") return { ok: true, hostId: null };
+  const enabled = new Set(input.enabledHostIds);
+  if (input.preferredHostId) {
+    if (enabled.has(input.preferredHostId)) return { ok: true, hostId: input.preferredHostId };
+    return { ok: false, reason: input.enabledHostIds.length > 0 ? "preferred_off" : "no_mac" };
+  }
+  if (input.currentHostId && enabled.has(input.currentHostId)) return { ok: true, hostId: input.currentHostId };
+  if (input.enabledHostIds.length === 1) return { ok: true, hostId: input.enabledHostIds[0]! };
+  return { ok: false, reason: input.enabledHostIds.length === 0 ? "no_mac" : "pick_mac" };
+}
+
 export const AGENT_NOTIFY_LEVELS = ["needs_you", "results", "all"] as const;
 export type AgentNotifyLevel = (typeof AGENT_NOTIFY_LEVELS)[number];
+
+/**
+ * Each notify level in words: `label` is the sentence (the profile's line, a
+ * setup change's before and after), `short` the control's segment.
+ */
+export const AGENT_NOTIFY_META: Record<AgentNotifyLevel, { label: string; short: string }> = {
+  needs_you: { label: "Only when it needs you", short: "Needs you" },
+  results: { label: "When a task finishes or needs you", short: "Results" },
+  all: { label: "Everything, ideas included", short: "Everything" },
+};
 
 export function agentNotifyLevel(value: string | null | undefined): AgentNotifyLevel {
   if (value === "needs_you" || value === "results" || value === "all") {
@@ -179,8 +267,16 @@ export const AGENT_EVENT_KINDS = [
   "goal_step",
   "goal_blocked",
   "goal_achieved",
+  // Its success criteria checked against what its steps produced, by the
+  // final step's run (src/lib/agents/goal-criteria.ts): `detail.verdict` is
+  // met, not_met or unchecked. And every step ran without that check passing.
+  "goal_checked",
+  "goal_unverified",
   // Teams (src/lib/agents/team.ts): a temporary specialist team ran a request.
   "team_run",
+  // Work it started on its own (a routine or a goal step) was refused, e.g.
+  // its Mac was offline. Never moved to another machine instead.
+  "task_refused",
 ] as const;
 export type AgentEventKind = (typeof AGENT_EVENT_KINDS)[number];
 
@@ -234,14 +330,8 @@ export const AGENT_BLOCKED_WINDOW_MS = 6 * 60 * 60 * 1000;
 // State
 // ---------------------------------------------------------------------------
 
-/** The newest task an agent owns, as much of it as state needs. */
-export interface AgentTaskGlance {
-  sessionId: string;
-  title: string;
-  status: string;
-  needsAttention: boolean;
-  lastActivityAt: Date;
-}
+// `AgentTaskGlance` (the newest task an agent owns, as much of it as state
+// needs) lives in state-labels.ts with the words; it is re-exported above.
 
 const BLOCKED_TERMINALS = new Set(["failed", "interrupted", "budget_exceeded", "timed_out", "host_offline"]);
 
@@ -337,68 +427,7 @@ export function aggregateAgentState(input: {
   return best.state === "idle" ? { state: "idle", task: null } : best;
 }
 
-/**
- * The one sentence beside the face.
- *
- * Every state names the task it is about, because "Working" alone is the
- * spinner the face exists to replace. The idle sentence prefers what is next
- * over what the agent is for: a person glancing at a roster wants to know what
- * will happen, and the role is already printed under the name.
- */
-export function agentStateSentence(input: {
-  state: AgentState;
-  task: Pick<AgentTaskGlance, "title" | "status"> | null;
-  nextRoutine: { name: string; nextRunAt: Date } | null;
-  now: Date;
-  formatWhen?: (at: Date, now: Date) => string;
-}): string {
-  const title = input.task?.title?.trim() || "a task";
-  const when = input.formatWhen ?? formatAgentWhen;
-  switch (input.state) {
-    case "sleeping":
-      return "Paused. Nothing new starts until you resume it.";
-    case "waiting":
-      if (input.task?.status === "waiting_approval") return `Needs your approval on ${title}`;
-      if (input.task?.status === "waiting_input") return `Has a question about ${title}`;
-      if (input.task?.status === "host_offline") return `Waiting for your Mac to finish ${title}`;
-      return `Needs your answer on ${title}`;
-    case "working":
-      return `Working on ${title}`;
-    case "done":
-      return `Finished ${title}`;
-    case "blocked":
-      if (input.task?.status === "budget_exceeded") return `Blocked: your usage window ran out during ${title}`;
-      return `Blocked before finishing ${title}`;
-    case "thinking":
-      return "Thinking";
-    case "listening":
-      return "Listening";
-    case "idle":
-    default:
-      if (input.nextRoutine) {
-        return `Next: ${input.nextRoutine.name}, ${when(input.nextRoutine.nextRunAt, input.now)}`;
-      }
-      return "Ready for something new";
-  }
-}
-
-/**
- * "today at 09:00", "tomorrow at 09:00", "Mon at 09:00", "12 Oct".
- *
- * In UTC on the server, which is honest about what it knows: the server does
- * not know the reader's zone. The web and native clients pass their own
- * formatter and say it in local time.
- */
-export function formatAgentWhen(at: Date, now: Date): string {
-  const time = `${String(at.getUTCHours()).padStart(2, "0")}:${String(at.getUTCMinutes()).padStart(2, "0")}`;
-  const day = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-  const days = Math.round((day(at) - day(now)) / 86_400_000);
-  if (days <= 0) return `today at ${time}`;
-  if (days === 1) return `tomorrow at ${time}`;
-  if (days < 7) return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][at.getUTCDay()]} at ${time}`;
-  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][at.getUTCMonth()];
-  return `${at.getUTCDate()} ${month}`;
-}
+// `agentStateSentence` and `formatAgentWhen` live in state-labels.ts (re-exported above).
 
 /** Whether a reflection is due, for the lazy trigger on the agent's page and the scheduler's sweep. */
 export function reflectionDue(input: {
@@ -526,6 +555,8 @@ export const createAgentSchema = z.object({
   projectId: z.string().trim().min(1).max(200).nullable().optional(),
   proactive: z.boolean().default(true),
   notify: z.enum(AGENT_NOTIFY_LEVELS).default("results"),
+  executionTarget: z.enum(AGENT_EXECUTION_TARGETS).default("cloud"),
+  preferredHostId: z.string().trim().min(1).max(200).nullable().optional(),
   template: z.string().trim().min(1).max(40).nullable().optional(),
   firstGoal: z.string().trim().min(1).max(MAX_GOAL_TITLE_CHARS).optional(),
 });
@@ -550,6 +581,10 @@ export const patchAgentSchema = z
     sortOrder: z.int().min(0).max(10_000).optional(),
     /** Its own weekly cap in micro-USD, or null for none (src/lib/agents/budget.ts). */
     budgetMicroUsd: z.int().min(0).max(MAX_MEMBER_BUDGET_MICRO_USD).nullable().optional(),
+    /** Where its work runs. The person's choice only; no agent tool sets it. */
+    executionTarget: z.enum(AGENT_EXECUTION_TARGETS).optional(),
+    /** The Mac it prefers (a WorkHost id), or null for any switched-on Mac. */
+    preferredHostId: z.string().trim().min(1).max(200).nullable().optional(),
   })
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change" });
 export type PatchAgentInput = z.infer<typeof patchAgentSchema>;
@@ -595,6 +630,9 @@ export const createNoteSchema = z.object({
 export const patchNoteSchema = z.object({
   content: z.string().trim().min(1).max(MAX_AGENT_NOTE_CHARS),
 });
+
+/** Keeps a note a task saved for review (src/lib/agents/note-review.ts). The person's press only. */
+export const keepNoteSchema = z.object({ action: z.literal("keep") }).strict();
 
 export const patchIdeaSchema = z.object({
   action: z.enum(["start", "dismiss"]),

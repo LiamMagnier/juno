@@ -53,6 +53,12 @@ step "Security and approval dispatch"
 npm run security:check
 node scripts/check-approval-dispatch.mjs
 python3 -m unittest discover -s tests -p 'test_computer_infrastructure.py'
+# The freeze's deadline rule and the host's x11vnc escalation, on a fake clock.
+python3 -m unittest discover -s tests -p 'test_computer_escalation.py'
+# The CDP gate over its private pipe (a fake Chromium, no Docker). It needs the
+# websockets library the image ships; without it every test skips and says so.
+# The computer-e2e CI job runs it for real (JUNO_COMPUTER_PIPE_REQUIRED=1).
+python3 -m unittest discover -s tests -p 'test_computer_pipe.py'
 python3 -m unittest discover -s tests -p 'test_exec_host.py'
 step "Generated contracts and sandbox"
 for task in capabilities:check work:contract:check agent:protocol:check shell:contract:check native:wire:check design:tokens:check native:parity:check work:sandbox:check; do

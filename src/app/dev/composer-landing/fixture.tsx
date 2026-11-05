@@ -7,6 +7,7 @@ import { AppProvider } from "@/components/app/app-provider";
 import { DictationStageContext, dictationStageFromParam, type DictationStage } from "@/components/chat/composer-dictation-stage";
 import { Composer } from "@/components/chat/composer";
 import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
+import { HomeStarters } from "@/components/chat/home-starters";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { loadMentionFixtures } from "./mention-fixtures";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
@@ -242,6 +243,10 @@ const CLARIFY: NonNullable<React.ComponentProps<typeof Composer>["pendingClarifi
 
 /** The home as chat-view lays it out (`.chat-home`), filling the panel. */
 function HomeView(common: React.ComponentProps<typeof Composer>) {
+  // The shipped home's starters (home-starters.tsx), wired as chat-view wires
+  // them, so the gallery shows the home people get, chips and all.
+  const composerRef = React.useRef<HTMLDivElement>(null);
+  const [startersShown, setStartersShown] = React.useState(false);
   return (
     <section data-fixture="landing" className="flex min-h-dvh flex-col">
       <div className="chat-home page-gutter relative isolate">
@@ -250,11 +255,13 @@ function HomeView(common: React.ComponentProps<typeof Composer>) {
             <EmptyGreeting />
           </div>
         </div>
-        <div className="chat-home__composer relative isolate w-full">
-          <HomeField />
+        <div ref={composerRef} className="chat-home__composer relative isolate w-full">
+          <HomeField calm={startersShown} />
           <Composer {...common} frame="landing" />
         </div>
-        <div className="chat-home__suggest" />
+        <div className="chat-home__suggest">
+          <HomeStarters composerRef={composerRef} onShownChange={setStartersShown} />
+        </div>
       </div>
     </section>
   );
@@ -268,9 +275,10 @@ function HomeView(common: React.ComponentProps<typeof Composer>) {
  */
 function PrivateView(common: React.ComponentProps<typeof Composer>) {
   const [on, setOn] = React.useState(true);
-  // `&field=0` draws the greeting without its construction, for comparison.
-  const [field, setField] = React.useState(true);
-  React.useEffect(() => setField(new URLSearchParams(window.location.search).get("field") !== "0"), []);
+  // Incognito ships with no drawing behind its mark (PrivateGreeting's
+  // default); `&field=1` draws the old construction, for comparison only.
+  const [field, setField] = React.useState(false);
+  React.useEffect(() => setField(new URLSearchParams(window.location.search).get("field") === "1"), []);
   return (
     <section data-fixture="private" className="relative flex min-h-dvh flex-col">
       {/* pr-1.5: chat-view's cluster sits 6px off the panel's right edge, so

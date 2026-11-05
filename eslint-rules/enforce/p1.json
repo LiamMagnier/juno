@@ -1,0 +1,15 @@
+{
+  "package": "p1",
+  "$comment": "P1-pipeline's own files. The wave 2 design rules are errors here (eslint.config.mjs), and the native design gates fail on any violation under the native globs (scripts/check-native-design-lib.mjs).",
+  "web": [
+    "src/app/globals.css",
+    "src/lib/strings/**",
+    "src/lib/accents.ts",
+    "src/lib/brand/names.ts",
+    "src/lib/design/tokens.generated.ts"
+  ],
+  "native": [
+    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/Generated/**",
+    "native/macOS/JunoDesktop/App/Generated/**"
+  ]
+}

@@ -193,7 +193,7 @@ export function ModelsSection() {
         description="How Auto chooses when it picks the model for you. Choosing a model yourself always overrides it."
       >
         <SettingRow
-          label="Optimise for"
+          label="Optimize for"
           description={AUTO_PREFERENCE_OPTIONS.find((o) => o.value === (settings.autoPreference ?? DEFAULT_AUTO_PREFERENCE))?.description}
           wide
           status={saves.status("autoPreference")}
@@ -202,7 +202,7 @@ export function ModelsSection() {
               value={settings.autoPreference ?? DEFAULT_AUTO_PREFERENCE}
               onValueChange={(v) => void saves.track("autoPreference", () => save({ autoPreference: v as AutoPreference }))}
             >
-              <SelectTrigger aria-label="What Auto optimises for" className="w-full @[34rem]/pane:w-48">
+              <SelectTrigger aria-label="What Auto optimizes for" className="w-full @[34rem]/pane:w-48">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

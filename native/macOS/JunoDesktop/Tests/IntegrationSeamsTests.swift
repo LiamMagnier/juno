@@ -138,7 +138,7 @@ struct IntegrationSeamsTests {
 
     @Test
     func moreHoldsTheWebsThreePagesAndTheSidebarItsFour() {
-        #expect(DesktopDestination.sidebarCases == [.projects, .library, .connections])
+        #expect(DesktopDestination.sidebarCases == [.activity, .projects, .library, .connections])
         #expect(DesktopDestination.moreCases == [])
     }
 }

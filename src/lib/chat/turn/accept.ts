@@ -36,6 +36,7 @@ import { cloneLibraryAttachments } from "@/lib/library-attach";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { recordRoomPlan, type RoomTurnSetup } from "@/lib/agents/room-store";
 import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
+import { isChatMemoryOffEnabled } from "@/lib/env";
 import { NEWEST_FIRST, olderThan } from "@/lib/chat/history-page";
 import type { TurnAccount } from "./account";
 import { refuse, usageWindowRefusal } from "./admission";
@@ -83,6 +84,10 @@ export async function acceptTurn({
   turnContext: TurnContext;
   roomSetup: RoomTurnSetup | null;
 }) {
+  // "Memory off for this chat" carried by a first send (request.ts): saved only
+  // while the server lets the switch be set (CHAT_MEMORY_OFF_ENABLED). A chat
+  // already saved with it on keeps memory out either way.
+  const saveMemoryOff = input.memoryOff === true && isChatMemoryOffEnabled();
   // Both gates are reads of the same spend ledger and neither informs the
   // other, so they ride in one wave. The refusal order is unchanged: the
   // monthly budget still answers first, and a request refused by it reports
@@ -219,7 +224,12 @@ export async function acceptTurn({
     const clientRequestId = input.clientRequestId!;
     const clientMessageId = input.clientMessageId!;
     const requestHash = firstSubmissionHash!;
-    const proposedGenerationId = crypto.randomUUID();
+    // The caller's own generation id when it named one, as the legacy path
+    // uses it: a Stop pressed while the turn is still in admission is recorded
+    // under that id (chat/stop-generation.ts), and the generation must register
+    // under the same one to find it. A repeat of this submission never reaches
+    // here — admission answers it from the receipt, whose id it keeps.
+    const proposedGenerationId = input.generationId ?? crypto.randomUUID();
     try {
       const acceptance = await prisma.$transaction(async (tx) => {
         let acceptedConversation = conversation;
@@ -260,10 +270,13 @@ export async function acceptTurn({
 
         const period = currentPeriod();
         const monthlyLimit = PLANS[plan].monthlyMessages;
-        await tx.usage.upsert({
-          where: { userId_period: { userId: user.id, period } },
-          create: { userId: user.id, period, messageCount: 0 },
-          update: {},
+        // INSERT … ON CONFLICT DO NOTHING, as consumeMessage does (lib/usage.ts):
+        // Prisma runs an upsert on this compound key as find-then-create, and
+        // the loser of two first turns of a period (two tabs) would fail the
+        // whole transaction on the unique key.
+        await tx.usage.createMany({
+          data: [{ userId: user.id, period, messageCount: 0 }],
+          skipDuplicates: true,
         });
         let quota: Awaited<ReturnType<typeof consumeMessage>>;
         if (monthlyLimit == null) {
@@ -305,6 +318,7 @@ export async function acceptTurn({
               projectId: newConversationProjectId,
               activeConnectors: connectorSelection ?? [],
               ...(input.taskApprovalMode ? { taskApprovalMode: input.taskApprovalMode } : {}),
+              ...(saveMemoryOff ? { memoryOff: true } : {}),
             },
           });
         }
@@ -424,6 +438,7 @@ export async function acceptTurn({
         projectId: newConversationProjectId,
         activeConnectors: connectorSelection ?? [],
         ...(input.taskApprovalMode ? { taskApprovalMode: input.taskApprovalMode } : {}),
+        ...(saveMemoryOff ? { memoryOff: true } : {}),
       },
     });
   } else if (
@@ -447,6 +462,17 @@ export async function acceptTurn({
       data: { taskApprovalMode: input.taskApprovalMode },
     });
     conversation = { ...conversation, taskApprovalMode: input.taskApprovalMode };
+  }
+  // "Memory off for this chat" (src/lib/chat/memory-off.ts), switched off in
+  // the composer before or while this turn was sent: saved before the turn
+  // reads memory (resolveMemory reads this row), so this very turn is already
+  // kept out. A turn can only switch it off, never back on (request.ts).
+  if (saveMemoryOff && !conversation.memoryOff) {
+    await prisma.conversation.updateMany({
+      where: { id: conversation.id, userId: user.id },
+      data: { memoryOff: true },
+    });
+    conversation = { ...conversation, memoryOff: true };
   }
 
   if (input.regenerate) {

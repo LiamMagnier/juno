@@ -2,13 +2,13 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Ban, ChevronLeft, ChevronRight, Loader2, Search, Users as UsersIcon } from "@/components/ui/icons";
+import { Ban, ChevronLeft, ChevronRight, Search, Users as UsersIcon } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import type { Plan, SubStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -507,79 +507,59 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
           </div>
         </Card>
 
-      <Dialog open={!!banTarget} onOpenChange={(open) => !open && !banning && (setBanTarget(null), setBanReason(""))}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Ban {banTarget?.email}?</DialogTitle>
-            <DialogDescription>
-              This blocks sign-in and kills active sessions. The reason is recorded to the moderation log.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="ban-reason">Reason</Label>
-            <Textarea
-              id="ban-reason"
-              value={banReason}
-              onChange={(e) => setBanReason(e.target.value)}
-              placeholder="Why is this user being banned?"
-              className="min-h-24"
-              maxLength={500}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => (setBanTarget(null), setBanReason(""))} disabled={banning}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={confirmBan} disabled={banning} aria-busy={banning}>
-              {banning ? <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> : <Ban className="size-4" />}
-              {banning ? "Banning…" : "Ban user"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!deleteTarget}
-        onOpenChange={(open) => !open && !deleting && (setDeleteTarget(null), setDeleteConfirm(""))}
+      <ConfirmDialog
+        open={!!banTarget}
+        onOpenChange={(open) => !open && (setBanTarget(null), setBanReason(""))}
+        busy={banning}
+        title={`Ban ${banTarget?.email ?? ""}?`}
+        description="This blocks sign-in and kills active sessions. The reason is recorded to the moderation log."
+        confirmLabel={
+          <>
+            <Ban className="size-4" />
+            Ban user
+          </>
+        }
+        onConfirm={confirmBan}
       >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete {deleteTarget?.email}?</DialogTitle>
-            <DialogDescription>
-              This permanently deletes the account and all of its data. This cannot be undone. Type the user&rsquo;s
-              email to confirm.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="delete-confirm">Confirm email</Label>
-            <Input
-              id="delete-confirm"
-              value={deleteConfirm}
-              onChange={(e) => setDeleteConfirm(e.target.value)}
-              placeholder={deleteTarget?.email}
-              autoComplete="off"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => (setDeleteTarget(null), setDeleteConfirm(""))} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmDelete}
-              disabled={deleting || deleteConfirm.trim().toLowerCase() !== deleteTarget?.email.toLowerCase()}
-              aria-busy={deleting}
-            >
-              {deleting ? (
-                <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
-              ) : (
-                <ActionIcons.delete className="size-4" />
-              )}
-              {deleting ? "Deleting…" : "Delete user"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ban-reason">Reason</Label>
+          <Textarea
+            id="ban-reason"
+            value={banReason}
+            onChange={(e) => setBanReason(e.target.value)}
+            placeholder="Why is this user being banned?"
+            className="min-h-24"
+            maxLength={500}
+          />
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && (setDeleteTarget(null), setDeleteConfirm(""))}
+        busy={deleting}
+        title={`Delete ${deleteTarget?.email ?? ""}?`}
+        description={<>This permanently deletes the account and all of its data. This cannot be undone. Type the user&rsquo;s email to confirm.</>}
+        confirmLabel={
+          <>
+            <ActionIcons.delete className="size-4" />
+            Delete user
+          </>
+        }
+        confirmDisabled={deleteConfirm.trim().toLowerCase() !== deleteTarget?.email.toLowerCase()}
+        onConfirm={confirmDelete}
+      >
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="delete-confirm">Confirm email</Label>
+          <Input
+            id="delete-confirm"
+            value={deleteConfirm}
+            onChange={(e) => setDeleteConfirm(e.target.value)}
+            placeholder={deleteTarget?.email}
+            autoComplete="off"
+          />
+        </div>
+      </ConfirmDialog>
     </AppPage>
   );
 }

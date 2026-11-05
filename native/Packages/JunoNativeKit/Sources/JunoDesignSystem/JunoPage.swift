@@ -410,7 +410,6 @@ public struct JunoPageSearchField: View {
     private let submit: (() -> Void)?
 
     @FocusState private var ownFocus: Bool
-    @State private var isHovering = false
 
     /// - Parameters:
     ///   - focus: the page's own focus for the field, when the page moves
@@ -435,11 +434,6 @@ public struct JunoPageSearchField: View {
     private var focusBinding: FocusState<Bool>.Binding { focus ?? $ownFocus }
 
     private var isFocused: Bool { focusBinding.wrappedValue }
-
-    private var edge: Color {
-        if isFocused { return Color.junoRing }
-        return isHovering ? Color.junoForeground.opacity(0.3) : Color.junoInput
-    }
 
     public var body: some View {
         HStack(spacing: JunoSpace.snug) {
@@ -488,19 +482,8 @@ public struct JunoPageSearchField: View {
             idealWidth: JunoPageMetrics.searchMinWidth,
             maxWidth: JunoPageMetrics.searchMaxWidth
         )
-        // The system search field's shape (round 2): a filled capsule with
-        // no edge at rest, the focus ring only while typing — what the
-        // sidebar's `.searchable` field and Finder's toolbar search draw.
-        // Round 3: the field sits on the same glass capsule as the page's
-        // other controls, so the row reads as one family.
-        .modifier(JunoGlassSegmentTrack())
-        .overlay(
-            Capsule(style: .continuous)
-                .strokeBorder(Color.junoRing, lineWidth: isFocused ? 2 : 0)
-        )
-        .contentShape(Capsule(style: .continuous))
+        .junoFieldSurface(isFocused: isFocused)
         .onTapGesture { focusBinding.wrappedValue = true }
-        .onHover { isHovering = $0 }
     }
 }
 

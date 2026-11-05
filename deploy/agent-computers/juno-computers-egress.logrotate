@@ -1,0 +1,15 @@
+# Installed by setup-vm.sh as /etc/logrotate.d/juno-computers-egress, with
+# @LOG_DAYS@ replaced (JUNO_EGRESS_LOG_DAYS, default 14). The log names the hosts
+# each computer reached: personal data about what an agent did, so it is kept
+# only this long. The proxy opens the file for every line, so after a rotation
+# it creates a new one itself (nocreate).
+/var/log/juno-computers-egress/egress.jsonl {
+    daily
+    rotate @LOG_DAYS@
+    maxage @LOG_DAYS@
+    missingok
+    notifempty
+    compress
+    delaycompress
+    nocreate
+}

@@ -355,7 +355,11 @@ test("the client feeds replayed frames through the same applier as the live stre
     "there is exactly one applier factory"
   );
   assert.match(hook, /readChatStream\(res\.body, applier\.apply\)/, "the live stream uses it");
-  assert.match(hook, /readChatStream\(res\.body, args\.applier\.apply\)/, "and so does the reconnect");
+  // The reconnect taps each frame for Tether's liveness (src/lib/net/tether.ts)
+  // and then hands it, unchanged, to the same applier.
+  assert.match(hook, /const apply = args\.applier\.apply;/, "and so does the reconnect");
+  assert.match(hook, /link\.connected\(\);\n\s*apply\(chunk, frame\);/);
+  assert.match(hook, /readChatStream\(res\.body, onFrame\)/);
 });
 
 test("a dropped stream is offered a reconnect, never a regenerate", () => {

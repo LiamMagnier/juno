@@ -5,6 +5,7 @@ import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, Volume2 } from "@/components/ui/icons";
+import { ExportChatMenuSection } from "@/components/chat/conversation-export-menu";
 import { ActionIcons, AppIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
 import { extractSkillMarkdown, PENDING_SKILL_MARKDOWN_KEY } from "@/components/skills/skill-library-model";
 import { IconSwap } from "@/components/ui/icon-swap";
@@ -33,7 +34,7 @@ import { StreamingMarkdown } from "@/components/chat/stream-text";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { AutoReceipt } from "@/components/chat/auto-receipt";
 import { AnswerMemory } from "@/components/chat/answer-memory";
-import { receiptLine, type RoutingReceipt } from "@/lib/router/receipt";
+import { receiptLine, receiptSummary, type RoutingReceipt } from "@/lib/router/receipt";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { AttachmentTile, MessageAttachments } from "@/components/chat/attachment-tile";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -59,6 +60,10 @@ const RoutineProposalList = nextDynamic(
   () => import("@/components/chat/routine-proposal-card").then((m) => m.RoutineProposalList),
   { ssr: false },
 );
+const SkillDraftList = nextDynamic(
+  () => import("@/components/skills/skill-draft-card").then((m) => m.SkillDraftList),
+  { ssr: false },
+);
 import { SourcesPill } from "@/components/chat/sources-pill";
 import { isAuditableAnswer, useCitationAudit } from "@/components/chat/citation-audit";
 
@@ -77,6 +82,9 @@ const CitationAuditPanel = nextDynamic(
 );
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { GeneratedImage, GeneratedImageGrid, GeneratedVideo, useGenerationHandoff } from "@/components/chat/generated-media";
+import { ImageGenerationCard, attachmentsForGeneration, imageGenerationsOf } from "@/components/chat/image-generation-card";
+import { shellString } from "@/lib/strings";
+import { useUiLocale } from "@/lib/i18n-format";
 import { AudioAttachment } from "@/components/chat/audio-attachment";
 /**
  * Split: a full-screen editor that mounts only once a reader has pressed Edit
@@ -89,10 +97,12 @@ const ImageEditOverlay = nextDynamic(
   { ssr: false },
 );
 import { LiveLine, useLiveSeconds } from "@/components/chat/live-line";
+import { ConnectionStatus } from "@/components/chat/connection-status";
 import { TIMING } from "@/lib/interaction";
 import { AgentFace } from "@/components/agents/agent-face";
 import { useAgentThread } from "@/components/agents/agent-thread-context";
 import { splitMessageContent, stripMemoryTags } from "@/lib/message-content";
+import { stripTrailingSourcesSection } from "@/components/chat/sources-section";
 import { resolveModel } from "@/lib/models";
 import { MESSAGE_DISPLAY_COLLAPSE_CHARS, sampleLineCount } from "@/lib/prompt-limits";
 import { cn, formatTokens, formatUsd } from "@/lib/utils";
@@ -188,30 +198,9 @@ function StreamStatus({
   );
 }
 
-/**
- * Deep-research reports are prompted to end with a "## Sources" section listing
- * every citation as "[n] Title — URL" (see buildResearchContext). Once the same
- * list renders as the sources pill, that tail is a duplicate wall of naked URLs
- * — so drop it from the RENDERED markdown. Copy still yields the full text.
- *
- * Conservative on purpose: only the last such heading, only when every line
- * under it is a citation entry (a "Sources" section the model wrote prose into
- * is the model saying something, not a list we already render), and only when
- * the heading isn't inside a code fence.
- */
-function stripTrailingSourcesSection(content: string): string {
-  const lines = content.split("\n");
-  let start = -1;
-  let fenced = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^ {0,3}(`{3,}|~{3,})/.test(lines[i])) fenced = !fenced;
-    else if (!fenced && /^#{1,6}\s+sources\s*$/i.test(lines[i])) start = i;
-  }
-  if (start === -1) return content;
-  const isEntry = (line: string) => line.trim() === "" || /^\s*(?:[-*]\s+)?\[\d{1,3}\]/.test(line);
-  if (!lines.slice(start + 1).every(isEntry)) return content;
-  return lines.slice(0, start).join("\n").trimEnd();
-}
+// `stripTrailingSourcesSection` (the research report's trailing "## Sources"
+// list, dropped once the sources pill shows it) is in sources-section.ts, shared
+// with the conversation export.
 
 /**
  * ChatGPT-style "‹ 2/3 ›" pager, shown whenever a message has alternatives: the
@@ -241,7 +230,7 @@ function VersionPager({
   // one pair that stayed mute. (A disabled arrow shows none; Radix cannot hover
   // a pointer-events-none target, and a control that cannot act needs no name.)
   return (
-    <div className="mr-1 flex items-center font-mono text-caption text-muted-foreground">
+    <div className="mr-1 flex items-center font-mono text-label font-normal text-muted-foreground">
       <Tooltip>
         <TooltipTrigger asChild>
           <Pressable kind="icon" size="sm" onClick={() => onStep(-1)} disabled={loading || index === 0} aria-label="Previous version">
@@ -363,7 +352,7 @@ function TurnMeta({
     </span>
   );
   return (
-    <span className="flex min-w-0 items-center gap-2.5 text-caption text-muted-foreground">
+    <span className="flex min-w-0 items-center gap-2.5 font-sans text-label font-normal text-muted-foreground">
       {modelName &&
         (receipt ? (
           // Its own control, beside (never inside) the numbers' tooltip: one
@@ -439,7 +428,7 @@ function RegenerateMenu({ onRegenerate, currentModelId }: { onRegenerate: (o?: R
           <DropdownMenuSubContent className={cn(MENU_W, "max-h-[min(24rem,60vh)]")}>
             {grouped.map(([provider, list]) => (
               <React.Fragment key={provider}>
-                <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-caption">
+                <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label">
                   <ProviderLogo provider={list[0].provider} className="size-3" />
                   {PROVIDERS[list[0].provider]?.label.split(" · ")[0] ?? provider}
                 </DropdownMenuLabel>
@@ -451,7 +440,7 @@ function RegenerateMenu({ onRegenerate, currentModelId }: { onRegenerate: (o?: R
                 ))}
               </React.Fragment>
             ))}
-            {grouped.length === 0 && <p className="px-2 py-3 text-center text-caption text-muted-foreground">No other models available.</p>}
+            {grouped.length === 0 && <p className="px-2 py-3 text-center font-sans text-label font-normal text-muted-foreground">No other models available.</p>}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSeparator />
@@ -538,8 +527,10 @@ function BubbleEditor({
   const empty = value.trim().length === 0;
 
   return (
-    <div className="w-full duration-fast motion-safe:animate-fade-in">
-      <div className="rounded-card rounded-br-md border border-transparent bg-secondary px-4 py-2.5 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-primary focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] motion-reduce:transition-none">
+    <div className="w-full animate-fade-in">
+      {/* It opens focused, so focus is an edge, not a ring: the keyboard's
+          2px line only follows the keyboard (`kbd-focus-within:`). */}
+      <div className="rounded-card rounded-br-md border border-transparent bg-secondary px-4 py-2.5 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/30 kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]">
         <textarea
           ref={ref}
           value={value}
@@ -580,6 +571,7 @@ interface MessageItemProps {
   surface?: "chat" | "code";
   /** Live generation phase — only meaningful for the streaming last message. */
   status?: GenerationStatus;
+  /** A newly arrived turn: the user's bubble rises in (`animate-rise-user`); the assistant root never animates. */
   animateIn?: boolean;
   artifactsByIdentifier: Map<string, ClientArtifact>;
   onOpenArtifact: (identifier: string, opts?: { fullscreen?: boolean }) => void;
@@ -701,6 +693,10 @@ export const MessageItem = React.memo(function MessageItem({
   const [editOpen, setEditOpen] = React.useState(false);
   // Where the picture sat when Edit was pressed, so the editor opens out of it.
   const [editOrigin, setEditOrigin] = React.useState<DOMRect | null>(null);
+  // The image model that made the picture being edited, when a chat model's
+  // `generate_image` made it: the answer's own model writes, it does not draw.
+  const [editSourceModel, setEditSourceModel] = React.useState<string | null>(null);
+  const uiLocale = useUiLocale();
   // The shape this turn's generation asked for, kept past the placeholder so
   // the result lands in the same box and reveals (generated-media.tsx).
   const generationHandoff = useGenerationHandoff(message.error ? null : message.progress);
@@ -987,7 +983,14 @@ export const MessageItem = React.memo(function MessageItem({
 
   if (isUser) {
     return (
-      <div className={cn("group flex flex-col items-end", animateIn && "motion-safe:animate-turn-in")}>
+      // The bubble lands (spec C1): 6px × --motion-shift and opacity over the
+      // fast rung, painted inside 100ms of Enter. No `motion-safe:`: the
+      // keyframe's travel reads --motion-shift, so under reduced motion it is
+      // the fade alone (Tier A kept, Tier B dropped), never a cut. This used
+      // to name the `turn-in` entrance, retired with its 420ms blur, so the
+      // class compiled to nothing and a sent message simply appeared
+      // (tests/motion-class-resolution.test.ts).
+      <div className={cn("group flex flex-col items-end", animateIn && "animate-rise-user")}>
         {/* Turn marker. On screen the alignment and bubble say who is speaking;
             in a screen reader nothing did, and a transcript with no headings is
             a wall of text with no way to move through it. */}
@@ -1048,7 +1051,7 @@ export const MessageItem = React.memo(function MessageItem({
                   // A control, so the interface face rather than the mono
                   // metadata voice; a 28px row (44px coarse) so it is a
                   // target rather than a line of type.
-                  className="-mr-1.5 mt-1 inline-flex h-7 items-center rounded-control px-1.5 text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground coarse:h-11"
+                  className="-mr-1.5 mt-1 inline-flex h-7 items-center rounded-control px-1.5 font-sans text-label font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground coarse:h-11"
                 >
                   {expanded ? "Show less" : lineCountShown ? <>Show more · {lineCount} lines</> : "Show more"}
                 </button>
@@ -1061,23 +1064,26 @@ export const MessageItem = React.memo(function MessageItem({
             this is the one control that gets them to the server. */}
         {!editing && message.unsent && onResend && (
           <div className="mt-1.5 flex items-center gap-2.5">
-            <span className="font-mono text-caption text-destructive">Not sent</span>
+            <span className="font-mono text-label font-normal text-destructive">Not sent</span>
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              // The 28px inline action (button.tsx `xs`), not `sm` cut down
+              // to it by hand, which kept sm's padding.
+              size="xs"
               disabled={busy}
               onClick={() => onResend(message.id)}
-              className="h-7 gap-1.5"
             >
               <ActionIcons.refresh className="size-3.5" /> Retry send
             </Button>
           </div>
         )}
         {!editing && !message.pending && !isVoice && (
+          // The pager is LAST, flush with the bubble's edge: at rest the
+          // hidden Copy and Edit keep their width, and with the pager first
+          // that width pushed it ~115px in from the bubble, off its line.
           <div className="mt-1 flex items-center">
-            {pager}
-            <div ref={actionRowRef} className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
+            <div ref={actionRowRef} className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
               <IconAction label={copied ? "Copied" : copyFailed ? "Couldn’t copy" : "Copy"} onClick={copy}>
                 <CopyGlyph copied={copied} />
               </IconAction>
@@ -1100,9 +1106,10 @@ export const MessageItem = React.memo(function MessageItem({
                 </IconAction>
               )}
               {/* No branch glyph here: editing IS branching on a question
-                  (the pager above switches between wordings), and a new chat
+                  (the pager switches between wordings), and a new chat
                   is branched from an answer's More menu, one verb in one place. */}
             </div>
+            {pager}
           </div>
         )}
       </div>
@@ -1114,7 +1121,15 @@ export const MessageItem = React.memo(function MessageItem({
   const hasRunTrace = !!view.reasoning?.trim() || !!view.activity?.length;
   // Generated media: image attachments + video and audio files (kind FILE, video/* or audio/* mime).
   const isPlayable = (a: ClientAttachment) => a.mimeType.startsWith("video/") || a.mimeType.startsWith("audio/");
-  const mediaAttachments = message.attachments.filter((a) => a.kind === "IMAGE" || isPlayable(a));
+  // Pictures the chat model made (`generate_image`, G04): drawn by their own
+  // card from the activity row, so they are left out of the generic media
+  // below — and out of `isMediaOnly`, because the turn is still a chat turn
+  // that Regenerate asks again.
+  const imageGenerations = imageGenerationsOf(view.activity);
+  const imageCardIds = new Set(imageGenerations.flatMap(({ generation }) => generation.attachmentIds));
+  const mediaAttachments = message.attachments.filter(
+    (a) => (a.kind === "IMAGE" || isPlayable(a)) && !imageCardIds.has(a.id)
+  );
   // Media from an image, video or audio model is AI output and is labelled as
   // such. A chart a chat model drew with code is not "generated" in that sense.
   const generatedMedia = (() => {
@@ -1145,10 +1160,14 @@ export const MessageItem = React.memo(function MessageItem({
   const canForkPrivate = !!onFork && !busy && !privateMode;
   const canShare = !!message.conversationId && !privateMode;
   const canCopyLink = !!message.conversationId;
+  // The whole chat, not this answer (conversation-export-menu.tsx): on a phone
+  // this menu is the way to it, the header's More being desktop only. Settled
+  // answers only, so an export never catches this one half-written.
+  const canExport = !message.streaming;
   // Only on a settled answer: a streaming one would offer a half-written skill.
   // A plain call, not a memo: this sits past the component's early returns.
   const skillMarkdown = !message.streaming && hasTextContent ? extractSkillMarkdown(view.content) : null;
-  const showMore = canBranchSaved || canForkPrivate || canShare || hasTextContent || canCopyLink || hasMeta;
+  const showMore = canBranchSaved || canForkPrivate || canShare || canExport || hasTextContent || canCopyLink || hasMeta;
   const finishNote =
     view.finishReason === "length"
       ? "The model stopped at its token limit."
@@ -1170,7 +1189,10 @@ export const MessageItem = React.memo(function MessageItem({
       // transcript — a different answer's source, confidently scrolled to.
       data-juno-message={message.id}
       // …and the target must not land under the transcript's sticky header band.
-      className={cn("group flex scroll-mt-24 flex-col gap-2", animateIn && "motion-safe:animate-turn-in")}
+      // The assistant turn's ROOT never animates (spec C1): its parts settle
+      // as they mount (`data-turn-streaming` below), and a root that rose as
+      // well would stack two entrances on one moment.
+      className="group flex scroll-mt-24 flex-col gap-2"
       // While the reply streams, each part of it (the run strip, an approval, a
       // tool card, the prose, an artifact, the sources) fades up as it mounts:
       // globals.css, "Turn parts".
@@ -1251,9 +1273,42 @@ export const MessageItem = React.memo(function MessageItem({
               ))}
           </div>
         ) : null}
+        {imageGenerations.length > 0 ? (
+          <div className="space-y-1">
+            {imageGenerations.map(({ id, generation }) => (
+              <ImageGenerationCard
+                key={generation.callId || id}
+                generation={generation}
+                attachments={attachmentsForGeneration(generation, message.attachments)}
+                live={!!message.streaming}
+                onEdit={
+                  onImageEdit && currentModelId && !privateMode && !busy
+                    ? (attachment, origin, sourceModelId) => {
+                        setEditOrigin(origin ?? null);
+                        setEditSourceModel(sourceModelId);
+                        setEditTarget(attachment);
+                        setEditOpen(true);
+                      }
+                    : undefined
+                }
+                onVary={
+                  onImageEdit && !privateMode && !busy
+                    ? (attachment, modelId) => {
+                        onImageEdit({
+                          prompt: shellString("image.varyPrompt", {}, uiLocale),
+                          model: modelId,
+                          edit: { attachmentId: attachment.id },
+                        });
+                      }
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        ) : null}
         {message.progress && !message.error ? (
           <GenerationPlaceholder progress={message.progress} />
-        ) : showCursor && !hasRunTrace ? (
+        ) : showCursor && !hasRunTrace && !message.connection ? (
           // `errorMessage` set while still streaming and NOT errored is exactly
           // the shape `beginDropRecovery` leaves behind — it is the only state
           // that writes an explanation onto a turn it expects to complete.
@@ -1274,14 +1329,32 @@ export const MessageItem = React.memo(function MessageItem({
               <span className="min-w-0">{message.content || message.errorMessage || "Something didn't go well."}</span>
             </p>
             {onRegenerate && isLast && !busy && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onRegenerate()}
-                className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              >
-                <ActionIcons.refresh className="size-3.5" /> Try again
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onRegenerate()}
+                  className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <ActionIcons.refresh className="size-3.5" /> Try again
+                </Button>
+                {/* The error frame's one alternative (chat wire 1.1): a
+                    different, healthy lab that does not train on prompts.
+                    Clicking it is the reader's explicit choice for this
+                    answer — the same one-shot override as Switch model — so
+                    nothing is ever rerouted without them. */}
+                {message.recovery?.suggestedModelId && !privateMode && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onRegenerate({ modelId: message.recovery!.suggestedModelId! })}
+                    className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <SettingsIcons.models className="size-3.5" />
+                    {`Answer with ${message.recovery.suggestedModelName ?? message.recovery.suggestedModelId}`}
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         ) : (
@@ -1308,6 +1381,7 @@ export const MessageItem = React.memo(function MessageItem({
                 onImageEdit && currentModelId && !privateMode && !busy
                   ? (origin?: DOMRect) => {
                       setEditOrigin(origin ?? null);
+                      setEditSourceModel(null);
                       setEditTarget(a);
                       setEditOpen(true);
                     }
@@ -1340,7 +1414,7 @@ export const MessageItem = React.memo(function MessageItem({
                     plain small words under it (never a pill). The files
                     themselves carry the machine-readable marking
                     (src/lib/ai-content-marking.ts). */}
-                {generatedMedia && <p className="mb-2 text-caption text-muted-foreground">AI-generated</p>}
+                {generatedMedia && <p className="mb-2 font-sans text-label font-normal text-muted-foreground">AI-generated</p>}
                 </>
               );
             })()}
@@ -1400,6 +1474,9 @@ export const MessageItem = React.memo(function MessageItem({
                 loudest thing on the page while a reply arrived, and it is
                 redundant now: the tail fade already says "still writing", and
                 the composer is showing its stop button throughout. */}
+            {/* The stream dropped and Tether is bringing it back: one calm,
+                worded line under whatever has arrived so far. */}
+            {message.streaming && message.connection ? <ConnectionStatus connection={message.connection} /> : null}
             {(view.errorMessage || finishNote || canContinue) && (
               // Same rung, same fill logic and same `text-ui` register as the
               // error notice above — these two are siblings in the same slot
@@ -1418,8 +1495,17 @@ export const MessageItem = React.memo(function MessageItem({
                 {canContinue && (
                   // Carry on from here, not "again": the refresh arrow is
                   // Retry, and this keeps the answer and writes past its end.
-                  <Button type="button" variant="outline" size="sm" onClick={onContinue} className="h-7 gap-1.5">
+                  <Button type="button" variant="outline" size="xs" onClick={onContinue}>
                     <CornerDownRight className="size-3.5" /> Continue
+                  </Button>
+                )}
+                {/* A reply that failed partway keeps what arrived, and the
+                    notice offers the way forward it names ("Click Try again"):
+                    same shape and place as Continue, which wins when the
+                    finish reason allows writing past the kept text. */}
+                {message.error && onRegenerate && isLast && !busy && !canContinue && (
+                  <Button type="button" variant="outline" size="xs" onClick={() => onRegenerate()}>
+                    <ActionIcons.refresh className="size-3.5" /> Try again
                   </Button>
                 )}
               </div>
@@ -1432,6 +1518,9 @@ export const MessageItem = React.memo(function MessageItem({
         {view.activity?.some((evt) => Boolean(evt.routineProposal)) ? (
           <RoutineProposalList activity={view.activity} />
         ) : null}
+        {/* Skills the person taught (`draft_skill`): Review opens the Teach
+            page, where the only Save is (skill-draft-card.tsx). */}
+        {view.activity?.some((evt) => Boolean(evt.skillDraft)) ? <SkillDraftList activity={view.activity} /> : null}
 
         {/* Footer, below the answer it backs — the inline chips are the citation,
             this is the bibliography. */}
@@ -1452,9 +1541,16 @@ export const MessageItem = React.memo(function MessageItem({
             set. Branch, Share, Quote and Copy link live one level down in
             More. The model · tokens · cost receipt sits at the far end of the
             row and shows only while the turn is hovered or focused (TurnMeta);
-            on phones it stays in More. */}
-        {!isVoice && !message.streaming && !message.error && (
-          <div className="mt-1.5 flex items-center">
+            on phones it stays in More. The row is a size container and the
+            receipt asks IT for room, not the window: beside an open canvas
+            the transcript is ~350px wide at any window size, and the
+            window's `sm:` let "Qwen3… 248 tokens $0.00" run past the
+            column's edge, its cost cut in half under the canvas. */}
+        {/* A kept partial answer (failed partway) still gets the row: Copy
+            copies what arrived, and the thumbs, Regenerate and More apply to
+            it as to any answer. A failure with no text has its own card. */}
+        {!isVoice && !message.streaming && (!message.error || hasPartialWithError) && (
+          <div className="@container mt-1.5 flex items-center">
             {pager}
             <div
               className={cn(
@@ -1570,7 +1666,8 @@ export const MessageItem = React.memo(function MessageItem({
                         <ActionIcons.share className="size-4" /> Share chat
                       </DropdownMenuItem>
                     )}
-                    {(hasTextContent || canCopyLink) && (canBranchSaved || canForkPrivate || canShare) && (
+                    {canExport && <ExportChatMenuSection />}
+                    {(hasTextContent || canCopyLink) && (canBranchSaved || canForkPrivate || canShare || canExport) && (
                       <DropdownMenuSeparator />
                     )}
                     {hasTextContent && (
@@ -1632,13 +1729,17 @@ export const MessageItem = React.memo(function MessageItem({
                               {view.routing ? receiptLine(modelName, view.routing) : modelName}
                             </span>
                           )}
+                          {/* The same sentence the desktop popover leads with (AutoReceiptReasons). */}
+                          {view.routing && receiptSummary(view.routing) && (
+                            <span className="text-label text-foreground">{receiptSummary(view.routing)}</span>
+                          )}
                           {view.routing && view.routing.reasons.length > 0 && (
-                            <span className="text-caption text-muted-foreground">
+                            <span className="font-sans text-label font-normal text-muted-foreground">
                               Selected for {view.routing.reasons.join(", ")}
                             </span>
                           )}
                           {(hasUsage || hasCost) && (
-                            <span className="font-mono text-caption text-muted-foreground">
+                            <span className="font-mono text-label font-normal text-muted-foreground">
                               {hasUsage
                                 ? `${formatTokens((view.promptTokens ?? 0) + (view.completionTokens ?? 0))} tokens (${formatTokens(view.promptTokens ?? 0)} in · ${formatTokens(view.completionTokens ?? 0)} out)`
                                 : ""}
@@ -1653,7 +1754,7 @@ export const MessageItem = React.memo(function MessageItem({
               )}
             </div>
             {hasMeta && (
-              <div className="ml-auto hidden min-w-0 pl-4 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none sm:flex">
+              <div className="ml-auto hidden min-w-0 pl-4 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 @[30rem]:flex">
                 <TurnMeta
                   modelName={modelName}
                   receipt={view.routing}
@@ -1670,7 +1771,7 @@ export const MessageItem = React.memo(function MessageItem({
       {editTarget && onImageEdit && currentModelId && (
         <ImageEditOverlay
           attachment={editTarget}
-          sourceModelId={message.model}
+          sourceModelId={editSourceModel ?? message.model}
           currentModelId={currentModelId}
           originRect={editOrigin}
           open={editOpen}

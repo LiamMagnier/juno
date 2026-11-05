@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Collapse } from "@/components/ui/collapse";
 import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
+import { fieldFrameClass } from "@/components/ui/field-recipe";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -589,12 +590,12 @@ function ChooseStep({
                 aria-hidden="true"
                 className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
               />
-              <input
+              <Input
                 type="search"
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
                 placeholder="Filter"
-                className="surface-inset h-8 w-full rounded-control border border-input pl-8 pr-2 text-ui outline-none transition-[border-color] duration-fast ease-out-soft placeholder:text-muted-foreground focus-visible:border-foreground/70 coarse:h-10 [&::-webkit-search-cancel-button]:hidden"
+                className="h-8 pl-8 pr-2 coarse:h-10 [&::-webkit-search-cancel-button]:hidden"
               />
             </label>
           ) : null}
@@ -765,10 +766,9 @@ function CandidateRow({
                 spellCheck={false}
                 autoCapitalize="off"
                 disabled={disabled}
-                className={cn(
-                  "surface-inset h-7 w-48 rounded-control border pl-4 pr-2 font-mono text-caption text-foreground outline-none transition-[border-color] duration-fast ease-out-soft focus-visible:border-foreground/70",
-                  renameInvalid ? "border-destructive/60" : "border-input"
-                )}
+                // The shared field at the sentence's 28px; `aria-invalid`
+                // draws the taken-name edge.
+                className={cn(fieldFrameClass, "h-7 w-48 pl-4 pr-2 font-mono text-caption")}
               />
             </span>
             {renameProblem ? (

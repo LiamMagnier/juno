@@ -1,12 +1,10 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { cancelGeneration } from "@/lib/generation-cancel";
 import {
   FIRST_SUBMISSION_RECEIPT_HEARTBEAT_MS,
   firstSubmissionLeaseHeartbeatOwnsReceipt,
   firstSubmissionLeaseExpiresAt,
 } from "@/lib/chat-first-submission";
-import { isChatCancelRequested } from "@/lib/chat-first-submission-receipt";
 import { START_FAILED_FAILURE_CODE } from "@/lib/chat/terminal-state";
 import type { ChatFinishReason } from "@/types/chat";
 
@@ -28,9 +26,6 @@ import type { ChatFinishReason } from "@/types/chat";
 /** The receipt's finish reason for a turn that handed off to a research run (SPEC §9.6.1). */
 export const RESEARCH_HANDOFF_FINISH = "research_handoff";
 
-/** How often a receipt-backed generation reads its durable cancel flag. */
-export const CHAT_CANCEL_POLL_MS = 2_000;
-
 export interface DurableReceipt {
   /** Set once this process stops owning the receipt. */
   leaseLost: boolean;
@@ -48,10 +43,6 @@ export interface DurableReceipt {
   markFailed(finishReason: ChatFinishReason, failureCode: string): Promise<void>;
   /** The 15s heartbeat's lease renewal; aborts the generation if the lease is gone. */
   heartbeat(abort: () => void): void;
-  /** Starts the durable cancel poll (receipt-backed turns only). */
-  startCancelPoll(): void;
-  /** Clears the cancel poll. */
-  stop(): void;
 }
 
 export function createDurableReceipt(input: {
@@ -63,26 +54,14 @@ export function createDurableReceipt(input: {
   const { userId, durableGenerationId, generationId } = input;
   let lastReceiptLeaseHeartbeat = Date.now();
   /*
-   * A cancel raised somewhere this process cannot hear.
-   *
-   * POST /api/chat/cancel aborts through the in-memory registry first, which
-   * is instant and covers the common case (same tab, same process). The
-   * registry is per-process though, so a Stop pressed in another tab served by
-   * another process — or after this tab's registry entry was recycled — used
-   * to land nowhere and the user watched an answer they had stopped keep
-   * writing itself. The durable half of that cancel is `cancelRequestedAt` on
-   * the receipt, and this is the loop that reads it: one indexed id-only
-   * lookup every ~2s, and only for turns that HAVE a receipt (the first
-   * submission of a saved conversation) — there is no row for the rest, so
-   * polling for them would be a query that can never return anything.
-   *
-   * It routes the result back through `cancelGeneration` rather than aborting
-   * the controller directly: that marks the generation `stopped` in the
-   * registry, which is what makes the terminal state "user stopped" (partial
-   * kept, charge kept) instead of an error (refunded).
+   * A cancel raised somewhere this process cannot hear is no longer polled
+   * here. The receipt's `cancelRequestedAt` used to be read by a per-turn
+   * interval, for receipt-backed turns only, while every other turn's Stop
+   * from another process landed nowhere. One pump per process now reads the
+   * durable cancel of EVERY generation it holds — this flag included, in the
+   * same round trip — and routes it through the registry so the terminal
+   * state is "user stopped". See chat/generation-signals.ts.
    */
-  let cancelPoll: ReturnType<typeof setInterval> | null = null;
-
   const receipt: DurableReceipt = {
     leaseLost: false,
 
@@ -219,35 +198,6 @@ export function createDurableReceipt(input: {
             message: error instanceof Error ? error.message : String(error),
           });
         });
-    },
-
-    startCancelPoll() {
-      if (!durableGenerationId) return;
-      const receiptGenerationId = durableGenerationId;
-      cancelPoll = setInterval(() => {
-        void isChatCancelRequested(userId, receiptGenerationId)
-          .then((requested) => {
-            if (!requested) return;
-            if (cancelPoll) clearInterval(cancelPoll);
-            cancelPoll = null;
-            // Registered in this process by definition — we are inside its
-            // generate(). Ownership is re-checked there anyway.
-            cancelGeneration(receiptGenerationId, userId);
-          })
-          .catch((error) => {
-            // A failed poll is not a cancel. Log once per failure and keep
-            // the interval: the registry fast path is unaffected.
-            console.error("[chat] cancel poll failed", {
-              generationId,
-              message: error instanceof Error ? error.message : String(error),
-            });
-          });
-      }, CHAT_CANCEL_POLL_MS);
-    },
-
-    stop() {
-      if (cancelPoll) clearInterval(cancelPoll);
-      cancelPoll = null;
     },
   };
   return receipt;

@@ -307,6 +307,24 @@ export class TurnItemProjector {
         changes: [{ path: str(input.path), change: name === 'write_file' ? 'add' : 'modify' }],
         status: 'running',
       };
+    } else if (name === 'edit_files') {
+      // One entry per file, the batch's last word on it: create → add, delete → delete.
+      const byPath = new Map<string, 'add' | 'modify' | 'delete'>();
+      for (const op of Array.isArray(input.operations) ? input.operations : []) {
+        const entry = (op && typeof op === 'object' ? op : {}) as Record<string, unknown>;
+        const p = str(entry.path);
+        if (!p) continue;
+        const prior = byPath.get(p);
+        const next = entry.op === 'create' ? 'add' : entry.op === 'delete' ? 'delete' : prior === 'add' ? 'add' : 'modify';
+        byPath.set(p, next);
+      }
+      item = {
+        ...this.base(id),
+        kind: 'file_change',
+        callId,
+        changes: [...byPath].map(([p, change]) => ({ path: p, change })),
+        status: 'running',
+      };
     } else if (name === 'grep' || name === 'glob' || name === 'read_file') {
       item = {
         ...this.base(id),

@@ -1,4 +1,5 @@
 import AppKit
+import JunoCore
 import SwiftUI
 import Testing
 
@@ -423,5 +424,58 @@ struct DesktopMenuBarTests {
         }
         #expect(!all.contains { $0.title == "Command Palette…" })
         #expect(!all.contains { $0.title == "Find in Alevr…" })
+    }
+}
+
+/// Quick Entry's global shortcut against the registry: the menu chords it may
+/// not take, and the menu item that shows the reader's choice (A10, A11).
+struct DesktopQuickEntryHotkeyTests {
+    @Test
+    func theAppsOwnChordsAreRefusedAndAskAlevrIsNotOneOfThem() {
+        let chords = DesktopQuickEntryHotkey.appChords
+        let preview = JunoHotkey(keyCode: 35, modifiers: [.option, .command])
+        #expect(chords[preview] == "Toggle Preview")
+        #expect(chords[.quickEntryDefault] == nil)
+        #expect(JunoHotkey.quickEntryDefault.problem(appChords: chords) == nil)
+        #expect(preview.problem(appChords: chords) == .usedByApp("Toggle Preview"))
+    }
+
+    @Test
+    func theMenuChordFollowsTheShortcut() throws {
+        let optionSpace = try #require(DesktopQuickEntryHotkey.keyboardShortcut(.quickEntryDefault))
+        #expect(optionSpace.key == .space)
+        #expect(optionSpace.modifiers == [.option])
+
+        let controlOptionK = JunoHotkey(keyCode: 40, modifiers: [.control, .option])
+        let chord = try #require(DesktopQuickEntryHotkey.keyboardShortcut(controlOptionK))
+        #expect(chord.key == KeyEquivalent("k"))
+        #expect(chord.modifiers == [.control, .option])
+
+        let context = DesktopCommandContext(quickEntryShortcut: chord)
+        #expect(context.keyboardShortcut(for: JunoShortcutRegistry.entry(.askJuno)) == chord)
+        let search = JunoShortcutRegistry.entry(.search)
+        #expect(context.keyboardShortcut(for: search) == search.keyboardShortcut)
+    }
+
+    @Test
+    func aSavedShortcutThatDoesNotReadIsOptionSpace() {
+        #expect(DesktopQuickEntryHotkey.hotkey(storage: "") == .quickEntryDefault)
+        #expect(DesktopQuickEntryHotkey.hotkey(storage: "nonsense") == .quickEntryDefault)
+        let controlOptionK = JunoHotkey(keyCode: 40, modifiers: [.control, .option])
+        #expect(DesktopQuickEntryHotkey.hotkey(storage: controlOptionK.storageValue) == controlOptionK)
+    }
+
+    @Test
+    func carbonModifiersAreTheHotKeyAPIsBits() {
+        #expect(DesktopCarbonHotkeyRegistrar.carbonModifiers([.option]) == 0x0800)
+        #expect(DesktopCarbonHotkeyRegistrar.carbonModifiers([.command, .shift, .control]) == 0x0100 | 0x0200 | 0x1000)
+    }
+
+    @Test
+    func everyRefusalNamesTheShortcut() {
+        let chord = JunoHotkey(keyCode: 49, modifiers: [.command])
+        let message = DesktopQuickEntryHotkey.message(for: .reservedBySystem("Spotlight"), hotkey: chord)
+        #expect(message == "macOS uses ⌘Space for Spotlight.")
+        #expect(DesktopQuickEntryHotkey.message(for: .unavailable, hotkey: chord).contains("⌘Space"))
     }
 }

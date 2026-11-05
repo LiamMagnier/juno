@@ -146,7 +146,28 @@ public enum JunoWorkVocabulary {
         case .hostOffline: return "the Mac it needed went away"
         case .interrupted: return "the executor stopped reporting"
         case .superseded: return "a newer attempt replaced it"
+        case .executorUnavailable: return "no cloud worker was running to start it"
         case nil: return sentenceCased(reason).lowercased()
+        }
+    }
+
+    /// The status sentence for an ending its status cannot describe on its
+    /// own, or nil where the status's own sentence is true of it. The web's
+    /// `TERMINAL_REASON_SENTENCE` (`work-vocabulary.tsx`), verbatim.
+    ///
+    /// `executor_unavailable` lands in `interrupted`, whose sentence warns that
+    /// the run "may already have changed something". A queued cloud run that
+    /// nothing claimed did nothing, and the detail under the header says so; a
+    /// header that warned otherwise would contradict it. The reason only ever
+    /// applies to the status it lands in, so a run retried since (queued,
+    /// running, done) never inherits it.
+    public static func endingSentence(status: JunoWorkStatus, terminalReason: String?) -> String? {
+        guard status == .interrupted, let reason = normalised(terminalReason) else { return nil }
+        switch JunoWorkTerminalReason(rawValue: reason) {
+        case .executorUnavailable:
+            return "This never started: no cloud worker was running to pick it up. Nothing was done."
+        default:
+            return nil
         }
     }
 

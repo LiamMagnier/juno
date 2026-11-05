@@ -121,7 +121,7 @@
   font-weight: 500;
 }
 .cv-w {
-  animation: cv-word 300ms var(--ease-out) both;
+  animation: cv-word var(--dur-slow) var(--ease-out) both;
 }
 @keyframes cv-word {
   from {

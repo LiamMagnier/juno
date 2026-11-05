@@ -9,6 +9,7 @@ import { Collapse } from "@/components/ui/collapse";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ARTIFACT_EXTENSION, type WorkArtifactKind } from "@/lib/work/domain";
+import { extensionForComputerMime } from "@/lib/computer/file-types";
 import type { ClientWorkArtifact } from "@/lib/work/serializers";
 import type { WorkProducedArtifact } from "@/components/work/work-detail-panels";
 import {
@@ -252,7 +253,10 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
   return (
     <li className="rounded-field border border-border/60 bg-card">
       <div className="flex items-center gap-2.5 px-3 py-2.5">
-        <KindBadge extension={ARTIFACT_EXTENSION[artifact.kind]} />
+        {/* By its type where the publish allowlist knows it: a CSV the agent
+            published from its computer (filed as a generic file) reads CSV,
+            not ZIP. Every generated kind gives the same answer either way. */}
+        <KindBadge extension={extensionForComputerMime(artifact.mimeType) ?? ARTIFACT_EXTENSION[artifact.kind]} />
         <button
           type="button"
           onClick={() => setOpen((prev) => !prev)}
@@ -267,7 +271,7 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
             </span>
             <ChevronRight
               className={cn(
-                "size-3 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground motion-reduce:transition-none",
+                "size-3 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground motion-reduce:transition-[color]",
                 open && "rotate-90"
               )}
               aria-hidden="true"
@@ -293,7 +297,7 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
           </Button>
         )}
         {rich ? (
-          <Button variant="secondary" size="sm" asChild className="h-7 shrink-0 gap-1.5">
+          <Button variant="secondary" size="xs" asChild className="shrink-0">
             <a
               href={workArtifactDownloadUrl(artifact.id)}
               // No `download` attribute: the route sets Content-Disposition

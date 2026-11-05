@@ -2,6 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://juno.app/contracts/chat/juno-chat-wire-v1.schema.json",
   "title": "Juno chat wire",
+  "x-wire-version": "1.1.0",
+  "x-wire-changes": {
+    "1.0.0": "The wire as generated before the contract carried a version.",
+    "1.1.0": "Additive: the error frame gains errorClass, retryable, retryAfterSeconds, suggestedModelId and suggestedModelName (ChatErrorRecovery). errorClass reports both of the platform's provider-account faults (a rejected key, no credit) as one class, account, and never which. A 1.0 client ignores them; the Swift decoder reads them lossily and accepts 1.0 frames without them. The native API contract version (contracts/openapi, x-juno-contract-version) does not move: installed apps compare it for equality and an additive field must not sign them out."
+  },
   "description": "POST /api/chat: the request body (ChatRequest) and the SSE frames the response streams (StreamEvent, one JSON object per `data:` line; GET /api/chat/stream/{generationId} replays the same frames). Generated from src/lib/chat/request.ts (chatBodySchema) and src/types/chat.ts (StreamChunk), with each field's `x-native` status from contracts/chat/juno-chat-wire-v1.status.json. Do not edit by hand; run `npm run native:wire`.",
   "x-native-legend": {
     "native": "The Swift apps send or read it today.",
@@ -10,9 +15,9 @@
     "unclassified": "Nobody has decided yet. `npm run native:wire:check` fails."
   },
   "x-native-summary": {
-    "native": 199,
-    "planned": 235,
-    "web-only": 67,
+    "native": 222,
+    "planned": 276,
+    "web-only": 107,
     "unclassified": 0
   },
   "x-native-only": {
@@ -489,6 +494,11 @@
           ],
           "x-native": "planned",
           "x-native-note": "How often a task the model starts from this turn asks (src/lib/chat/task-approval-mode.ts), saved on the conversation as the turn is accepted. The apps have no composer control for it yet; absent, the server uses the conversation's saved mode or the default."
+        },
+        "memoryOff": {
+          "type": "boolean",
+          "x-native": "web-only",
+          "x-native-note": "“Memory off for this chat” (src/lib/chat/memory-off.ts) chosen before the web's first submission creates the chat. The Swift apps create a conversation through sync before the first turn, so they set it there (`memoryOff` on conversation.create / conversation.update) and never need it on this body; the turn reads it from the conversation either way."
         },
         "localFolder": {
           "x-native": "native"
@@ -1046,6 +1056,42 @@
               "type": "string",
               "x-native": "web-only",
               "x-native-note": "Durable first-submission failure code, as meta.receiptState."
+            },
+            "errorClass": {
+              "type": "string",
+              "enum": [
+                "account",
+                "capacity",
+                "content_filter",
+                "context",
+                "invalid_request",
+                "network",
+                "not_found",
+                "rate_limit",
+                "unknown"
+              ],
+              "x-native": "native",
+              "x-native-note": "Chat wire 1.1. Decoded into NativeChatFailureRecovery as a string; set only when the turn failed at its provider. A provider-account fault arrives as account, never as auth or billing."
+            },
+            "retryable": {
+              "type": "boolean",
+              "x-native": "native",
+              "x-native-note": "Chat wire 1.1. Decoded; the cards do not use it yet."
+            },
+            "retryAfterSeconds": {
+              "type": "number",
+              "x-native": "native",
+              "x-native-note": "Chat wire 1.1. Decoded; the cards do not use it yet."
+            },
+            "suggestedModelId": {
+              "type": "string",
+              "x-native": "native",
+              "x-native-note": "Chat wire 1.1. The Mac's error card offers it as Answer with <model>, sent as Switch Model sends a model. The iPhone decodes it and does not show it yet."
+            },
+            "suggestedModelName": {
+              "type": "string",
+              "x-native": "native",
+              "x-native-note": "Chat wire 1.1. The label of the Mac's Answer with <model> button."
             }
           },
           "required": [
@@ -1113,6 +1159,7 @@
         "calculate",
         "current_time",
         "find_in_page",
+        "generate_image",
         "inspect_image",
         "local_folder",
         "mcp",
@@ -1127,6 +1174,42 @@
         "web_fetch",
         "web_search"
       ]
+    },
+    "ChatErrorRecovery": {
+      "type": "object",
+      "properties": {
+        "errorClass": {
+          "type": "string",
+          "enum": [
+            "account",
+            "capacity",
+            "content_filter",
+            "context",
+            "invalid_request",
+            "network",
+            "not_found",
+            "rate_limit",
+            "unknown"
+          ],
+          "x-native": "web-only"
+        },
+        "retryable": {
+          "type": "boolean",
+          "x-native": "web-only"
+        },
+        "retryAfterSeconds": {
+          "type": "number",
+          "x-native": "web-only"
+        },
+        "suggestedModelId": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "suggestedModelName": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      }
     },
     "ClientActionApproval": {
       "type": "object",
@@ -1441,6 +1524,16 @@
           "$ref": "#/$defs/ClientRoutineProposal",
           "x-native": "web-only",
           "x-native-note": "A recurring routine the model drafted (propose_routine) for the person to Schedule, Edit or dismiss. The tool is only attached for the web client, so native never receives it; native routines are made in its own editor."
+        },
+        "skillDraft": {
+          "$ref": "#/$defs/ClientSkillDraft",
+          "x-native": "web-only",
+          "x-native-note": "A skill the person taught in chat, drafted by draft_skill for them to review on the Teach page. Like routineProposal, the tool is only attached for the web client (chatSkillDraftToolEnabled's clientDrawsProposal), so native never receives it; the apps have no Teach page yet (contracts/parity/features.json, /skills/teach)."
+        },
+        "imageGeneration": {
+          "$ref": "#/$defs/ClientImageGeneration",
+          "x-native": "native",
+          "x-native-note": "A picture the chat model made (generate_image, G04): generating, then done with the files or failed with the cause, re-sent in place by id. Both native apps decode it (NativeActivityWire) to draw the placeholder and the named failure; the finished files also arrive as the answer's attachments, which every build draws."
         },
         "contextReceipt": {
           "type": "object",
@@ -2032,6 +2125,47 @@
         "to"
       ]
     },
+    "ClientAppliedConditions": {
+      "type": "object",
+      "properties": {
+        "reasoningEffort": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "high",
+            "low",
+            "max",
+            "medium",
+            "minimal",
+            "xhigh",
+            null
+          ],
+          "x-native": "planned",
+          "x-native-note": "As ClientMessage.applied: the effort sent to the provider, null when none was sent."
+        },
+        "webSearch": {
+          "type": "boolean",
+          "x-native": "planned",
+          "x-native-note": "As ClientMessage.applied: provider web search was offered on the turn."
+        },
+        "usageBasis": {
+          "type": "string",
+          "enum": [
+            "estimated",
+            "reported"
+          ],
+          "x-native": "planned",
+          "x-native-note": "As ClientMessage.applied: \"reported\" (the provider's usage report) or \"estimated\" (characters / 4)."
+        }
+      },
+      "required": [
+        "reasoningEffort",
+        "webSearch",
+        "usageBasis"
+      ]
+    },
     "ClientArtifact": {
       "type": "object",
       "properties": {
@@ -2281,6 +2415,104 @@
         "url"
       ]
     },
+    "ClientImageGeneration": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "number",
+          "const": 1,
+          "x-native": "native"
+        },
+        "callId": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "status": {
+          "$ref": "#/$defs/ImageGenerationStatus",
+          "x-native": "native"
+        },
+        "prompt": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "modelId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "modelName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "auto": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "aspect": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "count": {
+          "type": "number",
+          "x-native": "native"
+        },
+        "referenceAttachmentId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "attachmentIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "native"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientAttachment"
+          },
+          "x-native": "native",
+          "x-native-note": "Live only: the finished files before the done frame carries them as the answer's attachments. Never present after a reload."
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImageGenerationFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-native": "native",
+          "x-native-note": "The real cause: a code each client words itself (shell strings image.failure*), plus the server's sentence for an unknown code."
+        }
+      },
+      "required": [
+        "v",
+        "callId",
+        "status",
+        "prompt",
+        "modelId",
+        "modelName",
+        "auto",
+        "aspect",
+        "count",
+        "referenceAttachmentId",
+        "attachmentIds"
+      ]
+    },
     "ClientLocalToolCall": {
       "type": "object",
       "properties": {
@@ -2513,6 +2745,18 @@
           "x-native": "planned",
           "x-native-note": "Failures arrive as error frames; the stored message's error line is not read from done."
         },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatErrorRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-native": "web-only",
+          "x-native-note": "Client-transient on the web: use-chat copies the error frame's 1.1 fields onto the failed turn. The server never sends it on a message; native keeps the same fields on NativeChatMessage from the frame itself."
+        },
         "progress": {
           "anyOf": [
             {
@@ -2602,6 +2846,11 @@
           ],
           "x-native": "planned",
           "x-native-note": "Auto's routing receipt (which model it picked and why, src/lib/router/receipt.ts). The web shows it under an Auto reply; the Swift apps ignore the key until they draw the same receipt."
+        },
+        "applied": {
+          "$ref": "#/$defs/ClientAppliedConditions",
+          "x-native": "planned",
+          "x-native-note": "What a PRIVATE turn actually ran with (effort sent, web search offered, whether usage is reported or estimated), sent on private done frames only; saved turns omit it. The web's /compare panes read it; native /compare is planned (contracts/parity/features.json), and the Swift decoders ignore the key until then."
         }
       },
       "required": [
@@ -2874,6 +3123,191 @@
         "affects",
         "status",
         "digest"
+      ]
+    },
+    "ClientSkillDraft": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1,
+          "x-native": "web-only"
+        },
+        "key": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "name": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "slug": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "web-only"
+        },
+        "whenToUse": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaughtInput"
+          },
+          "x-native": "web-only"
+        },
+        "doneWhen": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "apps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaughtApp"
+          },
+          "x-native": "web-only"
+        },
+        "missingApps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "dropped": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "web-only"
+        },
+        "observed": {
+          "type": "object",
+          "properties": {
+            "tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "x-native": "web-only"
+            },
+            "apps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "x-native": "web-only"
+            }
+          },
+          "required": [
+            "tools",
+            "apps"
+          ],
+          "x-native": "web-only"
+        },
+        "source": {
+          "$ref": "#/$defs/TaughtSource",
+          "x-native": "web-only"
+        },
+        "fromOutsideContent": {
+          "type": "boolean",
+          "x-native": "web-only"
+        },
+        "scan": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "clear",
+                "warning"
+              ],
+              "x-native": "web-only"
+            },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "x-native": "web-only"
+                  },
+                  "message": {
+                    "type": "string",
+                    "x-native": "web-only"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ]
+              },
+              "x-native": "web-only"
+            }
+          },
+          "required": [
+            "status",
+            "findings"
+          ],
+          "x-native": "web-only"
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "version",
+        "key",
+        "name",
+        "slug",
+        "whenToUse",
+        "steps",
+        "inputs",
+        "doneWhen",
+        "rules",
+        "questions",
+        "tools",
+        "apps",
+        "missingApps",
+        "dropped",
+        "observed",
+        "source",
+        "fromOutsideContent",
+        "scan",
+        "createdAt"
       ]
     },
     "ClientSource": {
@@ -3372,6 +3806,62 @@
         "uploading"
       ]
     },
+    "ImageGenerationFailure": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "budget_exceeded",
+            "edit_unsupported",
+            "library_full",
+            "no_image_model",
+            "not_configured",
+            "not_requested",
+            "plan_required",
+            "policy_violation",
+            "provider_error",
+            "provider_unavailable",
+            "quota_exhausted",
+            "rate_limited",
+            "reference_missing",
+            "too_many_calls",
+            "workspace_disabled"
+          ],
+          "x-native": "native"
+        },
+        "message": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "plan": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "ImageGenerationStatus": {
+      "type": "string",
+      "enum": [
+        "done",
+        "failed",
+        "generating"
+      ]
+    },
     "JsonObject": {
       "type": "object",
       "properties": {},
@@ -3467,6 +3957,47 @@
         "offset"
       ]
     },
+    "ReceiptChoice": {
+      "type": "string",
+      "enum": [
+        "better_odds",
+        "lowest_cost",
+        "only_option"
+      ]
+    },
+    "ReceiptComplexity": {
+      "type": "string",
+      "enum": [
+        "expert",
+        "hard",
+        "medium",
+        "simple"
+      ]
+    },
+    "ReceiptEvidenceSource": {
+      "type": "string",
+      "enum": [
+        "measured",
+        "prior",
+        "reliability"
+      ]
+    },
+    "ReceiptLatencyTier": {
+      "type": "string",
+      "enum": [
+        "fast",
+        "slow",
+        "standard"
+      ]
+    },
+    "ReceiptTier": {
+      "type": "string",
+      "enum": [
+        "high",
+        "low",
+        "medium"
+      ]
+    },
     "RoutineProposalApp": {
       "type": "object",
       "properties": {
@@ -3482,6 +4013,206 @@
       "required": [
         "id",
         "label"
+      ]
+    },
+    "RoutingFactors": {
+      "type": "object",
+      "properties": {
+        "selected": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "complexity": {
+          "$ref": "#/$defs/ReceiptComplexity",
+          "x-native": "planned"
+        },
+        "modality": {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "string",
+              "enum": [
+                "text",
+                "text_image"
+              ],
+              "x-native": "planned"
+            },
+            "output": {
+              "type": "string",
+              "enum": [
+                "image",
+                "text"
+              ],
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "input",
+            "output"
+          ],
+          "x-native": "planned"
+        },
+        "tools": {
+          "type": "object",
+          "properties": {
+            "webSearch": {
+              "type": "boolean",
+              "x-native": "planned"
+            },
+            "imageGeneration": {
+              "type": "boolean",
+              "x-native": "planned"
+            },
+            "connectors": {
+              "type": "number",
+              "x-native": "planned"
+            },
+            "reliable": {
+              "type": "boolean",
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "webSearch",
+            "imageGeneration",
+            "connectors",
+            "reliable"
+          ],
+          "x-native": "planned"
+        },
+        "contextTokens": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "providerHealth": {
+          "type": "object",
+          "properties": {
+            "down": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "x-native": "planned"
+            },
+            "retryPressure": {
+              "type": "number",
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "down",
+            "retryPressure"
+          ],
+          "x-native": "planned"
+        },
+        "cost": {
+          "type": "object",
+          "properties": {
+            "tier": {
+              "$ref": "#/$defs/ReceiptTier",
+              "x-native": "planned"
+            },
+            "expectedMicroUsd": {
+              "type": "number",
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "tier",
+            "expectedMicroUsd"
+          ],
+          "x-native": "planned"
+        },
+        "latency": {
+          "type": "object",
+          "properties": {
+            "tier": {
+              "$ref": "#/$defs/ReceiptLatencyTier",
+              "x-native": "planned"
+            },
+            "expectedS": {
+              "type": "number",
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "tier",
+            "expectedS"
+          ],
+          "x-native": "planned"
+        },
+        "plan": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "preference": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "candidates": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "choice": {
+          "$ref": "#/$defs/ReceiptChoice",
+          "x-native": "planned"
+        },
+        "pSuccess": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "evidence": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "$ref": "#/$defs/ReceiptEvidenceSource",
+              "x-native": "planned"
+            },
+            "samples": {
+              "type": "number",
+              "x-native": "planned"
+            },
+            "shiftedFrom": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "source",
+            "samples",
+            "shiftedFrom"
+          ],
+          "x-native": "planned"
+        },
+        "budgetSaver": {
+          "type": "boolean",
+          "x-native": "planned"
+        },
+        "routerVersion": {
+          "type": "number",
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "selected",
+        "complexity",
+        "modality",
+        "tools",
+        "contextTokens",
+        "providerHealth",
+        "cost",
+        "latency",
+        "plan",
+        "preference",
+        "candidates",
+        "choice",
+        "pSuccess",
+        "evidence",
+        "budgetSaver",
+        "routerVersion"
       ]
     },
     "RoutingReceipt": {
@@ -3534,6 +4265,59 @@
           "type": [
             "string",
             "null"
+          ],
+          "x-native": "planned"
+        },
+        "rerouteReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "capacity",
+            "unreachable",
+            null
+          ],
+          "x-native": "planned"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "x-native": "planned"
+                },
+                "name": {
+                  "type": "string",
+                  "x-native": "planned"
+                },
+                "auto": {
+                  "type": "boolean",
+                  "x-native": "planned"
+                }
+              },
+              "required": [
+                "model",
+                "name",
+                "auto"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-native": "planned"
+        },
+        "factors": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoutingFactors"
+            },
+            {
+              "type": "null"
+            }
           ],
           "x-native": "planned"
         }
@@ -3589,6 +4373,69 @@
       },
       "required": [
         "code"
+      ]
+    },
+    "TaughtApp": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "label": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ]
+    },
+    "TaughtInput": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "description": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "required": {
+          "type": "boolean",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "required"
+      ]
+    },
+    "TaughtSource": {
+      "type": "object",
+      "properties": {
+        "via": {
+          "type": "string",
+          "enum": [
+            "conversation",
+            "walkthrough"
+          ],
+          "x-native": "web-only"
+        },
+        "conversationId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "via",
+        "conversationId"
       ]
     },
     "ToolCallApproval": {

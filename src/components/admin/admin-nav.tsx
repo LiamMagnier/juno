@@ -49,7 +49,7 @@ export function AdminNav({
               // the colour cross-fade on --dur-fast and the press dip on
               // --dur-press, like every other control; the tabs were the one
               // row of controls in admin that did not answer the finger.
-              "pressable flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-1.5 font-mono text-micro font-medium motion-reduce:transition-none motion-reduce:active:scale-100",
+              "pressable flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-1.5 font-mono text-micro font-medium motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
               // Hover is ink alone; selection is the fill AND the edge. Hover was
               // the selected fill at half strength — a state told apart from its
               // neighbour by opacity alone, the collapse PREMIUM_AUDIT §2d names.

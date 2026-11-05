@@ -51,8 +51,11 @@ test("the route decides execution tools from the entitlement rows and the verifi
   assert.doesNotMatch(toolTurn, /turnSkillSlug/);
   // One capability snapshot per request: routing and tools read the same rows.
   // Auto loads it with its other inputs; a hand-routed turn loads it once
-  // below, and only when Auto has not already (`if (!autoDecision)`).
-  assert.equal(route.match(/loadModelCapabilityMap\(/g)?.length, 2);
+  // below, and only when Auto has not already (`if (!autoDecision)`). The
+  // failure path (turn/failure-recovery.ts) reads its own after the turn has
+  // already failed, to suggest another model; it never routes or arms tools.
+  assert.equal(turnModule("model").match(/loadModelCapabilityMap\(/g)?.length, 2);
+  assert.equal(turnModule("failure-recovery").match(/loadModelCapabilityMap\(/g)?.length, 1);
   assert.match(route, /if \(!autoDecision\) capabilityProbes = await loadModelCapabilityMap\(/);
 });
 

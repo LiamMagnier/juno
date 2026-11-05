@@ -29,6 +29,9 @@ const GATES = [
   // The device-task wire fixtures the Mac's decoder is tested against are the
   // server's own serializeTask output.
   "code:task-wire:check",
+  // The stream pacer contract (constants, ink bands, recorded traces) is what
+  // the web pacer produces; JunoStreamPacer is held to the same file.
+  "stream-pacer:check",
   // globals.css + tailwind.config.ts → JunoGeneratedTokens.swift.
   "design:tokens:check",
   // The web's icon registries → both apps' symbol catalogs and JunoIcon.

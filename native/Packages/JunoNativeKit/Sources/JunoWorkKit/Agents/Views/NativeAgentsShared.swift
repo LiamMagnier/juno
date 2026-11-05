@@ -73,6 +73,24 @@ public enum NativeAgentFormat {
         return agent.stateSentence.isEmpty ? agent.state.label : agent.stateSentence
     }
 
+    /// The web's `CLOUD_WORKER_DOWN_MESSAGE` (thread-agent-state.ts), word
+    /// for word: a cloud agent's thread and profile while no cloud executor
+    /// is running.
+    public static let cloudWorkerDownMessage = "No cloud worker is running, so tasks can't start."
+
+    /// The web's `threadWorkNotice`: the one line a thread shows in place of
+    /// the state sentence while its agent's work cannot start where it is set
+    /// to run, or nil when nothing is wrong (or nothing is known). Only the
+    /// cloud is judged, from the roster's executor heartbeat; a Mac agent's
+    /// Mac is shown on its profile. Nil while the agent is paused, and while
+    /// it is visibly busy, because the face then says what it is doing.
+    public static func workNotice(for agent: NativeAgent, state: JunoAgentState) -> String? {
+        guard !agent.isPaused else { return nil }
+        guard state != .working, state != .thinking, state != .listening else { return nil }
+        guard agent.executionTarget == .cloud else { return nil }
+        return agent.cloudWorkAvailable == false ? cloudWorkerDownMessage : nil
+    }
+
     /// A Work session status, as words. No wire token reaches a person.
     static func taskStatus(_ raw: String) -> String {
         switch raw {

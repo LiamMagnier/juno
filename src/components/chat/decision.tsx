@@ -37,11 +37,16 @@ export function NeedsLead({ children }: { children: React.ReactNode }) {
   return <span className="font-medium text-[hsl(var(--attention))] dark:font-normal">{children}</span>;
 }
 
-/** The filled verb: ink on light, paper on dark. A destructive verb uses the danger fill. */
+/**
+ * The filled verb: ink on light, paper on dark. A destructive verb uses the
+ * danger fill. `shadow-none`: the verb is drawn over `<Button>`'s default
+ * `.control-primary`, whose contact shadow is tinted from the ACCENT, so
+ * without it an accent-coloured glow sat under a black (or white) button.
+ */
 export const VERB_INK_CLASS =
-  "border-foreground bg-foreground text-background hover:bg-foreground/90 hover:border-foreground/90 active:bg-foreground/80";
+  "border-foreground bg-foreground text-background shadow-none hover:bg-foreground/90 hover:border-foreground/90 active:bg-foreground/80";
 export const VERB_DANGER_CLASS =
-  "border-destructive bg-destructive text-destructive-foreground hover:brightness-[1.06] active:brightness-[.94]";
+  "border-destructive bg-destructive text-destructive-foreground shadow-none hover:brightness-[1.06] active:brightness-[.94]";
 /** The ways out: one quiet outline. */
 export const QUIET_OUTLINE_CLASS = "font-normal";
 

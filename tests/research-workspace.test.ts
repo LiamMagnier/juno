@@ -47,4 +47,8 @@ test("a clean audit requires every claim checked and supported", () => {
   assert.equal(researchAuditClean({ ...audit, supported: 1, unverified: 1 }), false);
   assert.equal(researchAuditClean({ ...audit, supported: 1, partiallySupported: 1 }), false);
   assert.equal(researchAuditClean({ ...audit, claims: 0, supported: 0 }), false);
+  // Every claim supported, but sources disagree about one, or one cites nothing.
+  assert.equal(researchAuditClean({ ...audit, contested: 1 }), false);
+  assert.equal(researchAuditClean({ ...audit, unresolvedCitations: 1 }), false);
+  assert.equal(researchAuditClean({ ...audit, contested: 0, unresolvedCitations: 0 }), true);
 });

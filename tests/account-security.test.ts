@@ -334,9 +334,15 @@ test("a refused turn says which refusal it was", () => {
     "src/app/api/generate/route.ts",
     "src/app/api/design/[artifactId]/edit/route.ts",
   ]) {
-    // The chat turn is the route plus its pipeline (tests/chat-turn-source.ts).
-    const source = route === "src/app/api/chat/route.ts" ? chatTurnSource() : readFileSync(join(process.cwd(), route), "utf8");
-    assert.match(source, /consumeRefusalBody/, `${route} must use the shared refusal body`);
+    // The chat turn is the route plus its pipeline (tests/chat-turn-source.ts);
+    // /api/generate meters through the shared media pipeline.
+    const source =
+      route === "src/app/api/chat/route.ts"
+        ? chatTurnSource()
+        : route === "src/app/api/generate/route.ts"
+          ? readFileSync(join(process.cwd(), "src/lib/media/generation-pipeline.ts"), "utf8")
+          : readFileSync(join(process.cwd(), route), "utf8");
+    assert.match(source, /consumeRefusalBody\(/, `${route} must use the shared refusal body`);
     assert.doesNotMatch(
       source,
       /error: "You've reached your monthly/,

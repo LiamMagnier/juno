@@ -39,6 +39,7 @@ import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ReasoningEffort } from "@/types/chat";
 import type { WorkPermissionPolicy } from "@/lib/work/domain";
 import { chatTaskPolicy } from "@/lib/chat/task-approval-mode";
+import { composeApprovalCallbacks } from "@/lib/tools/approval";
 import {
   CONVERSATION_LIVE_STATUSES,
   MAX_LIVE_TASKS_PER_CONVERSATION,
@@ -344,6 +345,8 @@ export const TASK_REFUSALS = {
   stopped: "The reply was stopped before the task started, so nothing was started.",
   already_tried: "This message already tried to start a task and it did not start. Nothing new was started.",
   agent_paused: "This agent is paused. Resume it before starting a task. Nothing was started.",
+  team_needs_cloud:
+    "Specialist teams run in the cloud, and this agent is set to run on your Mac. Ask for the task without a team, or switch the agent to Cloud. Nothing was started.",
   internal_error: `${PRODUCT_NAME} could not start the task because of a problem on its side. Nothing was started.`,
 } as const;
 
@@ -536,7 +539,14 @@ export interface StartTaskToolContext {
    * that agent instead of the default a model-started task otherwise gets —
    * a mode somebody chose on the agent's page is a decision, not a default.
    */
-  agent?: { id: string; approvalMode: WorkPermissionPolicy; status?: string } | null;
+  agent?: {
+    id: string;
+    approvalMode: WorkPermissionPolicy;
+    status?: string;
+    /** cloud | mac (src/lib/agents/domain.ts `AGENT_EXECUTION_TARGETS`). Absent: cloud. */
+    executionTarget?: string | null;
+    preferredHostId?: string | null;
+  } | null;
   /**
    * How often the task stops to ask, as chosen in this chat's composer
    * (src/lib/chat/task-approval-mode.ts), or null for the default. In an
@@ -608,6 +618,26 @@ export function createStartTaskTool(ctx: StartTaskToolContext): NativeChatTool {
   };
 }
 
+/**
+ * The apps a task started from a chat may reach.
+ *
+ * The turn's apps, deduplicated and bounded. In an agent's thread, only those
+ * the agent may use (`Agent.connectorIds`, "Connected apps it may use"): the
+ * composer can switch on any app the account linked, and without this a task
+ * the agent started reached an app the person never gave the agent, with
+ * nobody watching. Intersected, so it only narrows: an agent's app the turn did
+ * not carry is not added either. Outside an agent's thread, the turn's apps.
+ */
+export function taskToolConnectorIds(
+  turnConnectorIds: readonly string[],
+  agentConnectorIds: readonly string[] | null
+): string[] {
+  const allowed = agentConnectorIds === null ? null : new Set(agentConnectorIds);
+  return [...new Set(turnConnectorIds)]
+    .filter((id) => allowed === null || allowed.has(id))
+    .slice(0, MAX_TASK_CONNECTORS);
+}
+
 async function startTask(
   ctx: StartTaskToolContext,
   rawArgs: Record<string, unknown>,
@@ -627,14 +657,22 @@ async function startTask(
     import("@/lib/action-approval-store"),
   ]);
   const { user } = ctx;
+  // Read fresh: whether it is still active, and where it runs now (a "Runs on"
+  // change made after this turn began is the one that counts).
+  let agentPlacement: { executionTarget: string; preferredHostId: string | null } | null = null;
+  // The apps it may use, read fresh with the rest: an app removed from the
+  // agent after this turn began is not handed to its task.
+  let agentConnectorIds: readonly string[] | null = null;
   if (ctx.agent) {
     const agentRow = await prisma.agent.findFirst({
       where: { id: ctx.agent.id, userId: user.id, deletedAt: null },
-      select: { status: true },
+      select: { status: true, executionTarget: true, preferredHostId: true, connectorIds: true },
     });
     if (!agentRow || agentRow.status !== "active") {
       return taskRefusal("agent_paused");
     }
+    agentPlacement = { executionTarget: agentRow.executionTarget, preferredHostId: agentRow.preferredHostId };
+    agentConnectorIds = agentRow.connectorIds;
   }
   const keys = taskIdempotencyKeys(ctx.userMessageId);
   const ownSessionId = dispatch.sessionIdForKey(user, keys.session);
@@ -674,7 +712,18 @@ async function startTask(
 
   // Built through the route's own schema, so the task is bounded exactly like
   // one a person creates.
-  const requestedTarget = ctx.agent ? "cloud" : "automatic";
+  // An agent's task goes where its person set it to run: the cloud, or their
+  // Mac (Work's `local`) with its preferred host. Never `automatic`, which
+  // could move it. An offline Mac is the dispatcher's 409, told to the user.
+  // A preferred Mac removed since it was chosen is dropped (any Mac), not a
+  // "Host not found" refusal (`resolveAgentDispatchTarget`).
+  const agentTarget = agentPlacement
+    ? await (await import("@/lib/agents/run-context")).resolveAgentDispatchTarget(user.id, agentPlacement)
+    : null;
+  const requestedTarget = agentTarget ? agentTarget.requestedTarget : "automatic";
+  // A team is coordinated by the cloud runner (src/lib/agents/team-store.ts),
+  // so a Mac agent's team would quietly run somewhere it was not set to.
+  if (args.team && requestedTarget === "local") return taskRefusal("team_needs_cloud");
   const createBody = protocol.createSessionSchema.safeParse({
     goal: composeTaskGoal({
       request: ctx.userRequest,
@@ -684,6 +733,7 @@ async function startTask(
     }),
     title: args.title,
     requestedTarget,
+    ...(agentTarget?.preferredHostId ? { preferredHostId: agentTarget.preferredHostId } : {}),
     ...(ctx.conversation.projectId ? { projectId: ctx.conversation.projectId } : {}),
     conversationId: ctx.conversation.id,
     model: ctx.model,
@@ -694,7 +744,7 @@ async function startTask(
     // stricter mode still wins inside the dispatcher (`resolveSessionFields`).
     permissionPolicy: chatTaskPolicy({ chosen: ctx.approvalMode ?? null, agentMode: ctx.agent?.approvalMode ?? null }),
     attachmentIds: [...new Set(ctx.attachmentIds)],
-    connectorIds: [...new Set(ctx.connectorIds)].slice(0, MAX_TASK_CONNECTORS),
+    connectorIds: taskToolConnectorIds(ctx.connectorIds, agentConnectorIds),
     idempotencyKey: keys.session,
   });
   if (!createBody.success) return taskRefusal("invalid_arguments");
@@ -783,7 +833,10 @@ async function startTask(
         return notStarted(taskRefusalFromResponse(preflight.status, preflight.body));
       }
 
-      const onApprovalRequest = opts?.onApprovalRequest ?? ctx.onApprovalRequest;
+      // Both, never one or the other: the route's sends the card and pauses
+      // the stall clock, the dispatcher's (always present) marks the row as
+      // waiting. With `??` the card was never sent.
+      const onApprovalRequest = composeApprovalCallbacks(ctx.onApprovalRequest, opts?.onApprovalRequest);
       const taint = ctx.untrustedNow?.() ?? { untrusted: ctx.untrustedContent, hostile: false };
       if (taint.untrusted || estimate.requiresConfirmation) {
         const authorization = await store.authorizeExternalAction({
@@ -888,7 +941,10 @@ async function startTask(
  * through for a reason on Juno's side, which the model should not dress up as
  * the user's choice.
  */
-export function approvalRefusalReason(brokerReason: string, status?: ActionReceiptStatus): TaskRefusalReason {
+export function approvalRefusalReason(
+  brokerReason: string,
+  status?: ActionReceiptStatus
+): Extract<TaskRefusalReason, "declined" | "approval_expired" | "approval_blocked" | "approval_failed"> {
   if (status === "denied") return "declined";
   if (status === "expired") return "approval_expired";
   if (status === "blocked") return "approval_blocked";

@@ -17,7 +17,7 @@
     radial-gradient(46% 34% at var(--haze-x, 50%) var(--haze-y, 46%), hsl(var(--presence) / 0.07), transparent 72%),
     radial-gradient(120% 95% at 50% 42%, #fbfbfc 0%, #f2f3f5 64%, #eceef1 100%);
   outline: 1px solid hsl(var(--foreground) / 0.06);
-  transition: --haze-x 900ms var(--alv-ease), --haze-y 900ms var(--alv-ease);
+  transition: --haze-x var(--dur-emphasis) var(--alv-ease), --haze-y var(--dur-emphasis) var(--alv-ease);
 }
 .dark .plans-stage {
   background:
@@ -89,7 +89,7 @@
   border-radius: 14px;
   text-align: center;
   color: var(--alv-sub);
-  transition: color 420ms var(--alv-ease), transform 520ms var(--alv-ease), opacity 420ms var(--alv-ease);
+  transition: color var(--dur-slow) var(--alv-ease), transform var(--dur-emphasis) var(--alv-ease), opacity var(--dur-slow) var(--alv-ease);
   -webkit-tap-highlight-color: transparent;
 }
 .plans-node[data-outside] { opacity: 0.55; }
@@ -102,14 +102,14 @@
   border-radius: 99px;
   background: currentColor;
   opacity: 0.55;
-  transition: background-color 420ms var(--alv-ease), box-shadow 420ms var(--alv-ease), transform 520ms var(--alv-ease), opacity 420ms var(--alv-ease);
+  transition: background-color var(--dur-slow) var(--alv-ease), box-shadow var(--dur-slow) var(--alv-ease), transform var(--dur-emphasis) var(--alv-ease), opacity var(--dur-slow) var(--alv-ease);
 }
 .plans-node-name {
   font-family: var(--font-serif), Newsreader, serif;
   font-size: 21px;
   line-height: 1;
   letter-spacing: -0.01em;
-  transition: font-size 520ms var(--alv-ease);
+  transition: font-size var(--dur-emphasis) var(--alv-ease);
 }
 .plans-node-meta { font-family: var(--font-mono), monospace; font-size: 11px; line-height: 16px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
 .plans-node[aria-checked="true"] { color: var(--alv-ink); opacity: 1; }
@@ -165,8 +165,8 @@
 .plans-chip:active { transform: scale(0.98); }
 
 /* The price changing: the old figure leaves upward, the new one rises in. */
-@keyframes plans-roll-in { from { opacity: 0; transform: translateY(0.35em); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
-.plans-roll { display: inline-block; animation: plans-roll-in 520ms var(--alv-ease) both; }
+@keyframes plans-roll-in { from { opacity: 0; transform: translateY(0.35em); } to { opacity: 1; transform: none; } }
+.plans-roll { display: inline-block; animation: plans-roll-in var(--dur-emphasis) var(--alv-ease) both; }
 
 @media (prefers-reduced-motion: reduce) {
   .plans-stage, .plans-node, .plans-node-point, .plans-node-name { transition: none; }

@@ -514,6 +514,32 @@
       }
     },
     {
+      "id": "agent-pause",
+      "type": "agent.pause",
+      "params": {
+        "sessionId": "session-1",
+        "agentId": "worker-1",
+        "requestId": "agent-control-7f3a91c2"
+      }
+    },
+    {
+      "id": "agent-resume-all",
+      "type": "agent.resume",
+      "params": {
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "agent-top-up",
+      "type": "agent.topUp",
+      "params": {
+        "sessionId": "session-1",
+        "agentId": "worker-1",
+        "tokens": 100000,
+        "requestId": "agent-control-0b4e6d18"
+      }
+    },
+    {
       "id": "set-mode",
       "type": "session.setMode",
       "params": {

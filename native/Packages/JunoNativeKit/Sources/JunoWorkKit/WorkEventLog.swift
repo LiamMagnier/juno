@@ -925,7 +925,9 @@ extension WorkEventLog {
         case .paused:
             return entry(event, "Paused", string(payload, "reason"), .paused, .quiet)
         case .resumed:
-            return entry(event, "Resumed", nil, .started, .quiet)
+            // "After a server restart." when the cloud runner continued a run
+            // it set aside for one; absent otherwise, as on the web.
+            return entry(event, "Resumed", string(payload, "detail"), .started, .quiet)
         case .validationResult:
             let passed = payload["ok"]?.boolValue != false
             return entry(

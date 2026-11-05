@@ -1,0 +1,68 @@
+{
+  "_about": "The scripted Work model's two runs in tests/computer-real-e2e.test.ts (test 9). Not a model: each step is one assistant turn, and `expect` is a regular expression the previous tool result must match (runner/agent-core/src/work/scripted-model.ts). The page the browser steps read is put in place by the test before the run (a data: URL navigated through the computer's browser by the test itself); the model never navigates.",
+  "allowed": {
+    "version": 1,
+    "vision": false,
+    "steps": [
+      {
+        "say": "I will work on my computer.",
+        "call": {
+          "name": "computer_shell",
+          "input": {
+            "command": "mkdir -p e2e-run && printf 'from-the-shell' > e2e-run/shell.txt && cat e2e-run/shell.txt",
+            "cwd": "/home/agent/work",
+            "timeoutSeconds": 60
+          }
+        }
+      },
+      {
+        "expect": "from-the-shell",
+        "call": {
+          "name": "computer_files",
+          "input": { "action": "write", "path": "/home/agent/work/e2e-run/note.txt", "content": "written-by-the-files-tool" }
+        }
+      },
+      {
+        "expect": "Wrote .* to /home/agent/work/e2e-run/note\\.txt\\.",
+        "call": { "name": "computer_files", "input": { "action": "read", "path": "/home/agent/work/e2e-run/note.txt" } }
+      },
+      {
+        "expect": "written-by-the-files-tool",
+        "call": { "name": "browser", "input": { "action": "read" } }
+      },
+      {
+        "expect": "juno-e2e-marker",
+        "call": { "name": "browser", "input": { "action": "type", "selector": "#name", "text": "typed by the agent" } }
+      },
+      {
+        "expect": "juno-e2e-marker",
+        "say": "Done: a file from the shell, a note through the files tool, and the form field filled in my browser.",
+        "end": true
+      }
+    ]
+  },
+  "ask": {
+    "version": 1,
+    "vision": false,
+    "steps": [
+      { "call": { "name": "browser", "input": { "action": "read" } } },
+      {
+        "expect": "temporary-browser-page",
+        "call": { "name": "computer_shell", "input": { "command": "echo second-run-shell", "timeoutSeconds": 60 } }
+      },
+      {
+        "expect": "^Started your computer\\. Nothing else was done: call computer_shell again",
+        "call": { "name": "computer_shell", "input": { "command": "echo second-run-shell", "timeoutSeconds": 60 } }
+      },
+      {
+        "expect": "second-run-shell",
+        "call": { "name": "browser", "input": { "action": "read" } }
+      },
+      {
+        "expect": "Your browser tool now uses your computer's browser, with its saved sign-ins\\.[\\s\\S]*juno-e2e-marker",
+        "say": "Done: the computer started after you said yes, and my browser is now its browser.",
+        "end": true
+      }
+    ]
+  }
+}

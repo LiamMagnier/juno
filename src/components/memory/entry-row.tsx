@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { EyeOff, Folder, FolderLock, MessageSquare, MessagesSquare, ShieldAlert } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -148,7 +149,7 @@ export function EntryRow({
             // Keyed on the highlight so a second change to the same row replays it.
             key={highlighted ? "flash" : "rest"}
             className={cn(
-              "group/row flex items-start gap-2 rounded-control px-3 py-3 transition-colors duration-fast ease-out-soft hover:bg-muted motion-reduce:transition-none",
+              "group/row flex items-start gap-2 rounded-control px-3 py-3 transition-colors duration-fast ease-out-soft hover:bg-muted",
               highlighted && "animate-cite-flash [animation-duration:var(--dur-emphasis)]"
             )}
           >
@@ -233,7 +234,7 @@ function RowEditor({
         void save();
       }}
     >
-      <textarea
+      <Textarea
         ref={fieldRef}
         value={draft}
         rows={1}
@@ -254,7 +255,7 @@ function RowEditor({
         // The field's text sits exactly where the sentence did: the negative
         // margin cancels the padding that gives the field its edge, out to the
         // row's own edges (the list bleeds the rows 12px past the column).
-        className="-mx-3 block w-[calc(100%+1.5rem)] resize-none overflow-hidden rounded-control border border-input bg-background px-3 py-2 text-ui text-foreground outline-none transition-colors duration-fast ease-out-soft focus-visible:border-foreground/60"
+        className="-mx-3 block min-h-0 w-[calc(100%+1.5rem)] resize-none overflow-hidden px-3 py-2"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
         <p className="text-caption text-muted-foreground">Enter to save, Esc to cancel</p>
@@ -307,27 +308,38 @@ function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean
       </span>
     );
   }
+  // The server's one answer to "how do you know that?" (memory-provenance.ts),
+  // as the source's tooltip; the chat it came from by name, or that it is gone.
+  const why = memory.provenance?.why;
+  const chatGone = memory.provenance?.source.conversationUnavailable === true;
   parts.push(
     words ? (
-      <span key="source">{words}</span>
-    ) : chatId ? (
+      <span key="source" title={why}>{words}</span>
+    ) : chatId && !chatGone ? (
       // A link that reads as metadata until it is pointed at: the whole of the
       // "why does Juno think this" question is one click from here.
       <Link
         key="source"
+        title={why}
         // The exact message it was learned from, when that is known.
         href={memory.sourceMessageId ? `/chat/${chatId}?m=${encodeURIComponent(memory.sourceMessageId)}` : `/chat/${chatId}`}
-        className="rounded-xs underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+        className="max-w-[16rem] truncate rounded-xs underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
       >
-        From a chat
+        {memory.provenance?.source.label ?? "From a chat"}
       </Link>
     ) : (
-      <span key="source">From your chats</span>
+      <span key="source" title={why}>
+        {memory.provenance?.source.label ?? "From your chats"}
+      </span>
     )
   );
+  // Dated by when it was SAID: a fact re-read out of last year's chat was
+  // written down today and is still a year old.
+  const said = memory.observedAt ?? memory.createdAt;
+  const notedLater = new Date(memory.createdAt).getTime() - new Date(said).getTime() > 24 * 60 * 60 * 1000;
   parts.push(
-    <span key="when" title={`Learned ${shortDate(memory.createdAt)}`}>
-      {relativeTime(memory.createdAt)}
+    <span key="when" title={notedLater ? `Said ${shortDate(said)} · noted ${shortDate(memory.createdAt)}` : `Said ${shortDate(said)}`}>
+      {relativeTime(said)}
     </span>
   );
   // Provenance that changes how much to trust it, and only when it says
@@ -465,7 +477,7 @@ function RowMenu({
               // The verbs arrive with the pointer, keyboard focus or an open
               // menu; a column of dots on every fact was the loudest thing in
               // a list meant for reading. Always there on a touch screen.
-              className="-my-1 opacity-0 transition-opacity duration-fast ease-out-soft focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100 motion-reduce:transition-none"
+              className="-my-1 opacity-0 transition-opacity duration-fast ease-out-soft focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
             >
               <ActionIcons.more className="size-4" />
             </IconButton>

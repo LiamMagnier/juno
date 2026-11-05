@@ -222,10 +222,48 @@ public struct BackendCodeModelClient: AgentModelClient {
             || PromptCacheWire.cachingProviders.contains(route.providerID.lowercased())
     }
 
+    /// The manifest's thinking capabilities for a model, from the shared
+    /// registry, matched by canonical id or by the route's `provider:model`.
+    static func reasoningCaps(
+        for modelID: String,
+        resolver: CodeModelProviderResolver,
+        registry: CodeReasoningCapsRegistry = .shared
+    ) -> CodeReasoningCaps? {
+        let route = resolver.route(for: modelID)
+        return registry.caps(
+            for: modelID,
+            providerID: route?.providerID,
+            providerModelID: route?.providerModelID
+        )
+    }
+
+    /// `request` with its depth fitted to `caps` (unchanged without caps).
+    static func fittingReasoning(_ request: ModelTurnRequest, caps: CodeReasoningCaps?) -> ModelTurnRequest {
+        guard let caps else { return request }
+        let effort = caps.clamp(request.reasoningEffort)
+        guard effort != request.reasoningEffort else { return request }
+        return ModelTurnRequest(
+            sessionID: request.sessionID,
+            systemPrompt: request.systemPrompt,
+            messages: request.messages,
+            tools: request.tools,
+            modelID: request.modelID,
+            reasoningEffort: effort,
+            maximumOutputTokens: request.maximumOutputTokens
+        )
+    }
+
     public func streamTurn(
-        _ request: ModelTurnRequest
+        _ incoming: ModelTurnRequest
     ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
-        AsyncThrowingStream { continuation in
+        // The depth a model actually takes. Nothing between here and the lab
+        // clamps it (the agent proxy forwards bodies verbatim), so a depth
+        // stored for another model — GPT's `minimal` carried to Claude Haiku
+        // 5.5, a sub-agent's `max` on a model without it — is fitted to this
+        // model's manifest tiers first, as the website's chat route does.
+        let reasoningCaps = Self.reasoningCaps(for: incoming.modelID, resolver: resolver)
+        let request = Self.fittingReasoning(incoming, caps: reasoningCaps)
+        return AsyncThrowingStream { continuation in
             let streamer = self.streamer
             let accountID = self.accountID
             let resolver = self.resolver
@@ -290,7 +328,8 @@ public struct BackendCodeModelClient: AgentModelClient {
                                             for: request,
                                             providerModelID: route.providerModelID,
                                             providerID: route.providerID,
-                                            maxTokens: maxTokens
+                                            maxTokens: maxTokens,
+                                            reasoningCaps: reasoningCaps
                                         ),
                                         providerID: route.providerID,
                                         wire: .openAIChat
@@ -900,7 +939,8 @@ enum OpenAIChatRequestBuilder {
         for request: ModelTurnRequest,
         providerModelID: String,
         providerID: String,
-        maxTokens: Int
+        maxTokens: Int,
+        reasoningCaps: CodeReasoningCaps? = nil
     ) -> JSONValue {
         var messages: [JSONValue] = [
             .object([
@@ -1053,7 +1093,8 @@ enum OpenAIChatRequestBuilder {
         for (key, value) in CodeThinkingWire.chatParameters(
             providerID: providerID,
             providerModelID: providerModelID,
-            effort: request.reasoningEffort
+            effort: request.reasoningEffort,
+            caps: reasoningCaps
         ) {
             object[key] = value
         }

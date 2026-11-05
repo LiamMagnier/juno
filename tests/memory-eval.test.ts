@@ -40,6 +40,35 @@ test("no evaluated dimension regresses from the baseline", () => {
   assert.ok(now.tokens.max <= now.tokens.budget);
 });
 
+test("§10.3 floors: no inappropriate personalisation, no deletion leaks, typed corrections settle", () => {
+  const now = record.current.results;
+  assert.equal(now.personalisation.inappropriate, 0);
+  assert.equal(now.personalisation.appropriateUsed, now.personalisation.appropriate, "the gates do not simply refuse");
+  assert.equal(now.personalisation.typedKept, now.personalisation.typed);
+  assert.ok(now.personalisation.legacyInappropriate > 0, "the baseline the gates are measured against is real");
+  assert.equal(now.deletion.leaks, 0);
+  assert.ok(now.deletion.legacyLeaks > 0);
+  assert.equal(now.manual.passed, now.manual.cases);
+  assert.equal(now.manual.duplicatesLeft, 0);
+  assert.ok(now.manual.legacyPassed < now.manual.cases);
+});
+
+test("§10.3 floors: a sensitive fact a request makes relevant without naming it is still used", () => {
+  // A typed peanut allergy for "suggest a dinner recipe", inferred diabetes
+  // for "plan my meals this week" — in the lexical fallback (no embedder, or
+  // it failed), with semantic evidence that singles the fact out, and with
+  // semantic evidence that singles nothing out.
+  const implicit = record.current.results.personalisation.implicit;
+  assert.ok(implicit.expected >= 16, "the case set is the one recorded");
+  assert.equal(implicit.lexicalUsed, implicit.expected, "lexical fallback");
+  assert.equal(implicit.semanticStandoutUsed, implicit.expected, "semantic, the fact stands out");
+  assert.equal(implicit.semanticFlatUsed, implicit.expected, "semantic, nothing stands out");
+  assert.equal(implicit.distractorsUsed, 0, "a sensitive fact unrelated to food is not handed to a food request");
+  assert.equal(implicit.revokedInferredUsed, 0, "a switched-off topic's inferred facts stay out, relevant or not");
+  assert.equal(implicit.revokedTypedKept, implicit.revokedTyped, "typed ones stay");
+  assert.ok(implicit.legacyLexicalUsed < implicit.expected, "the rules before 2026-10-25 really missed some");
+});
+
 test("hard floors: nothing invented, nothing leaked, nothing sensitive stored without opt-in", () => {
   const now = record.current.results;
   assert.equal(now.falseMemory.dreamInvented, 0);

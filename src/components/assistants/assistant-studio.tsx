@@ -138,7 +138,7 @@ export function AssistantStudio({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[min(88vh,800px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[60rem] sm:p-0">
+      <DialogContent bare className="flex max-h-[min(88vh,800px)] flex-col gap-0 overflow-hidden sm:max-w-[60rem]">
         <DialogHeader className="border-b border-border/60 px-6 py-5 pr-14">
           <div className="flex items-start gap-3">
             <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">

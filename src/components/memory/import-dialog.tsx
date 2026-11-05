@@ -155,7 +155,7 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(88dvh,46rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent bare className="flex max-h-[min(88dvh,46rem)] max-w-2xl flex-col gap-0 overflow-hidden">
         <DialogHeader className="shrink-0 border-b border-border/50 p-6 pb-4">
           <DialogTitle>Import memory</DialogTitle>
           <DialogDescription>

@@ -14,13 +14,20 @@ import type { TurnUser } from "./types";
  * because the server is the trust boundary for what each of them may use.
  */
 
-/** Whether the answering member of a room may ask another one (`ask_room_member`). */
-export function roomMayAsk(setup: RoomTurnSetup, roomMessageId: string | null): boolean {
+/**
+ * Whether the answering member of a room may ask another one (`ask_room_member`).
+ *
+ * @param skillPermits false when the applied skill keeps the turn to what it
+ *   lists (`skillKeepsUnlistedSurfaces`): the tool and the prompt's invitation
+ *   to use it are left out together.
+ */
+export function roomMayAsk(setup: RoomTurnSetup, roomMessageId: string | null, skillPermits = true): boolean {
   // Offered only when some member could actually be asked: the same pure rule
   // `askRoomMember` enforces (cap, loop guard, paused), so the prompt never
   // invites a call the room would refuse.
   const turns = setup.messageTurnAgentIds.map((agentId) => ({ agentId }));
   return (
+    skillPermits &&
     !!roomMessageId &&
     setup.mode.kind !== "retry" &&
     setup.room.members.some(
@@ -31,7 +38,12 @@ export function roomMayAsk(setup: RoomTurnSetup, roomMessageId: string | null): 
 }
 
 /** The room section appended after the answering agent's own block (src/lib/agents/rooms.ts). */
-export function roomPromptBlock(setup: RoomTurnSetup, personName: string | null | undefined, roomMessageId: string | null): string {
+export function roomPromptBlock(
+  setup: RoomTurnSetup,
+  personName: string | null | undefined,
+  roomMessageId: string | null,
+  skillPermits = true
+): string {
   const fromAgentId = setup.mode.kind === "follow_up" ? setup.mode.fromAgentId : null;
   const asked =
     setup.mode.kind === "follow_up" && fromAgentId
@@ -45,7 +57,7 @@ export function roomPromptBlock(setup: RoomTurnSetup, personName: string | null 
     members: setup.room.members,
     personName,
     asked,
-    canAsk: roomMayAsk(setup, roomMessageId),
+    canAsk: roomMayAsk(setup, roomMessageId, skillPermits),
   });
 }
 

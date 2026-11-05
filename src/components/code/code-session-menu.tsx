@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -203,31 +204,20 @@ export function CodeSessionMenu({ conversation }: { conversation: ClientConversa
         </DialogContent>
       </Dialog>
 
-      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete this session?</DialogTitle>
-            {/*
-              The one sentence that has to be exactly true. Deleting the
-              conversation removes the transcript; it does not touch a branch
-              that was pushed, a pull request that was opened, or anything a run
-              wrote on a Mac — none of which this product could take back.
-            */}
-            <DialogDescription>
-              This permanently removes the transcript and everything in it. Any branch or pull request a run
-              already pushed stays on GitHub, and anything it changed on your Mac stays there.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={() => void destroy()}>
-              Delete session
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/*
+        The one sentence that has to be exactly true. Deleting the
+        conversation removes the transcript; it does not touch a branch
+        that was pushed, a pull request that was opened, or anything a run
+        wrote on a Mac — none of which this product could take back.
+      */}
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Delete this session?"
+        description="This permanently removes the transcript and everything in it. Any branch or pull request a run already pushed stays on GitHub, and anything it changed on your Mac stays there."
+        confirmLabel="Delete session"
+        onConfirm={() => void destroy()}
+      />
 
       {sharing && (
         <ShareDialog

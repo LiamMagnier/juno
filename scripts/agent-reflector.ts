@@ -27,6 +27,8 @@ import {
   sweepAgentReflections,
 } from "@/lib/agents/reflect-sweep";
 import { sweepGoals } from "@/lib/agents/goal-runner";
+import { installWorkerProcessGuard, registerWorkerDrain } from "@/lib/worker-process";
+import { LOOP_STALE_AFTER_MS, workerLoops } from "@/lib/worker-watchdog-rules";
 
 /** How long a stop waits for the reflection in hand to write what it paid for. */
 const SHUTDOWN_GRACE_MS = 20_000;
@@ -65,6 +67,9 @@ function tick(): Promise<boolean> {
   if (stopping) return Promise.resolve(true);
   inFlight ??= sweep().finally(() => {
     inFlight = null;
+    // A finished sweep, whatever it found: what the process's watchdog reads
+    // (src/lib/worker-watchdog.ts) to notice a sweep that never comes back.
+    workerLoops.beat("agent-reflector");
   });
   return inFlight;
 }
@@ -81,6 +86,19 @@ async function main() {
 
   const first = setTimeout(() => void tick(), AGENT_SWEEP_FIRST_TICK_MS);
   const timer = setInterval(() => void tick(), AGENT_SWEEP_INTERVAL_MS);
+
+  // Rejections logged and the loop kept; an uncaught exception lets the
+  // reflection in hand finish, then exits non-zero for PM2
+  // (src/lib/worker-process.ts). Inside juno-sweepers the first loop to start
+  // installs the handlers for the whole process.
+  installWorkerProcessGuard();
+  registerWorkerDrain("agent-reflector", async () => {
+    stopping = true;
+    clearTimeout(first);
+    clearInterval(timer);
+    if (inFlight) await inFlight;
+  });
+  workerLoops.register("agent-reflector", LOOP_STALE_AFTER_MS["agent-reflector"]);
 
   async function shutdown() {
     if (stopping) return;

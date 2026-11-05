@@ -346,3 +346,174 @@ describe("relay/computer-view WebSocket <-> TCP bridge", () => {
     }
   });
 });
+
+/*
+ * Version 2: a computer host's VNC tunnel (COMPUTERS_2026-10.md S3.3). The app
+ * mints these (src/lib/computer/live-view.ts; tests/computer-view-token.test.ts
+ * checks the two packages agree); here a token is sealed the same way so the
+ * relay's bridge can be driven against a stub host.
+ */
+import { createCipheriv, createHmac, hkdfSync, randomBytes } from "node:crypto";
+import { WebSocketServer } from "ws";
+import { normalizeComputerHost, parseComputerHosts, unsealTunnelTicket } from "../src/computer-view.js";
+
+function sealV2(fields: { a: string; u: string; m: string; exp: number; j: string; r: string }, inner: unknown, secret = TEST_SECRET): string {
+  const aad = Buffer.from([2, fields.a, fields.u, fields.m, fields.exp, fields.j, fields.r].join("|"), "utf8");
+  const key = Buffer.from(hkdfSync("sha256", secret, "juno-computer-view-v2", "tunnel-ticket", 32));
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(aad);
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(inner), "utf8"), cipher.final()]);
+  return Buffer.concat([iv, ciphertext, cipher.getAuthTag()]).toString("base64url");
+}
+
+function signV2(payload: Record<string, unknown>, secret = TEST_SECRET): string {
+  const body = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const key = createHmac("sha256", secret).update("juno-computer-view-v2").digest();
+  return `${body}.${createHmac("sha256", key).update(body).digest("base64url")}`;
+}
+
+const TICKET_A = "A".repeat(43);
+let jti = 0;
+function v2Token(r: string, opts: { m?: string; port?: number; ticket?: string; agent?: string } = {}): string {
+  const fields = {
+    a: opts.agent ?? "agent_tunnel",
+    u: "user_1",
+    m: opts.m ?? "control",
+    exp: Math.floor(Date.now() / 1000) + 60,
+    j: `jti-tunnel-${String((jti += 1)).padStart(4, "0")}`,
+    r,
+  };
+  return signV2({ v: 2, ...fields, k: sealV2(fields, { t: opts.ticket ?? TICKET_A, p: opts.port ?? 5900 }) });
+}
+
+describe("relay/computer-view version 2: a computer host's tunnel", () => {
+  it("v2 tokens open a tunnel only to a listed origin", () => {
+    const token = v2Token("https://computers.example.test");
+    assert.equal(verifyComputerViewToken(token, { authSecret: TEST_SECRET, nodeEnv: "production", computerHosts: [] }), null);
+    assert.equal(
+      verifyComputerViewToken(token, { authSecret: TEST_SECRET, nodeEnv: "production", computerHosts: ["https://other.example.test"] }),
+      null
+    );
+    const grant = verifyComputerViewToken(token, { authSecret: TEST_SECRET, nodeEnv: "production", computerHosts: ["https://computers.example.test"] });
+    assert.ok(grant && grant.v === 2 && grant.ticket === TICKET_A);
+    const plain = v2Token("http://127.0.0.1:8750");
+    assert.equal(verifyComputerViewToken(plain, { authSecret: TEST_SECRET, nodeEnv: "production", computerHosts: ["http://127.0.0.1:8750"] }), null);
+    assert.equal(normalizeComputerHost("http://10.0.0.4:8750", "development"), null);
+    assert.equal(normalizeComputerHost("https://computers.example.test/", "production"), "https://computers.example.test");
+    assert.deepEqual(parseComputerHosts(" https://a.test ,, wss://b.test", "production"), ["https://a.test"]);
+  });
+
+  it("a sealed ticket cannot be read from the token", () => {
+    const token = v2Token("https://computers.example.test");
+    assert.ok(!token.includes(TICKET_A));
+    const payload = JSON.parse(Buffer.from(token.split(".")[0], "base64url").toString("utf8")) as Record<string, string>;
+    assert.ok(!Buffer.from(payload.k, "base64url").toString("latin1").includes(TICKET_A));
+    // Without the secret, nothing opens it.
+    const aad = Buffer.from("anything");
+    assert.equal(unsealTunnelTicket(payload.k, aad, "another-secret-0123456789abcdef0123"), null);
+  });
+
+  it("a sealed ticket moved into another token is refused (AAD)", () => {
+    const host = "https://computers.example.test";
+    const victim = JSON.parse(Buffer.from(v2Token(host, { agent: "agent_victim" }).split(".")[0], "base64url").toString("utf8")) as Record<string, unknown>;
+    const attacker = JSON.parse(Buffer.from(v2Token(host, { agent: "agent_attacker" }).split(".")[0], "base64url").toString("utf8")) as Record<string, unknown>;
+    const moved = signV2({ ...attacker, k: victim.k });
+    assert.equal(verifyComputerViewToken(moved, { authSecret: TEST_SECRET, nodeEnv: "production", computerHosts: [host] }), null);
+  });
+
+  it("v2 needs watch or control and port 5900", () => {
+    const host = "https://computers.example.test";
+    const opts = { authSecret: TEST_SECRET, nodeEnv: "production", computerHosts: [host] };
+    assert.equal(verifyComputerViewToken(v2Token(host, { m: "admin" }), opts), null);
+    for (const port of [9222, 22, 5901]) {
+      assert.equal(verifyComputerViewToken(v2Token(host, { port }), opts), null, String(port));
+    }
+    assert.equal(verifyComputerViewToken(v2Token(host, { ticket: "short" }), opts), null);
+    assert.ok(verifyComputerViewToken(v2Token(host, { m: "watch" }), opts));
+  });
+
+  it("the relay sends the ticket as a header, offers no subprotocol, and bridges binary frames", async () => {
+    const seen: Array<{ url: string | undefined; ticket: unknown; protocol: unknown }> = [];
+    const stubHost = createServer((_req, res) => {
+      res.writeHead(404);
+      res.end();
+    });
+    const tunnels = new WebSocketServer({ noServer: true });
+    stubHost.on("upgrade", (req, socket, head) => {
+      seen.push({ url: req.url, ticket: req.headers["x-juno-tunnel-ticket"], protocol: req.headers["sec-websocket-protocol"] });
+      if (req.url !== "/v1/tunnel" || req.headers["x-juno-tunnel-ticket"] !== TICKET_A) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      tunnels.handleUpgrade(req, socket, head, (ws) => {
+        ws.send(Buffer.from("RFB 003.008\n", "ascii"));
+        ws.on("message", (data) => ws.send(Buffer.concat([Buffer.from([0xbb]), Buffer.from(data as Buffer)])));
+      });
+    });
+    await new Promise<void>((resolve) => stubHost.listen(0, "127.0.0.1", resolve));
+    const hostOrigin = `http://127.0.0.1:${(stubHost.address() as AddressInfo).port}`;
+
+    const computerView = createComputerViewUpgradeHandler({
+      allowedOrigins: ["https://juno.example"],
+      authSecret: TEST_SECRET,
+      nodeEnv: "development",
+      computerHosts: [hostOrigin],
+    });
+    const relayServer = createServer((_req, res) => {
+      res.writeHead(404);
+      res.end();
+    });
+    relayServer.on("upgrade", (req, socket, head) => {
+      if (!computerView.handleUpgrade(req, socket, head)) socket.destroy();
+    });
+    await new Promise<void>((resolve) => relayServer.listen(0, "127.0.0.1", resolve));
+    const relayPort = (relayServer.address() as AddressInfo).port;
+
+    try {
+      const viewer = new WebSocket(`ws://127.0.0.1:${relayPort}/voice-relay/computer`, ["binary", `juno-view.${v2Token(hostOrigin)}`], {
+        headers: { Origin: "https://juno.example" },
+      });
+      const banner = await new Promise<Buffer>((resolve, reject) => {
+        viewer.once("message", (data) => resolve(Buffer.from(data as ArrayBuffer)));
+        viewer.once("error", reject);
+      });
+      assert.equal(banner.toString("ascii"), "RFB 003.008\n");
+      const echo = new Promise<Buffer>((resolve) => viewer.once("message", (data) => resolve(Buffer.from(data as ArrayBuffer))));
+      viewer.send(Buffer.from([1, 2, 3]), { binary: true });
+      assert.deepEqual([...(await echo)], [0xbb, 1, 2, 3]);
+      assert.equal(seen.length, 1);
+      assert.deepEqual(seen[0], { url: "/v1/tunnel", ticket: TICKET_A, protocol: undefined }, "the ticket in the header, no subprotocol offered");
+      viewer.close();
+
+      // A host that refuses the ticket closes the viewer instead of leaving it open.
+      const refused = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/voice-relay/computer`,
+        ["binary", `juno-view.${v2Token(hostOrigin, { ticket: "B".repeat(43) })}`],
+        { headers: { Origin: "https://juno.example" } }
+      );
+      const closeCode = await new Promise<number>((resolve) => refused.once("close", (code) => resolve(code)));
+      assert.ok(closeCode > 0);
+      // And an unlisted host is refused at the relay's own door.
+      await assert.rejects(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            const w = new WebSocket(`ws://127.0.0.1:${relayPort}/voice-relay/computer`, ["binary", `juno-view.${v2Token("https://unlisted.example.test")}`], {
+              headers: { Origin: "https://juno.example" },
+            });
+            w.once("open", () => {
+              w.close();
+              resolve();
+            });
+            w.once("error", reject);
+          })
+      );
+    } finally {
+      await new Promise<void>((resolve) => relayServer.close(() => resolve()));
+      tunnels.close();
+      stubHost.closeAllConnections();
+      await new Promise<void>((resolve) => stubHost.close(() => resolve()));
+    }
+  });
+});

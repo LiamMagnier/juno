@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { fieldSurfaceClass } from "@/components/ui/field-recipe";
 
 /*
  * The pieces every Customize tab (Apps, Skills, Routines, Instructions) is
@@ -29,9 +30,10 @@ export const customizeHeaderClass =
  */
 export const customizeListClass = "ed-list -mx-3";
 
-/** A field's resting edge on these tabs: a hairline that firms on hover and focus. */
-export const customizeFieldClass =
-  "border-foreground/[0.1] hover:border-foreground/20 focus-visible:border-foreground/35";
+/**
+ * Customize keeps the shared field material; callers vary geometry only.
+ */
+export const customizeFieldClass = fieldSurfaceClass;
 
 /** How a row arrives on first load: a 6px rise, dealt on the shared stagger. */
 export const customizeEnterClass = "motion-safe:animate-rise-in [animation-fill-mode:backwards]";

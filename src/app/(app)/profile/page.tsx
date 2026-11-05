@@ -1,4 +1,5 @@
 import { ProfilePage } from "@/components/profile/profile-page";
+import { PageRoot } from "@/components/app/page-root";
 
 /**
  * The account's profile: name, photo, and a year of tokens and models
@@ -6,5 +7,9 @@ import { ProfilePage } from "@/components/profile/profile-page";
  * Account; this page reads, it does not edit.
  */
 export default function Profile() {
-  return <ProfilePage />;
+  return (
+    <PageRoot>
+      <ProfilePage />
+    </PageRoot>
+  );
 }

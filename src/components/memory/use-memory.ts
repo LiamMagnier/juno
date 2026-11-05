@@ -432,16 +432,35 @@ export function useMemory(): MemoryState {
           const { message } = await readRefusal(res);
           throw new Error(message);
         }
-        const { memory } = (await res.json()) as { memory: Memory };
-        setMemories((prev) => [memory, ...(prev ?? [])]);
-        toast.success(projectId ? "Added to this project’s memory." : "Added to memory.");
+        const { memory, action, replaced } = (await res.json()) as {
+          memory: Memory;
+          action?: "created" | "confirmed" | "reinstated";
+          replaced?: { id: string }[];
+        };
+        if ((replaced?.length ?? 0) > 0 || (action && action !== "created")) {
+          // It replaced an older belief, or turned out to be a fact Juno
+          // already had: rows on the page changed status, so read them back
+          // rather than splicing one in beside a stale twin.
+          await reload();
+        } else {
+          setMemories((prev) => [memory, ...(prev ?? []).filter((m) => m.id !== memory.id)]);
+        }
+        toast.success(
+          (replaced?.length ?? 0) > 0
+            ? "Saved, and replaced what it corrects."
+            : action === "confirmed"
+              ? "Already remembered — now marked as something you said."
+              : projectId
+                ? "Added to this project’s memory."
+                : "Added to memory."
+        );
         return true;
       } catch (error) {
         toast.error(error instanceof Error ? error.message : GENERIC_FAILURE);
         return false;
       }
     },
-    []
+    [reload]
   );
 
   const editMemory = React.useCallback(

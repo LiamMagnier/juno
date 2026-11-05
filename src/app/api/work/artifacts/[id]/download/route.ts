@@ -6,6 +6,7 @@ import { getObjectBytes } from "@/lib/storage";
 import { ARTIFACT_MIME } from "@/lib/work/domain";
 import { serializeArtifact } from "@/lib/work/serializers";
 import { attachmentDisposition, contentHashFor } from "@/lib/work/deliverables";
+import { computerFileDisposition, servableComputerMime } from "@/lib/computer/file-types";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 export const runtime = "nodejs";
@@ -123,6 +124,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // the bytes is how a browser decides to render a file inline that it should
   // have saved.
   const mimeType = ARTIFACT_MIME[kind];
+  // A file the agent published from its computer (COMPUTERS_2026-10.md S5.3)
+  // keeps its own type and name: the type re-derived through the publish
+  // allowlist (never the column as stored), always as an attachment.
+  const fromComputer = version.origin === "computer";
 
   const validated =
     version.version === artifact.currentVersion
@@ -140,9 +145,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // an `ArrayBuffer`.
   return new NextResponse(stored.bytes as unknown as BodyInit, {
     headers: {
-      "Content-Type": mimeType,
+      "Content-Type": fromComputer ? servableComputerMime(artifact.mimeType) : mimeType,
       "Content-Length": String(view.byteLength),
-      "Content-Disposition": attachmentDisposition(artifact.title, artifact.identifier, kind),
+      "Content-Disposition": fromComputer
+        ? computerFileDisposition(artifact.title, artifact.mimeType)
+        : attachmentDisposition(artifact.title, artifact.identifier, kind),
       // These are the user's own generated files; a shared cache holding them is
       // a copy of their work outside the account it belongs to.
       "Cache-Control": "private, no-store",

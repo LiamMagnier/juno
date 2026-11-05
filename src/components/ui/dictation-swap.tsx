@@ -95,7 +95,7 @@ function Layer({
     <div
       inert={hidden}
       className={cn(
-        "col-start-1 row-start-1 w-full transition-opacity duration-fast ease-out-soft motion-reduce:transition-none",
+        "col-start-1 row-start-1 w-full transition-opacity duration-fast ease-out-soft",
         hidden ? "pointer-events-none opacity-0" : "opacity-100",
         className
       )}

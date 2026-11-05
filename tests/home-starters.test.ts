@@ -105,17 +105,80 @@ test("the copy is plain, sentence-case English and never names the codename", ()
   }
 });
 
-test("the home draws the starters and calms its field while they show", () => {
+test("the home draws the starters over a field that stays calm, typing included", () => {
   const view = read("src/components/chat/chat-view.tsx");
   assert.match(view, /<HomeStarters\s+composerRef=\{emptyComposerRef\}/);
   assert.match(view, /calm=\{startersShown\}/);
   // Incognito, a clarification, a voice call and the send handoff each put the row away.
   assert.match(view, /hidden=\{Boolean\(privateMode \|\| chat\.pendingClarification \|\| voiceOpen \|\| handoff === "leaving"\)\}/);
   const field = read("src/components/chat/empty-state.tsx");
-  assert.match(field, /lamp=\{!calm\}/, "the pointer stops lighting the dots under the chips");
+  const homeField = field.slice(field.indexOf("export function HomeField"), field.indexOf("function PrivateField"));
+  // Typing hides the starters; that must not bring the field forward or light it blue under the mouse.
+  assert.match(homeField, /lamp=\{false\}/, "the pointer never lights the home field");
+  assert.match(homeField, /visible \? "opacity-\[0\.55\]" : "opacity-0"/, "one low ink while the home shows");
+  assert.doesNotMatch(homeField, /opacity-100/, "no full-ink state to return to");
+  // The chips paint above the composer's stacking context, so the field's dots never cross a control.
+  assert.match(read("src/components/chat/home-starters.css"), /\.home-starters \{\s*\/\*[\s\S]*?\*\/\s*position: relative;/);
   const starters = read("src/components/chat/home-starters.tsx");
   assert.match(starters, /new CustomEvent\("juno:composer-seed"/, "a pick goes through the composer's own seed door");
   assert.doesNotMatch(starters, /submit\(|sendFromComposer/, "a starter never sends");
+});
+
+test("the arrival focus is the caret, not the keyboard ring; a Tab still rings", async () => {
+  // The home puts the caret in the composer on a desktop arrival through the
+  // composer's own focus door, and the composer draws its keyboard ring
+  // (`data-kbd-focus`) only when lib/input-modality.ts says the keyboard moved
+  // focus. Both halves are pinned here, so the arrival cannot land without the gate.
+  const starters = read("src/components/chat/home-starters.tsx");
+  assert.match(starters, /new CustomEvent\("juno:composer-focus"\)/);
+  assert.doesNotMatch(starters, /focus\(\{\s*focusVisible:\s*true/, "the arrival never asks for a visible ring");
+  const composer = read("src/components/chat/composer.tsx");
+  const door = composer.slice(composer.indexOf('addEventListener("juno:composer-focus"') - 200, composer.indexOf('addEventListener("juno:composer-focus"'));
+  assert.doesNotMatch(door, /setKeyboardFocus\(true\)/, "the focus door moves the caret and nothing else");
+  // The ring is ComposerShell's, from the live modality (no private flag in the composer).
+  assert.doesNotMatch(composer, /pointerFocus/);
+  const shell = read("src/components/ui/composer-shell.tsx");
+  assert.match(shell, /keyboardFocus \|\| \(fieldFocused && modality === "keyboard"\)/);
+  assert.match(shell, /data-kbd-focus=\{ring \? "" : undefined\}/);
+
+  // The rule, run: what ComposerShell computes for a programmatic focus of
+  // the field under each modality.
+  const g = globalThis as unknown as Record<string, unknown>;
+  const saved = { HTMLElement: g.HTMLElement, HTMLTextAreaElement: g.HTMLTextAreaElement, HTMLInputElement: g.HTMLInputElement, document: g.document };
+  class FakeElement {
+    isContentEditable = false;
+    hasAttribute() {
+      return false;
+    }
+    getAttribute() {
+      return null;
+    }
+  }
+  g.HTMLElement = FakeElement;
+  g.HTMLTextAreaElement = class extends FakeElement {};
+  g.HTMLInputElement = class extends FakeElement {};
+  const doc = new EventTarget();
+  g.document = doc;
+  try {
+    const { inputModality, installInputModality, resetInputModalityForTests } = await import("../src/lib/input-modality");
+    const ringOnFocus = () => inputModality() === "keyboard";
+    const tab = () => {
+      const event = new Event("keydown");
+      Object.assign(event, { key: "Tab", metaKey: false, ctrlKey: false, altKey: false, isComposing: false });
+      Object.defineProperty(event, "target", { value: new FakeElement() });
+      doc.dispatchEvent(event);
+    };
+    resetInputModalityForTests();
+    installInputModality();
+    assert.equal(ringOnFocus(), false, "a fresh load: the arrival focus draws no ring");
+    doc.dispatchEvent(new Event("pointerdown"));
+    assert.equal(ringOnFocus(), false, "New chat pressed with the mouse: no ring");
+    tab();
+    assert.equal(ringOnFocus(), true, "after a Tab, focus on the composer rings");
+    resetInputModalityForTests();
+  } finally {
+    Object.assign(g, saved);
+  }
 });
 
 test("the composer takes the model a starter names, only from this account's list", () => {

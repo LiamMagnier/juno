@@ -5,6 +5,7 @@
  * one family, retired ids leaking back in, defaults pointing at dead models.
  */
 import {
+  CATALOG_TODAY,
   CURATED_CHAT_MODELS,
   CURATED_GEN_MODELS,
   DEFAULT_MODEL,
@@ -15,6 +16,7 @@ import {
   type ModelInfo,
 } from "../src/lib/models";
 import { PROVIDER_LIST } from "../src/lib/providers";
+import { isOverdue, lifecycleProblems } from "./model-sync/lifecycle";
 
 const all: ModelInfo[] = [...MODEL_LIST, ...GEN_MODELS];
 const errors: string[] = [];
@@ -50,44 +52,19 @@ for (const [key, ids] of currentByFamily) {
   if (ids.length > 1) errors.push(`multiple CURRENT models in family ${key}: ${ids.join(", ")}`);
 }
 
-// 4. Status/legacy-flag consistency; deprecated models must carry a note.
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// 4. Status/legacy-flag consistency, then the lifecycle fields as one
+//    statement (scripts/model-sync/lifecycle.ts, which models:sync also reads
+//    so the two never disagree on what a valid retirement is).
 for (const m of all) {
   const expectedLegacy = m.status !== "current";
   if ((m.legacy ?? false) !== expectedLegacy) errors.push(`${m.id}: legacy flag out of sync with status "${m.status}"`);
-  if (m.status === "deprecated" && !m.deprecationNote) errors.push(`${m.id}: deprecated without a deprecationNote`);
+  for (const problem of lifecycleProblems(m, all)) errors.push(`${m.id}: ${problem}`);
+}
 
-  if (m.retiresOn !== undefined) {
-    // Shape first: the date is compared as a plain string against a UTC
-    // YYYY-MM-DD, so a malformed one does not throw — it silently never matches
-    // and the model never retires.
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(m.retiresOn)) {
-      errors.push(`${m.id}: retiresOn "${m.retiresOn}" is not YYYY-MM-DD`);
-    }
-    // A retirement with nowhere to go is the dangerous half: the model leaves
-    // MODEL_LIST on the day, and without a replacement every stored id pointing
-    // at it resolves to a fabricated "current" model on a dead provider id.
-    if (!m.replacedBy) {
-      errors.push(`${m.id}: retiresOn without replacedBy — stored ids would have nowhere to migrate`);
-    } else {
-      const heir = all.find((x) => x.id === m.replacedBy);
-      if (!heir) errors.push(`${m.id}: replacedBy ${m.replacedBy} is not a registered model`);
-      else if (heir.status !== "current") errors.push(`${m.id}: replacedBy ${m.replacedBy} is ${heir.status}, not current`);
-      else if (heir.modality !== m.modality) errors.push(`${m.id}: replacedBy ${m.replacedBy} is a ${heir.modality} model, not ${m.modality}`);
-      else if (heir.retiresOn) errors.push(`${m.id}: replacedBy ${m.replacedBy} is itself retiring on ${heir.retiresOn}`);
-    }
-    // The date and the sentence are two statements of one fact; drift between
-    // them is how the UI ends up promising a day the catalog does not honour.
-    const spelled = m.deprecationNote?.match(/^Retires (\w{3}) (\d{1,2}), (\d{4})/);
-    if (spelled) {
-      const month = String(MONTHS.indexOf(spelled[1]) + 1).padStart(2, "0");
-      const fromNote = `${spelled[3]}-${month}-${spelled[2].padStart(2, "0")}`;
-      if (fromNote !== m.retiresOn) {
-        errors.push(`${m.id}: deprecationNote says ${fromNote} but retiresOn is ${m.retiresOn}`);
-      }
-    }
-  }
-  if (m.replacedBy && !m.retiresOn) errors.push(`${m.id}: replacedBy without retiresOn`);
+// 4b. Rows past their retiresOn. MODEL_LIST already hides them and stored ids
+//     migrate, so this is a warning: the move into RETIRED_MODELS is pending.
+for (const m of [...CURATED_CHAT_MODELS, ...CURATED_GEN_MODELS]) {
+  if (isOverdue(m, CATALOG_TODAY)) warnings.push(`${m.id}: retired ${m.retiresOn}, still a curated row — run npm run models:sync -- --apply to move it into RETIRED_MODELS`);
 }
 
 // 5. Retired map: keys must NOT be registered; values must resolve to a

@@ -262,7 +262,7 @@ export function ProjectWorkDefaults({
                       >
                         <AppIcons.connections
                           className={cn(
-                            "size-3.5 shrink-0 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+                            "size-3.5 shrink-0 transition-colors duration-fast ease-out-soft",
                             active ? "text-primary" : "text-muted-foreground"
                           )}
                           aria-hidden="true"
@@ -293,7 +293,7 @@ export function ProjectWorkDefaults({
                 : "Tasks filed here choose their own apps, from everything you have connected: "}
               <Link
                 href="/connections"
-                className="underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
+                className="underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground"
               >
                 manage them
               </Link>

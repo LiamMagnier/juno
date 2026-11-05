@@ -54,7 +54,16 @@ public enum CodeThinkingWire {
         let id = providerModelID.lowercased()
         // Manual-only families are matched first: "claude-opus-4-5" would
         // otherwise fall through to the adaptive default below.
-        if id.contains("haiku") { return .manual }
+        //
+        // Haiku 4.5 (and the Claude 3 Haikus) only. This used to match any id
+        // containing "haiku", which sent `{type: "enabled", budget_tokens}` to
+        // Claude Haiku 5.5 — adaptive-only, so every turn was a 400
+        // ("thinking.type.enabled is not supported for this model").
+        if id.range(of: #"haiku-[34]"#, options: .regularExpression) != nil
+            || id.contains("claude-3-haiku")
+        {
+            return .manual
+        }
         if id.contains("opus-4-5") || id.contains("sonnet-4-5") { return .manual }
         if id.contains("opus-4-1") || id.contains("claude-3") { return .manual }
         // An unrecognised future Claude id prefers adaptive, because manual is
@@ -71,6 +80,31 @@ public enum CodeThinkingWire {
             || id.contains("opus-5") // claude-opus-5 and claude-opus-5-5 alike
             || id.contains("opus-4-8") || id.contains("opus-4-7")
             || id.contains("sonnet-5")
+            || id.contains("haiku-5-5") // display defaults to "omitted" on Haiku 5.5 too
+    }
+
+    /// Adaptive thinking is always on and `disabled` is a 400: Fable, Mythos
+    /// and Opus 5.5. Opus 5 still accepts `disabled`, hence the exact match.
+    static func adaptiveAlwaysOn(_ providerModelID: String) -> Bool {
+        let id = providerModelID.lowercased()
+        return id.contains("fable") || id.contains("mythos") || id.contains("opus-5-5")
+    }
+
+    /// The depth an always-on model runs at when no depth was asked for: the
+    /// API's own default, so omitting a tier never costs more than the
+    /// provider would have charged. Opus 5.5 defaults to medium; Fable and
+    /// Mythos to high (`alwaysOnDefaultEffort` on the website).
+    static func alwaysOnDefaultEffort(_ providerModelID: String) -> ReasoningEffort {
+        providerModelID.lowercased().contains("opus-5-5") ? .medium : .high
+    }
+
+    /// The `thinking` type that switches thinking off on a default-on model.
+    /// Sonnet 5.5 rejects `disabled` at every effort and takes
+    /// `between_tools`; Opus 5, Sonnet 5 and Haiku 5.5 take `disabled` (at
+    /// effort high or below — Instant sends no effort, so the API default
+    /// applies). `instantThinkingParam` on the website.
+    static func instantThinkingType(_ providerModelID: String) -> String {
+        providerModelID.lowercased().contains("sonnet-5-5") ? "between_tools" : "disabled"
     }
 
     /// Anthropic publishes no `minimal` effort.
@@ -123,47 +157,49 @@ public enum CodeThinkingWire {
         public let outputConfig: JSONValue?
     }
 
+    /// Mirrors `buildAnthropicThinkingBits` in `src/lib/anthropic-thinking.ts`
+    /// branch for branch.
     public static func anthropicBits(
         providerModelID: String,
         maxTokens: Int,
         effort: ReasoningEffort?
     ) -> AnthropicBits {
         let cap = anthropicOutputCap(providerModelID)
-        // No depth to ask for.
-        //
-        // Omitting `thinking` is NOT the same as switching it off. An adaptive
-        // model that defaults thinking ON — Sonnet 5 — reasons anyway when the
-        // field is absent, so "Off" was a no-op and the user paid for thinking
-        // tokens they had explicitly declined. Those models need an explicit
-        // `{"type": "disabled"}`; the ones that default off still get nothing,
-        // because Fable/Mythos REJECT being disabled.
-        //
-        // The headroom added below exists only to pay for thinking tokens, so
-        // the ceiling is left alone here either way.
-        guard let effort else {
-            let disable = anthropicThinkingKind(providerModelID: providerModelID) == .adaptive
-                && adaptiveDefaultsOn(providerModelID)
-            // Sonnet 5.5 rejects `disabled` at every effort; its off switch is
-            // `between_tools` (src/lib/anthropic-thinking.ts instantThinkingParam).
-            let offType = providerModelID.lowercased().contains("sonnet-5-5") ? "between_tools" : "disabled"
-            return AnthropicBits(
-                maxTokens: min(maxTokens, cap),
-                thinking: disable ? .object(["type": .string(offType)]) : nil,
-                outputConfig: nil
-            )
-        }
         switch anthropicThinkingKind(providerModelID: providerModelID) {
         case .adaptive:
+            guard effort != nil || adaptiveAlwaysOn(providerModelID) else {
+                // Instant. Omitting `thinking` is NOT the same as switching it
+                // off: Opus 5, Sonnet 5/5.5 and Haiku 5.5 reason anyway when
+                // the field is absent, so they get the off value they accept.
+                // Opus 4.6-4.8 and Sonnet 4.6 default off and get nothing. The
+                // headroom below only pays for thinking, so the ceiling is
+                // left alone.
+                return AnthropicBits(
+                    maxTokens: min(maxTokens, cap),
+                    thinking: adaptiveDefaultsOn(providerModelID)
+                        ? .object(["type": .string(instantThinkingType(providerModelID))])
+                        : nil,
+                    outputConfig: nil
+                )
+            }
+            // Reached with no depth only on an always-on model, which runs at
+            // the API's own default — said explicitly, as the website does, so
+            // the summarized display and the headroom apply to it too.
+            let tier = effort ?? alwaysOnDefaultEffort(providerModelID)
             var thinking: [String: JSONValue] = ["type": .string("adaptive")]
             if needsSummarizedDisplay(providerModelID) {
                 thinking["display"] = .string("summarized")
             }
             return AnthropicBits(
-                maxTokens: min(maxTokens + adaptiveHeadroom(effort), cap),
+                maxTokens: min(maxTokens + adaptiveHeadroom(tier), cap),
                 thinking: .object(thinking),
-                outputConfig: .object(["effort": .string(anthropicEffort(effort))])
+                outputConfig: .object(["effort": .string(anthropicEffort(tier))])
             )
         case .manual:
+            guard let effort else {
+                // Omitting `thinking` is genuinely off on the manual families.
+                return AnthropicBits(maxTokens: min(maxTokens, cap), thinking: nil, outputConfig: nil)
+            }
             let requested = manualBudget(effort)
             let total = min(requested + maxTokens, cap)
             // Anthropic requires budget_tokens < max_tokens and >= 1024. A
@@ -193,108 +229,134 @@ public enum CodeThinkingWire {
     /// answer rather than a default guess: sending `reasoning_effort` to a lab
     /// that does not define it is at best ignored and at worst a 400, which is
     /// exactly why the website gates the parameter per provider.
+    ///
+    /// Mirrors `compatReasoningFields` in `src/lib/llm/compat-loop.ts` (the same
+    /// rules as `src/lib/openai-compat.ts`) branch for branch. Several of its
+    /// decisions turn on the model's own capabilities — whether it reasons at
+    /// all and whether it can be switched off — which the website reads from
+    /// `reasoningCaps`. `caps` is the same answer, from the account's model
+    /// manifest (``CodeReasoningCapsRegistry``).
+    ///
+    /// With `caps` nil — a model the manifest has not described — the off
+    /// switches that depend on `canDisable` are never sent. That is the
+    /// conservative direction: sending a disable to a model that does not
+    /// expose one is not a slower answer but a 400 on every turn ("reasoning_effort
+    /// is not enabled for this model" — the Mistral outage). Such a model may
+    /// over-think on Instant instead.
     public static func chatParameters(
         providerID: String,
         providerModelID: String,
-        effort: ReasoningEffort?
+        effort: ReasoningEffort?,
+        caps: CodeReasoningCaps? = nil
     ) -> [String: JSONValue] {
-        // Nothing at all when there is no depth to ask for.
-        //
-        // This is the case that matters most on this path, because the failure is
-        // not a wrong answer but a refused request. The Mistral line, the
-        // non-reasoning OpenAI snapshots and the non-thinking Qwen models all
-        // publish no tiers and all reject the parameter — `reasoning_effort is not
-        // enabled for this model` is a 400, so a session on one of them failed
-        // every turn rather than merely thinking at the wrong depth.
         let provider = providerID.lowercased()
         let id = providerModelID.lowercased()
-        var parameters: [String: JSONValue] = [:]
+        var out: [String: JSONValue] = [:]
 
-        // "Off" is a REQUEST, not an omission.
-        //
-        // GPT-5.5/5.6, Gemini and the GLM/Qwen hybrids all think by default when
-        // the parameter is absent, so omitting it made Juno's "Off" silently do
-        // nothing on half the catalog — and the user paid for reasoning tokens
-        // they had turned off. Each provider spells the off-state differently;
-        // this mirrors the website's per-provider rules rather than guessing,
-        // because sending the wrong spelling is a 400, not a slower answer.
-        guard let effort else {
-            if canDisableViaNoneEffort(provider: provider, id: id) {
-                return ["reasoning_effort": .string("none")]
-            }
-            // Everything else keeps sending nothing, deliberately.
-            //
-            // The website decides this per model from its reasoningCaps table
-            // (canDisable), which does not exist on this side. Guessing is not
-            // the safe direction: sending a disable to a model that does not
-            // expose one is not a slower answer, it is
-            // "reasoning_effort is not enabled for this model" — a 400 on every
-            // single turn, which is how the Mistral outage happened. So GLM,
-            // the Qwen hybrids, Kimi and MiniMax still over-think when switched
-            // off, and closing that needs the caps table ported, not a wider
-            // guess here.
-            return [:]
-        }
+        // `model.reasoning` on the website. Unknown: a depth was asked for, so
+        // the model is taken to reason; no depth, and nothing is assumed.
+        let reasoning = caps?.supported ?? (effort != nil)
+        // `reasoningCaps(model).canDisable`, gated on `model.reasoning` the way
+        // the website gates it (the caps report canDisable for a model that
+        // does not reason at all). Unknown is false — see above.
+        let canDisable = caps.map { $0.supported && $0.canDisable }
 
-        // Qwen (DashScope) drives thinking with enable_thinking + a token
-        // budget, never OpenAI's reasoning_effort — sending both is redundant
-        // or rejected.
-        if provider == "qwen" {
-            parameters["enable_thinking"] = .bool(true)
-            parameters["thinking_budget"] = .number(Double(qwenBudget(effort)))
-            return parameters
-        }
+        // GLM-5.3 always thinks: its depth is the effort enum, and the
+        // `thinking` object's off state is exactly what makes its requests fail.
+        let glmEffortOnly = provider == "zhipu" && id.contains("glm-5.3")
 
         if usesReasoningEffort(provider: provider, id: id) {
-            // Mistral's enum is only high|none, so any depth collapses to high.
-            parameters["reasoning_effort"] = .string(
-                provider == "mistral" ? "high" : effort.rawValue
-            )
+            if let effort {
+                // Mistral's enum is only high|none, so any depth collapses to high.
+                out["reasoning_effort"] = .string(provider == "mistral" ? "high" : effort.rawValue)
+            } else if canDisableViaNoneEffort(
+                provider: provider, id: id, canDisable: canDisable, reasoning: caps?.supported
+            ) {
+                // "Off" is a REQUEST, not an omission: GPT-5.5+, Gemini and
+                // DeepSeek V4 think by default when the parameter is absent.
+                out["reasoning_effort"] = .string("none")
+            }
         }
 
-        // GLM takes a thinking object on every model, and GLM-5.2 additionally
-        // takes reasoning_effort (set just above).
-        if provider == "zhipu" {
-            parameters["thinking"] = .object(["type": .string("enabled")])
+        if provider == "qwen", reasoning {
+            // Instant turns thinking off on the hybrid models (Qwen3.8 Max
+            // included — hybrid, on by default); a thinking-only model always
+            // gets it on. Unknown caps never send the off state.
+            let alwaysThinks = !(canDisable ?? false)
+            let qwenEffort: ReasoningEffort? = effort ?? (alwaysThinks ? .high : nil)
+            out["enable_thinking"] = .bool(alwaysThinks ? true : qwenEffort != nil)
+            if let qwenEffort {
+                if id.contains("qwen3.8") {
+                    // The 3.8 line takes reasoning_effort (low|medium|xhigh),
+                    // and a thinking_budget alongside it is an error.
+                    out["reasoning_effort"] = .string(qwenEffort.rawValue)
+                } else {
+                    out["thinking_budget"] = .number(Double(qwenBudget(qwenEffort)))
+                }
+            }
         }
 
-        if let onState = thinkingObjectOnState(provider: provider, id: id) {
-            parameters["thinking"] = .object(["type": .string(onState)])
+        if provider == "zhipu", reasoning, !glmEffortOnly {
+            // The on/off GLMs (and GLM-5.2): an effort means enabled, its
+            // absence means off. The off state is only sent when the manifest
+            // has confirmed the model reasons.
+            if effort != nil {
+                out["thinking"] = .object(["type": .string("enabled")])
+            } else if caps != nil {
+                out["thinking"] = .object(["type": .string("disabled")])
+            }
         }
 
-        if provider == "minimax" {
-            // Ask MiniMax to return reasoning in its own field rather than
-            // inline in the answer text.
-            parameters["reasoning_split"] = .bool(true)
+        if provider == "deepseek", reasoning, effort == nil, canDisable == true {
+            // DeepSeek V4/V4.1 think by default (effort high); Instant must
+            // switch it off explicitly. deepseek-reasoner has no switch.
+            out["thinking"] = .object(["type": .string("disabled")])
         }
 
-        return parameters
+        let usesThinkingObject = ["minimax", "moonshot", "mimo", "longcat"].contains(provider)
+        if usesThinkingObject, reasoning {
+            // MiniMax M3 spells its on-state "adaptive".
+            let onType = provider == "minimax" ? "adaptive" : "enabled"
+            if let canDisable {
+                // Only to models that can actually switch: Kimi K2.7 REJECTS
+                // {type:"disabled"} and MiniMax M2.x ignores the field.
+                if canDisable {
+                    out["thinking"] = .object(["type": .string(effort != nil ? onType : "disabled")])
+                }
+            } else if effort != nil, thinkingObjectSwitches(provider: provider, id: id) {
+                // Unknown caps: the on-state only, for the models known to
+                // switch (never the off state — see above).
+                out["thinking"] = .object(["type": .string(onType)])
+            }
+        }
+
+        // Ask MiniMax for its reasoning in its own field rather than inline.
+        if provider == "minimax" { out["reasoning_split"] = .bool(true) }
+        return out
     }
 
     /// Providers whose docs define OpenAI's top-level `reasoning_effort`
-    /// (verified against live providers on the website, 2026-07).
+    /// (`usesReasoningEffort` in compat-loop.ts).
     static func usesReasoningEffort(provider: String, id: String) -> Bool {
         switch provider {
-        case "openai", "google", "deepseek", "xai", "mistral":
+        case "openai", "google", "deepseek", "xai", "mistral", "meta":
             return true
         case "zhipu":
-            return id.contains("glm-5.2")
+            // GLM-5.2 takes it beside the thinking object; GLM-5.3 takes only it.
+            return id.contains("glm-5.2") || id.contains("glm-5.3")
         case "moonshot":
             // Kimi K3 introduced a top-level reasoning_effort enum
             // (low|high|max) replacing the K2.x thinking object. Only K3 speaks
             // it; the K2.x line stays on the thinking-object path.
             return id.contains("k3")
+        case "minimax":
+            // MiniMax M3.1: the one MiniMax with reasoning_effort.
+            return id.contains("m3.1")
         default:
             return false
         }
     }
 
-    /// Adaptive Claude models that reason when `thinking` is OMITTED, and so
-    /// need an explicit disable to actually stop.
-    ///
-    /// Opus 5 / Sonnet 5 / Sonnet 5.5 default on; Opus 4.7/4.8 default off. Fable, Mythos and Opus
-    /// 5.5 are always-on and reject `disabled` outright, which is why they must
-    /// not be listed here.
     /// True for the models that run adaptive thinking when `thinking` is
     /// omitted, so `{"type": "adaptive"}` with no effort asks for exactly what
     /// omission would: Fable, Mythos, and Opus 5 / 5.5.
@@ -303,58 +365,78 @@ public enum CodeThinkingWire {
         return id.contains("fable") || id.contains("mythos") || id.contains("opus-5")
     }
 
-    /// Anthropic's per-model table (thinking-troubleshooting, 2026-10-04)
-    /// marks Opus 5, Sonnet 5 and Sonnet 5.5 "On" by default. Opus 5.5 is
-    /// always-on (rejects `disabled`), so `opus-5` is matched exactly.
+    /// Adaptive models that reason when `thinking` is omitted AND accept an
+    /// off value, so Instant has to send one. Mirrors `adaptiveDefaultOn` in
+    /// src/lib/anthropic-thinking.ts exactly: Opus 5 and Sonnet 5 (matched
+    /// exactly — Opus 5.5 is always on and never reaches Instant), Sonnet 5.5,
+    /// and Haiku 5.5, which thinks by default and takes `disabled` at effort
+    /// high or below (thinking docs, 2026-10-10).
     static func adaptiveDefaultsOn(_ providerModelID: String) -> Bool {
-        let id = providerModelID.lowercased()
-        if id.contains("fable") || id.contains("mythos") || id.contains("opus-5-5") { return false }
-        if id.contains("sonnet-5") { return true } // sonnet-5 and sonnet-5-5
-        return id.range(of: #"opus-5(?![-.]\d)"#, options: .regularExpression) != nil
+        providerModelID.lowercased().range(
+            of: #"(opus|sonnet)-5(?![-.]\d)|sonnet-5-5|haiku-5-5"#,
+            options: .regularExpression
+        ) != nil
     }
 
     /// True when the model expresses "don't think" as reasoning_effort:"none".
     ///
-    /// Mirrors canDisableViaNoneEffort in src/lib/openai-compat.ts. The
-    /// exclusions are the load-bearing part: gpt-5-pro always reasons, the
-    /// original gpt-5 predates "none" (its floor is "minimal"), and sending the
-    /// parameter to a Mistral model that does not expose it returns
+    /// Mirrors `canDisableViaNoneEffort` in src/lib/llm/compat-loop.ts.
+    /// `canDisable` is the manifest's `reasoning.canDisable` (already gated on
+    /// the model reasoning), or nil when the manifest has not described the
+    /// model. The exclusions are the load-bearing part: gpt-5-pro always
+    /// reasons, the original gpt-5 predates "none" (its floor is "minimal"), and
+    /// sending the parameter to a Mistral model that does not expose it returns
     /// "reasoning_effort is not enabled for this model" — a 400 on every turn.
-    static func canDisableViaNoneEffort(provider: String, id: String) -> Bool {
-        // OpenAI only, and only where the website has verified it. Google and
-        // Mistral also accept "none" on SOME models, but both gate it on a
-        // per-model capability this side cannot see, and both 400 the models
-        // that do not expose it.
-        guard provider == "openai" else { return false }
-        if id.contains("-pro") { return false }        // gpt-5-pro always reasons
-        if id.contains("codex") { return false }      // gpt-5.3-codex lists no "none"
-        // 5.1+ only; the original gpt-5 predates "none" (its floor is "minimal").
-        // GPT-6 Sol and Luna list "none" too; GPT-6 Astra and GPT-6.1 Sol do
-        // not, so they are left out by name rather than matched by generation.
-        return id.range(of: #"gpt-5\.\d|gpt-6-(sol|luna)"#, options: .regularExpression) != nil
+    static func canDisableViaNoneEffort(
+        provider: String,
+        id: String,
+        canDisable: Bool?,
+        reasoning: Bool? = nil
+    ) -> Bool {
+        switch provider {
+        case "mistral", "google":
+            // Mistral: only medium/small expose the parameter. Google's compat
+            // shim accepts "none" on the models whose caps say so. Each is the
+            // per-model caps answer, so an undescribed model gets nothing.
+            return canDisable ?? false
+        case "deepseek":
+            // DeepSeek V4's documented off switch on Chat Completions is
+            // `thinking: {type: "disabled"}`, not "none" (sent by
+            // chatParameters, as compat-loop.ts does).
+            return false
+        case "openai":
+            if id.range(of: #"gpt-5(\.\d)?-pro"#, options: .regularExpression) != nil { return false }
+            // Codex and GPT-6 are split per snapshot; the caps carry each one's
+            // enum. Without caps, only the snapshots the website verified by
+            // name: GPT-6 Sol and Luna list "none", Astra and 6.1 Sol do not,
+            // and Codex is left alone.
+            if id.contains("codex") || id.contains("gpt-6") {
+                if let canDisable { return canDisable }
+                return id.range(of: #"gpt-6-(sol|luna)"#, options: .regularExpression) != nil
+            }
+            // 5.1+ only; the original gpt-5 predates "none". The website gates
+            // this on `model.reasoning` alone, not on canDisable.
+            return (reasoning ?? true)
+                && id.range(of: #"gpt-5\.\d"#, options: .regularExpression) != nil
+        default:
+            return false
+        }
     }
 
-    /// The on-state spelling for providers that switch thinking with a
-    /// `thinking: {type}` object, or nil when this model exposes no switch.
-    ///
-    /// Nil is the important case. Kimi K2.7 *rejects* `{type: "disabled"}` and
-    /// MiniMax M2.x silently ignores the field — both always reason and are
-    /// `canDisable: false` in the website's caps table, so nothing is sent for
-    /// them at all.
-    static func thinkingObjectOnState(provider: String, id: String) -> String? {
+    /// Without the manifest's caps: whether a `thinking: {type}` provider's
+    /// model is known to take the switch at all. Kimi K2.7 *rejects*
+    /// `{type: "disabled"}` and MiniMax M2.x silently ignores the field — both
+    /// always reason; K3 and MiniMax M3.1 are on the reasoning_effort path.
+    static func thinkingObjectSwitches(provider: String, id: String) -> Bool {
         switch provider {
         case "minimax":
-            // M3 spells its on-state "adaptive"; M2.x has no control.
-            return id.contains("m3") ? "adaptive" : nil
+            return id.contains("m3") && !id.contains("m3.1")
         case "moonshot":
-            // K3 is on the reasoning_effort path; K2.7 always reasons and takes
-            // no switch; K2.6 and earlier switch with enabled/disabled.
-            if id.contains("k3") || id.contains("k2.7") { return nil }
-            return "enabled"
+            return !id.contains("k3") && !id.contains("k2.7")
         case "mimo", "longcat":
-            return "enabled"
+            return true
         default:
-            return nil
+            return false
         }
     }
 

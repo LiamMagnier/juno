@@ -101,7 +101,6 @@ export function UsageHistoryView({
 
   const { totals } = breakdown;
   const focused = active !== null ? days[active] : null;
-  const busiest = days.reduce<HistoryDay | null>((best, d) => (!best || d.requests > best.requests ? d : best), null);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const last = days.length - 1;
@@ -167,7 +166,6 @@ export function UsageHistoryView({
         {days.map((day, i) => {
           const share = day.requests / max;
           const isActive = active === i;
-          const isBusiest = !focused && busiest !== null && busiest.requests > 0 && day === busiest;
           return (
             <div
               key={day.dayMs}
@@ -180,9 +178,12 @@ export function UsageHistoryView({
               <span
                 className={cn(
                   "block w-full rounded-t-xs transition-colors duration-fast ease-out-soft",
+                  // Ink only for the day being read (pointer or keyboard). The
+                  // busiest day used to wear it at rest, unlabelled, so one
+                  // bar looked selected, or looked like today.
                   day.requests === 0
                     ? "bg-border"
-                    : isActive || isBusiest
+                    : isActive
                       ? "bg-primary"
                       : active !== null
                         ? "bg-muted-foreground/35"

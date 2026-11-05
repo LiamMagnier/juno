@@ -1,9 +1,11 @@
 import AppKit
-import ApplicationServices
+import Carbon.HIToolbox
+import JunoCore
 import JunoDesignSystem
 import SwiftUI
 
-/// The floating "Ask Juno" panel, bound to ⌥Space from anywhere.
+/// The floating "Ask Juno" panel, bound to ⌥Space (or the reader's own
+/// shortcut) from anywhere.
 ///
 /// A small non-activating panel — the app does not come to the front, the
 /// panel does — holding the composer's shell and the Chat/Code switch. Return
@@ -15,20 +17,23 @@ import SwiftUI
 /// is armed: the model decides whether the sentence is a task and starts one
 /// itself, as it does on the web.)
 ///
-/// **The hotkey needs Accessibility.** A global key monitor only receives
-/// events when the app is trusted for accessibility, so the panel says so in
-/// one line when it is not, and offers the System Settings pane. It never asks
-/// for the permission on the reader's behalf: prompting for a standing grant
-/// from a background hotkey is exactly the surprise the permission exists to
-/// prevent. Inside the app the shortcut works regardless, through a local
-/// monitor.
+/// **The shortcut is a registered hot key.** It used to be a global `NSEvent`
+/// monitor, which only *observes* keys: it needed Accessibility trust to see
+/// anything, and even then ⌥Space still reached the frontmost app, where it
+/// typed a non-breaking space. Carbon's `RegisterEventHotKey` needs no
+/// permission and consumes the key in every app, this one included, so no
+/// local monitor is needed either. The shortcut is the reader's to change
+/// (Settings › General); ``JunoHotkeyBinder`` refuses a reserved or taken one
+/// and keeps the previous shortcut working when it does.
+///
+/// **Prewarmed.** The panel is built two seconds after launch rather than on
+/// the first press, so the first ⌥Space opens it without building a hosting
+/// view under the reader's finger.
 @MainActor
 final class DesktopQuickEntryController {
     static let shared = DesktopQuickEntryController()
 
     private var panel: NSPanel?
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
     /// The account's Light or Dark choice, or nil to follow the system.
     ///
     /// The panel is AppKit's, not a SwiftUI scene, so the theme the main
@@ -38,6 +43,21 @@ final class DesktopQuickEntryController {
     /// override").
     private var appearance: NSAppearance?
 
+    private lazy var binder = JunoHotkeyBinder(
+        registrar: DesktopCarbonHotkeyRegistrar(),
+        appChords: DesktopQuickEntryHotkey.appChords
+    )
+    private var prewarmTask: Task<Void, Never>?
+    /// While Settings records a new shortcut, a press of the current one is
+    /// the recorder's answer, not a reason to open the panel.
+    private var recorder: ((JunoHotkey) -> Void)?
+
+    /// Why the saved shortcut could not be registered at launch, or nil.
+    private(set) var launchProblem: JunoHotkeyProblem?
+
+    /// The shortcut registered now, if any.
+    var activeHotkey: JunoHotkey? { binder.active }
+
     /// Applies the account's theme to the panel, now and whenever it is next
     /// built. Nil follows the system, as the main window does.
     func setColorScheme(_ scheme: ColorScheme?) {
@@ -45,31 +65,78 @@ final class DesktopQuickEntryController {
         panel?.appearance = appearance
     }
 
-    /// Whether the global monitor can receive keys. Read live: the reader may
-    /// grant the permission while the app is running.
-    var isAccessibilityTrusted: Bool {
-        AXIsProcessTrusted()
-    }
-
-    /// Installs the ⌥Space monitors. Idempotent.
+    /// Registers the reader's shortcut, falling back to ⌥Space for this run if
+    /// the saved one no longer registers, then schedules the prewarm.
+    /// Idempotent.
     func installHotkey() {
-        guard globalMonitor == nil, localMonitor == nil else { return }
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            guard Self.isHotkey(event) else { return }
-            Task { @MainActor in DesktopQuickEntryController.shared.toggle() }
+        guard binder.active == nil else { return }
+        let saved = DesktopQuickEntryHotkey.saved
+        if let problem = binder.bind(saved) {
+            launchProblem = problem
+            if saved != .quickEntryDefault {
+                binder.bind(.quickEntryDefault)
+            }
         }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard Self.isHotkey(event) else { return event }
-            Task { @MainActor in DesktopQuickEntryController.shared.toggle() }
-            return nil
+        schedulePrewarm()
+    }
+
+    /// Makes `hotkey` the shortcut and saves it. Returns why not, in which
+    /// case the previous shortcut is still the one registered.
+    @discardableResult
+    func rebind(_ hotkey: JunoHotkey) -> JunoHotkeyProblem? {
+        if let problem = binder.bind(hotkey) { return problem }
+        DesktopQuickEntryHotkey.save(hotkey)
+        launchProblem = nil
+        return nil
+    }
+
+    /// Routes presses of the current shortcut to Settings' recorder while it
+    /// listens; nil hands them back to the panel.
+    func setRecorder(_ recorder: ((JunoHotkey) -> Void)?) {
+        self.recorder = recorder
+    }
+
+    /// The registered shortcut was pressed, in any app.
+    func hotkeyPressed() {
+        if let recorder, let active = binder.active {
+            recorder(active)
+        } else {
+            toggle()
         }
     }
 
-    /// ⌥Space, and nothing else: no ⌘, no ⌃, no ⇧, so it cannot collide with
-    /// Spotlight's ⌘Space or a terminal's ⌃Space.
-    nonisolated static func isHotkey(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        return event.keyCode == 49 && flags == [.option]
+    /// The panel's one line about the shortcut, set only when the saved
+    /// shortcut could not be registered, so the reader knows why it did not
+    /// open from another app (or why ⌥Space did instead).
+    var notice: String? {
+        guard let launchProblem else { return nil }
+        let saved = DesktopQuickEntryHotkey.saved
+        var line = DesktopQuickEntryHotkey.message(for: launchProblem, hotkey: saved)
+        if let active = binder.active, active != saved {
+            line += " Using \(active.display) for now."
+        }
+        return line + " Change it in Settings › General."
+    }
+
+    /// Builds the panel ahead of the first press, once launch has settled.
+    private func schedulePrewarm() {
+        prewarmTask?.cancel()
+        prewarmTask = Task { [weak self] in
+            // An explicit clock, as elsewhere in the app: Swift 6.2's
+            // cross-module `Task.sleep(for:)` specialization can crash.
+            let clock = ContinuousClock()
+            try? await clock.sleep(until: clock.now.advanced(by: .seconds(2)))
+            guard !Task.isCancelled else { return }
+            self?.prewarm()
+        }
+    }
+
+    /// Builds and lays out the panel without showing it. Idempotent.
+    func prewarm() {
+        guard panel == nil else { return }
+        let built = makePanel()
+        built.contentView?.layoutSubtreeIfNeeded()
+        panel = built
     }
 
     func toggle() {
@@ -124,7 +191,7 @@ final class DesktopQuickEntryController {
         }
         panel.contentView = NSHostingView(
             rootView: DesktopQuickEntryView(
-                readTrust: { AXIsProcessTrusted() },
+                readNotice: { DesktopQuickEntryController.shared.notice },
                 dismiss: { [weak self] in self?.hide() }
             )
             .desktopTextScale()
@@ -165,23 +232,22 @@ private final class DesktopQuickEntryPanel: NSPanel {
 /// ``DesktopWorkbenchRegistry`` to whichever window is open, and that window is
 /// brought forward; a window is opened only when there is none.
 struct DesktopQuickEntryView: View {
-    /// Reads whether the app is trusted for Accessibility. Read on every
-    /// appearance and whenever the app comes forward, because the reader may
-    /// grant the permission while the panel is cached: a line asking for a
-    /// permission already given would be the panel's one lie.
-    let readTrust: () -> Bool
+    /// Reads the controller's line about the shortcut, if it could not be
+    /// registered. Read on every appearance, because the panel is built once
+    /// (prewarmed) and the reader may fix the shortcut in Settings meanwhile.
+    let readNotice: () -> String?
     let dismiss: () -> Void
 
-    @State private var isAccessibilityTrusted = true
+    @State private var notice: String?
     @State private var text = ""
     @State private var product: DesktopProductMode
 
     init(
-        readTrust: @escaping () -> Bool,
+        readNotice: @escaping () -> String?,
         dismiss: @escaping () -> Void,
         startingProduct: DesktopProductMode = .chat
     ) {
-        self.readTrust = readTrust
+        self.readNotice = readNotice
         self.dismiss = dismiss
         _product = State(initialValue: startingProduct)
     }
@@ -217,23 +283,33 @@ struct DesktopQuickEntryView: View {
             field: { field },
             controls: { controls },
             edge: { EmptyView() },
-            captionBelow: { EmptyView() }
+            captionBelow: { noticeLine }
         )
         .frame(width: Self.width)
         .padding(JunoSpace.snug)
         .onAppear {
             fieldFocused = true
-            isAccessibilityTrusted = readTrust()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            isAccessibilityTrusted = readTrust()
+            notice = readNotice()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            isAccessibilityTrusted = readTrust()
+            notice = readNotice()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Ask Alevr")
         .accessibilityIdentifier("juno.desktop.quick-entry")
+    }
+
+    /// Why the shortcut did not open the panel from another app, when it
+    /// could not be registered. Nothing otherwise.
+    @ViewBuilder
+    private var noticeLine: some View {
+        if let notice {
+            JunoIconLabel(verbatim: notice, icon: .keyboard, size: 12)
+                .junoType(.caption)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .lineLimit(2)
+                .accessibilityIdentifier("juno.desktop.quick-entry.shortcut-notice")
+        }
     }
 
     private var field: some View {
@@ -288,23 +364,6 @@ struct DesktopQuickEntryView: View {
                 .lineLimit(1)
                 .padding(.leading, JunoSpace.snug)
             Spacer(minLength: JunoSpace.snug)
-            if !isAccessibilityTrusted {
-                Button {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                        NSWorkspace.shared.open(url)
-                    }
-                } label: {
-                    JunoIconLabel(verbatim: "Allow ⌥Space everywhere", icon: .permission, size: 12)
-                        .junoType(.caption)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .padding(.horizontal, JunoSpace.tight)
-                        .frame(height: JunoComposerMetrics.controlHeight)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(ComposerControlStyle())
-                .help("Opens Privacy & Security › Accessibility. The global shortcut needs it.")
-                .accessibilityIdentifier("juno.desktop.quick-entry.accessibility")
-            }
             // The send face, but not the send words: Return puts the text in
             // a new chat's (or task's) field, and the reader sends it there.
             ComposerPrimaryDisc(
@@ -328,5 +387,305 @@ struct DesktopQuickEntryView: View {
         text = ""
         dismiss()
         JunoDesktopWindow.showMainWindow(using: openWindow)
+    }
+}
+
+// MARK: - The shortcut
+
+/// Quick Entry's shortcut as the app stores, shows and checks it.
+enum DesktopQuickEntryHotkey {
+    /// `UserDefaults` key: the shortcut's ``JunoHotkey/storageValue``. This
+    /// Mac's choice, like text size, not the account's.
+    static let storageKey = "quickEntry.hotkey"
+
+    /// The saved shortcut, or ⌥Space when none is saved or it does not read.
+    static var saved: JunoHotkey {
+        hotkey(storage: UserDefaults.standard.string(forKey: storageKey) ?? "")
+    }
+
+    static func hotkey(storage: String) -> JunoHotkey {
+        JunoHotkey(storageValue: storage) ?? .quickEntryDefault
+    }
+
+    static func save(_ hotkey: JunoHotkey) {
+        UserDefaults.standard.set(hotkey.storageValue, forKey: storageKey)
+    }
+
+    /// The chords Alevr's own menus answer, by command name, so a global
+    /// shortcut cannot take one of them away from the app itself.
+    static var appChords: [JunoHotkey: String] {
+        var chords: [JunoHotkey: String] = [:]
+        for entry in JunoShortcutRegistry.entries where entry.id != .askJuno {
+            if case .field = entry.binding { continue }
+            guard let key = entry.key, let hotkey = hotkey(key: key, modifiers: entry.modifiers) else { continue }
+            chords[hotkey] = entry.menuTitle ?? entry.listLabel ?? entry.id.rawValue
+        }
+        return chords
+    }
+
+    static func modifiers(_ eventModifiers: SwiftUI.EventModifiers) -> JunoHotkey.Modifiers {
+        var result: JunoHotkey.Modifiers = []
+        if eventModifiers.contains(.control) { result.insert(.control) }
+        if eventModifiers.contains(.option) { result.insert(.option) }
+        if eventModifiers.contains(.shift) { result.insert(.shift) }
+        if eventModifiers.contains(.command) { result.insert(.command) }
+        return result
+    }
+
+    /// A SwiftUI chord as a key position, or nil for a key with no fixed one.
+    static func hotkey(key: KeyEquivalent, modifiers eventModifiers: SwiftUI.EventModifiers) -> JunoHotkey? {
+        let code: UInt16?
+        switch key {
+        case .space: code = JunoHotkey.KeyCode.space
+        case .return: code = JunoHotkey.KeyCode.returnKey
+        case .tab: code = JunoHotkey.KeyCode.tab
+        case .delete: code = JunoHotkey.KeyCode.delete
+        case .escape: code = JunoHotkey.KeyCode.escape
+        case .upArrow: code = JunoHotkey.KeyCode.upArrow
+        case .downArrow: code = JunoHotkey.KeyCode.downArrow
+        case .leftArrow: code = JunoHotkey.KeyCode.leftArrow
+        case .rightArrow: code = JunoHotkey.KeyCode.rightArrow
+        default: code = JunoHotkey.keyCode(forCharacter: key.character)
+        }
+        return code.map { JunoHotkey(keyCode: $0, modifiers: Self.modifiers(eventModifiers)) }
+    }
+
+    /// The shortcut as a menu chord, so File › Ask Alevr… shows the reader's
+    /// choice. Nil for a key a menu cannot show.
+    static func keyboardShortcut(_ hotkey: JunoHotkey) -> KeyboardShortcut? {
+        let key: KeyEquivalent
+        switch hotkey.keyCode {
+        case JunoHotkey.KeyCode.space: key = .space
+        case JunoHotkey.KeyCode.returnKey: key = .return
+        case JunoHotkey.KeyCode.tab: key = .tab
+        case JunoHotkey.KeyCode.delete: key = .delete
+        case JunoHotkey.KeyCode.escape: key = .escape
+        case JunoHotkey.KeyCode.upArrow: key = .upArrow
+        case JunoHotkey.KeyCode.downArrow: key = .downArrow
+        case JunoHotkey.KeyCode.leftArrow: key = .leftArrow
+        case JunoHotkey.KeyCode.rightArrow: key = .rightArrow
+        default:
+            guard hotkey.isCharacterKey, let character = hotkey.keyName.lowercased().first else { return nil }
+            key = KeyEquivalent(character)
+        }
+        var eventModifiers: SwiftUI.EventModifiers = []
+        if hotkey.modifiers.contains(.control) { eventModifiers.insert(.control) }
+        if hotkey.modifiers.contains(.option) { eventModifiers.insert(.option) }
+        if hotkey.modifiers.contains(.shift) { eventModifiers.insert(.shift) }
+        if hotkey.modifiers.contains(.command) { eventModifiers.insert(.command) }
+        return KeyboardShortcut(key, modifiers: eventModifiers)
+    }
+
+    /// The key a recorder just saw, as a shortcut.
+    static func hotkey(from event: NSEvent) -> JunoHotkey {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        var result: JunoHotkey.Modifiers = []
+        if flags.contains(.control) { result.insert(.control) }
+        if flags.contains(.option) { result.insert(.option) }
+        if flags.contains(.shift) { result.insert(.shift) }
+        if flags.contains(.command) { result.insert(.command) }
+        return JunoHotkey(keyCode: event.keyCode, modifiers: result)
+    }
+
+    /// Why a shortcut was refused, in one sentence that names it.
+    static func message(for problem: JunoHotkeyProblem, hotkey: JunoHotkey) -> String {
+        let chord = hotkey.display
+        switch problem {
+        case .unknownKey: return "Alevr can’t use that key in a shortcut."
+        case .needsControlOrOption: return "\(chord) needs ⌃ or ⌥, or it would take the key from every app."
+        case .typesCharacter: return "\(chord) types a character. Add ⌃ or ⌘."
+        case .reservedBySystem(let use): return "macOS uses \(chord) for \(use)."
+        case .usedByApp(let command): return "\(chord) is already \(command) in Alevr."
+        case .unavailable: return "\(chord) is already taken by another app."
+        }
+    }
+}
+
+/// Registers global shortcuts with Carbon's hot key API, which needs no
+/// Accessibility permission and consumes the key before any app sees it.
+///
+/// One application-level handler serves every registration; a press is
+/// handed to the Quick Entry controller on the main actor. Each registration
+/// carries Alevr's signature, so a press from anything else is passed on.
+final class DesktopCarbonHotkeyRegistrar: JunoHotkeyRegistrar {
+    /// "Alvr".
+    static let signature: OSType = 0x416C_7672
+
+    private var handler: EventHandlerRef?
+    private var nextID: UInt32 = 0
+
+    func register(_ hotkey: JunoHotkey) -> EventHotKeyRef? {
+        installHandlerIfNeeded()
+        nextID &+= 1
+        var reference: EventHotKeyRef?
+        let status = RegisterEventHotKey(
+            UInt32(hotkey.keyCode),
+            Self.carbonModifiers(hotkey.modifiers),
+            EventHotKeyID(signature: Self.signature, id: nextID),
+            GetApplicationEventTarget(),
+            0,
+            &reference
+        )
+        guard status == noErr, let reference else { return nil }
+        return reference
+    }
+
+    func unregister(_ registration: EventHotKeyRef) {
+        UnregisterEventHotKey(registration)
+    }
+
+    static func carbonModifiers(_ modifiers: JunoHotkey.Modifiers) -> UInt32 {
+        var flags: UInt32 = 0
+        if modifiers.contains(.command) { flags |= UInt32(cmdKey) }
+        if modifiers.contains(.option) { flags |= UInt32(optionKey) }
+        if modifiers.contains(.control) { flags |= UInt32(controlKey) }
+        if modifiers.contains(.shift) { flags |= UInt32(shiftKey) }
+        return flags
+    }
+
+    private func installHandlerIfNeeded() {
+        guard handler == nil else { return }
+        var pressed = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, event, _ in
+                var identifier = EventHotKeyID()
+                let status = GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &identifier
+                )
+                guard status == noErr, identifier.signature == DesktopCarbonHotkeyRegistrar.signature else {
+                    return OSStatus(eventNotHandledErr)
+                }
+                Task { @MainActor in DesktopQuickEntryController.shared.hotkeyPressed() }
+                return noErr
+            },
+            1,
+            &pressed,
+            nil,
+            &handler
+        )
+    }
+}
+
+// MARK: - Settings › General: the shortcut recorder
+
+/// Listens for the next chord while Settings records Quick Entry's shortcut.
+///
+/// A local monitor, which needs no permission: it only sees keys sent to this
+/// app, and Settings is frontmost while it records. A press of the current
+/// shortcut never reaches it (the hot key consumes it first), so the
+/// controller forwards that one here instead.
+@MainActor
+@Observable
+final class DesktopShortcutRecorder {
+    private(set) var isRecording = false
+    @ObservationIgnored private var monitor: Any?
+    @ObservationIgnored private var onChord: ((JunoHotkey) -> Void)?
+
+    func start(_ onChord: @escaping (JunoHotkey) -> Void) {
+        guard !isRecording else { return }
+        isRecording = true
+        self.onChord = onChord
+        DesktopQuickEntryController.shared.setRecorder { [weak self] hotkey in self?.finish(hotkey) }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let hotkey = DesktopQuickEntryHotkey.hotkey(from: event)
+            // Local monitors run on the main thread, inside the event loop.
+            MainActor.assumeIsolated {
+                if hotkey == JunoHotkey(keyCode: JunoHotkey.KeyCode.escape, modifiers: []) {
+                    self?.stop()
+                } else {
+                    self?.finish(hotkey)
+                }
+            }
+            return nil
+        }
+    }
+
+    func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        onChord = nil
+        isRecording = false
+        DesktopQuickEntryController.shared.setRecorder(nil)
+    }
+
+    private func finish(_ hotkey: JunoHotkey) {
+        let deliver = onChord
+        stop()
+        deliver?(hotkey)
+    }
+}
+
+/// The "Ask Alevr" row: the shortcut as keycaps, a click to record a new one,
+/// and Reset when it is not ⌥Space. A refused shortcut says why in the row
+/// and leaves the previous one working.
+struct DesktopQuickEntryShortcutRow: View {
+    @AppStorage(DesktopQuickEntryHotkey.storageKey) private var stored = ""
+    @State private var recorder = DesktopShortcutRecorder()
+    @State private var problem: String?
+
+    private var current: JunoHotkey {
+        DesktopQuickEntryController.shared.activeHotkey ?? DesktopQuickEntryHotkey.hotkey(storage: stored)
+    }
+
+    var body: some View {
+        DesktopSettingRow(
+            title: "Ask Alevr",
+            description: problem ?? "Opens Quick Entry from any app. Click the shortcut, then press a new one.",
+            tone: problem == nil ? .normal : .destructive
+        ) {
+            HStack(spacing: JunoSpace.snug) {
+                if current != .quickEntryDefault, !recorder.isRecording {
+                    DesktopOutlineButton(title: "Reset") { apply(.quickEntryDefault) }
+                        .accessibilityIdentifier("juno.desktop.settings.quick-entry-shortcut.reset")
+                }
+                Button {
+                    if recorder.isRecording {
+                        recorder.stop()
+                    } else {
+                        problem = nil
+                        recorder.start { apply($0) }
+                    }
+                } label: {
+                    Group {
+                        if recorder.isRecording {
+                            Text("Press a shortcut")
+                                .junoType(.ui)
+                                .foregroundStyle(Color.junoSecondaryInk)
+                        } else {
+                            DesktopKeycapChord(keys: current.keys)
+                        }
+                    }
+                    .frame(minWidth: 112, minHeight: 28)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.bordered)
+                .help(recorder.isRecording ? "Press a shortcut, or esc to cancel" : "Change the shortcut")
+                .accessibilityLabel(
+                    recorder.isRecording
+                        ? "Recording a shortcut. Press Escape to cancel."
+                        : "Shortcut, \(JunoShortcutKeys.spoken(current.keys)). Change"
+                )
+                .accessibilityIdentifier("juno.desktop.settings.quick-entry-shortcut")
+            }
+        }
+        .onDisappear { recorder.stop() }
+    }
+
+    private func apply(_ hotkey: JunoHotkey) {
+        let previous = current
+        if let refusal = DesktopQuickEntryController.shared.rebind(hotkey) {
+            problem = DesktopQuickEntryHotkey.message(for: refusal, hotkey: hotkey)
+                + " \(previous.display) still works."
+        } else {
+            problem = nil
+            stored = hotkey.storageValue
+        }
     }
 }

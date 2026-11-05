@@ -53,7 +53,7 @@ export function WorkDeliverableStage({ list }: { list: WorkArtifactList }) {
           {ARTIFACT_EXTENSION[artifact.kind]} · v{artifact.currentVersion} ·{" "}
           {workTimeAgo(artifact.updatedAt)}
         </span>
-        <Button variant="secondary" size="sm" asChild className="h-7 gap-1.5">
+        <Button variant="secondary" size="xs" asChild>
           <a
             href={workArtifactDownloadUrl(artifact.id)}
             // No `download` attribute: the route sets Content-Disposition

@@ -600,6 +600,7 @@ function asTerminalReason(value: string | null): WorkTerminalReason | null {
     "host_offline",
     "interrupted",
     "superseded",
+    "executor_unavailable",
   ];
   return value !== null && known.includes(value) ? (value as WorkTerminalReason) : null;
 }

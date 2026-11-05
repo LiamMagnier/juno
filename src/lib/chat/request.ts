@@ -207,6 +207,9 @@ export const chatBodySchema = z
     origin: chatOriginSchema.optional(),
     // These keys are paired intentionally: the request key deduplicates a new
     // conversation while the message key deduplicates its first persisted turn.
+    // The web sends them on a new saved chat's first message, so the send it
+    // repeats after a deploy's 502 or a dropped connection is recognised
+    // rather than run twice (src/lib/chat/send-retry.ts).
     clientRequestId: clientIdempotencyKeySchema.optional(),
     clientMessageId: clientIdempotencyKeySchema.optional(),
     // Deep research mode: plan → search → read → cited report (saved chats only;
@@ -289,6 +292,16 @@ export const chatBodySchema = z
      * is imported by clients that must not pull in Work.
      */
     taskApprovalMode: z.enum(["conservative", "balanced", "permissive"]).optional(),
+    /**
+     * "Memory off for this chat" (src/lib/chat/memory-off.ts), chosen in the
+     * composer before the chat existed: `true` saves it on the conversation
+     * this turn creates (or on the one it continues), so the very first turn
+     * already reads and saves no memory. It only switches memory OFF — `false`
+     * is the same as absent, and turning memory back on is the chat's own
+     * toggle (PATCH /api/conversations/[id]/memory), which also covers what
+     * was said meanwhile as read. A stale tab can therefore never undo it.
+     */
+    memoryOff: z.boolean().optional(),
     /**
      * The folder on the person's Mac this chat works in (the Mac's "Work in a
      * folder"): its display name and the access they chose, never a path.

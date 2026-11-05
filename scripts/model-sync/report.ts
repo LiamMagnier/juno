@@ -2,6 +2,7 @@ import type { Plan } from "./compare";
 import type { Finding, Source } from "./types";
 
 const SECTIONS: { title: string; kinds: Finding["kind"][] }[] = [
+  { title: "Needs review (set aside; the rest of the run went on)", kinds: ["needs-review"] },
   { title: "New models", kinds: ["new-model"] },
   { title: "Retirements", kinds: ["retirement", "auto-routed", "expired"] },
   { title: "Prices", kinds: ["rate", "long-context", "fast-tier"] },
@@ -28,6 +29,8 @@ export interface ReportMeta {
   apiChecked: string[];
   apiSkipped: { provider: string; reason: string }[];
   discovery: "on" | "off" | "failed";
+  /** Rates on file for labs this run did not read: kept, not re-verified. */
+  ratesKept?: number;
 }
 
 export function renderReport(plan: Plan, meta: ReportMeta): string {
@@ -44,7 +47,10 @@ export function renderReport(plan: Plan, meta: ReportMeta): string {
   lines.push(`- Official pages read: ${meta.labsRead.join(", ") || "none"}${meta.labsFailed.length ? `; failed: ${meta.labsFailed.join(", ")}` : ""}`);
   lines.push(`- Lab model-list APIs checked: ${meta.apiChecked.join(", ") || "none"}${meta.apiSkipped.length ? `; skipped: ${meta.apiSkipped.map((s) => `${s.provider} (${s.reason})`).join(", ")}` : ""}`);
   lines.push(`- OpenRouter discovery: ${meta.discovery}`);
-  lines.push(`- Verified official rates on file: ${Object.keys(plan.rates).length} models`, "");
+  lines.push(
+    `- Official rates read this run: ${Object.keys(plan.rates).length} models${meta.ratesKept ? `; ${meta.ratesKept} kept from earlier runs for labs not read this run (each keeps the day it was read)` : ""}`,
+    ""
+  );
 
   for (const section of SECTIONS) {
     const items = plan.findings.filter((f) => section.kinds.includes(f.kind));

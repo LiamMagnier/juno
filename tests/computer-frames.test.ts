@@ -283,6 +283,8 @@ describe("(b) the runner's step loop on the fake provider", () => {
 
   before(async () => {
     process.env.AGENT_COMPUTER_PROVIDER = "fake";
+    // Open to every plan that includes computers (src/lib/computer/access.ts); an account the in-memory store does not know reads as the owner's.
+    process.env.AGENT_COMPUTER_ROLLOUT = "plans";
     resetComputerProviderCache();
     fakeComputerProvider.reset();
     memDb = store.createInMemoryComputerPersistence();
@@ -515,7 +517,8 @@ describe("frames.ts", () => {
     assert.match(runner, /createRunFrameRecorder\(\{ userId: input\.userId, runId: input\.runId \}\)/);
     assert.match(runner, /storeFrame: \(ref, shot\) =>\s*stepFrames!\.store\(/);
     assert.match(runner, /hash: shot\.sha256/);
-    assert.match(runner, /canDescribePoints\(input\.remoteComputer\.browser\)/);
+    // The computer's own browser, once a computer tool has started it (lazy start, run-tools.ts).
+    assert.match(runner, /canDescribePoints\(computerBrowser\)/);
     assert.match(runner, /provider\.drag\(remote\.attachment\.handle, opts\)/);
     assert.match(runner, /zoomFrame\(shot\.jpeg, region, shot\)/);
   });
@@ -541,7 +544,10 @@ describe("(d) ComputerTimeline motion and fallbacks", () => {
     const component = source("src/components/code/computer-timeline.tsx");
     assert.doesNotMatch(component, /<style/);
     assert.doesNotMatch(component, /180ms|120ms/);
-    assert.match(component, /transition-opacity duration-base ease-out-soft motion-reduce:transition-none/);
+    // The frame crossfade is opacity, Tier A (spec §4.7): it keeps its timing
+    // under reduced motion. Only the zoom (a transform) is motion-safe.
+    assert.match(component, /"transition-opacity duration-base ease-out-soft"/);
+    assert.doesNotMatch(component, /transition-opacity duration-base ease-out-soft motion-reduce:transition-none/);
     assert.match(component, /motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-150/);
     assert.match(component, /prefersReducedMotion\(\) \? "auto" : "smooth"/);
     assert.match(component, /unavailableLabel = "Screenshot unavailable"/);

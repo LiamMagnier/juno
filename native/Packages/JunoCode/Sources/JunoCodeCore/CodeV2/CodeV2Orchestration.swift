@@ -18,12 +18,17 @@ public struct CodeV2RoleDraft: Equatable, Sendable {
     public var utility: CodeV2.ModelSelection?
     /// Best of N: one selection per candidate, 2…4.
     public var candidates: [CodeV2.ModelSelection]
-    /// Hard stop on Alevr / BYOK spend per run, USD. Nil = no budget.
+    /// Hard stop on Alevr / BYOK spend per run, USD. Nil = no per-run cap:
+    /// the run is bounded by the account's own spend ceiling, like any turn.
     public var budgetUsd: Double?
 
     public static let workerRange = 1...6
     public static let candidateRange = 2...4
-    public static let defaultBudgetUsd = 4.0
+    /// No per-run cap unless the reader sets one (2026-10-31). A fixed $4
+    /// default stopped every team run's sub-agents mid-task ("Not started:
+    /// the run's cost budget ($4.00) was reached") on work the account could
+    /// easily pay for; the account's spend ceiling is the budget that binds.
+    public static let defaultBudgetUsd: Double? = nil
 
     public init(
         preset: CodeV2.RolePreset = .solo,

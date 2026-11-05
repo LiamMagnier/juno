@@ -55,6 +55,12 @@ const RELAY_ENV_ALLOWLIST = [
 ];
 
 const rootEnv = loadEnv(path.join(__dirname, "..", ".env"));
+// A separate computer host's private, name-constrained CA (COMPUTERS_2026-10.md
+// D18, deploy/computer-host/README.md). Node reads NODE_EXTRA_CA_CERTS only when
+// a process starts, so the release .env alone never reaches it: the app, the
+// Work runner and the relay get it here. Unset (the default): nothing changes.
+const computerHostCaEnv = rootEnv.NODE_EXTRA_CA_CERTS ? { NODE_EXTRA_CA_CERTS: rootEnv.NODE_EXTRA_CA_CERTS } : {};
+
 const relayEnv = {};
 for (const [key, value] of Object.entries(rootEnv)) {
   // RELAY_* are the relay's own model/feature overrides.
@@ -193,6 +199,7 @@ module.exports = {
       env: {
         ...releaseEnv,
         ...pooledDatabaseEnv("juno-backend"),
+        ...computerHostCaEnv,
         PORT: 3000,
         NODE_ENV: "production",
         // Higher default HTTP header limit (16kb) and heap for big chat bodies.
@@ -232,9 +239,30 @@ module.exports = {
       ...tsxWorker("scripts/work-runner.ts", 448),
       watch: false,
       max_memory_restart: "900M",
+      // Graceful stop for the runs in flight. On SIGINT the runner claims
+      // nothing new, lets each run finish the step it is on and sets it aside
+      // for the next runner, which continues it when its checkpoint shows no
+      // tool call was cut short (src/lib/work/restart-resume-rules.ts). It
+      // waits WORK_SHUTDOWN_STEP_WAIT_MS (45 s) for the step, stops what is
+      // still inside one, takes 8 s to write that down and exits, inside this
+      // window. PM2's default of 1.6 s killed every run mid-step and let its
+      // lease lapse into `interrupted`. deploy.sh's pause_background_apps
+      // waits for this too, so a deploy with a run in flight takes up to a
+      // minute longer. Keep it above the step wait plus 10 s.
+      kill_timeout: 60_000,
+      // The stop signal goes to the runner alone. PM2's default (treekill)
+      // sends it to every descendant at once: the Work browser's Chromium
+      // and the computer tools' `docker exec` clients would be stopped in the
+      // middle of a call while the runner was still letting that step finish
+      // (the browser closed, a command left running in the computer with
+      // "exit 130" reported). The runner closes its own children when its
+      // runs stop, Playwright kills a browser when the runner exits, and
+      // tsx's esbuild service exits when its stdin closes.
+      treekill: false,
       env: {
         ...releaseEnv,
         ...pooledDatabaseEnv("juno-work"),
+        ...computerHostCaEnv,
         NODE_ENV: "production",
       },
       error_file: "logs/work-err.log",
@@ -290,6 +318,7 @@ module.exports = {
         // those callbacks are silently skipped (relay/src/session.ts).
         JUNO_APP_URL: rootEnv.JUNO_APP_URL || "http://127.0.0.1:3000",
         ...relayEnv,
+        ...computerHostCaEnv,
       },
       error_file: path.join(__dirname, "..", "logs", "relay-err.log"),
       out_file: path.join(__dirname, "..", "logs", "relay-out.log"),

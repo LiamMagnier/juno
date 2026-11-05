@@ -141,7 +141,7 @@ let package = Package(
         .testTarget(
             name: "JunoCodeUITests",
             dependencies: [
-                "JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime", "JunoCodeUI",
+                "JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime", "JunoCodeUI", "JunoCodeBridge",
                 .product(name: "JunoScreenControl", package: "JunoScreenControl"),
             ]
         ),

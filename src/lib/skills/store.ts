@@ -88,6 +88,13 @@ export interface CreateSkillInput {
   /** Decides the starting trust. Never taken from a request body. */
   origin: WorkSkillOrigin;
   autoSelect?: boolean;
+  /**
+   * Whether it starts switched on. Defaults to on, as every route that writes
+   * a skill has always done; a taught skill (src/lib/skills/teach-store.ts)
+   * starts off until the person confirms what it may use. A scanner `blocked`
+   * verdict lands it off either way.
+   */
+  enabled?: boolean;
   /** The source it was installed from, and its `SKILL.md` path there. */
   sourceId?: string | null;
   sourcePath?: string | null;
@@ -208,7 +215,7 @@ export async function createSkillWithFirstVersion(input: CreateSkillInput): Prom
           name: input.name,
           description: input.description,
           currentVersion: 1,
-          enabled: securityScan.status !== "blocked",
+          enabled: (input.enabled ?? true) && securityScan.status !== "blocked",
           trust,
           securityStatus: securityScan.status,
           securityUpdatedAt: new Date(),

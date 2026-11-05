@@ -257,3 +257,110 @@ test("the last request's figures come from differencing cumulative usage", () =>
     cachedShare: 0,
   });
 });
+
+test("OpenAI cache writes are already inside the last request's input count", () => {
+  const figures = lastRequestFigures(
+    { input: 10_000, cacheRead: 4_000, cacheWrite: 5_000 },
+    { input: 22_000, cacheRead: 10_000, cacheWrite: 10_000 },
+    { promptTokensIncludeCacheRead: true },
+  );
+  assert.deepEqual(figures, { lastRequestInputTokens: 12_000, cachedShare: 0.5 });
+  // Counting the 5,000 written tokens twice used to end this tool loop early.
+  const { g } = guard({
+    ceilingMicroUsd: 55_000,
+    rates: { input: 1, output: 10, cacheRead: 0.1 },
+  });
+  assert.equal(g.wouldExceedNextRound({ ...figures, toolFeeEstimateMicroUsd: 0 }), false);
+  assert.equal(g.wouldExceedNextRound({ lastRequestInputTokens: 17_000, cachedShare: 6_000 / 17_000, toolFeeEstimateMicroUsd: 0 }), true);
+});
+
+test("the hard guard prices fresh input, reads and writes once at their own rates", () => {
+  const { g } = guard({
+    rates: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+    usage: () => ({
+      promptTokens: 12_000,
+      cacheReadTokens: 4_000,
+      cacheWriteTokens: 7_000,
+      completionTokens: 100,
+      outputChars: 0,
+      reasoningChars: 0,
+    }),
+  });
+  assert.equal(g.projectedMicroUsd(), 1_000 * 2 + 4_000 * 0.2 + 7_000 * 2.5 + 100 * 10);
+});
+
+test("Anthropic writes are additive and the TTL split overrides the aggregate", () => {
+  const { g } = guard({
+    rates: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 4, cacheWrite5m: 2.5, cacheWrite1h: 4 },
+    usage: () => ({
+      promptTokens: 100,
+      cacheReadTokens: 4_000,
+      cacheWriteTokens: 99_999,
+      cacheWrite5mTokens: 3_000,
+      cacheWrite1hTokens: 2_000,
+      promptTokensIncludeCacheRead: false,
+      completionTokens: 100,
+      outputChars: 0,
+      reasoningChars: 0,
+    }),
+  });
+  assert.equal(g.projectedMicroUsd(), 100 * 2 + 4_000 * 0.2 + 3_000 * 2.5 + 2_000 * 4 + 100 * 10);
+});
+
+test("fully cached Anthropic input is not estimated and charged again as fresh", () => {
+  const { g } = guard({
+    inputChars: 400_000,
+    rates: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 4 },
+    usage: () => ({
+      cacheReadTokens: 90_000,
+      cacheWriteTokens: 10_000,
+      promptTokensIncludeCacheRead: false,
+      completionTokens: 100,
+      outputChars: 0,
+      reasoningChars: 0,
+    }),
+  });
+  assert.equal(g.projectedMicroUsd(), 90_000 * 0.2 + 10_000 * 4 + 100 * 10);
+});
+
+test("a previous tool round's output count cannot hide the next round's growing text", () => {
+  let outputChars = 400;
+  const { g, halts } = guard({
+    ceilingMicroUsd: 2_000,
+    usage: () => ({ promptTokens: 0, completionTokens: 100, outputChars, reasoningChars: 0 }),
+  });
+  g.enforce();
+  assert.equal(halts.length, 0);
+  outputChars = 800;
+  g.enforce();
+  assert.equal(halts.length, 1, "enforce the ceiling while awaiting the next usage report");
+});
+
+test("live rates follow a premium-tier fallback before deciding whether to halt", () => {
+  let premium = true;
+  const { g, halts } = guard({
+    ceilingMicroUsd: 1_500,
+    rates: () => premium ? { input: 2, output: 20 } : { input: 1, output: 10 },
+    usage: () => ({ promptTokens: 300, completionTokens: 50, outputChars: 0, reasoningChars: 0 }),
+  });
+  assert.equal(g.projectedMicroUsd(), 1_600);
+  premium = false;
+  assert.equal(g.projectedMicroUsd(), 800);
+  g.enforce();
+  assert.equal(halts.length, 0, "a confirmed standard-tier response must not be halted at the old premium rate");
+  premium = true;
+  g.enforce();
+  assert.equal(halts.length, 1, "premium work still respects its real cost");
+});
+
+test("next-round estimates also use the latest served-tier rates", () => {
+  let premium = true;
+  const { g } = guard({
+    ceilingMicroUsd: 50_000,
+    rates: () => premium ? { input: 2, output: 20 } : { input: 1, output: 10 },
+  });
+  const next = { lastRequestInputTokens: 0, cachedShare: 0, toolFeeEstimateMicroUsd: 0 };
+  assert.equal(g.wouldExceedNextRound(next), true);
+  premium = false;
+  assert.equal(g.wouldExceedNextRound(next), false);
+});

@@ -4,7 +4,9 @@ import { requireUser } from "@/lib/code-remote";
 import { rateLimit } from "@/lib/rate-limit";
 import { findAgent, recordAgentEvent } from "@/lib/agents/store";
 import { getCurrentDeviceSessionId } from "@/lib/session";
-import { isAgentComputerConfigured } from "@/lib/computer/provider";
+import { computerProvider } from "@/lib/computer/provider";
+import { COMPUTER_ACCESS_COPY } from "@/lib/computer/access-copy";
+import { ComputerAccessError, computerErrorBody } from "@/lib/computer/errors";
 import {
   computerTakeoverConflict,
   heartbeatComputerViewSession,
@@ -77,11 +79,11 @@ export async function POST(req: Request, { params }: Params) {
     );
   }
 
-  if (!(await isAgentComputerConfigured())) {
-    return NextResponse.json(
-      { error: "not_enabled", message: "Agent computers are not configured on this server." },
-      { status: 404, headers: NO_STORE_HEADERS }
-    );
+  // Hand back is never refused while there is a computer layer to hand back
+  // to; with no computers on this server there is nothing to keep or return.
+  if (!computerProvider()) {
+    const { status, body } = computerErrorBody(new ComputerAccessError("server_off", COMPUTER_ACCESS_COPY.serverOff));
+    return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
   }
 
   const deviceSessionId = await getCurrentDeviceSessionId();
@@ -99,12 +101,22 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   // A control heartbeat holds the takeover (the agent's computer tools stay
-  // refused); `ended` is Hand back, which releases it.
-  await heartbeatComputerViewSession(user.id, id, {
-    mode,
-    ended,
-    deviceSessionId,
-  });
+  // refused); `ended` is Hand back, which releases it. A heartbeat (watch or
+  // control) from an account that lost access is answered 403 with the
+  // sentence and keeps nothing awake; a control one also releases the take
+  // over through the same path as Hand back.
+  try {
+    await heartbeatComputerViewSession(user.id, id, {
+      mode,
+      ended,
+      deviceSessionId,
+      agentName: agent.name,
+    });
+  } catch (err) {
+    const { status, body } = computerErrorBody(err, { fallbackError: "heartbeat_failed" });
+    const computer = await loadAgentComputerStatusPayload(user.id, id).catch(() => null);
+    return NextResponse.json({ ...body, computer }, { status, headers: NO_STORE_HEADERS });
+  }
 
   if (ended && mode === "control") {
     await recordAgentEvent({

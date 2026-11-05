@@ -132,7 +132,7 @@ export function ChatSurface({
           aria-hidden="true"
           initial={false}
           animate={{ opacity: home && phase !== "leaving" ? 1 : 0 }}
-          transition={reduced ? T.instant : { duration: 0.28, ease: EASE_OUT }}
+          transition={reduced ? T.instant : { duration: 0.22, ease: EASE_OUT }}
         />
         <MobileBar title={home ? "Juno" : THREAD_TITLE} thread={!home} clear={home} />
         {home ? (
@@ -173,7 +173,7 @@ export function ChatSurface({
               className="cv-chips"
               initial={false}
               animate={{ opacity: phase === "leaving" ? 0 : 1 }}
-              transition={{ duration: 0.1, ease: EASE_OUT }}
+              transition={{ duration: 0.12, ease: EASE_OUT }}
             >
               <Suggestions />
             </motion.div>
@@ -186,7 +186,7 @@ export function ChatSurface({
                   className="cv-sheet__bg"
                   initial={initialPhase === "thread" ? false : { opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={reduced ? T.instant : { duration: 0.24, delay: 0.14, ease: EASE_OUT }}
+                  transition={reduced ? T.instant : { duration: 0.22, delay: 0.16, ease: EASE_OUT }}
                 />
                 <Sentence segments={sent} layoutId="cv-sentence" />
               </div>
@@ -211,7 +211,7 @@ export function ChatSurface({
                 <motion.div
                   initial={initialPhase === "thread" ? false : { opacity: 0, y: reduced ? 0 : 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={reduced ? T.fade : { duration: 0.24, ease: EASE_OUT }}
+                  transition={reduced ? T.fade : { duration: 0.22, ease: EASE_OUT }}
                 >
                   <TaskCard planOpen={planOpen} />
                 </motion.div>

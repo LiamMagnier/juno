@@ -35,6 +35,21 @@ export interface SearchMatch {
   previewEnd: number;
 }
 
+export interface ConversationSearchResult {
+  matches: SearchMatch[];
+  /** The scan found at least one more match than it keeps for navigation. */
+  truncated: boolean;
+}
+
+/** A hit's identity survives older history being inserted before it. */
+export interface SearchSelection {
+  messageId: string;
+  start: number;
+  end: number;
+  index: number;
+}
+
+export const CONVERSATION_SEARCH_LIMIT = 500;
 const PREVIEW_RADIUS = 48;
 
 /** Collapse whitespace so a match spanning a line break still reads as one line. */
@@ -52,22 +67,40 @@ function flatten(text: string): string {
 export function findInConversation(
   messages: readonly SearchableMessage[],
   query: string,
-  { limit = 500 }: { limit?: number } = {}
+  options: { limit?: number } = {}
 ): SearchMatch[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [];
+  return searchConversation(messages, query, options).matches;
+}
+
+/**
+ * Keep the scan bounded, but inspect one extra hit so the UI never presents
+ * the navigation cap as the whole conversation's exact result count.
+ */
+export function searchConversation(
+  messages: readonly SearchableMessage[],
+  query: string,
+  { limit = CONVERSATION_SEARCH_LIMIT }: { limit?: number } = {}
+): ConversationSearchResult {
+  const needle = query.trim();
+  const cap = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : CONVERSATION_SEARCH_LIMIT;
+  if (!needle || cap === 0) return { matches: [], truncated: false };
+
+  // Escaping makes this a literal search. Matching the ORIGINAL string also
+  // preserves UTF-16 offsets: lowercasing "İ" expands to two code points and
+  // used to shift every subsequent match's preview away from the actual word.
+  const pattern = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu");
 
   const matches: SearchMatch[] = [];
   for (const message of messages) {
     if (!message.content) continue;
-    const haystack = message.content.toLowerCase();
-
-    let from = 0;
+    pattern.lastIndex = 0;
     for (;;) {
-      const at = haystack.indexOf(needle, from);
-      if (at === -1) break;
+      const found = pattern.exec(message.content);
+      if (!found) break;
+      if (matches.length >= cap) return { matches, truncated: true };
 
-      const end = at + needle.length;
+      const at = found.index;
+      const end = at + found[0].length;
       const sliceStart = Math.max(0, at - PREVIEW_RADIUS);
       const sliceEnd = Math.min(message.content.length, end + PREVIEW_RADIUS);
       const lead = flatten(message.content.slice(sliceStart, at));
@@ -85,13 +118,18 @@ export function findInConversation(
         previewEnd: prefix.length + lead.length + hit.length,
       });
 
-      if (matches.length >= limit) return matches;
-      // Advance past this match so overlapping needles ("aa" in "aaa") cannot
-      // loop forever, and a zero-length needle is impossible (guarded above).
-      from = at + needle.length;
+      // `g` advances past this hit; an empty match is impossible because the
+      // literal, non-empty query is escaped above.
     }
   }
-  return matches;
+  return { matches, truncated: false };
+}
+
+/** Resolve a stable hit first, then clamp its old position after edits/deletions. */
+export function selectedMatchIndex(matches: readonly SearchMatch[], selection: SearchSelection | null): number {
+  if (!selection || matches.length === 0) return 0;
+  const retained = matches.findIndex((match) => match.messageId === selection.messageId && match.start === selection.start && match.end === selection.end);
+  return retained >= 0 ? retained : Math.max(0, Math.min(selection.index, matches.length - 1));
 }
 
 /** Distinct messages containing a match, in reading order. */
@@ -109,5 +147,6 @@ export function matchedMessageIds(matches: readonly SearchMatch[]): string[] {
 /** Step through matches, wrapping at both ends. */
 export function stepMatch(current: number, total: number, direction: 1 | -1): number {
   if (total <= 0) return 0;
-  return (current + direction + total) % total;
+  const bounded = Math.max(0, Math.min(current, total - 1));
+  return (bounded + direction + total) % total;
 }

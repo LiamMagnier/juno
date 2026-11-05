@@ -535,6 +535,8 @@ List(selection: $selection) {
 .safeAreaBar(edge: .bottom, spacing: 0) { SidebarFooter() }     // keep the existing bar (:81)
 ```
 
+> **Superseded, 2026-10-26 (`docs/rework/INTERACTION_SPEC.md` S11):** there is no "Pinned chats" section any more, and no `pinnedChatsOpen` fold. The pinned chats lead Recent, newest first, each keeping its pin mark, then the rest newest first (`DesktopChatSidebarContent.recent(from:excluding:)`). The sketch above and the "Pinned" entries below are kept as history.
+
 - **Data rules:**
   - Every source filters on `kind == "chat"` and excludes archived chats. This fixes the leak at `NativeConversationStore.swift:268`.
   - Needs-you rows are removed from Pinned and Recent.

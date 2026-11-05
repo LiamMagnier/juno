@@ -1,0 +1,49 @@
+{
+  "$comment": "Error frames of both chat wire versions, checked against contracts/chat/juno-chat-wire-v1.schema.json by tests/chat-error-frame-contract.test.ts. The Swift decoder test (NativeChatAPIClientTests, error-frame cases) decodes the same frames. A 1.0 frame carries only the sentence; a 1.1 frame adds the provider failure's class (a provider-account fault is `account`, never which) and the one model offered instead.",
+  "frames": {
+    "v1.0-provider": {
+      "type": "error",
+      "message": "Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.",
+      "finishReason": "error"
+    },
+    "v1.0-durable": {
+      "type": "error",
+      "message": "Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.",
+      "finishReason": "error",
+      "conversationId": "c_1",
+      "userMessageId": "m_1",
+      "generationId": "g_1",
+      "receiptState": "failed",
+      "failureCode": "GENERATION_FAILED"
+    },
+    "v1.1-account-fault": {
+      "type": "error",
+      "message": "Qwen3.8 Flash is temporarily unavailable. Choose another model, or try again later.",
+      "finishReason": "error",
+      "errorClass": "account",
+      "retryable": false,
+      "suggestedModelId": "google:gemini-3.5-flash-lite",
+      "suggestedModelName": "Gemini 3.5 Flash-Lite",
+      "conversationId": "c_1",
+      "userMessageId": "m_1",
+      "generationId": "g_1",
+      "receiptState": "failed",
+      "failureCode": "GENERATION_FAILED"
+    },
+    "v1.1-rate-limit": {
+      "type": "error",
+      "message": "Gemini 3.8 Flash has hit its rate limit. Try again in 34 seconds, or pick another model.",
+      "finishReason": "error",
+      "errorClass": "rate_limit",
+      "retryable": true,
+      "retryAfterSeconds": 34
+    },
+    "v1.1-no-alternative": {
+      "type": "error",
+      "message": "The connection to the model was interrupted. Please try again.",
+      "finishReason": "error",
+      "errorClass": "network",
+      "retryable": true
+    }
+  }
+}

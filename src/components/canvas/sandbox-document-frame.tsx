@@ -27,6 +27,23 @@ export function useSandboxProfile(): SandboxProfile {
 }
 
 /**
+ * Whether app previews under this point get `window.alevr` (model calls and
+ * per-viewer storage, src/lib/artifact-ai). Off unless the server has
+ * ARTIFACT_AI_ENABLED on and a surface says so: the app shell passes the
+ * bootstrap's `features.artifactAi`, the share page its own read of the flag.
+ * Off, no bridge script is written into a preview and nothing listens for one.
+ */
+const AlevrBridgeContext = React.createContext(false);
+
+export function AlevrBridgeProvider({ enabled, children }: { enabled: boolean; children: React.ReactNode }) {
+  return <AlevrBridgeContext.Provider value={enabled}>{children}</AlevrBridgeContext.Provider>;
+}
+
+export function useAlevrBridgeEnabled(): boolean {
+  return React.useContext(AlevrBridgeContext);
+}
+
+/**
  * An iframe that shows `html` on a preview origin with its own policy.
  *
  * Why not `srcDoc`: a srcdoc document inherits this page's Content-Security-

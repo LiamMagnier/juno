@@ -89,6 +89,11 @@ struct DesktopTurnNote: View {
 struct DesktopTurnError: View {
     let message: String
     var retry: (() -> Void)? = nil
+    /// "Answer with <model>": the one alternative a failed turn's error frame
+    /// offered (chat wire 1.1). Clicking it is the reader's explicit choice,
+    /// sent as Switch Model sends it (`retryLastMessage(modelID:)`); nothing is rerouted
+    /// without it.
+    var answerWith: (name: String, action: () -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -103,22 +108,41 @@ struct DesktopTurnError: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .foregroundStyle(Color.junoDestructiveInk)
-            if let retry {
-                Button(action: retry) {
-                    Label {
-                        Text("Try again")
-                    } icon: {
-                        JunoIconView(.refresh, size: 14)
+            if retry != nil || answerWith != nil {
+                HStack(spacing: JunoSpace.snug) {
+                    if let retry {
+                        Button(action: retry) {
+                            Label {
+                                Text("Try again")
+                            } icon: {
+                                JunoIconView(.refresh, size: 14)
+                            }
+                            .frame(minHeight: 28)
+                        }
+                        .buttonStyle(.junoGlass)
+                        .controlSize(.small)
+                        // Destructive-tinted, as the web's outline is: the tone of the
+                        // box it sits in, never the accent.
+                        .tint(Color.junoDestructiveInk)
+                        .contentShape(.rect)
+                        .accessibilityIdentifier("juno.desktop.chat.message-retry")
                     }
-                    .frame(minHeight: 28)
+                    if let answerWith {
+                        Button(action: answerWith.action) {
+                            Label {
+                                Text("Answer with \(answerWith.name)")
+                            } icon: {
+                                JunoIconView(.cube, size: 14)
+                            }
+                            .frame(minHeight: 28)
+                        }
+                        .buttonStyle(.junoGlass)
+                        .controlSize(.small)
+                        .tint(Color.junoDestructiveInk)
+                        .contentShape(.rect)
+                        .accessibilityIdentifier("juno.desktop.chat.message-answer-with")
+                    }
                 }
-                .buttonStyle(.junoGlass)
-                .controlSize(.small)
-                // Destructive-tinted, as the web's outline is: the tone of the
-                // box it sits in, never the accent.
-                .tint(Color.junoDestructiveInk)
-                .contentShape(.rect)
-                .accessibilityIdentifier("juno.desktop.chat.message-retry")
             }
         }
         .padding(.horizontal, JunoSpace.comfy)

@@ -12,9 +12,11 @@ import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import { finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationAbortedForShutdown, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
+import { noteLiveProviderFault } from "@/lib/provider-health";
 import { checkBudget, releaseSpend, reserveSpend, modelRatesMicroUsdPerToken, type billingPeriodFor } from "@/lib/spend";
 import { createSseSender, SSE_HEADERS } from "@/lib/chat-stream";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
+import { isToneCharacteristicsEnabled } from "@/lib/env";
 import { resolveFastMode } from "@/lib/pricing";
 import { supportsProMode } from "@/lib/model-metrics";
 import { buildUsage } from "@/lib/chat-usage";
@@ -27,7 +29,8 @@ import { privateModeFeatureRefusal } from "@/lib/chat/entitlements";
 import { postGenerationPlan } from "@/lib/chat/post-processing";
 import { appendSkillBlock, composeSystemPrompt } from "@/lib/chat/prompt-sections";
 import { loadChatSkill } from "@/lib/chat/skill-runtime";
-import { CHAT_SKILL_REFUSAL_MESSAGES, skillAppliedActivity } from "@/lib/chat/skills";
+import { CHAT_SKILL_REFUSAL_MESSAGES, scopeTurnToSkill, skillAppliedActivity } from "@/lib/chat/skills";
+import { detectTeachIntent } from "@/lib/chat/skill-draft-tool";
 import { contextActivityRows } from "@/lib/chat/context-resolution";
 import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
 import { INTERNAL_ERROR_FAILURE_CODE, resolveTerminalState } from "@/lib/chat/terminal-state";
@@ -37,6 +40,7 @@ import type { TurnRequest } from "./admission";
 import { refuse, usageWindowRefusal } from "./admission";
 import type { TurnSettings } from "./account";
 import type { TurnModel } from "./model";
+import { providerErrorRecovery } from "./failure-recovery";
 import type { TurnTokens } from "./context";
 import { skillSettlement } from "./context";
 import { createToolActivity, prepareChatArtifactOutput, privateAssistantMessage } from "./activity";
@@ -46,6 +50,7 @@ import { recordTurnSpend } from "./spend";
 import { createTurnTrace, traceUsage } from "./trace";
 import { emitTurnTrace } from "./trace-sink";
 import type { TurnUser } from "./types";
+import type { ReasoningEffort } from "@/types/chat";
 
 /*
  * Pipeline — the private turn, start to finish.
@@ -67,6 +72,7 @@ export async function runPrivateTurn({
   model,
   tokens,
   toolDetailEnabled,
+  requestStartedAt,
 }: {
   req: Request;
   user: TurnUser;
@@ -78,6 +84,8 @@ export async function runPrivateTurn({
   model: TurnModel;
   tokens: TurnTokens;
   toolDetailEnabled: boolean;
+  /** When the request reached the chat route: the start of the trace's `serverPrepMs`. */
+  requestStartedAt?: number;
 }): Promise<Response> {
   const { input, privateHistory, legacyClient, moderate, moderationTexts } = request;
   const { modelInfo, modelId, requestedId, requestedEffort, autoReasoningEffort, routingNote, routingWarning, routingReceipt } = model;
@@ -97,7 +105,7 @@ export async function runPrivateTurn({
     return NextResponse.json(consumeRefusalBody(consumed), { status: 402 });
   }
 
-  const useWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
+  const offeredWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
   const useFastMode = resolveFastMode(modelInfo, input);
   const useProMode = !!input.proMode && supportsProMode(modelInfo);
   /*
@@ -115,7 +123,7 @@ export async function runPrivateTurn({
         userId: user.id,
         slug: turnSkillSlug,
         capabilities: {
-          webSearch: useWebSearch,
+          webSearch: offeredWebSearch,
           canvas: false,
           documents: false,
           images: false,
@@ -124,11 +132,23 @@ export async function runPrivateTurn({
       })
     : null;
   const privateSkillBlock = privateSkill?.applied ? privateSkill.application : null;
+  // A taught skill that lists what it uses and leaves web search out runs
+  // without it here too (`scopeTurnToSkill`); every other skill keeps the
+  // turn's search as it was.
+  const useWebSearch = scopeTurnToSkill(privateSkillBlock, {
+    webSearch: offeredWebSearch,
+    alevrSearch: false,
+    canvas: false,
+    connectors: [],
+  }).webSearch;
   turnContext.settleSkill(skillSettlement(privateSkill));
   const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
+    // The row itself: the builder reads only the tone* columns, leniently.
+    // Only while the server has them on (TONE_CHARACTERISTICS_ENABLED).
+    characteristics: isToneCharacteristicsEnabled() ? settings : null,
     responseLanguage: settings?.responseLanguage ?? "auto",
     memories: [],
     memoryEnabled: false,
@@ -143,9 +163,16 @@ export async function runPrivateTurn({
     untrustedContent: useWebSearch || !!privateSkillBlock?.untrusted,
     liveUi: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui") ?? false),
     liveUiExercise: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("live_ui_exercise") ?? false),
+    liveUiDo: legacyChatClientForOrigin(input) === "web",
     codeRun: legacyChatClientForOrigin(input) === "web" || (input.clientFeatures?.includes("code_run") ?? false),
     // Private chats never execute on the server (outputs would persist).
     codeSandbox: false,
+    // `draft_skill` never runs in incognito (nothing of it may be kept), so a
+    // person asking to teach a method is told how to do it here instead.
+    skillDraftsUnavailable: detectTeachIntent([
+      ...privateHistory.filter((m) => m.role === "USER").map((m) => m.content),
+      input.message,
+    ]),
   });
   const baseSystem = baseSystemSections.variable
     ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`
@@ -183,6 +210,7 @@ export async function runPrivateTurn({
       artifactEdit: false,
       regenerate: !!input.regenerate,
     },
+    requestStartedAt,
   }, emitTurnTrace);
 /*
    * Hold this turn's estimated cost against the ceiling for as long as it runs.
@@ -206,6 +234,9 @@ export async function runPrivateTurn({
     controller: generationController,
     model: modelId,
     conversationId: "private",
+    // No live lease: a private turn writes nothing on its own. A Stop from
+    // another process still reaches it through the cancel row its owner writes.
+    private: true,
   });
 
   const stream = new ReadableStream<Uint8Array>({
@@ -241,6 +272,10 @@ export async function runPrivateTurn({
       // Declared out here because the catch below reads it to tell a
       // budget-triggered abort from a real failure.
       let budgetHalted = false;
+      // The effort actually sent to the provider, for the done frame's
+      // `applied` record. Set once it is resolved below; a turn that fails
+      // before that point never reaches a done frame.
+      let appliedEffort: ReasoningEffort | null = null;
       // Same reason: the catch reads `stalled` to tell a wedged provider from
       // a user Stop. Nothing else bounds a stream that goes quiet — the SDK
       // timeout is cleared once headers arrive, and Juno's own 15s SSE
@@ -294,6 +329,7 @@ export async function runPrivateTurn({
           modelInfo,
           autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : requestedEffort
         );
+        appliedEffort = reasoningEffort ?? null;
         sendReasoningAndSearch(sendActivity, {
           reasoningEffort,
           auto: isAutoModelId(requestedId),
@@ -301,17 +337,20 @@ export async function runPrivateTurn({
           modelInfo,
         });
 
-        // Hard mid-stream budget ceiling: the instant the running cost of THIS
-        // generation would push the user past their remaining plan budget, abort
-        // the provider stream so they cannot be billed a cent beyond it.
+        // Stop when this generation's available usage projection reaches the
+        // remaining budget. Late usage and already accepted provider work are
+        // reconciled at settlement; cancellation is not an invoice-level cap.
         const budgetGuard = createStreamBudgetGuard({
           ceilingMicroUsd: budget.remainingMicroUsd,
-          rates: modelRatesMicroUsdPerToken(modelId),
+          rates: () => modelRatesMicroUsdPerToken(modelId, acc.servedFast),
           inputChars: privatePromptChars(),
           usage: () => ({
             promptTokens: acc.tokens.promptTokens,
             completionTokens: acc.tokens.completionTokens,
             cacheReadTokens: acc.tokens.cacheReadTokens,
+            cacheWriteTokens: acc.tokens.cacheWriteTokens,
+            cacheWrite5mTokens: acc.tokens.cacheWrite5mTokens,
+            cacheWrite1hTokens: acc.tokens.cacheWrite1hTokens,
             // Anthropic's input_tokens exclude cache reads; every other adapter
             // reports a prompt count that includes them (pricing.ts, normalizeUsage).
             promptTokensIncludeCacheRead: modelInfo.provider !== "anthropic",
@@ -329,6 +368,7 @@ export async function runPrivateTurn({
         await pumpTurnStream(
           streamChat({
             model: modelInfo,
+            onRequestUsage: (usage) => acc.recordRequestUsage(usage),
             system,
             systemStablePrefix: baseSystemSections.stable,
             history: privateHistory,
@@ -346,6 +386,8 @@ export async function runPrivateTurn({
             cacheKey: `private-${user.id}`,
             fastMode: useFastMode,
             proMode: useProMode,
+            // The end of the server's preparation, for the trace's `serverPrepMs`.
+            onProviderRequest: trace.noteProviderCall,
           }),
           {
             acc,
@@ -356,6 +398,8 @@ export async function runPrivateTurn({
             enforceStreamBudget,
             writing: { title: "Writing the private answer", detail: "Streaming response text" },
             forwardDeltas: true,
+            // First-token time for the trace (counts only: the trace keeps no text).
+            onEffect: trace.observe,
           }
         );
         // Provider done — stop measuring silence before Juno's own work. See
@@ -379,7 +423,11 @@ export async function runPrivateTurn({
 
         send({
           type: "done",
-          message: privateAssistantMessage(acc, modelId, usage, finishReason, activityLog, routingReceipt),
+          message: privateAssistantMessage(acc, modelId, usage, finishReason, activityLog, routingReceipt, {
+            reasoningEffort: appliedEffort,
+            webSearch: useWebSearch,
+            usageBasis: usage.basis,
+          }),
           artifacts: [],
           memoryUpdated: false,
           quota: consumed.quota,
@@ -433,6 +481,15 @@ export async function runPrivateTurn({
           stalled: stallWatchdog.stalled,
           shutdown: wasGenerationAbortedForShutdown(generationId),
         };
+        // Private turns feed provider health like saved ones: the fault is
+        // the lab's, not the conversation's. Nothing of the conversation is
+        // recorded: for a private chat the verdict keeps the class and status
+        // only, never the provider's text (`noteLiveProviderFault`).
+        const endedByReaderOrPlatform =
+          cancellation.userStopped || cancellation.budgetHalted || cancellation.stalled || cancellation.shutdown;
+        if (!endedByReaderOrPlatform) {
+          noteLiveProviderFault(modelInfo.provider, err, "private_chat", { requester: user.id, modelId: modelInfo.id });
+        }
         console.error("[chat] private generation error", {
           generationId,
           provider: modelInfo.provider,
@@ -449,7 +506,11 @@ export async function runPrivateTurn({
           );
           send({
             type: "done",
-            message: privateAssistantMessage(acc, modelId, partialUsage, reason, activityLog, routingReceipt),
+            message: privateAssistantMessage(acc, modelId, partialUsage, reason, activityLog, routingReceipt, {
+              reasoningEffort: appliedEffort,
+              webSearch: useWebSearch,
+              usageBasis: partialUsage.basis,
+            }),
             artifacts: [],
             memoryUpdated: false,
             quota: consumed.quota,
@@ -506,12 +567,18 @@ export async function runPrivateTurn({
               : reason === "user_stopped"
                 ? "Generation stopped before any output."
                 : providerErrorMessage(err, { model: modelInfo.name, provider: PROVIDERS[modelInfo.provider].label });
+          // Chat wire 1.1, as on the saved path: only when the message above
+          // is the provider's.
+          const recovery =
+            reason !== "user_stopped" && !endedByReaderOrPlatform
+              ? await providerErrorRecovery(err, { modelInfo, plan, history: privateHistory, requestedId, userId: user.id })
+              : {};
           sendActivity({
             kind: "warning",
             title: finishReasonTitle(reason),
             detail: message,
           });
-          send({ type: "error", message, quota, finishReason: reason });
+          send({ type: "error", message, quota, finishReason: reason, ...recovery });
           trace.finish({
             finishReason: reason,
             outcome: reason === "user_stopped" ? "stopped" : "failed",

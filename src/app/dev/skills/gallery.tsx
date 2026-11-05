@@ -29,6 +29,11 @@ import {
   FIXTURE_UPDATE_CHECK,
 } from "./fixtures";
 import { SKILLS_GALLERY_VIEWS as VIEWS, type SkillsGalleryView } from "./views";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { TeachEditor } from "@/components/skills/teach/teach-editor";
+import { SkillDraftCard } from "@/components/skills/skill-draft-card";
+import { emptyTeachState, stateFromDraft } from "@/components/skills/teach/teach-model";
+import { admitSkillDraft, skillDraftKey, type ClientSkillDraft } from "@/lib/skills/teach";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -147,6 +152,15 @@ function View({ view }: { view: SkillsGalleryView }) {
       );
     case "composer":
       return <ComposerFixture />;
+    case "teach-walk":
+    case "teach-draft":
+      return <TeachFixture walk={view === "teach-walk"} />;
+    case "teach-card":
+      return (
+        <div className="mx-auto max-w-2xl px-4 py-10">
+          <SkillDraftCard draft={TEACH_DRAFT} />
+        </div>
+      );
     case "detail-notices":
       return (
         <DetailFixture
@@ -238,6 +252,59 @@ const fixtureImport = {
     };
   },
 };
+
+/** A chat draft as `draft_skill` admits it, for the Teach views. */
+const TEACH_DRAFT: ClientSkillDraft = (() => {
+  const admission = admitSkillDraft(
+    {
+      name: "File the monthly invoices",
+      whenToUse: "When I ask to file or sort invoices for a month.",
+      steps: [
+        "Open the Invoices label in Gmail.",
+        "Download each PDF attached to an unread email.",
+        "Rename it to client-month.pdf.",
+        "Put it in the month’s folder in Google Drive.",
+      ],
+      inputs: [{ name: "Month", description: "Which month to file", required: true }],
+      rules: ["Never delete an email."],
+      tools: ["web_search", "Bash(git add *)"],
+      apps: ["Gmail", "Notion"],
+      questions: ["Which Drive folder holds the months?"],
+    },
+    {
+      key: skillDraftKey("dev-gallery", 0),
+      now: new Date("2026-10-25T10:00:00Z"),
+      conversationId: null,
+      connectors: [{ id: "composio:gmail", label: "Gmail" }],
+      observed: { tools: ["web_search"], apps: ["composio:gmail"] },
+      untrusted: false,
+    }
+  );
+  if (!admission.ok) throw new Error(admission.message);
+  return admission.draft;
+})();
+
+function TeachFixture({ walk }: { walk: boolean }) {
+  return (
+    <AppPage measure="reading">
+      <AppPageHeader
+        heading="Teach Alevr"
+        lede={walk ? "Show it how you do something once." : "Alevr drafted this from your chat. Read it, change anything, then save."}
+        backHref="/dev/skills"
+        backLabel="Back"
+      />
+      <TeachEditor
+        initial={walk ? emptyTeachState() : stateFromDraft(TEACH_DRAFT)}
+        mode={{ kind: "new", key: walk ? null : TEACH_DRAFT.key, source: TEACH_DRAFT.source }}
+        context={{ projects: [{ id: "p1", name: "Finance" }], apps: [{ id: "composio:gmail", label: "Gmail" }] }}
+        observed={walk ? undefined : TEACH_DRAFT.observed}
+        draftNotes={walk ? undefined : { dropped: TEACH_DRAFT.dropped, missingApps: TEACH_DRAFT.missingApps, fromOutsideContent: false }}
+        autoFocusSteps={walk}
+        onSaved={(saved) => toast.message(`Would save /${saved.skill.slug}`)}
+      />
+    </AppPage>
+  );
+}
 
 function LibraryFixture({ initial, error = null }: { initial: SkillLibrary | null; error?: string | null }) {
   const [library, setLibrary] = React.useState(initial);

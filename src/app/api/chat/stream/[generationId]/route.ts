@@ -5,7 +5,7 @@ import { encodeChunk, encodeSseFrame, SSE_HEADERS } from "@/lib/chat-stream";
 import { chatReceiptLiveness, findFirstSubmissionReceipt } from "@/lib/chat-first-submission-receipt";
 import { findChatStreamMeta, readChatStreamEvents } from "@/lib/chat-stream-log-store";
 import { replayStream, type StreamReplayPort } from "@/lib/chat/stream-replay";
-import { isGenerationActive } from "@/lib/generation-cancel";
+import { isGenerationActive, isGenerationLive } from "@/lib/generation-cancel";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,9 +28,17 @@ export const dynamic = "force-dynamic";
  * The end. A `done`/`error` frame closes the stream. When the generation is
  * over but no such frame is in the log — the process died, or the log was
  * disabled — the client gets one `resume` frame with `refetch: true` and
- * should load the conversation instead.
+ * should load the conversation instead. "Over" is asked of every process: the
+ * one serving this request, then the generation's live lease, which whichever
+ * process holds it keeps renewed (chat/generation-signals.ts).
  */
 const GENERATION_ID = /^[A-Za-z0-9._:-]{8,120}$/;
+/**
+ * How long one answer about ANOTHER process's live lease is reused. The replay
+ * asks for liveness every REPLAY_POLL_MS between frames; the lease is renewed
+ * every 5s and lives 20s, so re-reading it more often than this buys nothing.
+ */
+const REMOTE_LIVENESS_CACHE_MS = 2_000;
 
 function parseAfter(raw: string | null): number {
   const value = Number.parseInt(raw ?? "0", 10);
@@ -61,6 +69,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ generati
   }
   if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  let remote: { live: boolean; at: number } | null = null;
   const port: StreamReplayPort = {
     eventsAfter: readChatStreamEvents,
     liveness: async (id) => {
@@ -71,8 +80,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ generati
         const state = await chatReceiptLiveness(user.id, id);
         return state === "running" ? "running" : "terminal";
       }
-      // No receipt and not registered here: nothing can append any more.
-      return "terminal";
+      // No receipt and not registered here: another backend process may hold
+      // it (a second instance, the old process during a reload). Its live
+      // lease says so; with no lease, nothing can append any more.
+      if (!remote || Date.now() - remote.at >= REMOTE_LIVENESS_CACHE_MS) {
+        const live = await isGenerationLive(id, user.id).catch(() => false);
+        remote = { live, at: Date.now() };
+      }
+      return remote.live ? "running" : "terminal";
     },
   };
 

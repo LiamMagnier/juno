@@ -11,14 +11,7 @@ import { IconSwap } from "@/components/ui/icon-swap";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -147,7 +140,7 @@ export default function AssistantsPage() {
       type="button"
       onClick={() => openStudio(null)}
       style={staggerDelay(filteredAssistants.length, "tight")}
-      className="surface-inset flex min-h-40 items-center justify-center gap-2 rounded-card border-dashed border-border/80 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+      className="surface-inset flex min-h-40 items-center justify-center gap-2 rounded-card border-dashed border-border/80 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground [animation-fill-mode:backwards] motion-safe:animate-rise-in"
     >
       <Plus className="size-4" aria-hidden="true" />
       New assistant
@@ -268,7 +261,7 @@ export default function AssistantsPage() {
                     className="flex min-w-0 flex-1 items-start gap-3 rounded-control text-left"
                     aria-label={`Start a chat with ${assistant.name}`}
                   >
-                    <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
+                    <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
                       <AssistantIcon className="size-4" aria-hidden="true" />
                     </span>
                     <span className="min-w-0 pt-0.5">
@@ -284,7 +277,7 @@ export default function AssistantsPage() {
                     </span>
                   </button>
 
-                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
+                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100">
                     <Button
                       type="button"
                       variant="ghost"
@@ -343,7 +336,7 @@ export default function AssistantsPage() {
                 <button
                   type="button"
                   onClick={() => startChat(assistant)}
-                  className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 text-left font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
+                  className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 text-left font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
                 >
                   {/* The arrow's nudge is its own articulation (icons.tsx),
                       played when this footer button is pointed at — not a
@@ -378,26 +371,19 @@ export default function AssistantsPage() {
         }}
       />
 
-      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete assistant?</DialogTitle>
-            <DialogDescription>
-              {deleteTarget
-                ? `${deleteTarget.name} will be removed from your assistant library. Existing chats are not deleted.`
-                : "This assistant will be removed from your library."}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={() => void deleteAssistant()} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete assistant"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        busy={deleting}
+        title="Delete assistant?"
+        description={
+          deleteTarget
+            ? `${deleteTarget.name} will be removed from your assistant library. Existing chats are not deleted.`
+            : "This assistant will be removed from your library."
+        }
+        confirmLabel="Delete assistant"
+        onConfirm={() => void deleteAssistant()}
+      />
     </AppPage>
   );
 }

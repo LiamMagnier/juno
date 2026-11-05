@@ -43,7 +43,7 @@
     }
   },
   "current": {
-    "recordedAt": "2026-10-14",
+    "recordedAt": "2026-10-25",
     "results": {
       "judged by when it was said": {
         "live": {
@@ -51,7 +51,7 @@
           "stale": 0,
           "forgotten": 0,
           "precision": 1,
-          "retrieval": 0.9090909090909091,
+          "retrieval": 0.9545454545454546,
           "leaks": 0
         },
         "re-read": {
@@ -59,7 +59,7 @@
           "stale": 0,
           "forgotten": 0,
           "precision": 1,
-          "retrieval": 0.9090909090909091,
+          "retrieval": 0.9545454545454546,
           "leaks": 0
         },
         "repair": {
@@ -67,7 +67,7 @@
           "stale": 0.8571428571428571,
           "forgotten": 0,
           "precision": 0.927710843373494,
-          "retrieval": 0.7727272727272727,
+          "retrieval": 0.8181818181818182,
           "leaks": 5
         }
       },
@@ -77,7 +77,7 @@
           "stale": 0,
           "forgotten": 0,
           "precision": 1,
-          "retrieval": 0.9090909090909091,
+          "retrieval": 0.9545454545454546,
           "leaks": 0
         },
         "re-read": {
@@ -85,7 +85,7 @@
           "stale": 0,
           "forgotten": 0,
           "precision": 1,
-          "retrieval": 0.9090909090909091,
+          "retrieval": 0.9545454545454546,
           "leaks": 0
         },
         "repair": {
@@ -93,7 +93,7 @@
           "stale": 0,
           "forgotten": 0,
           "precision": 1,
-          "retrieval": 0.9090909090909091,
+          "retrieval": 0.9545454545454546,
           "leaks": 0
         }
       }

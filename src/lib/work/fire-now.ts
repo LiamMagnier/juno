@@ -2,6 +2,7 @@ import "server-only";
 
 import type { Prisma, WorkRun } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { cloudWorkAvailable } from "@/lib/work/executor-heartbeat";
 import { getUserPlan } from "@/lib/usage";
 import {
   WORK_LIVE_STATUSES,
@@ -13,6 +14,7 @@ import {
 import { runBudgetForWindow } from "@/lib/work/budget";
 import { checkUsageWindows } from "@/lib/spend";
 import { checkMemberBudget } from "@/lib/agents/budget-store";
+import { pausedAgentRunRefusal } from "@/lib/agents/domain";
 import { windowLimitMessage, type UsageWindowName } from "@/lib/spend-ceiling";
 import { createRun, recordRunInputsFromGrants } from "@/lib/work/store";
 import {
@@ -82,6 +84,8 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 export const FIRE_REFUSALS = [
   /** The routine is paused. */
   "paused",
+  /** The agent that owns the routine is paused: it starts nothing until it resumes. */
+  "agent_paused",
   /** This routine already has as many runs going as it allows. */
   "already_running",
   /** A newer deployment's routine, which this build must not guess at. */
@@ -177,6 +181,25 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
     };
   }
 
+  // A paused agent starts nothing, its routines included: the routine can be
+  // switched back on in Automations while the agent stays paused. The
+  // dispatcher's rule and sentence, read fresh.
+  const pausedAgent = pausedAgentRunRefusal(
+    schedule.session.agentId
+      ? await prisma.agent.findFirst({
+          where: { id: schedule.session.agentId, userId, deletedAt: null },
+          select: { name: true, status: true },
+        })
+      : null
+  );
+  if (pausedAgent) {
+    return {
+      outcome: "refused",
+      reason: "agent_paused",
+      message: pausedAgent.message,
+    };
+  }
+
   const runKind: WorkScheduleRunKind | null = scheduleRunKindOf(schedule.runKind);
   if (runKind === null) {
     return {
@@ -252,7 +275,7 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
     requested: scheduleTargetOf(schedule.target),
     required: runConfig.requiredCapabilities,
     hosts: ordered.map((host) => hostCapabilityView(host, effectiveHostState(host, now))),
-    cloudAvailable: CLOUD_WORK_AVAILABLE,
+    cloudAvailable: await cloudWorkAvailable(now),
   });
 
   // A fire refuses rather than falling back on `hostOfflinePolicy`. That policy
@@ -381,7 +404,6 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
   return { outcome: "work_run", run: created.run, replay: created.replay, selection };
 }
 
-/** Matches the constant the dispatchers hold, and for the same reason: turning
- *  cloud off should produce an honest refusal rather than a queue of runs
- *  nothing will ever claim. */
-const CLOUD_WORK_AVAILABLE = true;
+/* Cloud availability is the executor heartbeat (src/lib/work/executor-heartbeat.ts),
+ * read at fire time, so no runner means an honest refusal rather than a queue
+ * of runs nothing will ever claim. */

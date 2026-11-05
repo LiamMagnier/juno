@@ -39,13 +39,36 @@ struct CodeV2ModelControl: View {
     static func ladder(for model: CodeV2.ProviderModel?, name: String) -> JunoThinkingLadder {
         let levels = model?.effortLevels ?? []
         return JunoThinkingLadder(
-            stops: levels.map {
-                JunoThinkingStop(id: $0.rawValue, label: $0.title, accessibilityLabel: "Effort \($0.title.lowercased())")
+            stops: levels.map { level in
+                level == CodeV2.EffortLevel.none
+                    // Thinking off is the shared panel's Instant stop, the
+                    // word Chat and the web use for it.
+                    ? JunoThinkingStop(
+                        id: JunoThinkingLadder.instantStopID,
+                        label: "Instant",
+                        accessibilityLabel: "Instant, no thinking"
+                    )
+                    : JunoThinkingStop(
+                        id: level.rawValue,
+                        label: level.title,
+                        accessibilityLabel: "Effort \(level.title.lowercased())"
+                    )
             },
             modelName: name,
             fastModeRateMultiplier: model?.supportsFast == true ? 2 : nil,
-            defaultStopID: model?.defaultEffort?.rawValue
+            defaultStopID: stopID(for: model?.defaultEffort)
         )
+    }
+
+    /// The shared panel's stop id for a level (`none` is the Instant stop).
+    static func stopID(for level: CodeV2.EffortLevel?) -> String? {
+        guard let level else { return nil }
+        return level == CodeV2.EffortLevel.none ? JunoThinkingLadder.instantStopID : level.rawValue
+    }
+
+    /// The level a stop id stands for.
+    static func level(forStopID id: String) -> CodeV2.EffortLevel? {
+        id == JunoThinkingLadder.instantStopID ? CodeV2.EffortLevel.none : CodeV2.EffortLevel(rawValue: id)
     }
 
     private var name: String { model?.label ?? CodeV2Formatting.modelName(selection.model) }
@@ -53,9 +76,9 @@ struct CodeV2ModelControl: View {
 
     private var stopID: Binding<String?> {
         Binding(
-            get: { (selection.effort ?? model?.defaultEffort)?.rawValue },
+            get: { Self.stopID(for: selection.effort ?? model?.defaultEffort) },
             set: { id in
-                guard let id, let level = CodeV2.EffortLevel(rawValue: id) else { return }
+                guard let id, let level = Self.level(forStopID: id) else { return }
                 selection.effort = level
             }
         )

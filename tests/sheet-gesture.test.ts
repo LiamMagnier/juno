@@ -161,7 +161,10 @@ test("small touch targets reach 44px without moving their neighbours", () => {
   assert.match(source("src/components/code/v2/code-v2.css"), /\.cv2-nav-tick::before/);
 });
 
-test("page headers keep to one lede line on a phone", () => {
+test("page headers never cut their lede on a phone, and draw no backdrop there", () => {
   const header = source("src/components/app/app-page-header.tsx");
-  assert.match(header, /line-clamp-1[^"]*@\[40rem\]\/page:line-clamp-none/);
+  // The lede wraps as finished text; a one-line clamp ended it mid-sentence.
+  assert.doesNotMatch(header, /line-clamp-1/);
+  // The orbit drawing is wide-only: under 40rem it ran behind the lede.
+  assert.match(header, /hidden @\[40rem\]\/page:contents">\s*<PageBackdrop \/>/);
 });

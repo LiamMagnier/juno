@@ -130,7 +130,7 @@ export function ApprovalCard({
     // Settled: one quiet line, the receipt of what was decided.
     return (
       <p className="flex flex-wrap items-baseline gap-x-2 text-ui leading-relaxed text-muted-foreground">
-        <span className="text-foreground/75">{approval.summary}</span>
+        <span className="text-muted-foreground">{approval.summary}</span>
         <span>{describeDecision(approval, expired)}</span>
       </p>
     );
@@ -158,7 +158,7 @@ export function ApprovalCard({
 
       {frame !== null && <ApprovalFrame frame={frame} point={point} className="mt-2.5" />}
 
-      <p className="mt-2 text-ui leading-relaxed text-foreground/75">{RISK_CONSEQUENCE[approval.risk]}</p>
+      <p className="mt-2 text-ui leading-relaxed text-muted-foreground">{RISK_CONSEQUENCE[approval.risk]}</p>
 
       {parameters.length > 0 && (
         <>
@@ -166,7 +166,7 @@ export function ApprovalCard({
             type="button"
             onClick={() => setShowParameters((current) => !current)}
             aria-expanded={showParameters}
-            className="-ml-2 mt-1 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none coarse:min-h-11"
+            className="-ml-2 mt-1 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground coarse:min-h-11"
           >
             <ChevronRight
               className={cn(

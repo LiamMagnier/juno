@@ -300,6 +300,47 @@ export function cheapestPlanWith(feature: PlanFeature): Plan {
 }
 
 /**
+ * An agent's own computer (docs/design/agents-v2/COMPUTERS_2026-10.md, D7):
+ * how many computers an account may have and how many awake minutes they may
+ * use a week.
+ *
+ * A map beside `PLANS`, not fields on `PlanConfig`: `PlanConfig` is the
+ * commercial record the plans page, the billing surfaces and the Stripe keys
+ * read, and computers are off in production. Leaving it untouched means no
+ * existing entitlement changes and no plan surface starts advertising
+ * computers. Non-null exactly where `PLANS[plan].agents` is true
+ * (tests/computer-access.test.ts holds it). The numbers are defaults the owner
+ * has not confirmed (docs/OPEN_DECISIONS.md, "Agent computers"); every one has
+ * an env override, read in src/lib/computer/access.ts.
+ */
+export interface AgentComputerEntitlement {
+  /** Computers (rows in AgentComputer) an account may have. */
+  maxEnabled: number;
+  /** Awake minutes per account per week (Monday 00:00 UTC). */
+  weeklyMinutes: number;
+}
+
+export const PLAN_AGENT_COMPUTER: Record<Plan, AgentComputerEntitlement | null> = {
+  FREE: null,
+  LITE: null,
+  PRO: { maxEnabled: 1, weeklyMinutes: 120 },
+  PLUS: { maxEnabled: 2, weeklyMinutes: 300 },
+  MAX: { maxEnabled: 3, weeklyMinutes: 600 },
+  MAX20: { maxEnabled: 5, weeklyMinutes: 1200 },
+  ULTRA: { maxEnabled: 10, weeklyMinutes: 3000 },
+  OWNER: { maxEnabled: 24, weeklyMinutes: 10080 },
+};
+
+/**
+ * The cheapest tier whose default caps include an agent computer. The upgrade
+ * sentence uses `computerUpgradeFor` (src/lib/computer/access.ts) instead,
+ * which reads the owner's env overrides too.
+ */
+export function cheapestPlanWithAgentComputer(): Plan {
+  return PLAN_LIST.find((p) => PLAN_AGENT_COMPUTER[p.id] !== null)?.id ?? "PRO";
+}
+
+/**
  * Policy: which tier a model needs.
  *
  *   FREE  — the catalog prices it FREE *and* it is a cost-1 model (Haiku,

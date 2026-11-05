@@ -49,6 +49,8 @@ export type SidebarMotionIconKind =
   | "search"
   /** Notifications: an action row like Search, opening a popover rather than a page. */
   | "notifications"
+  /** Activity: everything live across chats, Code and research (G70). A destination. */
+  | "activity"
   | "panel-open"
   | "panel-close"
   | "close"
@@ -87,6 +89,7 @@ const ICONS: Record<SidebarMotionIconKind, IconComponent> = {
   settings: AppIcons.settings,
   search: AppIcons.search,
   notifications: AppIcons.notifications,
+  activity: AppIcons.activity,
   "panel-open": PanelLeft,
   "panel-close": PanelLeftClose,
   close: ActionIcons.dismiss,

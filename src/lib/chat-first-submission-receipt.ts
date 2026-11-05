@@ -9,6 +9,7 @@ import {
   type ReceiptSweepResult,
 } from "@/lib/chat/receipt-sweep";
 import { PROCESS_LOST_FAILURE_CODE } from "@/lib/chat/terminal-state";
+import { preStreamRetrySpendRef } from "@/lib/chat/turn/pre-stream-retry";
 import { releaseSpend } from "@/lib/spend";
 import { getUserPlan, refundMessage } from "@/lib/usage";
 
@@ -93,7 +94,13 @@ export async function sweepAbandonedFirstSubmissionReceipts(
     refundMessage: async (userId) => {
       await refundMessage(userId, await getUserPlan(userId));
     },
-    releaseReservation: (userId, generationId) => releaseSpend(userId, generationId),
+    // A turn that retried before its first byte holds attempt 2 under its own
+    // ref (pre-stream-retry.ts): a process lost mid-retry leaves that one open.
+    releaseReservation: async (userId, generationId) => {
+      const own = await releaseSpend(userId, generationId);
+      const retry = await releaseSpend(userId, preStreamRetrySpendRef(generationId));
+      return own || retry;
+    },
   };
   return sweepAbandonedReceipts(port, {
     limit: options.limit,
@@ -108,9 +115,11 @@ export async function sweepAbandonedFirstSubmissionReceipts(
 
 /**
  * Record a cancel on the receipt. The in-memory registry is the fast path
- * (same process, sub-millisecond); this is what lets a cancel from another
- * process or tab reach a stream loop that polls it (~2s). Only while the
- * generation can still be running — a terminal receipt has nothing to cancel.
+ * (same process, sub-millisecond); this flag is one of the two durable Stops
+ * the per-process signal pump reads for every generation it holds (the other
+ * is the cancel row; chat/generation-signals-store.ts reads both in one round
+ * trip). Only while the generation can still be running — a terminal receipt
+ * has nothing to cancel. True when this call set the flag.
  */
 export async function requestChatCancel(userId: string, generationId: string): Promise<boolean> {
   const updated = await prisma.chatFirstSubmissionReceipt.updateMany({
@@ -118,15 +127,6 @@ export async function requestChatCancel(userId: string, generationId: string): P
     data: { cancelRequestedAt: new Date() },
   });
   return updated.count === 1;
-}
-
-/** The minimal read the stream loop makes on its cancel poll. */
-export async function isChatCancelRequested(userId: string, generationId: string): Promise<boolean> {
-  const row = await prisma.chatFirstSubmissionReceipt.findFirst({
-    where: { userId, generationId, cancelRequestedAt: { not: null } },
-    select: { id: true },
-  });
-  return row !== null;
 }
 
 /**

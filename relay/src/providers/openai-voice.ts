@@ -51,7 +51,8 @@ export class OpenAiVoiceSession implements VoiceProviderSession {
     } catch (err) {
       // Leave nothing half-open behind: the failed attempt owns a socket.
       await live.close().catch(() => {});
-      const reason = err instanceof Error ? err.message : String(err);
+      // One line in the log whatever the provider put in its message.
+      const reason = (err instanceof Error ? err.message : String(err)).replace(/\r/g, "").replace(/\n/g, "");
       console.error("[openai-voice] GPT-Live unavailable, falling back to Realtime:", reason);
 
       const realtime = new OpenAiShapedRealtimeSession(this.dialect);
@@ -79,6 +80,11 @@ export class OpenAiVoiceSession implements VoiceProviderSession {
       model: answered?.model,
       delegate: this.fellBack ? undefined : answered?.delegate,
       effort: this.fellBack ? undefined : answered?.effort,
+      // GPT-Live declares none of the chat's tools: its session config refuses
+      // fields it does not know, and its delegation has no documented way to
+      // hand a function call back to the client, so it keeps its delegate's
+      // web search only. The Realtime leg declares them.
+      tools: answered?.tools ?? 0,
     };
   }
 

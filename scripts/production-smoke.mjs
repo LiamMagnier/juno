@@ -69,8 +69,9 @@ function assert(condition, message) {
 }
 
 /**
- * The error frame in an SSE body, as a sentence — or null if the stream carried
- * none.
+ * The error frame in an SSE body: its sentence (`quoted`) and, from a chat
+ * wire 1.1 server, its machine-readable `errorClass` — or null if the stream
+ * carried none.
  *
  * QUOTE THE ERROR, DO NOT MERELY NAME IT. The caller used to assert "chat smoke
  * returned an error event" and stop there. When that fired on a real deploy the
@@ -86,19 +87,22 @@ function assert(condition, message) {
  * see on screen; the raw fallback is trimmed so a stack trace or an echoed
  * prompt cannot reach a public build log.
  */
-function quoteErrorFrame(text) {
+function readErrorFrame(text) {
   const frame = text.match(/\{[^\n]*"type"\s*:\s*"error"[^\n]*\}/i);
   if (!frame) return null;
   try {
     const parsed = JSON.parse(frame[0]);
     if (parsed && typeof parsed.message === "string") {
-      return `${parsed.message}${parsed.finishReason ? ` (finishReason: ${parsed.finishReason})` : ""}`;
+      return {
+        quoted: `${parsed.message}${parsed.finishReason ? ` (finishReason: ${parsed.finishReason})` : ""}`,
+        errorClass: typeof parsed.errorClass === "string" ? parsed.errorClass : null,
+      };
     }
   } catch {
     // Not a whole frame on one line — the trimmed raw match is still better
     // than the sentence this replaced.
   }
-  return frame[0].slice(0, 400);
+  return { quoted: frame[0].slice(0, 400), errorClass: null };
 }
 
 async function main() {
@@ -148,11 +152,12 @@ async function main() {
    * A smoke's job is to prove THE RELEASE's chat path works end to end, and for
    * that it needs a working model, not one particular one. A dead key is an ops
    * problem: it deserves a warning on every deploy until somebody fixes it, and
-   * it must not revert code that has nothing to do with it. So a credential
-   * failure moves to the next candidate and shouts; ANY OTHER error frame fails
-   * at once, because that is the release; and all candidates failing on
-   * credentials fails too, because an account that cannot reach a single
-   * provider cannot serve anyone.
+   * it must not revert code that has nothing to do with it, and neither must
+   * an account that ran out of credit. So a provider-account failure (dead key
+   * or exhausted credit) moves to the next candidate and shouts; ANY OTHER
+   * error frame fails at once, because that is the release; and all candidates
+   * failing on their accounts fails too, because an account that cannot reach
+   * a single provider cannot serve anyone.
    */
   const requested = (process.env.JUNO_SMOKE_MODEL || "")
     .split(",")
@@ -167,22 +172,35 @@ async function main() {
   assert(process.env.JUNO_SMOKE_RUN_CHAT === "1", "authenticated smoke must run the provider/replay path");
 
   /**
-   * The exact sentence `provider-error.ts` emits for class `auth`, and for no
-   * other class. Matching the copy rather than a code is not ideal; the frame
-   * carries no machine-readable class, and adding one would change an SSE
-   * contract that native clients read and that this same script pins at
-   * 1.3.0 two checks above — too much blast radius for a smoke discriminator.
+   * How a candidate's failure is known to be its provider ACCOUNT's (a dead
+   * key, or credit run out) rather than the release's. Both are the account's
+   * state: the second rolled back a healthy release on 2026-10-26 because
+   * Qwen's credit ran out while the next two candidates were fine. Rate
+   * limits, capacity and every other error frame still fail at once.
    *
-   * It fails SAFE: if the copy is ever reworded, nothing matches, every failure
-   * is treated as the release's, and the deploy rolls back. That is the same
-   * behaviour this gate had before the list existed.
+   * Two signals, the first preferred:
+   *  - `errorClass` on the error frame (chat wire 1.1, additive — the native
+   *    API contract this script pins at 1.3.0 above does not move for it):
+   *    `account`, the one wire class for both of `isAccountFault`'s classes
+   *    in provider-health-policy (`wireErrorClass` folds `auth` and `billing`
+   *    together so the stream never says which).
+   *  - the sentence `provider-error.ts` emits for those two classes and no
+   *    other, for a frame without a class. The sentence no longer names the
+   *    platform's funding state ("temporarily unavailable"), and is worded
+   *    apart from `capacity`'s on purpose (tests/production-smoke.test.ts
+   *    holds the copy to it).
+   *
+   * It fails SAFE: if the copy is ever reworded and no class is sent, nothing
+   * matches, every failure is treated as the release's, and the deploy rolls
+   * back. That is the same behaviour this gate had before the list existed.
    */
-  const CREDENTIAL_FAILURE = /API connection is not configured correctly/i;
+  const PROVIDER_ACCOUNT_FAILURE = /is temporarily unavailable\. Choose another model, or try again later\./i;
+  const ACCOUNT_FAULT_CLASSES = new Set(["account"]);
 
   let selected = null;
   let clientRequestId = null;
   let body = null;
-  const credentialFailures = [];
+  const accountFailures = [];
 
   for (const candidate of candidates) {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -209,13 +227,27 @@ async function main() {
       `chat response never reached a terminal SSE/recovery marker on ${candidate}`,
     );
 
-    const quoted = quoteErrorFrame(attempt.text);
-    if (quoted && CREDENTIAL_FAILURE.test(quoted)) {
+    const errorFrame = readErrorFrame(attempt.text);
+    const quoted = errorFrame?.quoted ?? null;
+    const accountFault =
+      !!errorFrame &&
+      (errorFrame.errorClass !== null
+        ? ACCOUNT_FAULT_CLASSES.has(errorFrame.errorClass)
+        : PROVIDER_ACCOUNT_FAILURE.test(errorFrame.quoted));
+    if (accountFault) {
       // Not this release's fault, and loud about it: a GitHub Actions warning
       // annotation survives in the run summary where a plain line scrolls away.
-      console.log(`::warning::${candidate} is unusable in production — ${quoted}`);
-      console.log(`SKIP ${candidate} (provider credential); trying the next candidate`);
-      credentialFailures.push(`${candidate}: ${quoted}`);
+      // The first candidate is the account default (deploy.yml SMOKE_MODEL), so
+      // a skip there means every account that never chose a model is failing;
+      // the app's own provider-health alert mails the operator for that lab.
+      const isDefault = candidate === candidates[0] && requested.length > 0;
+      console.log(
+        `::warning::${candidate}${isDefault ? " (the account default)" : ""} is unusable in production (${
+          errorFrame.errorClass ?? "account fault"
+        }) — ${quoted}`,
+      );
+      console.log(`SKIP ${candidate} (provider account); trying the next candidate`);
+      accountFailures.push(`${candidate}: ${quoted}`);
       continue;
     }
     assert(!quoted, `chat smoke returned an error event on ${candidate}: ${quoted}`);
@@ -228,12 +260,12 @@ async function main() {
 
   assert(
     selected,
-    "every candidate model failed on its provider credential, so this account cannot reach any provider — " +
-      credentialFailures.join(" | "),
+    "every candidate model failed on its provider account (key or credit), so this account cannot reach any provider — " +
+      accountFailures.join(" | "),
   );
   console.log(
     `PASS chat submission reached a terminal response on ${selected}` +
-      (credentialFailures.length ? ` (after ${credentialFailures.length} unusable provider(s))` : ""),
+      (accountFailures.length ? ` (after ${accountFailures.length} unusable provider(s))` : ""),
   );
 
   let receipt = null;

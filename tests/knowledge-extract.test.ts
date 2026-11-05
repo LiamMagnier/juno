@@ -17,7 +17,9 @@ import {
   type KnowledgeBlockInput,
   type KnowledgeDocumentRecord,
   type KnowledgeStore,
+  type UpdateDocumentInput,
 } from "@/lib/knowledge/ingest";
+import type { PackedChunk } from "@/lib/knowledge/chunk";
 
 /*
  * Everything here is built in-process. There is no `tests/fixtures/*.docx`,
@@ -701,6 +703,11 @@ function fakeStore(over: Partial<KnowledgeStore> = {}) {
   const jobStates: string[] = [];
   const documents = new Map<string, KnowledgeDocumentRecord>();
   let blocks: KnowledgeBlockInput[] = [];
+  let blockIds: string[] = [];
+  let chunks: PackedChunk[] = [];
+  const events: string[] = [];
+  const patches: UpdateDocumentInput[] = [];
+  const superseded: Array<{ attachmentId: string; current: string }> = [];
   let errors: Array<string | null | undefined> = [];
   let ownerScoped = true;
   let seq = 0;
@@ -721,6 +728,8 @@ function fakeStore(over: Partial<KnowledgeStore> = {}) {
     async updateDocument(userId, documentId, patch) {
       if (userId !== "user_1") ownerScoped = false;
       if (patch.state) states.push(patch.state);
+      if (patch.state) events.push(`state:${patch.state}`);
+      patches.push(patch);
       if ("error" in patch) errors.push(patch.error);
       const existing = documents.get(documentId);
       if (existing && patch.state) existing.state = patch.state;
@@ -728,6 +737,18 @@ function fakeStore(over: Partial<KnowledgeStore> = {}) {
     async replaceBlocks(userId, _documentId, next) {
       if (userId !== "user_1") ownerScoped = false;
       blocks = next;
+      blockIds = next.map((_, index) => `blk_${index}`);
+      events.push("blocks");
+      return blockIds;
+    },
+    async replaceChunks(userId, _documentId, next) {
+      if (userId !== "user_1") ownerScoped = false;
+      chunks = next;
+      events.push("chunks");
+    },
+    async supersedeAttachment(userId, attachmentId, current) {
+      if (userId !== "user_1") ownerScoped = false;
+      superseded.push({ attachmentId, current });
     },
     async createJob() {
       jobStates.push("queued");
@@ -747,6 +768,15 @@ function fakeStore(over: Partial<KnowledgeStore> = {}) {
     get blocks() {
       return blocks;
     },
+    get blockIds() {
+      return blockIds;
+    },
+    get chunks() {
+      return chunks;
+    },
+    events,
+    patches,
+    superseded,
     get errors() {
       return errors.filter((e): e is string => typeof e === "string" && e.length > 0);
     },
@@ -868,4 +898,56 @@ test("a store that fails mid-write still parks the document in failed", async ()
   assert.equal(outcome.status === "indexed" && outcome.state, "failed");
   assert.equal(fake.states[fake.states.length - 1], "failed");
   assert.equal(fake.jobStates[fake.jobStates.length - 1], "failed");
+});
+
+/*
+ * PRJ-1: ingest wrote blocks and never a chunk, so project retrieval had
+ * nothing to rank and every project turn pasted the whole library.
+ */
+const longGuide = () =>
+  utf8(
+    "# Refunds\n\n" +
+      Array.from({ length: 40 }, (_, i) => `Paragraph ${i} explains how the refund window works for order type ${i}.`).join("\n\n") +
+      "\n\n## Exchanges\n\nExchanges follow the same window.\n"
+  );
+
+test("ingest packs chunks that cite only the blocks it just wrote, with dense ordinals", async () => {
+  const fake = fakeStore();
+  const outcome = await runIngest(fake.store, ingestInput("guide.md", longGuide()));
+  assert.equal(outcome.status, "indexed");
+  assert.ok(fake.chunks.length > 0, "a document with text has chunks");
+  const written = new Set(fake.blockIds);
+  for (const chunk of fake.chunks) {
+    assert.ok(chunk.blockIds.length > 0);
+    for (const id of chunk.blockIds) assert.ok(written.has(id), `${id} is a block replaceBlocks returned`);
+  }
+  assert.deepEqual(fake.chunks.map((c) => c.ordinal), fake.chunks.map((_, i) => i));
+  assert.ok(fake.ownerScoped);
+});
+
+test("chunks land before the document becomes retrievable, and the count rides with the flip", async () => {
+  const fake = fakeStore();
+  await runIngest(fake.store, ingestInput("guide.md", longGuide()));
+  const chunksAt = fake.events.indexOf("chunks");
+  const readyAt = fake.events.indexOf("state:ready");
+  assert.ok(fake.events.indexOf("blocks") < chunksAt);
+  assert.ok(chunksAt >= 0 && chunksAt < readyAt, fake.events.join(" → "));
+  const flip = fake.patches.find((patch) => patch.state === "ready")!;
+  assert.equal(flip.chunkCount, fake.chunks.length);
+  assert.equal(flip.tokenCount, fake.chunks.reduce((sum, c) => sum + c.tokens, 0));
+  assert.equal(flip.embeddingState, "pending", "vectors come from the sweep, off the upload path");
+});
+
+test("a successful ingest supersedes the attachment's other documents", async () => {
+  const fake = fakeStore();
+  const outcome = await runIngest(fake.store, ingestInput("guide.md", longGuide()));
+  assert.equal(outcome.status, "indexed");
+  assert.deepEqual(fake.superseded, [{ attachmentId: "att_1", current: outcome.status === "indexed" ? outcome.documentId : "" }]);
+});
+
+test("a failed extraction neither chunks nor supersedes", async () => {
+  const fake = fakeStore();
+  await runIngest(fake.store, ingestInput("broken.pdf", utf8("%PDF-1.7 not really")));
+  assert.equal(fake.chunks.length, 0);
+  assert.deepEqual(fake.superseded, []);
 });

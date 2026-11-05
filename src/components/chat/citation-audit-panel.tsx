@@ -37,6 +37,7 @@ import {
   AUDIT_COPY,
   AuditFindings,
   CLAIM_FOCUS_CSS,
+  READ_STATE_LABEL,
   ScoreMeter,
   SOURCE_TYPE_LABEL,
   STATES,
@@ -51,6 +52,7 @@ import {
   type AuditState,
   type CitationAuditClaim,
   type CitationAuditLink,
+  type CitationAuditRival,
   type CitationAuditSource,
 } from "@/components/chat/citation-audit";
 import { cn } from "@/lib/utils";
@@ -96,13 +98,14 @@ function SourceInspector({
   );
   const provenance = describeLocator(link.locator);
   const sourceTypeLabel = source?.sourceType ? SOURCE_TYPE_LABEL[source.sourceType] : undefined;
+  const readStateLabel = source?.readState ? READ_STATE_LABEL[source.readState] : undefined;
 
   return (
     <div className="mt-2 rounded-menu border border-border/70 bg-card p-3">
       <div className="flex items-start gap-2">
         {source && <SourceFavicon url={source.url} variant="list" />}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-body leading-tight text-foreground/90">{source?.title ?? "Cited source"}</p>
+          <p className="truncate text-body leading-tight text-foreground">{source?.title ?? "Cited source"}</p>
           <p className="truncate font-mono text-caption text-muted-foreground">
             {source ? hostOf(source.url) : ""}
             {published ? ` · published ${published.toISOString().slice(0, 10)}` : " · no publication date"}
@@ -110,9 +113,23 @@ function SourceInspector({
           {/* What KIND of source this is, in front of the four score meters
               below. A regulator's filing and a forum thread can score alike on
               freshness and directness, and the panel used to let them. */}
-          {sourceTypeLabel && (
-            <p className="mt-1 inline-flex h-5 items-center rounded-full border border-border/70 px-1.5 font-mono text-caption text-muted-foreground">
-              {sourceTypeLabel}
+          {(sourceTypeLabel || readStateLabel) && (
+            <p className="mt-1 flex flex-wrap gap-1">
+              {sourceTypeLabel && (
+                <span className="inline-flex h-5 items-center rounded-full border border-border/70 px-1.5 font-mono text-caption text-muted-foreground">
+                  {sourceTypeLabel}
+                </span>
+              )}
+              {/* Whether the page itself was read, beside what kind of page it
+                  is: text a search provider handed over is not the same
+                  evidence as a page the run opened, and a passage gives no
+                  sign of which it came from. A preview has its own warning
+                  below; an unknown state draws nothing. */}
+              {readStateLabel && (
+                <span className="inline-flex h-5 items-center rounded-full border border-border/70 px-1.5 font-mono text-caption text-muted-foreground">
+                  {readStateLabel}
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -132,7 +149,7 @@ function SourceInspector({
                 // `.pressable` times the tonal hover and the dip. No local focus
                 // ring: the global `:focus-visible` outline is authoritative.
                 "pressable inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground",
-                "motion-reduce:transition-none motion-reduce:active:scale-100",
+                "motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
                 // `hover:bg-accent`. This button is inside the `bg-card` inspector
                 // above, so `hover:bg-card` repainted the exact colour already
                 // under it — the only copy-passage control in the audit had no
@@ -173,7 +190,7 @@ function SourceInspector({
         </p>
       )}
 
-      <blockquote className="mt-2 border-l-2 border-border pl-3 text-body leading-relaxed text-foreground/85">
+      <blockquote className="mt-2 border-l-2 border-border pl-3 text-body leading-relaxed text-foreground">
         {quoteRange ? (
           <>
             {link.passage.slice(0, quoteRange[0])}
@@ -231,6 +248,45 @@ function SourceInspector({
       )}
 
       <AuditFindings reasons={link.codedReasons} />
+    </div>
+  );
+}
+
+/**
+ * A passage from a source the claim did not cite, giving a different figure.
+ *
+ * Drawn apart from the citations and headed as uncited, because it is not one:
+ * the report never said the sentence rests on this source. It is here because
+ * the run read it, and a reader deciding whether to trust a figure deserves to
+ * know the research also holds a page that says otherwise — older, perhaps, or
+ * about a different scope, which only the passage can show.
+ */
+function RivalInspector({ rival, source }: { rival: CitationAuditRival; source?: CitationAuditSource }) {
+  const published = source?.publishedAt ? new Date(source.publishedAt) : null;
+  const provenance = describeLocator(rival.locator);
+  return (
+    <div className="mt-2 rounded-menu border border-dashed border-warning/45 bg-card p-3">
+      <p className="flex items-start gap-1.5 text-caption leading-snug text-warning-foreground">
+        <StatusIcons.warning aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
+        <span className="min-w-0 flex-1">{AUDIT_COPY.rivalHeading}</span>
+      </p>
+      <div className="mt-2 flex items-start gap-2">
+        {source && <SourceFavicon url={source.url} variant="list" />}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-body leading-tight text-foreground">
+            [{rival.sourceIndex}] {source?.title ?? "Source"}
+          </p>
+          <p className="truncate font-mono text-caption text-muted-foreground">
+            {source ? hostOf(source.url) : ""}
+            {published ? ` · published ${published.toISOString().slice(0, 10)}` : " · no publication date"}
+          </p>
+        </div>
+      </div>
+      <blockquote className="mt-2 border-l-2 border-border pl-3 text-body leading-relaxed text-foreground">
+        {rival.passage}
+      </blockquote>
+      {provenance && <p className="mt-1 pl-3 font-mono text-caption text-muted-foreground">{provenance}</p>}
+      <AuditFindings reasons={rival.codedReasons} />
     </div>
   );
 }
@@ -307,7 +363,7 @@ function ClaimInAnswer({
         className={cn(
           "pressable inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2.5",
           "font-mono text-caption text-muted-foreground",
-          "motion-reduce:transition-none motion-reduce:active:scale-100",
+          "motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
           "hover:bg-accent hover:text-foreground",
           "coarse:h-11"
         )}
@@ -338,6 +394,8 @@ function ClaimRow({
   const panelId = React.useId();
   const sourceOf = (index: number) => sources.find((s) => s.index === index);
   const hasEvidence = claim.links.length > 0;
+  const rivals = claim.rivals ?? [];
+  const unresolved = claim.unresolvedCitations ?? [];
 
   return (
     <li className="border-t border-border/60 first:border-t-0">
@@ -348,7 +406,7 @@ function ClaimRow({
         aria-controls={panelId}
         className={cn(
           "flex w-full items-start gap-2.5 rounded-field px-2 py-2.5 text-left",
-          "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          "transition-colors duration-fast ease-out-soft",
           // Full-strength `bg-muted`. The claim list is drawn straight on the
           // page, and half a muted fill is a 1-point step over light paper —
           // the row hover on the widest control in the audit was invisible in
@@ -364,7 +422,7 @@ function ClaimRow({
           className={cn("mt-1.5 size-2 shrink-0 rounded-full", STATES[claim.label].dot)}
         />
         <span className="min-w-0 flex-1">
-          <span className="block text-body leading-snug text-foreground/90">{claim.text}</span>
+          <span className="block text-body leading-snug text-foreground">{claim.text}</span>
           <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <SupportBadge label={claim.label} />
             {/* The number behind the badge, at the top level. "Partly
@@ -380,14 +438,28 @@ function ClaimRow({
                 key={`${link.sourceIndex}-${i}`}
                 className={cn(
                   "inline-flex h-6 items-center gap-1 rounded-full border border-border/70 bg-card px-2 font-mono text-caption",
-                  link.stance === "contradicts" && "border-destructive/40 text-destructive-ink"
+                  link.stance === "contradicts" && "border-destructive/40 text-destructive-ink",
+                  link.stance === "differs" && "border-warning/45 text-warning-foreground"
                 )}
               >
                 [{link.sourceIndex}]
-                {link.stance === "contradicts" ? " contradicts" : ""}
+                {link.stance === "contradicts" ? " contradicts" : link.stance === "differs" ? ` ${AUDIT_COPY.mayDiffer}` : ""}
               </span>
             ))}
-            {!hasEvidence && (
+            {claim.contested && (
+              <span className="inline-flex h-6 items-center rounded-full border border-warning/45 bg-warning/10 px-2 font-mono text-caption text-warning-foreground">
+                {AUDIT_COPY.sourcesDisagree}
+              </span>
+            )}
+            {unresolved.map((n) => (
+              <span
+                key={`unresolved-${n}`}
+                className="inline-flex h-6 items-center gap-1 rounded-full border border-destructive/40 px-2 font-mono text-caption text-destructive-ink line-through"
+              >
+                [{n}]
+              </span>
+            ))}
+            {!hasEvidence && unresolved.length === 0 && (
               <span className="font-mono text-caption text-muted-foreground">no citation on this sentence</span>
             )}
           </span>
@@ -395,7 +467,7 @@ function ClaimRow({
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "mt-1 size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+            "mt-1 size-3.5 shrink-0 text-ink-tertiary transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />
@@ -420,11 +492,25 @@ function ClaimRow({
                   claimText={claim.text}
                 />
               ))
-            ) : (
+            ) : unresolved.length === 0 ? (
               <p className="mt-2 rounded-menu border border-border/70 bg-card p-3 text-body text-muted-foreground">
                 {`The report states this without citing anything. ${PRODUCT_NAME} could not check it against a source, so treat it as unverified.`}
               </p>
+            ) : null}
+            {unresolved.length > 0 && (
+              <p className="mt-2 flex items-start gap-1.5 rounded-menu border border-destructive/30 bg-card p-3 text-body leading-snug text-muted-foreground">
+                <StatusIcons.error aria-hidden="true" className="mt-1 size-3 shrink-0 text-destructive-ink" />
+                <span className="min-w-0 flex-1">
+                  {unresolved.map((n) => `[${n}]`).join(" ")} {AUDIT_COPY.unresolvedDetail}
+                </span>
+              </p>
             )}
+            {claim.contested && (
+              <p className="mt-2 text-caption leading-snug text-warning-foreground">{AUDIT_COPY.contestedDetail}</p>
+            )}
+            {rivals.map((rival, i) => (
+              <RivalInspector key={`rival-${rival.sourceIndex}-${i}`} rival={rival} source={sourceOf(rival.sourceIndex)} />
+            ))}
           </div>
         </div>
       </div>
@@ -479,7 +565,10 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
       unverified: 3,
       supported: 4,
     };
-    return [...state.audit.claims].sort((a, b) => rank[a.label] - rank[b.label]);
+    // A supported claim the corpus disagrees with sorts above the plainly
+    // supported ones: it is still a thing the reader came here to find.
+    const order = (claim: CitationAuditClaim) => rank[claim.label] - (claim.contested ? 0.5 : 0);
+    return [...state.audit.claims].sort((a, b) => order(a) - order(b));
   }, [state]);
 
   if (state.phase === "idle" || state.phase === "none") return null;
@@ -505,7 +594,11 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
   }
 
   const { audit } = state;
-  const trouble = audit.summary.contradicted + audit.summary.unsupported;
+  const trouble =
+    audit.summary.contradicted +
+    audit.summary.unsupported +
+    (audit.summary.contested ?? 0) +
+    (audit.summary.unresolvedCitations ?? 0);
 
   return (
     <div ref={rootRef} className={cn("mt-3", className)}>
@@ -526,7 +619,7 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
           // floated. `.pressable` times the fill and the dip; the global
           // `:focus-visible` outline is the focus state.
           "pressable group/audit relative inline-flex h-9 max-w-full items-center gap-2 rounded-full border bg-card pl-2.5 pr-3",
-          "hover:bg-accent motion-reduce:transition-none motion-reduce:active:scale-100",
+          "hover:bg-accent motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
           "coarse:h-11",
           trouble > 0 ? "border-warning/45" : "border-border/70"
         )}
@@ -535,13 +628,13 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
           aria-hidden="true"
           className={cn("size-2 shrink-0 rounded-full", trouble > 0 ? "bg-warning" : "bg-success")}
         />
-        <span className="truncate font-mono text-label text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/audit:text-foreground motion-reduce:transition-none">
+        <span className="truncate font-mono text-label text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/audit:text-foreground">
           {auditHeadline(audit.summary)}
         </span>
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+            "size-3.5 shrink-0 text-ink-tertiary transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />

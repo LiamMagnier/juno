@@ -1,0 +1,27 @@
+{
+  "validator": "juno.work.deliverables.validate.v1",
+  "checkedAt": "2026-10-25T20:11:03.459Z",
+  "kind": "spreadsheet",
+  "byteSize": 7627,
+  "ok": true,
+  "observations": [
+    "Opened the workbook with a reader that did not write it: 2 sheet(s) — Expenses, Summary.",
+    "Checked 0 formula cell(s), 0 chart part(s), 0 named range(s), and 0 unwrapped overflow risk(s)."
+  ],
+  "problems": [],
+  "details": {
+    "sheets": [
+      "Expenses",
+      "Summary"
+    ],
+    "rowCounts": [
+      6,
+      5
+    ],
+    "formulaCount": 0,
+    "chartCount": 0,
+    "namedRangeCount": 0,
+    "overflowCount": 0,
+    "missingAssetCount": 0
+  }
+}

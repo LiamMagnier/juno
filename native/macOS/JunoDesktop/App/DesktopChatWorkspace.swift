@@ -481,6 +481,12 @@ struct DesktopChatWorkspace: View {
             let id = arguments[index + 1]
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { openConversation(id) }
         }
+        // `--juno-preview-project <id>`: one project's page, as a sidebar
+        // project row opens it.
+        if let index = arguments.firstIndex(of: "--juno-preview-project"), index + 1 < arguments.count {
+            let id = arguments[index + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { openProject(id) }
+        }
         // The trailing panel's states: a report (and full screen), an
         // artifact by id, a file.
         if arguments.contains("--juno-preview-report-panel") {
@@ -527,6 +533,22 @@ struct DesktopChatWorkspace: View {
             let words = arguments[index + 1]
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 composerRequest = ChatComposerRequest(kind: .send(words))
+            }
+        }
+        // `--juno-preview-seed <words>`: a draft typed into the composer and
+        // left unsent — the composer's typing state, for the CI captures.
+        if let index = arguments.firstIndex(of: "--juno-preview-seed"), index + 1 < arguments.count {
+            let words = arguments[index + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                composerRequest = ChatComposerRequest(kind: .seed(words))
+            }
+        }
+        // `--juno-preview-attach`: a spreadsheet and a picture on the draft,
+        // so the composer's attachment tray can be captured.
+        if arguments.contains("--juno-preview-attach") {
+            let urls = DesktopPreviewAttachments.write()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+                composerRequest = ChatComposerRequest(kind: .attach(urls))
             }
         }
     }

@@ -10,11 +10,13 @@ import { LayoutGrid, List, Loader2, Search, Trash2, Upload, X } from "@/componen
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileVersionsDialog, RenameFileDialog } from "./library-dialogs";
+import { LibraryQuickLook } from "./library-quick-look";
 import { LibraryDropOverlay, useFileDrop } from "./library-drop-zone";
 import {
   EntryRow,
   EntryTile,
   LibraryRowHead,
+  UploadRow,
   UploadTile,
   entryFromFile,
   entryFromMade,
@@ -31,6 +33,8 @@ import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import { cn, formatBytes } from "@/lib/utils";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 import { Pressable } from "@/components/ui/pressable";
+import { StatusIcons } from "@/lib/app-icons";
+import { staggerDelay } from "@/lib/motion";
 
 /*
  * The Library: one place for what Alevr made and the files you gave it
@@ -96,18 +100,32 @@ function useMade(q: string, enabled: boolean) {
   const [error, setError] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [reloadKey, setReloadKey] = React.useState(0);
+  /** A new search (or a reload) is out while the last answer stays on screen. */
+  const [pending, setPending] = React.useState(false);
+  /** Whether what is on screen is an answer from this source at all (false before the first, and after it was switched off). */
+  const shown = React.useRef(false);
   const generation = React.useRef(0);
   const url = React.useCallback(
     (after?: string | null) => `/api/library/made?limit=${PAGE}&q=${encodeURIComponent(q)}${after ? `&cursor=${encodeURIComponent(after)}` : ""}`,
     [q],
   );
   React.useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      shown.current = false;
+      return;
+    }
     const controller = new AbortController();
     const token = ++generation.current;
-    setItems(null);
+    // A search typed over results keeps them on screen until the new answer
+    // lands, as the file manager's search does: emptying the list here put
+    // the whole grid back to its skeleton on every keystroke. Only a first
+    // load (or a return to this source) starts from the placeholder.
+    if (!shown.current) setItems(null);
+    // No cursor while the new answer is out: "Load more" must not append a
+    // page of the old search to the new one.
     setCursor(null);
     setError(false);
+    setPending(true);
     fetch(url(), { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error();
@@ -117,9 +135,13 @@ function useMade(q: string, enabled: boolean) {
         if (generation.current !== token) return;
         setItems(data.items);
         setCursor(data.nextCursor);
+        shown.current = true;
       })
       .catch(() => {
         if (!controller.signal.aborted && generation.current === token) setError(true);
+      })
+      .finally(() => {
+        if (generation.current === token) setPending(false);
       });
     return () => controller.abort();
   }, [url, enabled, reloadKey]);
@@ -148,7 +170,7 @@ function useMade(q: string, enabled: boolean) {
     window.addEventListener(ARTIFACT_CHANGED_EVENT, reload);
     return () => window.removeEventListener(ARTIFACT_CHANGED_EVENT, reload);
   }, [enabled, reload]);
-  return { items, hasMore: cursor !== null, error, loadingMore, loadMore, reload };
+  return { items, hasMore: cursor !== null, error, pending, loadingMore, loadMore, reload };
 }
 
 /** How many things wait in Recently deleted: files and made things, read once. */
@@ -184,6 +206,7 @@ export function LibraryHome() {
   const deletedCount = useDeletedCount();
   const [renameTarget, setRenameTarget] = React.useState<LibraryItem | null>(null);
   const [versionsTarget, setVersionsTarget] = React.useState<LibraryItem | null>(null);
+  const [previewTarget, setPreviewTarget] = React.useState<LibraryItem | null>(null);
   const fileInput = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -208,8 +231,10 @@ export function LibraryHome() {
   };
 
   const { addUploaded } = files;
+  /** The plan's per-file limit: the constant /api/upload enforces, so the page can state it exactly. */
+  const limitMb = PLANS[quota.plan].maxUploadMb;
   const uploads = useLibraryUploads({
-    maxBytes: PLANS[quota.plan].maxUploadMb * 1024 * 1024,
+    maxBytes: limitMb * 1024 * 1024,
     onUploaded: React.useCallback((attachment) => void addUploaded(attachment), [addUploaded]),
   });
   const { dragging, handlers } = useFileDrop({ onFiles: uploads.add, enabled: true });
@@ -218,6 +243,7 @@ export function LibraryHome() {
     onRename: setRenameTarget,
     onVersions: setVersionsTarget,
     onDelete: (item) => files.deleteItems([item]),
+    onPreview: setPreviewTarget,
   };
 
   const visibleFiles = (files.items ?? []).filter((file) => {
@@ -239,6 +265,8 @@ export function LibraryHome() {
   const loadingMore = files.loadingMore || made.loadingMore;
   const pendingUploads = show === "made" ? [] : uploads.uploads;
   const empty = !pending && !failed && entries.length === 0 && pendingUploads.length === 0;
+  /** Nothing could be shown at all: the page's error state, not a sentence over an empty page. */
+  const failedOutright = failed && !pending && entries.length === 0 && pendingUploads.length === 0;
 
   const loadMoreRef = React.useRef<() => void>(() => {});
   loadMoreRef.current = () => {
@@ -258,8 +286,10 @@ export function LibraryHome() {
     return () => observer.disconnect();
   }, [hasMore, loadingMore, show, entries.length]);
 
-  const count = !hasMore && !pending ? entries.length : null;
-  const searching = query.trim() !== q || files.pending;
+  // No count while part of the Library failed to load: "0 items" over a
+  // failure read as an empty Library.
+  const count = !hasMore && !pending && !failed ? entries.length : null;
+  const searching = query.trim() !== q || files.pending || (!filesOnly && made.pending);
 
   return (
     <div className="relative h-full" {...handlers}>
@@ -269,13 +299,15 @@ export function LibraryHome() {
           lede={`What ${PRODUCT_NAME} made and the files you gave it, newest first.`}
           actions={
             <>
-              <Button variant="ghost" size="sm" asChild className="h-9 gap-2 border-foreground/10 px-3 font-normal text-muted-foreground hover:border-foreground/[0.16] hover:text-foreground active:scale-[0.97] coarse:h-11 dark:border-white/10 dark:hover:border-white/[0.16]">
+              {/* bg-background: the header's drawing (backdrop) runs behind this
+                  corner, and a transparent button let it show through its words. */}
+              <Button variant="ghost" asChild className="gap-2 border-foreground/10 bg-background px-3 font-normal text-muted-foreground hover:border-foreground/[0.16] hover:text-foreground active:scale-[0.97] dark:border-white/10 dark:hover:border-white/[0.16]">
                 <Link href="/library?view=trash">
                   <Trash2 className="size-4" aria-hidden="true" />
                   {/* A glyph and its count on a phone (G54), so both actions
                       share the title's line; the name stays for a screen reader. */}
                   <span className="sr-only @[40rem]/page:not-sr-only">Recently deleted</span>
-                  {deletedCount ? <span className="-mr-0.5 font-mono text-label leading-none tabular-nums text-muted-foreground/80">{deletedCount}</span> : null}
+                  {deletedCount ? <span className="-mr-0.5 font-mono text-label leading-none tabular-nums text-muted-foreground">{deletedCount}</span> : null}
                 </Link>
               </Button>
               <Button size="sm" onClick={() => fileInput.current?.click()} className="ml-0.5 h-9 gap-2 px-3.5 active:scale-[0.97] coarse:h-11">
@@ -321,7 +353,7 @@ export function LibraryHome() {
           />
           <div className="flex w-full min-w-0 items-center justify-end gap-2 @[40rem]/page:w-auto @[40rem]/page:flex-none">
             {show === "files" ? (
-              <Button variant="ghost" size="sm" asChild className="hidden h-9 font-normal text-muted-foreground hover:text-foreground @[40rem]/page:inline-flex">
+              <Button variant="ghost" asChild className="hidden px-3 font-normal text-muted-foreground hover:text-foreground @[40rem]/page:inline-flex">
                 <Link href="/library?view=files">Manage files</Link>
               </Button>
             ) : null}
@@ -340,7 +372,7 @@ export function LibraryHome() {
                 }}
                 placeholder="Search the library"
                 aria-label="Search the library"
-                className="h-9 w-full min-w-0 rounded-field border border-foreground/10 bg-transparent pl-9 pr-9 text-ui text-foreground outline-none transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground hover:border-foreground/[0.16] focus-visible:border-foreground/25 focus-visible:bg-background focus-visible:ring-4 focus-visible:ring-foreground/[0.05] coarse:h-11 dark:border-white/10 dark:hover:border-white/[0.16] dark:focus-visible:border-white/25 [&::-webkit-search-cancel-button]:hidden"
+                className="h-9 w-full min-w-0 rounded-field border border-foreground/10 bg-transparent pl-9 pr-9 text-ui text-foreground outline-none transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground hover:border-foreground/[0.16] focus-visible:border-foreground/25 focus-visible:bg-background focus-visible:ring-4 focus-visible:ring-foreground/[0.05] kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:ring-0 kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] coarse:h-11 dark:border-white/10 dark:hover:border-white/[0.16] dark:focus-visible:border-white/25 [&::-webkit-search-cancel-button]:hidden"
               />
               {query ? (
                 <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="absolute right-1.5 grid size-6 place-items-center rounded-control text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.06] hover:text-foreground active:scale-90">
@@ -384,7 +416,7 @@ export function LibraryHome() {
           </div>
         ) : null}
 
-        {failed ? (
+        {failed && !failedOutright ? (
           <p role="alert" className="mb-6 flex flex-wrap items-center gap-2 text-ui text-muted-foreground">
             Some of your Library couldn’t load. Nothing was changed.
             <Button
@@ -402,6 +434,27 @@ export function LibraryHome() {
 
         {pending ? (
           <LibrarySkeleton view={view} />
+        ) : failedOutright ? (
+          <div className="grid min-h-[min(48vh,28rem)] place-items-center">
+            <EmptyState
+              tone="error"
+              icon={StatusIcons.error}
+              title="Your Library didn’t load"
+              description="Nothing was changed. Check your connection and try again."
+              action={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    made.reload();
+                    void files.reload();
+                  }}
+                >
+                  Try again
+                </Button>
+              }
+            />
+          </div>
         ) : empty ? (
           <div className="grid min-h-[min(48vh,28rem)] place-items-center">
           {q ? (
@@ -419,7 +472,7 @@ export function LibraryHome() {
             <EmptyState
               icon={Upload}
               title={show === "files" ? "No files yet" : show === "media" ? "No media yet" : "Your Library starts here"}
-              description={`Files you upload or share in chats, and the documents, decks and sites ${PRODUCT_NAME} makes, collect here. Drop files anywhere on this page to add them.`}
+              description={`Files you upload or share in chats, and the documents, decks and sites ${PRODUCT_NAME} makes, collect here. Drop files anywhere on this page to add them, up to ${limitMb} MB each.`}
               action={
                 <>
                   <Button size="sm" variant="secondary" onClick={() => fileInput.current?.click()}>
@@ -445,7 +498,7 @@ export function LibraryHome() {
               </li>
             ))}
             {entries.map((entry, index) => (
-              <li key={entry.key} className="min-w-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]" style={{ animationDelay: `${Math.min(index, 8) * 30}ms` }}>
+              <li key={entry.key} className="min-w-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]" style={staggerDelay(index, "tight")}>
                 <EntryTile entry={entry} actions={actions} />
               </li>
             ))}
@@ -454,14 +507,7 @@ export function LibraryHome() {
           <div role="table" aria-label={FEATURE_NAMES.library.label} className="-mx-2.5 flex flex-col motion-safe:animate-rise-in">
             <LibraryRowHead />
             {pendingUploads.map((upload) => (
-              <div key={upload.localId} role="row" className="flex h-12 items-center gap-3 rounded-control px-2.5 text-caption text-muted-foreground [&+*]:shadow-[0_-1px_0_hsl(var(--foreground)/0.07)]">
-                <span role="cell" className="min-w-0 flex-1 truncate text-ui text-foreground">
-                  {upload.fileName}
-                </span>
-                <span role="cell" className="tabular-nums">
-                  {upload.status === "failed" ? (upload.error ?? "Didn’t upload") : `Uploading, ${Math.round(upload.progress)}%`}
-                </span>
-              </div>
+              <UploadRow key={upload.localId} upload={upload} onRetry={() => uploads.retry(upload.localId)} onDismiss={() => uploads.dismiss(upload.localId)} />
             ))}
             {entries.map((entry) => (
               <EntryRow key={entry.key} entry={entry} actions={actions} />
@@ -477,7 +523,7 @@ export function LibraryHome() {
           </div>
         ) : null}
 
-        {!pending && !empty ? (
+        {!pending && !empty && !failedOutright && (count !== null || files.storage) ? (
           <p className="mt-6 border-t border-foreground/[0.07] pt-4 text-caption tabular-nums text-muted-foreground dark:border-white/[0.07]">
             {count !== null ? `${count} ${count === 1 ? "item" : "items"}` : null}
             {count !== null && files.storage ? ", " : null}
@@ -487,8 +533,9 @@ export function LibraryHome() {
 
         <RenameFileDialog item={renameTarget} onOpenChange={(open) => !open && setRenameTarget(null)} onRename={files.renameItem} />
         <FileVersionsDialog item={versionsTarget} onOpenChange={(open) => !open && setVersionsTarget(null)} onRestored={() => void files.reload()} />
+        <LibraryQuickLook item={previewTarget} onOpenChange={(open) => !open && setPreviewTarget(null)} />
       </AppPage>
-      <LibraryDropOverlay open={dragging} />
+      <LibraryDropOverlay open={dragging} limitMb={limitMb} />
     </div>
   );
 }

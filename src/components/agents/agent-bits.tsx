@@ -1,17 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { agentStateSentence, type AgentState } from "@/lib/agents/domain";
+import { agentStateSentence, type AgentState } from "@/lib/agents/state-labels";
 import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
 
 /**
- * "today at 09:00", "tomorrow at 09:00", "Mon at 09:00", "12 Oct" — in the
+ * "today at 9:00 AM", "tomorrow at 9:00 AM", "Mon at 9:00 AM", "12 Oct" (on a
+ * 24-hour clock 9:00 or 09:00, as the reader's locale writes it) — in the
  * reader's own zone. The server says the same sentence in UTC because it does
- * not know the zone; the client does, so it says it again, correctly.
+ * not know the zone; the client does, so it says it again, correctly. The hour
+ * is numeric: a 12-hour clock never pads it ("09:00 AM").
  */
 export function formatLocalWhen(at: Date, now: Date): string {
-  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const time = at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((day(at) - day(now)) / 86_400_000);
   if (days <= 0) return `today at ${time}`;

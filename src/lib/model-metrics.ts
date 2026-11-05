@@ -212,6 +212,12 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["glm"], metric: metric(0.6, 2.2, 200_000, 6, 5) },
   ],
   moonshot: [
+    // K3.1 Pro / Highspeed (2026-10-23): $2/$10 and $4/$20, 1M ctx. Not yet in
+    // model-rates.generated.ts (the 2026-10-25 audit could not fetch Moonshot's
+    // pricing page); read from search-indexed copies of kimi.ai's pricing page.
+    // Highspeed first — its id also contains "k3".
+    { hints: ["k3.1", "highspeed"], metric: official(4, 20, 1_048_576, 8, 9) },
+    { hints: ["k3.1"], metric: official(2, 10, 1_048_576, 4, 9) },
     // platform.kimi.ai/docs/pricing/chat (2026-10-04).
     { hints: ["k3"], metric: official(3, 15, 1_048_576, 4, 8) }, // flagship 2.8T reasoner, 1M ctx — tops the lineup (no AA/arena index yet)
     { hints: ["highspeed"], metric: official(1.9, 8, 262_144, 9, 7) }, // premium ~180-260 tok/s serving of K2.7 Code
@@ -267,7 +273,10 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
   ],
   minimax: [
     // M3.1 Flash Preview: M Plan only, no pay-as-you-go rate; priced as M3.
-    { hints: ["m3.1"], metric: metric(0.3, 1.2, 1_000_000, 7, 7) },
+    { hints: ["m3.1", "preview"], metric: metric(0.3, 1.2, 1_000_000, 7, 7) },
+    // M3.1 Flash GA (2026-10-19): pay-as-you-go $0.15/$0.60, flat, 1M ctx
+    // (platform.minimax.io pricing, via search-indexed copy 2026-10-25).
+    { hints: ["m3.1"], metric: official(0.15, 0.6, 1_000_000, 8, 7) },
     { hints: ["m3"], metric: official(0.3, 1.2, 1_000_000, 6, 7) }, // II 44.4 — AA's #2 open-weights · 96 tok/s
     // platform.minimax.io/docs/guides/pricing-paygo (2026-10-04).
     { hints: ["highspeed"], metric: official(0.6, 2.4, 204_800, 9, 6) }, // low-latency serving premium
@@ -288,6 +297,10 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // Singapore (international) list prices from each Model Studio model
     // page (2026-10-04); tiered models quote their lowest input tier.
     { hints: ["qwen3.8-max"], metric: official(2, 6, 1_000_000, 8, 8) },
+    // Open-weight 3.8 rows (model pages, 2026-10-18); grades are positioning
+    // estimates, no independent benchmark run yet.
+    { hints: ["qwen3.8-2.4t"], metric: official(2, 6, 1_000_000, 6, 7) },
+    { hints: ["qwen3.8-27b"], metric: official(0.5, 3, 1_000_000, 8, 5) },
     { hints: ["qwen3.8-flash"], metric: official(0.15, 0.47, 1_000_000, 9, 6) },
     { hints: ["qwen3.7-max"], metric: official(2.5, 7.5, 1_000_000, 9, 7) }, // II 46.0 · 192 tok/s · arena #17
     { hints: ["qwen3.7-flash"], metric: official(0.03, 0.13, 1_000_000, 9, 5) },
@@ -842,7 +855,9 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // with no invented ladder exposed in any picker.
       return caps([], false);
     case "xai":
-      if (id.includes("multi-agent")) return caps(LMHX, false); // effort selects agent COUNT
+      // effort selects agent COUNT (4 or 16); API default high for every
+      // reasoning Grok (docs.x.ai/docs/guides/reasoning, read 2026-10-18).
+      if (id.includes("multi-agent")) return caps(LMHX, false, false, "high");
       // low | medium | high (default) | xhigh — same ladder as 4.6, one rung
       // longer runs aimed at multi-hour agent loops. Not verified against a
       // live key; see docs/models-september-22-2026.md.
@@ -891,6 +906,10 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // Off is real: "none" -> 200, content a plain string (no thinking chunk);
       // "high" -> content list with chunk types ['thinking','text'].
       if (id.includes("medium") || id.includes("small")) return caps([], true, true);
+      // Large 4 joined the reasoning list (docs.mistral.ai/capabilities/
+      // reasoning, read 2026-10-18: "Supports adjustable reasoning via the
+      // reasoning_effort parameter"), on the same documented high|none pair.
+      if (id.includes("large-4")) return caps([], true, true);
       // large 3 / codestral / ministral / devstral: verified to REJECT the
       // parameter (400 "reasoning_effort is not enabled for this model") and to
       // never reason (bare call -> 200, plain-string content).
@@ -945,6 +964,12 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // low|medium|xhigh (default xhigh; high/max map to xhigh). It must not
       // also get a thinking_budget: "Setting both will cause an error"
       // (Model Studio, OpenAI Chat Completions reference, read 2026-10-04).
+      // Qwen3.8 Omni Flash publishes the long ladder none|minimal|low|medium|
+      // high|xhigh|max, default xhigh (Model Studio Chat Completions
+      // reference, read 2026-10-18), still with enable_thinking as the switch.
+      if (id.includes("qwen3.8-omni")) return caps(["minimal", ...LMHXM], true);
+      // Qwen3.8 2.4T-A95B is thinking-only: the 3.8 ladder, no Instant.
+      if (id.includes("qwen3.8-2.4t")) return caps(["low", "medium", "xhigh"], false, false, "xhigh");
       if (id.includes("qwen3.8")) return caps(["low", "medium", "xhigh"], true);
       // enable_thinking + thinking_budget: depth tiers are mapped to budgets.
       return caps(LMH, true);

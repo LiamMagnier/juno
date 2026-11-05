@@ -730,7 +730,7 @@ function DiffLine({
               aria-expanded={drafting}
               // Revealed on hover and on focus. Focus is the half that is easy
               // to forget and the half a keyboard reader depends on entirely.
-              className="size-6 opacity-0 transition-opacity duration-fast ease-out-soft focus-visible:opacity-100 group-hover/line:opacity-100 motion-reduce:transition-none"
+              className="size-6 opacity-0 transition-opacity duration-fast ease-out-soft focus-visible:opacity-100 group-hover/line:opacity-100"
             >
               <ActionIcons.edit className="size-3" aria-hidden="true" />
             </Button>

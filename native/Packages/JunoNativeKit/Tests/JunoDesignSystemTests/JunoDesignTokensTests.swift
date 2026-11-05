@@ -104,16 +104,17 @@ final class JunoDesignTokensTests: XCTestCase {
 
         // These literals track the Soft UI ladder (docs/design/SOFT_UI.md
         // §2.3): control 8 · field 10 · menu 14 · card 12 · popover 12 ·
-        // panel 16 · composer 22 (V3, docs/rework/brand/BRAND_IDENTITY.md). When the web retunes, the paired token
+        // panel 16 · composer 26 (the floating composer, tailwind.config.ts; it was 22 in V3,
+        // docs/rework/brand/BRAND_IDENTITY.md). When the web retunes, the paired token
         // references above keep passing and only these numbers move — that
         // is this assertion doing its job, not failing at it.
         //
-        // 22 by way of the web's `rounded-composer`, never by way of
+        // 26 by way of the web's `rounded-composer`, never by way of
         // `--radius`: the rung once hardcoded 24 while claiming composer
         // parity, and `--radius` merely happened to sit nearby. See the note
         // on JunoRadius.composer.
         XCTAssertEqual(JunoRadius.composer, JunoGeneratedRadius.composer)
-        XCTAssertEqual(JunoRadius.composer, 22)
+        XCTAssertEqual(JunoRadius.composer, 26)
     }
 
     /// The redesign's radius names (§8.4 plus errata 9) are the web's own
@@ -333,9 +334,7 @@ final class JunoDesignTokensTests: XCTestCase {
     /// (10%) < card (14.1%) < popover (16.1%), in HSL lightness, the unit the
     /// web writes the ramp in (§8.1; V3's layered charcoal).
     ///
-    /// Measured on the ground the Mac paints. The phone keeps its 4% ground
-    /// for now (see `JunoColorToken.canvasDark`), which satisfies the same
-    /// order with more room.
+    /// Both native platforms read this complete generated elevation ramp.
     func testDarkCanvasIsDarkerThanEverySurfaceAboveIt() {
         func lightness(_ token: JunoColorToken) -> Double {
             (max(token.red, token.green, token.blue) + min(token.red, token.green, token.blue)) / 2
@@ -350,13 +349,10 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertEqual(popover, 0.161, accuracy: 0.001)
     }
 
-    /// The Mac canvas is `--background` itself: #FAF9F6 / #1F1D1C. The old
-    /// hand-kept `warmBlack` (4%) is gone from the Mac.
-    func testTheMacCanvasIsTheGeneratedBackground() {
+    /// Every native canvas is the generated background, including the phone.
+    func testTheNativeCanvasIsTheGeneratedBackground() {
         XCTAssertEqual(JunoColorToken.canvasLight, JunoGeneratedColors.background.light)
-        #if os(macOS)
         XCTAssertEqual(JunoColorToken.canvasDark, JunoGeneratedColors.background.dark)
-        #endif
     }
 
     /// The surviving scales are ordered.

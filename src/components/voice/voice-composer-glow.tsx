@@ -18,10 +18,11 @@ import { VoiceGlowSurface } from "@/components/voice/voice-glow-surface";
  * takes the speaker's tone where it is lit, a soft falloff blooms outward
  * from it, and the text and controls stay exactly as crisp as at rest.
  *
- * - STATE IS THE LIGHT, with no meter and no status label. Ember while you
- *   speak, presence ink while Alevr speaks, the Continuum handoff (a beam
- *   from your end to Alevr's, ember to presence) while it thinks, still
- *   graphite when muted. The call's live region says each state in words.
+ * - STATE IS THE LIGHT, with no meter. Ember while you speak, presence ink
+ *   while Alevr speaks, the Continuum handoff (a beam from your end to
+ *   Alevr's, ember to presence) while it thinks, still graphite when muted.
+ *   The light is never the only telling: the call also names each state in
+ *   one word beside `+` (VoiceCallStatus), and its live region says it aloud.
  * - EACH VOICE IS ITS OWN AUDIO. In a call, your microphone and Alevr's
  *   output as heard (`levels`, from the realtime hook's split envelopes), so
  *   talking over Alevr shows both. Otherwise one live `stream` (dictation's

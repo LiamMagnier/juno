@@ -493,8 +493,10 @@
   stroke-width: 1;
 }
 .jn .jn-brand__arcs path {
+  /* The panel is charcoal in both themes, so presence resolves dark here. */
+  color-scheme: dark;
   fill: none;
-  stroke: #97a6e6;
+  stroke: var(--presence);
   stroke-width: 0.15;
   stroke-linecap: round;
 }

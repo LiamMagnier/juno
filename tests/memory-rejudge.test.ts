@@ -335,7 +335,9 @@ test("'Learn from past chats' and every summary rebuild settle the timeline firs
 });
 
 test("facts typed or rewritten by hand are dated now", () => {
-  assert.match(src("src/app/api/memory/route.ts"), /observedAt: new Date\(\),/);
+  // A typed add goes through the manual write door, which plans it as said now.
+  assert.match(src("src/app/api/memory/route.ts"), /writeManualFact\(tx, \{/);
+  assert.match(src("src/lib/memory.ts"), /\{ content, source: "MANUAL", projectId, observedAt: now \}/);
   assert.match(src("src/app/api/memory/[id]/route.ts"), /observedAt: new Date\(\),/);
   assert.equal((src("src/app/api/memory/edit/apply/route.ts").match(/observedAt: new Date\(\),/g) ?? []).length, 2);
 });

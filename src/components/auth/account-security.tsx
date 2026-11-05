@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
@@ -398,39 +399,30 @@ function TwoStepDisableDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (busy ? undefined : onOpenChange(next))}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Turn off two-step verification?</DialogTitle>
-          <DialogDescription>
-            Your password alone will be enough to sign in again. Confirm with a current code, or one of your unused
-            recovery codes.
-          </DialogDescription>
-        </DialogHeader>
-        <Field
-          id="mfa-disable-code"
-          label="Code"
-          required
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          error={error}
-          placeholder="123456"
-          autoComplete="one-time-code"
-          autoCapitalize="characters"
-          spellCheck={false}
-          maxLength={20}
-        />
-        <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
-            Cancel
-          </Button>
-          <Button variant="destructive" onClick={() => void submit()} disabled={busy || code.trim().length < 6}>
-            {busy && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
-            Turn off
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      busy={busy}
+      title="Turn off two-step verification?"
+      description="Your password alone will be enough to sign in again. Confirm with a current code, or one of your unused recovery codes."
+      confirmLabel="Turn off"
+      confirmDisabled={code.trim().length < 6}
+      onConfirm={() => void submit()}
+    >
+      <Field
+        id="mfa-disable-code"
+        label="Code"
+        required
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        error={error}
+        placeholder="123456"
+        autoComplete="one-time-code"
+        autoCapitalize="characters"
+        spellCheck={false}
+        maxLength={20}
+      />
+    </ConfirmDialog>
   );
 }
 
@@ -733,26 +725,15 @@ function SignOutEverywhereRow() {
           </Button>
         }
       />
-      <Dialog open={open} onOpenChange={(next) => (busy ? undefined : setOpen(next))}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Sign out of every device?</DialogTitle>
-            <DialogDescription>
-              Every browser, phone and native app signed in to this account is signed out immediately, this one
-              included. Nothing else about the account changes.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={() => void revoke()} disabled={busy}>
-              {busy && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
-              Sign out everywhere
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        busy={busy}
+        title="Sign out of every device?"
+        description="Every browser, phone and native app signed in to this account is signed out immediately, this one included. Nothing else about the account changes."
+        confirmLabel="Sign out everywhere"
+        onConfirm={() => void revoke()}
+      />
     </>
   );
 }

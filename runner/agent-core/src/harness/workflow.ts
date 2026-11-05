@@ -270,9 +270,11 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<WorkflowRunR
   child.stderr.on('data', (chunk: Buffer) => {
     if (stderr.length < 8_000) stderr += chunk.toString('utf8');
   });
-  // A budget/Stop can kill the guest while parallel children are replying.
-  // Guard late replies and handle in-flight writes whose pipe closes later.
-  child.stdin.on('error', () => halt('error'));
+  // A guest killed by Stop or the budget can still be owed a reply that is
+  // already on its way: the write then fails with EPIPE, emitted on stdin.
+  // Nobody is left to read it, so it is dropped rather than left unhandled,
+  // which would crash the host process.
+  child.stdin.on('error', () => {});
   const send = (message: unknown) => {
     if (runAbort.signal.aborted || child.killed || child.stdin.destroyed || !child.stdin.writable) return;
     child.stdin.write(`${JSON.stringify(message)}\n`);

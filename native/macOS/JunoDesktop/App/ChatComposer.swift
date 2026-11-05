@@ -635,22 +635,10 @@ struct ComposerControlStyle: ButtonStyle {
     }
 }
 
-/// The primary disc's press: scale 0.97 and a touch darker, over 70ms (§5.3).
+/// The primary disc shares the phone's press cadence and accessibility policy.
 struct ComposerDiscStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        Disc(configuration: configuration)
-    }
-
-    private struct Disc: View {
-        let configuration: ButtonStyleConfiguration
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-        var body: some View {
-            configuration.label
-                .scaleEffect(configuration.isPressed ? JunoMotion.scaleFrom(0.97, reduceMotion: reduceMotion) : 1)
-                .brightness(configuration.isPressed ? -0.06 : 0)
-                .animation(JunoMotion.reduced(JunoMotion.press, when: reduceMotion), value: configuration.isPressed)
-        }
+        JunoPressButtonStyle().makeBody(configuration: configuration)
     }
 }
 
@@ -673,7 +661,7 @@ struct ComposerPrimaryDisc: View {
     var identifier: String? = nil
     let action: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.junoAccessibility) private var accessibility
 
     var body: some View {
         Button(action: action) {
@@ -688,7 +676,7 @@ struct ComposerPrimaryDisc: View {
             }
             .frame(width: JunoComposerMetrics.controlHeight, height: JunoComposerMetrics.controlHeight)
             .contentShape(Circle())
-            .animation(JunoMotion.reduced(JunoMotion.sendMorph, when: reduceMotion, tier: .tint), value: face.kind)
+            .animation(JunoMotion.reduced(JunoMotion.sendMorph, when: accessibility.reduceMotion, tier: .tint), value: face.kind)
         }
         .buttonStyle(ComposerDiscStyle())
         .disabled(!face.isEnabled)
@@ -723,7 +711,7 @@ struct ComposerPrimaryDisc: View {
             JunoIconView(symbol, size: face.kind == ChatComposerFace.stop.kind ? 12 : 16, weight: .bold)
                 .foregroundStyle(Color.junoCanvas)
                 .id(symbol)
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                .transition(.junoControlSwap(reducesTravel: accessibility.reducesTravel))
         case .busy:
             ProgressView()
                 .controlSize(.small)
@@ -928,6 +916,11 @@ struct ChatComposer: View {
     /// what ``configureSelection()`` resolves — "this model because I said so"
     /// and "this model because it was first" are the same string.
     @State private var modelChosenByReader = false
+    /// "Create Image" (G04): the chat model to give back when it is turned off.
+    @State private var imageMode = NativeImageMode()
+    /// The picture model the reader last made something with, so the switch
+    /// reopens on it while it is still usable. Empty until the first one.
+    @AppStorage("juno.desktop.composer.last-image-model") private var lastImageModelID = ""
     @State private var selectedProjectID: String?
     @State private var selectedConnectors: Set<String> = []
     @State private var showingFileImporter = false
@@ -1180,8 +1173,44 @@ struct ChatComposer: View {
         return (skillSlug, choice?.name, choice?.description)
     }
 
+    /// The selected model makes pictures: "Create Image" is on.
+    private var inImageMode: Bool {
+        NativeImageMode.isImageModel(selectedModel)
+    }
+
+    /// Whether "Create Image" is offered: a picture model this account can
+    /// use, and a turn that goes through the chat composer's own route — not
+    /// a private chat, not a call.
+    private var imageModeAvailable: Bool {
+        !isPrivate && !voiceActive && !NativeImageMode.usableImageModels(in: model.composerCatalog).isEmpty
+    }
+
+    private var createImageBinding: Binding<Bool> {
+        Binding(
+            get: { inImageMode },
+            set: { isOn in if isOn { enterImageMode() } else { exitImageMode() } }
+        )
+    }
+
+    private func enterImageMode() {
+        guard let id = imageMode.enter(
+            currentModelID: selectedModelID,
+            catalog: model.composerCatalog,
+            lastUsedImageModelID: lastImageModelID.isEmpty ? nil : lastImageModelID
+        ) else { return }
+        selectedModelID = id
+        modelChosenByReader = true
+    }
+
+    private func exitImageMode() {
+        guard let id = imageMode.exit(catalog: model.composerCatalog) else { return }
+        selectedModelID = id
+        modelChosenByReader = true
+    }
+
     private var marks: [ChatComposerMark] {
         ChatComposerMark.marks(
+            image: inImageMode && !isPrivate && !voiceActive,
             skill: armedSkill,
             research: deepResearch && researchAvailable,
             webSearch: webSearch && webSearchAvailable,
@@ -1220,6 +1249,10 @@ struct ChatComposer: View {
             if let schema = model.model(withID: id)?.mediaParams, !schema.isEmpty {
                 model.mediaParamsMemory.activate(id, schema: schema)
             }
+            // Image mode remembers the chat model to give back, and the
+            // picture model to reopen on, whichever control chose them.
+            imageMode.observe(selectedModelID: id, catalog: model.composerCatalog)
+            if NativeImageMode.isImageModel(model.model(withID: id)) { lastImageModelID = id }
         }
         .task(id: isGenerating) {
             streamedPastBeat = false
@@ -1316,6 +1349,13 @@ struct ChatComposer: View {
         // a new chat or a project's composer: none has a thread to sync.
         .modifier(DesktopChatDraftSync(
             conversationID: privateChat == nil && fixedProjectID == nil ? model.selectedConversationID : nil,
+            text: $prompt
+        ))
+        // The unsent draft also goes into this Mac's session snapshot, so an
+        // unclean exit gives it back (§3.3). Never a private chat's.
+        .modifier(DesktopRecoveryDraft(
+            isRecorded: privateChat == nil && fixedProjectID == nil,
+            conversationID: model.selectedConversationID,
             text: $prompt
         ))
         // A refused first send stays said until the reader edits the words or
@@ -1972,6 +2012,7 @@ struct ChatComposer: View {
 
     private func disarm(_ id: String) {
         switch id {
+        case ChatComposerMark.imageID: exitImageMode()
         case ChatComposerMark.skillID: skillSlug = nil
         case ChatComposerMark.researchID: deepResearch = false
         case ChatComposerMark.webSearchID: webSearch = false
@@ -2015,6 +2056,7 @@ struct ChatComposer: View {
             skillsLoading: skillLibrary?.isLoading == true,
             skillSlug: $skillSlug,
             manageSkills: manageSkills,
+            createImage: imageModeAvailable ? createImageBinding : nil,
             deepResearch: researchAvailable ? gated($deepResearch, by: .research) : nil,
             // A private turn carries only its words: the private route takes
             // no web search and no local documents, so the rows are absent

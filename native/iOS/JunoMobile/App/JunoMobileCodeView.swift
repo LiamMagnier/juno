@@ -68,6 +68,8 @@ struct JunoMobileCodeView: View {
   @State private var showingPulls = false
   @State private var showingUsage = false
   @State private var showingDevices = false
+  /// Live runs and where the Runs screen opens (REA 8).
+  private var runsCoordinator: JunoMobileRunsCoordinator { .shared }
   /// The scope (All, Cloud, a computer) and, in All, where the dock starts work.
   @AppStorage(JunoMobilePreferences.codeScope) private var scopeStored = "all"
   @AppStorage(JunoMobilePreferences.codeLastTarget) private var lastTargetStored = ""
@@ -194,6 +196,16 @@ struct JunoMobileCodeView: View {
     }
     .navigationDestination(isPresented: $showingDevices) {
       JunoMobileCodeDevicesView(remoteModel: remoteModel)
+    }
+    .navigationDestination(
+      isPresented: Binding(
+        get: { runsCoordinator.presentsRuns && runsCoordinator.model != nil },
+        set: { runsCoordinator.presentsRuns = $0 }
+      )
+    ) {
+      if let runsModel = runsCoordinator.model {
+        JunoMobileRunsView(model: runsModel)
+      }
     }
     // A session on a Mac paired over the device link: a live one, or the
     // empty thread a new one starts from (the same screen, so the first
@@ -369,6 +381,11 @@ struct JunoMobileCodeView: View {
         stop: stop,
         refresh: refreshAll
       ) {
+        // Live runs across the Mac and the cloud (REA 8): a strip while any
+        // run is going, opening the Runs screen.
+        if let runsModel = runsCoordinator.model {
+          JunoMobileRunsStrip(model: runsModel) { runsCoordinator.open(runKey: nil, confirmStop: false) }
+        }
         if let error = model.lastErrorDescription, scope == .cloud || scope == .all, model.tasks.isEmpty {
           JunoInlineError(message: error) { Task { await model.refresh() } }
         }
@@ -475,6 +492,7 @@ struct JunoMobileCodeView: View {
 
   /// An error, a pairing line or an offline notice above Recents.
   private var showsListLead: Bool {
+    if runsCoordinator.model?.runs.isEmpty == false { return true }
     if model.lastErrorDescription != nil, scope == .cloud || scope == .all, model.tasks.isEmpty { return true }
     if unpairedScopeDevice != nil { return true }
     if let id = scope.deviceID, case .offline? = linkModel?.macs.first(where: { $0.id == id })?.reachability { return true }
@@ -517,6 +535,14 @@ struct JunoMobileCodeView: View {
           Label("Pull requests", image: JunoIcon.pulls.assetName(.regular))
         }
         .accessibilityIdentifier("juno.mobile.code.pulls")
+      }
+      if runsCoordinator.model != nil {
+        Button {
+          runsCoordinator.open(runKey: nil, confirmStop: false)
+        } label: {
+          Label("Live runs", image: JunoIcon.agents.assetName(.regular))
+        }
+        .accessibilityIdentifier("juno.mobile.code.runs")
       }
       if let openWork {
         Button(action: openWork) {
@@ -1747,6 +1773,10 @@ private struct JunoMobileCodeSessionView: View {
         + String(
           localized: "code.session.stopped", defaultValue: "stopped \(stopped)"
         )
+    } else if let connection = model.streamConnection {
+      // Which way the stream is coming back (Tether): reconnecting, waiting
+      // for the network, or parked until a trigger.
+      line += " · " + connection.phaseLabel
     } else if model.streamReconnectAttempt > 0 {
       line +=
         " · "

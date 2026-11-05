@@ -11,7 +11,8 @@ import { PLAYS, STATES, type GlowPlay, type GlowState } from "./scenes";
  *   /dev/voice-glow?state=<state>&theme=light|dark   one state, in the real composer under a short thread
  *
  *   state   idle | connecting | listening | thinking | answering | muted | interrupted |
- *           approval | reconnecting | error | ended | dictation | lab
+ *           approval | reconnecting | error | blocked | ended | dictation | lab
+ *           (blocked: the microphone-denied error, the longest line the call shows)
  *   still   1 freezes the state's chosen moment (the still); t=<ms> freezes that scene time
  *   play    flow | interrupt | mute | dictation: the scripted clip, looping
  *   rm      1 renders the reduced-motion form; solid=1 the reduced-transparency form

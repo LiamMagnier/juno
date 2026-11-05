@@ -789,8 +789,31 @@ actor DesktopWorkRunHost: WorkRunHosting {
         )
         lines.append("Say what you did in plain language. Never print a full filesystem path.")
         lines.append("When the task is done, reply without calling a tool.")
-        return lines.joined(separator: "\n")
+        guard let agentContext = agentContext(in: request.payload) else {
+            return lines.joined(separator: "\n")
+        }
+        // Who the task runs as, ahead of the rules above, which stay last so
+        // nothing in a brief or a note reads as overriding them.
+        return agentContext + "\n\n" + lines.joined(separator: "\n")
     }
+
+    /// The crew member's persona, brief, goals and kept notes, when the task
+    /// was started by one (`agentContext` on a start or resume command,
+    /// additive and optional on the relay). The server builds it when this
+    /// Mac claims the command and never stores it on the command row.
+    ///
+    /// Context only. It is read here and nowhere else: it never reaches the
+    /// tool bindings, the folder grants or `setRunPolicy`, so whatever it says
+    /// cannot widen what this run may touch or how often it asks. Bounded, so
+    /// a payload cannot crowd the rules out of the prompt.
+    private static func agentContext(in payload: [String: WorkToolValue]) -> String? {
+        guard let raw = payload["agentContext"]?.stringValue else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(maximumAgentContextCharacters))
+    }
+
+    private static let maximumAgentContextCharacters = 24_000
 
     private static func goal(in payload: [String: WorkToolValue]) -> String? {
         payload["goal"]?.stringValue ?? payload["prompt"]?.stringValue
