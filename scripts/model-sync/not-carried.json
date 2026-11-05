@@ -1,4 +1,5 @@
 {
+  "deepseek:deepseek-v4.1-flash-1017": "dated snapshot that DeepSeek serves behind the deepseek-flash alias, which Alevr carries",
   "google:gemini-2.5-flash-lite": "2.5 line is limited to existing users (Google's models page)",
   "google:gemini-3.1-pro-preview-customtools": "variant of gemini-3.1-pro-preview tuned for custom-tool agents",
   "google:gemini-3.5-live-translate-preview": "speech, realtime, translation or embedding model: not a chat model Juno serves",
@@ -12,6 +13,7 @@
   "google:gemini-robotics-er-2-preview": "speech, realtime, translation or embedding model: not a chat model Juno serves",
   "google:gemini-robotics-er-2-streaming-preview": "speech, realtime, translation or embedding model: not a chat model Juno serves",
   "google:lyria-realtime-exp": "speech, realtime, translation or embedding model: not a chat model Juno serves",
+  "meta:muse-spark-open": "open-weight release on Hugging Face; Meta's Model API does not list it",
   "minimax:MiniMax-M2": "legacy MiniMax tier; Juno carries M3, M2.7 and M2.5",
   "minimax:MiniMax-M2.1": "legacy MiniMax tier; Juno carries M3, M2.7 and M2.5",
   "minimax:MiniMax-M2.1-highspeed": "legacy MiniMax tier; Juno carries M3, M2.7 and M2.5",
@@ -27,6 +29,7 @@
   "openai:gpt-6-luna-pro": "OpenRouter's slug for reasoning.mode \"pro\" on the base model, which Juno exposes as Pro mode",
   "openai:gpt-6-sol-pro": "OpenRouter's slug for reasoning.mode \"pro\" on the base model, which Juno exposes as Pro mode",
   "openai:gpt-6.1-sol-pro": "OpenRouter's slug for reasoning.mode \"pro\" on the base model, which Juno exposes as Pro mode",
+  "openai:gpt-6.1-terra-pro": "OpenRouter's slug for reasoning.mode \"pro\" on the base model, which Juno exposes as Pro mode",
   "openai:gpt-audio-1.5": "speech, realtime, translation or embedding model: not a chat model Juno serves",
   "openai:gpt-live-1": "speech, realtime, translation or embedding model: not a chat model Juno serves",
   "openai:gpt-live-transcribe": "speech, realtime, translation or embedding model: not a chat model Juno serves",

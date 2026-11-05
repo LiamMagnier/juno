@@ -41,6 +41,7 @@ import {
   type ProviderResolver,
 } from './harness/routing.js';
 import { BudgetLedger, type BudgetSnapshot } from './harness/budget.js';
+import { customAgentPersona, renderCustomAgents, type CustomAgent } from './harness/custom-agents.js';
 import { FileStateGuard, RepeatCallGuard, takeJustification, withJustification } from './harness/guards.js';
 import { spillIfLarge } from './harness/spill.js';
 import { extractJson, schemaProblem, validateAgainstSchema, type JsonSchema } from './harness/output-schema.js';
@@ -114,6 +115,8 @@ export interface SubagentSpec {
   phase?: TeamPhase;
   /** How the agent tree names it ("Architect", "Builder 2", "Verifier"). */
   label?: string;
+  /** The named custom agent (a `.claude/agents`-style file) this child runs as. */
+  agent?: string;
 }
 
 /** The durable, surface-facing snapshot of one child task. */
@@ -262,6 +265,10 @@ export interface SubagentHost {
   readonly spillDir?: string;
   /** The parent's current request shape, for forks. */
   forkContext?(): ForkContext;
+  /** Type errors in files a child just edited, under the child's worktree `cwd`; null when there is nothing to say. */
+  afterEdit?(cwd: string, absPaths: string[]): Promise<string | null>;
+  /** The repository's named agents (`.alevr/agents`, `.juno/agents`, `.claude/agents`, the Alevr home). */
+  customAgents?(): readonly CustomAgent[];
   emit(event: AgentEvent): void;
   requestApproval(request: ApprovalRequest): Promise<ApprovalDecision>;
   /** Snapshot an absolute path before the manager applies imported changes. */
@@ -365,6 +372,7 @@ export function orchestrationToolSpecs(options: OrchestrationToolOptions = {}): 
                 dependencies: { type: 'array', items: { type: 'string' } },
                 context: { type: 'string' },
                 model: { type: 'string' },
+                agent: { type: 'string', description: 'Optional: a named agent from this repository (listed in the system prompt). Its brief, tools and model apply.' },
               },
               required: ['title', 'prompt', 'role'],
             },
@@ -405,6 +413,7 @@ export function orchestrationToolSpecs(options: OrchestrationToolOptions = {}): 
           description: { type: 'string', description: 'Three to six words: what this agent does (its title).' },
           prompt: { type: 'string', description: 'The task. For spawn: complete and self-contained.' },
           mode: { type: 'string', enum: ['spawn', 'fork'] },
+          agent: { type: 'string', description: 'Optional: a named agent from this repository (listed in the system prompt). Its brief, tools and model apply; it never widens permissions.' },
           role: { type: 'string', enum: ROLES },
           writes: { type: 'boolean', description: 'true when it must modify files (runs in its own git worktree; changes come back through review).' },
           model: { type: 'string', description: 'Optional model or alias ("sonnet", "fast", "openai:gpt-6"); default follows the session\'s role routing.' },
@@ -462,7 +471,9 @@ export function orchestrationToolSpecs(options: OrchestrationToolOptions = {}): 
 }
 
 /** The delegation section appended to the ROOT system prompt when enabled. */
-export function delegationPromptSection(options: { maxConcurrent?: number; maxPerTurn?: number } = {}): string {
+export function delegationPromptSection(
+  options: { maxConcurrent?: number; maxPerTurn?: number; customAgents?: readonly CustomAgent[] } = {},
+): string {
   const perTurn = options.maxPerTurn ?? 8;
   const concurrent = options.maxConcurrent ?? 6;
   return `
@@ -475,7 +486,7 @@ You can hand work to child agents:
 - Pick the role that fits the job: explorer and architect read only; builder, refactorer, designer, tester and docs may write in their own worktree. Give each child a complete, self-contained prompt: it starts with no context.
 - At most ${perTurn} agents per turn, at most ${concurrent} running at once. Children cannot spawn further agents.
 - Writing agents work in isolated git worktrees; their changes come back for review/import — never claim delegated work is applied until it is.
-- RECONCILE what children report yourself: surface conflicts between findings, name failed tasks, report only tests that actually ran, and finish with ONE coherent summary — never paste child reports verbatim.`;
+- RECONCILE what children report yourself: surface conflicts between findings, name failed tasks, report only tests that actually ran, and finish with ONE coherent summary — never paste child reports verbatim.${renderCustomAgents(options.customAgents ?? [])}`;
 }
 
 // MARK: Internal task state
@@ -963,6 +974,9 @@ export class SubagentManager {
           true,
         );
       }
+      const named = this.namedAgent(entry.agent, writes);
+      if (typeof named === 'string') return respond(`Task ${i + 1} ('${title}'): ${named}`, true);
+      const explicitModel = entry.model === undefined ? undefined : String(entry.model);
       specs.push({
         title,
         prompt,
@@ -970,8 +984,9 @@ export class SubagentManager {
         writes,
         dependencies: Array.isArray(entry.dependencies) ? entry.dependencies.map(String) : [],
         context: entry.context === undefined ? undefined : String(entry.context),
-        model: entry.model === undefined ? undefined : String(entry.model),
+        model: explicitModel ?? named?.model,
         source: 'delegate',
+        ...(named ? { agent: named.name, persona: customAgentPersona(named), ...(named.tools ? { toolFilter: { allow: this.knownTools(named.tools) } } : {}) } : {}),
       });
     }
 
@@ -989,7 +1004,7 @@ export class SubagentManager {
     const created: SubagentTask[] = [];
     const idByTitle = new Map<string, string>();
     for (const spec of specs) {
-      const task = this.createTask(spec, turnIndex, { notify: false, maxSteps: this.config.maxStepsPerChild });
+      const task = this.createTask(spec, turnIndex, { notify: false, maxSteps: this.agentSteps(spec, this.config.maxStepsPerChild) });
       idByTitle.set(spec.title.toLowerCase(), task.id);
       created.push(task);
     }
@@ -1056,6 +1071,35 @@ export class SubagentManager {
     );
   }
 
+  // MARK: Named custom agents
+
+  /** The named agent a call asks for: undefined when none was asked, a refusal string when it cannot be used. */
+  private namedAgent(raw: unknown, writes: boolean): CustomAgent | string | undefined {
+    if (raw === undefined || raw === null || raw === '') return undefined;
+    const wanted = String(raw).trim().toLowerCase().replace(/\s+/g, '-');
+    const agents = this.host.customAgents?.() ?? [];
+    const agent = agents.find((candidate) => candidate.name === wanted);
+    if (!agent) {
+      const names = agents.map((candidate) => candidate.name);
+      return `No agent named '${String(raw)}'.${names.length ? ` Available: ${names.join(', ')}.` : ' This repository defines none.'}`;
+    }
+    if (writes && agent.readOnly) return `The '${agent.name}' agent is read-only (${agent.path}); start it without writes.`;
+    return agent;
+  }
+
+  /** Of an agent file's tool names, the ones this session actually has. */
+  private knownTools(names: readonly string[]): string[] {
+    const known = new Set(this.host.tools.map((tool) => tool.spec.name));
+    return names.filter((name) => known.has(name));
+  }
+
+  /** A named agent's maxSteps lowers the session's cap; it never raises it. */
+  private agentSteps(spec: SubagentSpec, cap: number): number {
+    if (!spec.agent) return cap;
+    const agent = this.host.customAgents?.().find((candidate) => candidate.name === spec.agent);
+    return agent?.maxSteps ? Math.min(agent.maxSteps, cap) : cap;
+  }
+
   // MARK: spawn_agent / send_message / interrupt_agent / list_agents
 
   private async spawnAgent(
@@ -1101,6 +1145,19 @@ export class SubagentManager {
       outputSchema = input.output_schema as JsonSchema;
     }
     const effort = typeof input.effort === 'string' ? (input.effort as EffortLevel) : undefined;
+    const named = this.namedAgent(input.agent, writes);
+    if (typeof named === 'string') return respond(named, true);
+    if (named?.tools) {
+      // The file's list narrows; an explicit allow narrows further, never widens.
+      const fromFile = this.knownTools(named.tools);
+      toolFilter = {
+        ...(toolFilter ?? {}),
+        allow: toolFilter?.allow ? toolFilter.allow.filter((name) => fromFile.includes(name)) : fromFile,
+      };
+    }
+    const callPersona = typeof input.persona === 'string' && input.persona.trim() ? input.persona.trim().slice(0, 4_000) : undefined;
+    const persona = named ? customAgentPersona(named, callPersona) : callPersona;
+    const model = typeof input.model === 'string' && input.model.trim() ? input.model.trim() : named?.model;
     const spec: SubagentSpec = {
       title: title.slice(0, 80),
       prompt,
@@ -1109,11 +1166,12 @@ export class SubagentManager {
       dependencies: [],
       mode,
       source: 'spawn',
-      ...(typeof input.model === 'string' && input.model.trim() ? { model: input.model.trim() } : {}),
+      ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
       ...(toolFilter ? { toolFilter } : {}),
-      ...(typeof input.persona === 'string' && input.persona.trim() ? { persona: input.persona.trim().slice(0, 4_000) } : {}),
+      ...(persona ? { persona } : {}),
       ...(outputSchema ? { outputSchema } : {}),
+      ...(named ? { agent: named.name } : {}),
     };
     const writeRefusal = await this.writeRefusal([spec]);
     if (writeRefusal) return respond(writeRefusal, true);
@@ -1122,7 +1180,7 @@ export class SubagentManager {
       if (!approved) return respond('The user declined starting this agent. Handle the work yourself.', true);
     }
     const background = input.background !== false;
-    const task = this.createTask(spec, turnIndex, { notify: background, maxSteps: this.config.maxStepsPerSpawnedChild });
+    const task = this.createTask(spec, turnIndex, { notify: background, maxSteps: this.agentSteps(spec, this.config.maxStepsPerSpawnedChild) });
     this.spawnedThisTurn += 1;
     this.register(task);
     this.startEligible();
@@ -2340,8 +2398,10 @@ export class SubagentManager {
     // Worktree containment for edit tools: the child edits ITS worktree only.
     // Absolute paths (or ../ escapes) pointing outside are denied outright —
     // isolation is structural, not advisory.
+    let editedPaths: string[] = [];
     if (tool.kind === 'edit') {
       const targets = tool.mutatedPaths?.(call.input, ctx) ?? [];
+      editedPaths = targets.map((target) => path.resolve(ctx.cwd, target));
       const rootPrefix = fs.realpathSync(ctx.cwd) + path.sep;
       for (const target of targets) {
         const resolved = path.resolve(ctx.cwd, target);
@@ -2423,6 +2483,10 @@ export class SubagentManager {
       content = spillIfLarge(content, { dir: this.host.spillDir, callId: `${task.id}-${call.id}`, toolName: call.name }).content;
     }
     if (reminder) content = `${content}\n\n${reminder}`;
+    if (!isError && editedPaths.length > 0 && this.host.afterEdit) {
+      const note = await this.host.afterEdit(ctx.cwd, editedPaths).catch(() => null);
+      if (note) content = `${content}\n\n${note}`;
+    }
     const result: UserContent = { type: 'tool_result', toolCallId: call.id, content, isError };
     const attached = (images ?? []).map((img): UserContent => ({ type: 'image', ...img }));
     return image ? [result, image, ...attached] : attached.length ? [result, ...attached] : result;
@@ -2432,6 +2496,8 @@ export class SubagentManager {
     const filter = task.spec.toolFilter;
     return this.host.tools.filter((tool) => {
       if (isOrchestrationTool(tool.spec.name)) return false;
+      // The plan row is the coordinator's; a child reports in its closing message.
+      if (tool.spec.name === 'todo_write') return false;
       if (filter?.allow && !filter.allow.includes(tool.spec.name)) return false;
       if (filter?.deny?.includes(tool.spec.name)) return false;
       if (tool.kind === 'read') return true;

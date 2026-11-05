@@ -21,7 +21,8 @@ final class JunoTypeLadderTests: XCTestCase {
         let name: String
     }
 
-    /// §8.2 with errata 8 applied: `ui` is ×1.5 and `bodyLarge` ×1.6. P1 (spec
+    /// §8.2 with errata 8 applied: `bodyLarge` is ×1.6. Graphite (docs/design/
+    /// direction-2026-11) sets `ui` at 13.5 on a 20px line. P1 (spec
     /// D16, §3.5) sets page-title at 500, raises `caption` from 11 to 12/1.4 and
     /// aliases the retired `micro` to it, so no rung is under the 12pt floor.
     private let ladder: [Expected] = [
@@ -33,7 +34,7 @@ final class JunoTypeLadderTests: XCTestCase {
         Expected(rung: .reading, generated: JunoGeneratedType.reading, size: 16, lineHeight: 1.7, tracking: 0, weight: .regular, face: .sans, name: "reading"),
         Expected(rung: .body, generated: JunoGeneratedType.body, size: 15, lineHeight: 1.6, tracking: 0, weight: .regular, face: .sans, name: "body"),
         Expected(rung: .prose, generated: JunoGeneratedType.reading, size: 16, lineHeight: 1.7, tracking: 0, weight: .regular, face: .sans, name: "prose"),
-        Expected(rung: .ui, generated: JunoGeneratedType.ui, size: 13, lineHeight: 1.5, tracking: 0, weight: .regular, face: .sans, name: "ui"),
+        Expected(rung: .ui, generated: JunoGeneratedType.ui, size: 13.5, lineHeight: 20.0 / 13.5, tracking: 0, weight: .regular, face: .sans, name: "ui"),
         Expected(rung: .label, generated: JunoGeneratedType.label, size: 12, lineHeight: 1.4, tracking: 0.01, weight: .medium, face: .sans, name: "label"),
         Expected(rung: .caption, generated: JunoGeneratedType.caption, size: 12, lineHeight: 1.4, tracking: 0, weight: .regular, face: .sans, name: "caption"),
         Expected(rung: .micro, generated: JunoGeneratedType.micro, size: 12, lineHeight: 1.4, tracking: 0, weight: .regular, face: .mono, name: "micro"),

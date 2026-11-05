@@ -1,9 +1,9 @@
 import type { ModelInfo } from "@/lib/models";
 
-/** The GA Gemini Omni Flash id (27 Aug 2026), on the Interactions API. */
-export const GOOGLE_OMNI_MODEL_ID = "gemini-omni-1.1-flash";
-/** Every Omni id this adapter speaks for: the GA model and the retired preview it replaced. */
-const GOOGLE_OMNI_MODEL_IDS: ReadonlySet<string> = new Set([GOOGLE_OMNI_MODEL_ID, "gemini-omni-flash-preview"]);
+/** The current Gemini Omni Flash id (1.2, GA 5 Nov 2026), on the Interactions API. */
+export const GOOGLE_OMNI_MODEL_ID = "gemini-omni-1.2-flash";
+/** Every Omni id this adapter speaks for: 1.2, the 1.1 it supersedes, and the retired preview. */
+const GOOGLE_OMNI_MODEL_IDS: ReadonlySet<string> = new Set([GOOGLE_OMNI_MODEL_ID, "gemini-omni-1.1-flash", "gemini-omni-flash-preview"]);
 
 export type GoogleOmniVideoPoll =
   | { status: "running"; note?: string }

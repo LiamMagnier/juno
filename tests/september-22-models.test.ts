@@ -131,8 +131,10 @@ test("the models each one replaced stay routable under their own ids", () => {
     assert.equal(previous.status, "legacy", `${id} steps down for ${successor}`);
     assert.equal(previous.family, model(successor).family, `${id} and ${successor} are one product line`);
   }
-  // GPT-5.6 Terra has no GPT-6 tier, so it keeps its place.
-  assert.equal(model("openai:gpt-5.6-terra").status, "current");
+  // GPT-5.6 Terra stepped down for GPT-6.1 Terra on 2026-11-05 (see
+  // tests/november-5-models.test.ts) but still answers as itself.
+  assert.equal(model("openai:gpt-5.6-terra").status, "legacy");
+  assert.equal(model("openai:gpt-5.6-terra").family, model("openai:gpt-6.1-terra").family);
 });
 
 test("stored ids that pointed at a Sol tier land on the current Sol, GPT-6.1 Sol", () => {
