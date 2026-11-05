@@ -17,8 +17,8 @@
 #               that recorded nothing. External gates (platform "ci") are measured by
 #               their own jobs and are not required here.
 #
-# The native half of #99 ("Native gates (Release)") is not on this branch; see
-# scripts/qa/README.md § Native.
+# The native half of #99 ("Native gates (Release)") runs on demand in
+# design-gates-native.yml; see scripts/qa/README.md § Native.
 #
 # Never deploys, never reads secrets, never touches production: the only database
 # is the service container, and the runner refuses any other.
