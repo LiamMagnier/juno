@@ -52,6 +52,17 @@ export function MenuGlide() {
     if (!pill || !menu) return;
     let shown = false;
     let frame = 0;
+    // Which input moved the highlight last. Arrow keys jump (no glide); the
+    // pointer glides. Reset on pointer movement, so mixing the two works.
+    let keyed = false;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") keyed = true;
+    };
+    const onPointer = () => {
+      keyed = false;
+    };
+    menu.addEventListener("keydown", onKey, true);
+    menu.addEventListener("pointermove", onPointer, true);
     const place = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
@@ -73,6 +84,7 @@ export function MenuGlide() {
         pill.style.height = `${rect.height}px`;
         pill.style.transform = `translate(${x}px, ${y}px)`;
         pill.dataset.destructive = row.classList.contains("text-destructive") ? "true" : "false";
+        pill.dataset.instant = keyed ? "true" : "false";
         if (!shown) {
           void pill.offsetWidth;
           pill.style.transition = "";
@@ -89,6 +101,8 @@ export function MenuGlide() {
       cancelAnimationFrame(frame);
       observer.disconnect();
       menu.removeEventListener("scroll", place, true);
+      menu.removeEventListener("keydown", onKey, true);
+      menu.removeEventListener("pointermove", onPointer, true);
     };
   }, []);
   return <span ref={ref} aria-hidden="true" className="cmenu-glide" data-on="false" />;

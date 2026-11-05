@@ -612,6 +612,22 @@ export const WORK_APPROVAL_MODE_SUMMARY: Record<WorkPermissionPolicy, string> = 
 };
 
 /**
+ * The same three promises, cut to one line each for a menu row.
+ *
+ * `WORK_APPROVAL_MODE_SUMMARY` is written for a settings page, where a reader
+ * has the room for the whole contract. In the composer's mode menu those
+ * sentences ran three to five lines a row, so the menu covered the greeting
+ * above the composer and its footer was cut off on a laptop screen. The menu
+ * names what each mode does differently and leaves the always-ask list to the
+ * one footer line, instead of saying it twice.
+ */
+export const WORK_APPROVAL_MODE_HINT: Record<WorkPermissionPolicy, string> = {
+  conservative: "Asks before it changes a file or runs anything.",
+  balanced: "Makes changes it can undo. Asks before commands or anything private.",
+  permissive: "Works without stopping, except for what it can’t take back.",
+};
+
+/**
  * Policy strength, for narrowing.
  *
  * Every layer (host, project, session, schedule, skill) may only ever narrow.

@@ -797,82 +797,66 @@
    imported before Tailwind's utilities, and the shared shell and row
    (menu-recipe.ts) arrive as utilities at (0,2,0). */
 .cmenu.cmenu {
-  --cm-radius: 18px;
+  /* Graphite (DIRECTION.md §4): the composer's menus are the same object as
+     every other menu — the 12px menu rung, a 6px inset, so rows are 6 and
+     nest concentrically; one floating elevation (--shadow-float) instead of a
+     private three-layer throw. They were 18 / 12 with their own shadow, and
+     opened beside a kebab menu at 12 / 6 they read as two products. */
+  --cm-radius: 12px;
   --cm-pad: 6px;
-  --cm-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --cm-ease: var(--ease-out-expo);
   --cm-dx: 0px;
-  --cm-dy: -6px;
+  --cm-dy: -4px;
   position: relative;
   isolation: isolate;
   padding: var(--cm-pad);
   border-radius: var(--cm-radius);
-  border: 1px solid hsl(var(--foreground) / 0.07);
+  /* `.surface-float`'s boundary: the edge is what gives WCAG 1.4.11's 3:1. */
+  border: 1px solid hsl(var(--border) / 0.9);
   background-color: hsl(var(--popover));
-  box-shadow:
-    0 1px 2px hsl(var(--shadow-ink) / 0.04),
-    0 8px 20px -6px hsl(var(--shadow-ink) / 0.08),
-    0 28px 56px -18px hsl(var(--shadow-ink) / 0.16);
+  box-shadow: var(--shadow-float);
   transform-origin: var(--radix-popper-transform-origin);
-}
-.dark .cmenu.cmenu {
-  border-color: hsl(0 0% 100% / 0.08);
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.04),
-    0 8px 20px -6px hsl(0 0% 0% / 0.4),
-    0 28px 56px -18px hsl(0 0% 0% / 0.55);
 }
 /* Travel toward the trigger: a menu below its trigger drops in from it, one
    above rises from it, a flyout slides out of the row that opened it. */
-.cmenu.cmenu[data-side="top"] { --cm-dy: 6px; }
-.cmenu.cmenu[data-side="right"] { --cm-dy: 0px; --cm-dx: -6px; }
-.cmenu.cmenu[data-side="left"] { --cm-dy: 0px; --cm-dx: 6px; }
+.cmenu.cmenu[data-side="top"] { --cm-dy: 4px; }
+.cmenu.cmenu[data-side="right"] { --cm-dy: 0px; --cm-dx: -4px; }
+.cmenu.cmenu[data-side="left"] { --cm-dy: 0px; --cm-dx: 4px; }
 
+/* Open 160 on the expo decelerate, from the trigger (transform-origin is
+   Radix's popper origin); close faster, 120, opacity and a 0.98 settle only.
+   Menus open tens of times a day, so the motion is just enough to say where
+   the menu came from. The contents used to trail the shell by 70ms
+   (`cmenu-fill`), which made every menu feel a beat late; they now arrive
+   with it. */
 .cmenu.cmenu[data-state="open"] {
-  animation: cmenu-in var(--dur-base) var(--cm-ease) both;
+  animation: cmenu-in 160ms var(--cm-ease) both;
 }
 .cmenu.cmenu[data-state="closed"] {
-  animation: cmenu-out var(--dur-fast) cubic-bezier(0.4, 0, 1, 1) both;
-}
-/* The contents settle a beat behind the shell, so the menu reads as a box
-   that opens, then fills, rather than one flat image scaling up. */
-.cmenu.cmenu[data-state="open"] > :not(.cmenu-glide) {
-  animation: cmenu-fill 220ms var(--cm-ease) var(--dur-press) both;
+  animation: cmenu-out var(--dur-fast) var(--ease-out-soft) both;
 }
 @keyframes cmenu-in {
-  0% {
+  from {
     opacity: 0;
     transform: translate(var(--cm-dx), var(--cm-dy)) scale(0.96);
-  }
-  45% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 1;
-    transform: none;
   }
 }
 @keyframes cmenu-out {
   to {
     opacity: 0;
-    transform: scale(0.97);
-  }
-}
-@keyframes cmenu-fill {
-  from {
-    opacity: 0;
-    transform: translateY(calc(var(--cm-dy) * -0.5));
+    transform: scale(0.98);
   }
 }
 
-/* Rows: concentric with the shell (18 − 6 = 12), 36px, 14px type. The fill
-   is the glide's, so a row's own highlight is cleared. */
+/* Rows: concentric with the shell (12 − 6 = 6), 32px, the `ui` rung (13.5 on
+   a 20px line). The fill is the glide's, so a row's own highlight is cleared. */
 .cmenu.cmenu [role^="menuitem"] {
   z-index: 1;
-  min-height: 36px;
-  gap: 10px;
-  padding: 0 10px;
+  min-height: 32px;
+  gap: 8px;
+  padding: 0 8px;
   border-radius: calc(var(--cm-radius) - var(--cm-pad));
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 20px;
   color: hsl(var(--foreground));
   background-color: transparent;
@@ -891,8 +875,9 @@
 }
 .cmenu.cmenu [role="separator"] {
   height: 1px;
-  margin: 6px 10px;
-  background-color: hsl(var(--foreground) / 0.07);
+  /* Full-bleed: the hairline runs to the shell's edges (negative inset). */
+  margin: 6px calc(var(--cm-pad) * -1);
+  background-color: hsl(var(--hairline));
 }
 @media (pointer: coarse) {
   .cmenu.cmenu [role^="menuitem"] {
@@ -910,10 +895,16 @@
   pointer-events: none;
   opacity: 0;
   transition:
-    transform var(--dur-base) var(--cm-ease),
-    width var(--dur-base) var(--cm-ease),
-    height var(--dur-base) var(--cm-ease),
+    transform 160ms var(--cm-ease),
+    width 160ms var(--cm-ease),
+    height 160ms var(--cm-ease),
     opacity var(--dur-fast) var(--ease-out-soft);
+}
+/* Arrow keys move the highlight at once. A glide that trails the key is a
+   delay on an action people repeat dozens of times in a row; the pointer,
+   which travels continuously, keeps the glide. */
+.cmenu-glide[data-instant="true"] {
+  transition: opacity var(--dur-fast) var(--ease-out-soft);
 }
 .dark .cmenu-glide {
   background-color: hsl(0 0% 100% / 0.075);
@@ -966,7 +957,7 @@
 }
 
 .cmenu-label {
-  padding: 6px 10px 4px;
+  padding: 6px 8px 4px;
   font-size: 12px;
   line-height: 16px;
   font-weight: 500;
@@ -977,11 +968,11 @@
 .cmenu-search {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 36px;
+  gap: 8px;
+  height: 32px;
   margin: 0 0 6px;
-  padding: 0 10px;
-  border-bottom: 1px solid hsl(var(--foreground) / 0.07);
+  padding: 0 8px;
+  border-bottom: 1px solid hsl(var(--hairline));
   color: hsl(var(--muted-foreground));
 }
 .cmenu-search > input {
@@ -991,7 +982,7 @@
   background: transparent;
   border: 0;
   outline: none;
-  font-size: 14px;
+  font-size: 13.5px;
   color: hsl(var(--foreground));
 }
 .cmenu-search > input::placeholder {
@@ -1001,8 +992,8 @@
 .cmenu-empty {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 8px 10px 10px;
+  gap: 8px;
+  padding: 8px 8px 10px;
 }
 .cmenu-empty__mark {
   display: grid;
@@ -1010,13 +1001,13 @@
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: 6px;
   background-color: hsl(var(--foreground) / 0.05);
   color: hsl(var(--muted-foreground));
 }
 .cmenu-empty__title {
   display: block;
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 20px;
   color: hsl(var(--foreground));
 }
@@ -1036,9 +1027,9 @@
 .cmenu-skeleton__row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 36px;
-  padding: 0 10px;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
 }
 .cmenu-skeleton__row > :first-child {
   width: 16px;

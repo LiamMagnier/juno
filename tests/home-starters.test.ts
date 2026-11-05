@@ -108,7 +108,8 @@ test("the copy is plain, sentence-case English and never names the codename", ()
 test("the home draws the starters over a field that stays calm, typing included", () => {
   const view = read("src/components/chat/chat-view.tsx");
   assert.match(view, /<HomeStarters\s+composerRef=\{emptyComposerRef\}/);
-  assert.match(view, /calm=\{startersShown\}/);
+  // The home's dot field is gone (Graphite §1); nothing draws behind the starters.
+  assert.doesNotMatch(view, /<HomeField/);
   // Incognito, a clarification, a voice call and the send handoff each put the row away.
   assert.match(view, /hidden=\{Boolean\(privateMode \|\| chat\.pendingClarification \|\| voiceOpen \|\| handoff === "leaving"\)\}/);
   const field = read("src/components/chat/empty-state.tsx");

@@ -6,12 +6,12 @@ import { ChevronDown, Hand } from "@/components/ui/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { composerChevronClass, composerChipClass } from "@/components/ui/composer-shell";
-import { COMPOSER_MENU_COLLISION_PADDING, composerMenuClass, MenuGlide, MenuLabel } from "@/components/chat/composer-menu";
+import { COMPOSER_MENU_COLLISION_PADDING, composerMenuClass, MenuGlide, MenuLabel, MenuScrollEdges } from "@/components/chat/composer-menu";
 import { StatusIcons } from "@/lib/app-icons";
 import {
   DEFAULT_WORK_PERMISSION_POLICY,
+  WORK_APPROVAL_MODE_HINT,
   WORK_APPROVAL_MODE_LABEL,
-  WORK_APPROVAL_MODE_SUMMARY,
 } from "@/lib/work/domain";
 import { CHAT_TASK_MODES, CHAT_TASK_MODE_NOTE, type ChatTaskMode } from "@/lib/chat/task-approval-mode";
 import { cn } from "@/lib/utils";
@@ -108,50 +108,58 @@ export function TaskModeChip({
         collisionPadding={COMPOSER_MENU_COLLISION_PADDING}
         // Wider than the 18rem two-line recipe: each row carries a whole
         // sentence, and Skip's names five exceptions.
-        className={cn("flex w-[min(21rem,calc(100vw-1.5rem))] flex-col", composerMenuClass)}
+        // Capped to the room above the composer; the rows scroll and the
+        // footer stays pinned, so the always-ask line is never cut off.
+        className={cn(
+          "flex max-h-[min(30rem,var(--radix-dropdown-menu-content-available-height))] w-[min(18rem,calc(100vw-1.5rem))] flex-col",
+          composerMenuClass,
+        )}
       >
         <MenuGlide />
         <MenuLabel>How often tasks from this chat ask</MenuLabel>
-        <DropdownMenuPrimitive.RadioGroup
-          value={selected}
-          onValueChange={(value) => {
-            const next = CHAT_TASK_MODES.find((mode) => mode === value);
-            if (next && next !== selected) onChange(next);
-          }}
-        >
-          {CHAT_TASK_MODES.map((mode) => {
-            const active = mode === selected;
-            const note = CHAT_TASK_MODE_NOTE[mode];
-            return (
-              <DropdownMenuPrimitive.RadioItem
-                key={mode}
-                value={mode}
-                // Two lines, so the check sits at the top of the row, beside the
-                // name it marks, not centred against a wrapped sentence.
-                className="relative flex cursor-default select-none items-start outline-none"
-              >
-                {/* The row recipe zeroes vertical padding (36px single-line
-                    rows); a two-line row takes its breathing room inside. */}
-                <span className="min-w-0 flex-1 py-2">
-                  <span className="flex items-center gap-2">
-                    <span className={cn("font-medium", active && "text-primary")}>{WORK_APPROVAL_MODE_LABEL[mode]}</span>
-                    {mode === DEFAULT_WORK_PERMISSION_POLICY && (
-                      <span className="font-mono text-micro text-muted-foreground">Default</span>
-                    )}
+        <div className="cmenu-scroll -mx-1.5 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5">
+          <MenuScrollEdges />
+          <DropdownMenuPrimitive.RadioGroup
+            value={selected}
+            onValueChange={(value) => {
+              const next = CHAT_TASK_MODES.find((mode) => mode === value);
+              if (next && next !== selected) onChange(next);
+            }}
+          >
+            {CHAT_TASK_MODES.map((mode) => {
+              const note = CHAT_TASK_MODE_NOTE[mode];
+              return (
+                <DropdownMenuPrimitive.RadioItem
+                  key={mode}
+                  value={mode}
+                  className="group/mode relative flex cursor-default select-none items-start gap-2 outline-none"
+                >
+                  {/* Graphite §4: the selection slot leads (a 16px check) and
+                      the chosen label takes weight 500. Ink stays foreground;
+                      colour is for state, and a tick already says it. */}
+                  <span className="mt-2 grid size-4 shrink-0 place-items-center" aria-hidden="true">
+                    <DropdownMenuPrimitive.ItemIndicator>
+                      <StatusIcons.success className="size-3.5 text-foreground" />
+                    </DropdownMenuPrimitive.ItemIndicator>
                   </span>
-                  <span className="mt-0.5 block whitespace-normal text-caption leading-relaxed text-muted-foreground">
-                    {WORK_APPROVAL_MODE_SUMMARY[mode]}
-                    {note ? ` ${note}` : ""}
+                  <span className="min-w-0 flex-1 py-1.5">
+                    <span className="flex items-center gap-2">
+                      <span className="group-data-[state=checked]/mode:font-medium">{WORK_APPROVAL_MODE_LABEL[mode]}</span>
+                      {mode === DEFAULT_WORK_PERMISSION_POLICY && (
+                        <span className="font-mono text-micro text-muted-foreground">Default</span>
+                      )}
+                    </span>
+                    <span className="block whitespace-normal text-caption text-muted-foreground [text-wrap:pretty]">
+                      {WORK_APPROVAL_MODE_HINT[mode]}
+                      {note ? ` ${note}` : ""}
+                    </span>
                   </span>
-                </span>
-                <DropdownMenuPrimitive.ItemIndicator className="mt-2.5 shrink-0">
-                  <StatusIcons.success aria-hidden="true" className="size-3.5 text-primary" />
-                </DropdownMenuPrimitive.ItemIndicator>
-              </DropdownMenuPrimitive.RadioItem>
-            );
-          })}
-        </DropdownMenuPrimitive.RadioGroup>
-        <div className="relative z-[1] space-y-1 px-2.5 pb-1.5 pt-2 text-caption leading-relaxed text-muted-foreground">
+                </DropdownMenuPrimitive.RadioItem>
+              );
+            })}
+          </DropdownMenuPrimitive.RadioGroup>
+        </div>
+        <div className="relative z-[1] -mx-1.5 mt-1.5 space-y-1 border-t border-border/60 px-3.5 pb-1 pt-2 text-caption text-muted-foreground [text-wrap:pretty]">
           {/* Why the mode in the chip is not the one ticked above. Each reason
               is one whole sentence, so it is translated as one. */}
           {narrowedBy === "project" && (

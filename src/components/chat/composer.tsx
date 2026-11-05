@@ -3173,7 +3173,11 @@ function ComposerImpl({
             // Private mode redraws the edge dashed; every other state's border
             // and focus lift come from `.composer-surface` itself.
             privateMode && "border-dashed border-foreground/25",
-            dragging && "border-primary/55 ring-2 ring-primary/20",
+            // Drag-over draws ONE outline, the overlay's dashed ring (Graphite
+            // §6). The shell's own edge steps aside so it is not a second one;
+            // it used to add a tinted border and a 2px ring under the overlay's
+            // dashed border, three outlines for one state.
+            dragging && !privateMode && "border-transparent",
           )}
           above={
             <>
@@ -3185,7 +3189,7 @@ function ComposerImpl({
               {modeControl}
               {steerMode && steering?.above}
               {dragging && !privateMode && (
-                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-card bg-[linear-gradient(hsl(var(--primary)/0.1),hsl(var(--primary)/0.1))] animate-fade-in">
+                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-[1.5px] border-dashed border-ring bg-card motion-safe:animate-fade-in">
                   <ComposerIcons.files aria-hidden="true" className="size-6 text-primary" />
                   <span className="font-mono text-label text-primary">
                     Drop to attach
@@ -3614,7 +3618,7 @@ function ComposerImpl({
                       aria-pressed={dictating}
                       className={composerIconButtonClass}
                     >
-                      <Mic className="size-[18px]" motion="none" />
+                      <Mic className="size-4" motion="none" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Dictate</TooltipContent>

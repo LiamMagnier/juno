@@ -144,8 +144,7 @@ export function ComposerAddMenu({
  */
 export function ComposerDropOverlay({ className }: { className?: string } = {}) {
   return (
-    <div className={cn("pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-panel border border-dashed border-primary/60 bg-card motion-safe:animate-fade-in", className)}>
-      <div className={cn("pointer-events-none absolute inset-0 rounded-panel bg-primary/5", className)} aria-hidden="true" />
+    <div className={cn("pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-panel border-[1.5px] border-dashed border-ring bg-card motion-safe:animate-fade-in", className)}>
       <ComposerIcons.files className="relative size-6 text-primary" aria-hidden="true" />
       <span className="relative font-mono text-label text-primary">Drop to attach</span>
     </div>

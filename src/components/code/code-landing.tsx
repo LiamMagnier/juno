@@ -2,7 +2,6 @@ import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { CodeComposer } from "@/components/code/code-composer";
 import type { CodePrefill } from "@/lib/code-prefill";
 import { BRAND } from "@/lib/brand/names";
-import { HomeField } from "@/components/chat/empty-state";
 
 /**
  * The Code landing's column: Alevr Code's lockup, the entry question and the
@@ -50,10 +49,9 @@ export function CodeLanding({ prefill }: { prefill: CodePrefill }) {
         <h1 className="chat-home__title ed-rise mb-6 text-balance text-center font-serif font-normal text-foreground sm:mb-8" style={{ ["--i" as string]: 1 }}>
           What will you build?
         </h1>
-        {/* The chat home's construction, on the composer the same way: one
-            drawing for both products' first screen. */}
+        {/* No dot field here either, as on the chat home: the composer is the
+            first screen's only object. */}
         <div className="relative isolate w-full">
-          <HomeField />
           <CodeComposer prefill={prefill} />
         </div>
       </div>

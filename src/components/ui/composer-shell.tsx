@@ -271,9 +271,15 @@ export const composerFieldClass = cn(
  * The inset ring it used to draw instead was for a control flush inside a
  * clipping parent, and the controls row is neither: it sits 10px inside a
  * surface that does not clip, so the outline has room on every side.
+ *
+ * ROUND, LIKE EVERYTHING ELSE ON THE ROW (Graphite §6). The `+`, the mic and
+ * the primary disc are circles; the chips between them were 8px rectangles,
+ * so the row read as two shape languages side by side. A pill on the same
+ * 32px line makes the row one family, and the chip gives under the finger
+ * (0.97 over the press rung) like every other control that answers a press.
  */
 export const composerChipClass =
-  "group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-control px-2.5 font-sans text-label text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 coarse:h-10";
+  "group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-full px-2.5 font-sans text-label text-muted-foreground transition-[background-color,color,opacity,transform] duration-fast ease-out-soft [transition-duration:var(--dur-fast),var(--dur-fast),var(--dur-fast),var(--dur-press)] active:scale-[0.97] motion-reduce:active:scale-100 hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 coarse:h-10";
 
 /* ————————————————————————————————————————————————————————————————————————
  * The field tier: armed marks and connector mentions, inside the draft
@@ -611,13 +617,15 @@ export type ComposerPrimaryFace = "send" | "stop" | "voice" | "busy";
 const FACE_MOTION = {
   // One disc, three faces (C12, C13, C16; MOTION_AND_THINKING "Send / Stop /
   // Mic: existing semantic glyph change"): the glyphs overlap and swap in
-  // place, opacity with scale 0.8 to 1 on fast. Reduced motion keeps the fade
-  // (the app's root MotionConfig drops the scale). Nothing delays Stop.
-  // 2026-10: from 0.5, so a face change reads as one glyph growing out of
-  // the disc rather than two glyphs crossing at nearly the same size.
-  initial: { opacity: 0, scale: 0.5 },
+  // place, opacity with scale on fast. Reduced motion keeps the fade (the
+  // app's root MotionConfig drops the scale). Nothing delays Stop.
+  // Graphite (DIRECTION.md §6, §7, approved 31 Oct 2026): 0.9 → 1, was 0.5.
+  // At half size the outgoing glyph collapsed while the next one grew, a
+  // visible swap on the most-pressed control; at 0.9 the face changes in
+  // place and the 120ms fade carries it.
+  initial: { opacity: 0, scale: 0.9 },
   animate: { opacity: 1, scale: 1 },
-  exit: { opacity: 0, scale: 0.5 },
+  exit: { opacity: 0, scale: 0.9 },
   // From the scale, not a literal. This was `0.12` and a raw cubic-bezier
   // array — the exact values of `--dur-fast` and `--ease-out-strong`, copied,
   // which means a change to the scale would have silently skipped this one
@@ -716,14 +724,14 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
                     dictation — which this composer already has, one button to
                     the left — and the two doing different things behind the
                     same picture is the confusion this row can least afford. */}
-                <AudioLines className="size-[18px]" />
+                <AudioLines className="size-4" />
               </motion.span>
             ) : (
               <motion.span key="send" className={FACE_LAYER} {...FACE_MOTION} aria-hidden="true">
                 {/* The bold cut: the one glyph on the row set on a solid
                     accent disc, where the regular line thins against the fill
                     — the same weight Claude and ChatGPT give their send arrow. */}
-                <Send weight="bold" className="size-[18px]" />
+                <Send weight="bold" className="size-4" />
               </motion.span>
             )}
           </AnimatePresence>
