@@ -170,6 +170,8 @@ const MODEL_TOOLS: Readonly<Record<string, Partial<ModelToolCapabilities>>> = {
   "openai:gpt-6-astra": { chatCompletions: false },
   // "Chat Completions is supported without tool calling" (model page).
   "openai:gpt-6.1-sol": { chatCompletions: false },
+  // "Tool calling requires the Responses API" (model page, 2026-11-05).
+  "openai:gpt-6.1-terra": { chatCompletions: false },
   "openai:gpt-6-sol": { chatCompletions: false },
   "openai:gpt-6-luna": { chatCompletions: false },
   "openai:gpt-5.6-sol": { chatCompletions: false },
