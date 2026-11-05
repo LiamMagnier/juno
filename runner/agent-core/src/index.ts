@@ -108,3 +108,11 @@ export {
   type CloudSkillRequest,
   type CloudSkills,
 } from './skills/cloud.js';
+export {
+  loadCustomAgents,
+  parseAgentFile,
+  renderCustomAgents,
+  engineToolNames,
+  PROJECT_AGENT_DIRS,
+  type CustomAgent,
+} from './harness/custom-agents.js';

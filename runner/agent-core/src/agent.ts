@@ -43,6 +43,7 @@ import { spillIfLarge } from './harness/spill.js';
 import { BackgroundJobs, jobAwareShellTools } from './harness/jobs.js';
 import { AutoReviewer, userInstructionsFrom } from './harness/auto-review.js';
 import { loadInstructionChain, renderInstructionChain } from './harness/instructions.js';
+import { loadCustomAgents, type CustomAgent } from './harness/custom-agents.js';
 import { TurnItemProjector, type TurnItemOp } from './harness/turn-items.js';
 
 const MAX_STEPS_PER_TURN = 60;
@@ -177,7 +178,7 @@ export interface AgentOptions {
  */
 function buildSystemPrompt(
   cwd: string,
-  delegation: { maxConcurrent: number; maxPerTurn: number } | null,
+  delegation: { maxConcurrent: number; maxPerTurn: number; customAgents?: readonly CustomAgent[] } | null,
   globalDir: string | null,
 ): string {
   const memory = renderInstructionChain(loadInstructionChain(cwd, globalDir), cwd);
@@ -382,6 +383,7 @@ export class AgentSession {
           get selection() { return session.selection; },
           get tier() { return session.contextTier; },
           get spillDir() { return session.spillDir ?? undefined; },
+          customAgents: () => loadCustomAgents(session.cwd, session.globalInstructionsDir),
           forkContext: () => ({
             system: session.currentSystem || session.systemPrompt(true),
             tools: session.currentToolSpecs,
@@ -640,7 +642,13 @@ export class AgentSession {
   private systemPrompt(delegation: boolean): string {
     const base = buildSystemPrompt(
       this.cwd,
-      delegation && this.subagents ? { maxConcurrent: this.subagents.maxConcurrent, maxPerTurn: this.subagents.maxPerTurn } : null,
+      delegation && this.subagents
+        ? {
+            maxConcurrent: this.subagents.maxConcurrent,
+            maxPerTurn: this.subagents.maxPerTurn,
+            customAgents: loadCustomAgents(this.cwd, this.globalInstructionsDir),
+          }
+        : null,
       this.globalInstructionsDir,
     );
     return this.systemAppendix ? `${base}\n\n${this.systemAppendix}` : base;
