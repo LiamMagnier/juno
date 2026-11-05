@@ -166,24 +166,11 @@ function readAgentDir(dir: string, displayBase: string, scope: CustomAgent['scop
       const real = fs.realpathSync(file);
       // A project agent never pulls a file in from outside the repository through a symlink.
       if (root && path.relative(root, real).startsWith('..')) continue;
-      // One descriptor for the check and the read, so the file checked is the file read.
-      // Read-only ('r'): nothing is ever created; `real` is already resolved, so no link is followed.
-      const fd = fs.openSync(real, 'r');
-      let text: string;
-      try {
-        const stat = fs.fstatSync(fd);
-        if (!stat.isFile() || stat.size > AGENT_FILE_MAX_BYTES) continue;
-        const buffer = Buffer.alloc(stat.size);
-        let read = 0;
-        while (read < buffer.length) {
-          const n = fs.readSync(fd, buffer, read, buffer.length - read, read);
-          if (n === 0) break;
-          read += n;
-        }
-        text = buffer.subarray(0, read).toString('utf8');
-      } finally {
-        fs.closeSync(fd);
-      }
+      // Read first, then judge what was read: no separate check for the file to change after.
+      // A directory throws (caught below); an oversized file is not an agent.
+      const bytes = fs.readFileSync(real);
+      if (bytes.length > AGENT_FILE_MAX_BYTES) continue;
+      const text = bytes.toString('utf8');
       const agent = parseAgentFile(text, file, `${displayBase}/${entry}`, scope);
       if (agent && !into.has(agent.name)) into.set(agent.name, agent);
     } catch {
