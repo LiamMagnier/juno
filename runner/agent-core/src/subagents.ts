@@ -262,6 +262,8 @@ export interface SubagentHost {
   readonly spillDir?: string;
   /** The parent's current request shape, for forks. */
   forkContext?(): ForkContext;
+  /** Type errors in files a child just edited, under the child's worktree `cwd`; null when there is nothing to say. */
+  afterEdit?(cwd: string, absPaths: string[]): Promise<string | null>;
   /** The repository's named agents (`.alevr/agents`, `.juno/agents`, `.claude/agents`, the Alevr home). */
   customAgents?(): readonly CustomAgent[];
   emit(event: AgentEvent): void;
@@ -2391,8 +2393,10 @@ export class SubagentManager {
     // Worktree containment for edit tools: the child edits ITS worktree only.
     // Absolute paths (or ../ escapes) pointing outside are denied outright —
     // isolation is structural, not advisory.
+    let editedPaths: string[] = [];
     if (tool.kind === 'edit') {
       const targets = tool.mutatedPaths?.(call.input, ctx) ?? [];
+      editedPaths = targets.map((target) => path.resolve(ctx.cwd, target));
       const rootPrefix = fs.realpathSync(ctx.cwd) + path.sep;
       for (const target of targets) {
         const resolved = path.resolve(ctx.cwd, target);
@@ -2465,6 +2469,10 @@ export class SubagentManager {
       content = spillIfLarge(content, { dir: this.host.spillDir, callId: `${task.id}-${call.id}`, toolName: call.name }).content;
     }
     if (reminder) content = `${content}\n\n${reminder}`;
+    if (!isError && editedPaths.length > 0 && this.host.afterEdit) {
+      const note = await this.host.afterEdit(ctx.cwd, editedPaths).catch(() => null);
+      if (note) content = `${content}\n\n${note}`;
+    }
     const result: UserContent = { type: 'tool_result', toolCallId: call.id, content, isError };
     const attached = (images ?? []).map((img): UserContent => ({ type: 'image', ...img }));
     return image ? [result, image, ...attached] : attached.length ? [result, ...attached] : result;
