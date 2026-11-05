@@ -817,6 +817,24 @@
   box-shadow: var(--shadow-float);
   transform-origin: var(--radix-popper-transform-origin);
 }
+.dark .cmenu.cmenu {
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06), var(--shadow-float);
+}
+/* A row's leading glyph rests in the second ink and comes up to the label's
+   when the row is highlighted or open, so the highlight lands on the whole
+   row at once: fill, label and mark. In 0ms, out over the fast rung, like
+   the fill. */
+.cmenu.cmenu [role^="menuitem"] > svg:first-child,
+.cmenu.cmenu [role^="menuitem"] > span:first-child > svg:only-child {
+  color: hsl(var(--muted-foreground));
+  transition: color var(--dur-fast) var(--ease-out-soft);
+}
+.cmenu.cmenu [role^="menuitem"][data-highlighted] > svg:first-child,
+.cmenu.cmenu [role^="menuitem"][data-highlighted] > span:first-child > svg:only-child,
+.cmenu.cmenu [role^="menuitem"][data-state="open"] > svg:first-child {
+  color: hsl(var(--foreground));
+  transition-duration: 0ms;
+}
 /* Travel toward the trigger: a menu below its trigger drops in from it, one
    above rises from it, a flyout slides out of the row that opened it. */
 .cmenu.cmenu[data-side="top"] { --cm-dy: 4px; }
