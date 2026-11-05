@@ -209,7 +209,7 @@
       }
     },
     {
-      "id": "openai:gpt-5.6-terra",
+      "id": "openai:gpt-6.1-terra",
       "provider": "openai",
       "adapter": "openai-responses",
       "vision": true,
@@ -525,6 +525,32 @@
         },
         "toolImages": {
           "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "zhipu:glm-5.3-flashx-legal",
+      "provider": "zhipu",
+      "adapter": "openai-compatible",
+      "vision": false,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "not_applicable",
+          "note": "No vision."
         },
         "runCodeE2E": {
           "verdict": "untested"
