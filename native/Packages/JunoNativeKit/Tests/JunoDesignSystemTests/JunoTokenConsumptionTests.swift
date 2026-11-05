@@ -429,7 +429,6 @@ final class JunoTokenConsumptionTests: XCTestCase {
             "JunoGeneratedColors.cmpWell": composer,
             "JunoGeneratedColors.cmpWell2": composer,
             "JunoGeneratedColors.cmpWell3": composer,
-            "JunoGeneratedRadius.bubble": bubble,
             "JunoGeneratedRadius.bubbleTuck": bubble,
             "JunoGeneratedType.homeTitle": "The web home's h1 rung. The apps open on the greeting (JunoType.display); no native home title exists yet.",
             "JunoGeneratedType.kbd": "The web's keycap and count-badge rung (Kbd and Badge only). Native shortcuts are drawn by the system menus and .keyboardShortcut.",
