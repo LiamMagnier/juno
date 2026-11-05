@@ -103,7 +103,7 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertEqual(JunoRadius.message, 12)
 
         // These literals track the Soft UI ladder (docs/design/SOFT_UI.md
-        // §2.3): control 8 · field 10 · menu 14 · card 12 · popover 12 ·
+        // §2.3, Graphite: menu 12): control 8 · field 10 · menu 12 · card 12 · popover 12 ·
         // panel 16 · composer 26 (the floating composer, tailwind.config.ts; it was 22 in V3,
         // docs/rework/brand/BRAND_IDENTITY.md). When the web retunes, the paired token
         // references above keep passing and only these numbers move — that
@@ -128,7 +128,7 @@ final class JunoDesignTokensTests: XCTestCase {
             (JunoRadius.md, JunoGeneratedRadius.md, 8, "md"),
             (JunoRadius.control, JunoGeneratedRadius.control, 8, "control"),
             (JunoRadius.field, JunoGeneratedRadius.field, 10, "field"),
-            (JunoRadius.menu, JunoGeneratedRadius.menu, 14, "menu"),
+            (JunoRadius.menu, JunoGeneratedRadius.menu, 12, "menu"),
             (JunoRadius.card, JunoGeneratedRadius.card, 12, "card"),
             (JunoRadius.panel, JunoGeneratedRadius.panel, 16, "panel"),
         ]
