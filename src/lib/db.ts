@@ -223,6 +223,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // Every call site already carries userId, so guarding costs nothing and the
   // tripwire is worth having on a table like this one.
   ["CodeEnvironment", "userId"],
+  // Project hook trust: which exact `.alevr/hooks.json` bytes a cloud run of
+  // a repository may run without a person. An unscoped write is one account
+  // approving commands for another's runs; every call site carries userId.
+  ["CodeHookTrust", "userId"],
   // Auto-fix. The row is a standing permission — "answer GitHub on this pull
   // request by editing my branch" — so an unscoped update is one account
   // switching on a machine that pushes to another account's repository. The

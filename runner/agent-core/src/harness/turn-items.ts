@@ -14,6 +14,7 @@ import type {
   TurnItem,
 } from '../contracts/code-v2.js';
 import { contractRoleOf } from './routing.js';
+import { parseTodos } from '../tools/todo.js';
 
 export type TurnItemOp =
   | { op: 'added'; item: TurnItem }
@@ -345,6 +346,10 @@ export class TurnItemProjector {
         ...(str(input.text) || str(input.app) ? { target: str(input.text) || str(input.app) } : {}),
         status: 'running',
       };
+    } else if (name === 'todo_write') {
+      const todos = parseTodos(input);
+      if (typeof todos === 'string') return [];
+      item = { ...this.base(id), kind: 'todo_list', todos: todos.map((t) => ({ text: t.content, status: t.status })) };
     } else if (name === 'bash_output' || name === 'kill_job') {
       item = { ...this.base(id), kind: 'command_execution', callId, command: `${name} ${str(input.id)}`.trim(), background: true, status: 'running' };
     }

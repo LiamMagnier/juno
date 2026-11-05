@@ -15,6 +15,7 @@ import { COMMAND_TITLES, DEFAULT_KEYBINDINGS, resolveKeybinding, type KeyContext
 import { escPress } from "@/lib/code-v2/composer";
 import { DETAIL_LEVELS, DETAIL_LEVEL_LABELS, groupTurns, nextDetailLevel, type DetailLevel } from "@/lib/code-v2/turns";
 import { Composer, pendingRequests, type ComposerHandle, type PopoverName } from "./composer";
+import { PlanRow } from "./plan-row";
 import { ConnectionsPanel, type ConnectionsProps } from "./connections";
 import { Dock, type DockFocus } from "./dock";
 import { cycleEffort, findInstance } from "./model-info";
@@ -518,6 +519,8 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
 
   const empty = model.items.length === 0 && !model.starting && !loading;
   const composerNode = (
+    <>
+    <PlanRow items={model.items} state={model.state} />
     <Composer
       ref={composer}
       model={{ ...model, actions: { ...model.actions, openConnections } }}
@@ -529,6 +532,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       onFocusChange={setComposerFocus}
       tall={empty}
     />
+    </>
   );
 
   const a = model.actions;

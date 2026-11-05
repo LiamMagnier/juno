@@ -211,6 +211,7 @@ function baseRate(model: ModelInfo, at: Date | number = Date.now()): { input: nu
       if (/^o\d/.test(pm) || pm.includes("-o1") || pm.includes("-o3")) return { input: 15, output: 60 };
       if (pm.includes("gpt-6-astra")) return { input: 10, output: 50 };
       if (pm.includes("gpt-6.1-sol")) return { input: 2, output: 10 };
+      if (pm.includes("gpt-6.1-terra")) return { input: 1, output: 5 };
       if (pm.includes("gpt-6-sol")) return { input: 2, output: 10 };
       if (pm.includes("gpt-6-luna")) return { input: 0.1, output: 0.5 };
       // Terra/Luna were cut on 2026-07-30 (Terra −20%, Luna −80%) from their
@@ -430,7 +431,7 @@ export function fastModeMultiplier(model: ModelInfo): number | null {
   if (model.provider === "anthropic") return pm.includes("opus-4-8") || pm.includes("opus-5-5") ? 2 : null;
   if (model.provider === "openai") {
     if (pm.includes("-pro")) return null; // pro tiers aren't priority-eligible
-    if (/gpt-6(?:\.\d+)?-(astra|sol|luna)/.test(pm)) return 2;
+    if (/gpt-6(?:\.\d+)?-(astra|sol|terra|luna)/.test(pm)) return 2;
     if (pm.includes("gpt-5.6")) return 2; // sol / terra / luna
     if (pm.includes("gpt-5.5")) return 2.5;
     if (pm.includes("gpt-5.4")) return 2;
@@ -587,14 +588,14 @@ function computedRate(model: ModelInfo, input: number, output: number): TokenRat
   if (
     model.provider === "openai" &&
     (model.providerModel.toLowerCase().includes("gpt-5.6") ||
-      /gpt-6(?:\.\d+)?-(astra|sol|luna)/.test(model.providerModel.toLowerCase()))
+      /gpt-6(?:\.\d+)?-(astra|sol|terra|luna)/.test(model.providerModel.toLowerCase()))
   ) {
-    // GPT-5.6+ family: 90% cached-input discount (95% on GPT-6.1 Sol: $0.10
-    // against $2); cache writes 1.25× uncached.
+    // GPT-5.6+ family: 90% cached-input discount (95% on GPT-6.1 Sol and Terra:
+    // $0.10 against $2, $0.05 against $1); cache writes 1.25× uncached.
     return {
       input,
       output,
-      cacheRead: input * (model.providerModel.toLowerCase().includes("gpt-6.1-sol") ? 0.05 : 0.1),
+      cacheRead: input * (/gpt-6\.1-(sol|terra)/.test(model.providerModel.toLowerCase()) ? 0.05 : 0.1),
       cacheWrite: input * 1.25,
       cacheWrite5m: input * 1.25,
       cacheWrite1h: input * 1.25,
@@ -844,7 +845,7 @@ export function longContextPricing(
   const official = officialRate({ id: model.id ?? `${model.provider}:${model.providerModel}` });
   if (official && official.longContext !== undefined) return official.longContext ? { ...official.longContext } : null;
   const pm = model.providerModel.toLowerCase();
-  if (model.provider === "openai" && /gpt-6(?:\.\d+)?-(astra|sol|luna)/.test(pm)) {
+  if (model.provider === "openai" && /gpt-6(?:\.\d+)?-(astra|sol|terra|luna)/.test(pm)) {
     return { threshold: 272_000, inclusive: false, inputMultiplier: 2, outputMultiplier: 1.5 };
   }
   if (model.provider === "xai" && pm.startsWith("grok-") && model.modality === "chat") {

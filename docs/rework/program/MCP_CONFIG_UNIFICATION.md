@@ -8,4 +8,4 @@ OAuth reads and writes use the owner-scoped mcp-config-store adapter. Header man
 
 Regression evidence is in mcp-config-unification-db.test.ts: real migration execution with colliding fixture names and preserved ciphertext, canonical writes, concurrent duplicate adds, cross-account denial, credential-free directory payloads, stable runtime IDs and disabled-tool filtering, and atomic cleanup. mcp-add.spec.ts exercises token and OAuth/error recovery paths at desktop and phone widths against mocked endpoints. These browser checks do not establish live third-party OAuth acceptance.
 
-G78 is not complete: Mac/cloud MCP injection and trusted lifecycle hooks still need the small Code integration points requested in the shared LANES.md. No unsupported hook or runner capability is advertised by this configuration phase.
+The subsequent runtime phase is described in [MCP_RUNTIME_HOOKS.md](MCP_RUNTIME_HOOKS.md). G78 still needs the reserved Code customization editor and persistent owner-reviewed cloud hook hashes. No unsupported editor capability is advertised by this configuration phase.
