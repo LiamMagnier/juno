@@ -134,7 +134,7 @@ struct CodeV2Keycap: View {
     let keys: String
     var body: some View {
         Text(keys)
-            .junoFont(size: 11, relativeTo: .caption2)
+            .junoFont(size: 12, relativeTo: .caption)
             .foregroundStyle(Studio.Ink.secondary)
             .padding(.horizontal, 5)
             .frame(minHeight: 18)
