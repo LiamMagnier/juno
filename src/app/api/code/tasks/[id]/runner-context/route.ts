@@ -27,6 +27,7 @@ import { catalogEntryMatchesModel } from "@/lib/models";
 import { loadModelCapabilityMap } from "@/lib/model-capability";
 import { AGENT_PROTOCOL_ACCEPTED } from "@/lib/code-task-wire";
 import { ON_ACTIVE_PATH } from "@/lib/chat/branches";
+import { trustedHookHashesFor } from "@/lib/code-hook-trust";
 
 export const runtime = "nodejs";
 
@@ -416,6 +417,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // own skills by name, which the runner reads from its clone.
   const skills = await resolveCloudSkillContext(prisma, user.id, readCloudSkillRefs(task.skills));
 
+  // Project hooks the owner reviewed for this repository in Code > Customize.
+  // The run compares them with its clone's `.alevr/hooks.json`; a file nobody
+  // reviewed is still refused, because nobody is attached to answer.
+  const hookTrustedHashes = await trustedHookHashesFor(prisma, user.id, task.repoOwner, task.repoName);
+
   return NextResponse.json(
     {
       // The agent protocol this server stores as `protocol` task events; the
@@ -489,6 +495,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       // runner/agent-core `readCloudSkillRequest`: { account: [{name, title?,
       // instructions}], project: [name] }. Empty lists when none were chosen.
       skills,
+      hookTrustedHashes,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

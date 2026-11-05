@@ -1151,10 +1151,19 @@ async function main() {
     sink.hostEvent({ type: "item.notice", itemId: protocol.projector.itemId("notice"), source: "host", text: "Account connections could not be loaded. This run continues without them." });
   }
 
+  // Project hooks: only the exact `.alevr/hooks.json` versions the owner
+  // reviewed for this repository (Code > Customize). runner-context reads them
+  // from the account, never from the clone, so a repository cannot approve
+  // its own commands.
+  const hookTrustedHashes = Array.isArray(ctx.hookTrustedHashes)
+    ? ctx.hookTrustedHashes.filter((h) => typeof h === "string" && /^[0-9a-f]{64}$/.test(h))
+    : [];
+
   const session = AgentSession.create({
     provider,
     cwd: workdir,
     extraTools: connectionTools,
+    hooks: { trustedHashes: hookTrustedHashes },
     model: chosen.model,
     // The chosen skills (above): in the system prompt, as on the Mac.
     ...(skillAppendix ? { systemAppendix: skillAppendix } : {}),
@@ -1214,14 +1223,19 @@ async function main() {
         // so even Full access refuses it rather than allowing it silently.
         const allowed = unattendedApprovalAnswer(permissionMode, request.risk) === "allow";
         const floored = request.risk === "sensitive";
+        // A project hook reaches here only when its file is not one the owner
+        // reviewed (or a shell rule says ask). Say where it is reviewed.
+        const hookReview = typeof request.toolName === "string" && request.toolName.startsWith("hook:");
         protocol.projector.noteApprovalAnswer(request.callId, {
           by: "mode",
           ...(allowed
             ? {}
             : {
-                feedback: floored
-                  ? "it needs a person to approve it, and nobody is attached to this run"
-                  : `this run is set to ${PERMISSION_MODE_LABELS[permissionMode]}`,
+                feedback: hookReview
+                  ? "this version of .alevr/hooks.json has not been reviewed for cloud runs; review it in Code > Customize > Project hooks"
+                  : floored
+                    ? "it needs a person to approve it, and nobody is attached to this run"
+                    : `this run is set to ${PERMISSION_MODE_LABELS[permissionMode]}`,
               }),
         });
         return allowed ? "allow" : "deny";
