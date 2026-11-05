@@ -167,7 +167,8 @@ function readAgentDir(dir: string, displayBase: string, scope: CustomAgent['scop
       // A project agent never pulls a file in from outside the repository through a symlink.
       if (root && path.relative(root, real).startsWith('..')) continue;
       // One descriptor for the check and the read, so the file checked is the file read.
-      const fd = fs.openSync(real, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+      // Read-only ('r'): nothing is ever created; `real` is already resolved, so no link is followed.
+      const fd = fs.openSync(real, 'r');
       let text: string;
       try {
         const stat = fs.fstatSync(fd);
