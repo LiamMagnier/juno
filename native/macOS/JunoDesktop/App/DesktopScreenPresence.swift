@@ -269,8 +269,7 @@ private final class FadingPanel {
 
 // MARK: - Views
 
-/// "Alevr is using TextEdit · Esc to stop", on an opaque card: text read
-/// through glass over another app has no fixed contrast (Graphite §8).
+/// "Alevr is using TextEdit · Esc to stop", on Liquid Glass.
 private struct DesktopScreenCaption: View {
     let text: String
 
@@ -284,7 +283,7 @@ private struct DesktopScreenCaption: View {
             .animation(reduceMotion ? nil : JunoMotion.fast, value: text)
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug)
-            .junoCard(cornerRadius: JunoRadius.control)
+            .junoGlass(in: RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
             .padding(JunoSpace.snug)
             .accessibilityLabel(text)
     }

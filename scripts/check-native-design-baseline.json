@@ -1,10 +1,10 @@
 {
   "glass": {
-    "total": 11,
+    "total": 14,
     "modules": {
       "JunoNativeKit (shared)": 3,
       "JunoCode (shared)": 2,
-      "JunoDesktop (macOS)": 1,
+      "JunoDesktop (macOS)": 4,
       "JunoMobile (iOS)": 5
     },
     "files": {
@@ -15,6 +15,8 @@
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIExercise.swift": 1,
       "native/iOS/JunoMobile/App/JunoMobilePhoneShell.swift": 1,
       "native/iOS/JunoMobile/App/JunoMobileWorkView.swift": 4,
+      "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 2,
+      "native/macOS/JunoDesktop/App/DesktopScreenPresence.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopVoice.swift": 1
     }
   },

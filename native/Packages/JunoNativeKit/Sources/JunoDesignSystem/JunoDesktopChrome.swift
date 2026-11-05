@@ -61,21 +61,16 @@ public enum JunoInspectorMetrics {
 }
 
 public extension View {
-    /// Applies Juno's resizable navigation-column range and its ground.
+    /// Applies Juno's resizable navigation-column range.
     ///
-    /// **The sidebar is opaque** (Graphite §8, approved 2026-10-31): the web's
-    /// `--sidebar` fill, never the system's glass. Rows read through a blur
-    /// had no fixed contrast, and the column now matches the web shell and the
-    /// snapshot fixtures, which already paint `junoSidebar`. Glass stays on the
-    /// toolbar's controls and the five sanctioned sites.
+    /// The column keeps the system's Liquid Glass sidebar (owner, 2026-11-05:
+    /// "keep the native glass look on the sidebar"); nothing here paints it.
     func junoSidebarColumn() -> some View {
         navigationSplitViewColumnWidth(
             min: JunoSidebarMetrics.minimum,
             ideal: JunoSidebarMetrics.ideal,
             max: JunoSidebarMetrics.maximum
         )
-        .scrollContentBackground(.hidden)
-        .background(Color.junoSidebar.ignoresSafeArea())
     }
 
     /// The opaque reading surface: a transcript, a report, a diff, a file, a

@@ -1945,14 +1945,14 @@ private struct DesktopCodeRemoteCanvas: View {
                     JunoIconView(.send, size: 14)
                         .frame(width: 22, height: 22)
                 }
-                .junoCircleAction(active: canSend && !trimmed.isEmpty)
+                .junoProminentGlassButton()
                 .disabled(!canSend || trimmed.isEmpty)
                 .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityLabel("Send to this computer")
             }
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug)
-            .junoCard(cornerRadius: CGFloat(JunoRadius.composer))
+            .junoFloatingChrome(cornerRadius: CGFloat(JunoRadius.composer))
         }
     }
 
