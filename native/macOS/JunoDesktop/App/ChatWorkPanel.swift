@@ -155,7 +155,7 @@ struct ChatWorkPanel: View {
             VStack(alignment: .leading, spacing: 0) {
                 if case .snapshot(let snapshot) = source, let readAt = snapshot.readAt {
                     Text("As of \(readAt.formatted(date: .omitted, time: .shortened))")
-                        .junoFont(size: 11, relativeTo: .caption)
+                        .junoFont(size: 12, relativeTo: .caption)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .padding(.bottom, JunoSpace.snug)
                 }
@@ -228,7 +228,7 @@ struct ChatWorkPanel: View {
                                         .truncationMode(.middle)
                                     if let detail = reference.detail {
                                         Text(detail)
-                                            .junoFont(size: 11, relativeTo: .caption)
+                                            .junoFont(size: 12, relativeTo: .caption)
                                             .foregroundStyle(Color.junoSecondaryInk)
                                             .lineLimit(1)
                                     }
@@ -443,7 +443,7 @@ struct ChatWorkFileRow: View {
             Text(" \u{00B7} v\(file.artifact.currentVersion)")
                 .monospacedDigit()
         }
-        .junoFont(size: 11, relativeTo: .caption)
+        .junoFont(size: 12, relativeTo: .caption)
         .monospacedDigit()
         .foregroundStyle(Color.junoSecondaryInk)
         .lineLimit(1)
@@ -470,7 +470,7 @@ struct ChatWorkActivityRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if let detail = entry.detail {
                     Text(detail)
-                        .junoFont(size: 11, relativeTo: .caption)
+                        .junoFont(size: 12, relativeTo: .caption)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .lineLimit(2)
                         .truncationMode(.middle)
@@ -478,7 +478,7 @@ struct ChatWorkActivityRow: View {
             }
             Spacer(minLength: JunoSpace.snug)
             Text(entry.at.formatted(date: .omitted, time: .shortened))
-                .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                 .foregroundStyle(Color.junoSecondaryInk)
                 .monospacedDigit()
                 .fixedSize()

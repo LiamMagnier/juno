@@ -721,7 +721,7 @@ struct MessageVersionPager: View {
         HStack(spacing: 0) {
             arrow(.chevronLeft, label: "Previous version", enabled: canGoBack) { step(-1) }
             Text(verbatim: "\(index + 1)/\(total)")
-                .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                 .monospacedDigit()
                 .foregroundStyle(Color.junoSecondaryInk)
                 .frame(minWidth: 21)

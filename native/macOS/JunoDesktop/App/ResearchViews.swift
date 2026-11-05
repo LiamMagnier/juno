@@ -384,7 +384,7 @@ struct DesktopResearchClarifyCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(question.skippable ? "Optional" : "Needed")
-                    .junoFont(size: 11, relativeTo: .caption)
+                    .junoFont(size: 12, relativeTo: .caption)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize()
             }
@@ -587,7 +587,7 @@ struct DesktopResearchPanel: View {
                             Spacer(minLength: JunoSpace.snug)
                             if let at = step.at {
                                 Text(at.formatted(date: .omitted, time: .shortened))
-                                    .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                                    .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                                     .foregroundStyle(Color.junoSecondaryInk)
                             }
                         }

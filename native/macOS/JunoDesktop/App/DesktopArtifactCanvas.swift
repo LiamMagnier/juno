@@ -903,7 +903,7 @@ struct DesktopArtifactCanvas: View {
 
             if let message = saveError ?? downloadError {
                 Text(message)
-                    .junoFont(size: 11, relativeTo: .caption2)
+                    .junoFont(size: 12, relativeTo: .caption2)
                     .foregroundStyle(Color.junoDestructiveInk)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)

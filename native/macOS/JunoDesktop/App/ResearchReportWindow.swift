@@ -95,7 +95,7 @@ struct ResearchReportWindow: View {
                     .lineLimit(1)
                 if let report {
                     Text(Self.subtitle(report))
-                        .junoFont(size: 11, relativeTo: .caption)
+                        .junoFont(size: 12, relativeTo: .caption)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .lineLimit(1)
                 }

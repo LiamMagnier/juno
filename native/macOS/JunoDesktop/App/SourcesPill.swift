@@ -162,7 +162,7 @@ struct SourceFaviconStack: View {
             }
             if showsMore, all.count > items.count {
                 Text("+\(all.count - items.count)")
-                    .junoFont(size: 11, relativeTo: .caption)
+                    .junoFont(size: 12, relativeTo: .caption)
                     .monospacedDigit()
                     .foregroundStyle(Color.junoSecondaryInk)
             }
