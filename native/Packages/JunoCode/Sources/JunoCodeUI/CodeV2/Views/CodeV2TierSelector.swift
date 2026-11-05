@@ -54,7 +54,7 @@ struct CodeV2TierSelector: View {
                     .studioType(.small).foregroundStyle(Studio.Ink.secondary)
                 Spacer(minLength: 0)
                 Button("Compact and Switch") { apply(pendingCompact) }
-                    .buttonStyle(.bordered).controlSize(.small)
+                    .buttonStyle(.junoGlass).controlSize(.small)
             }
             .padding(.vertical, JunoSpace.snug)
         } else {

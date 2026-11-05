@@ -836,7 +836,7 @@ struct StudioChangesCard: View {
                 CodeV2DiffCounts(additions: added, deletions: removed)
                 Spacer(minLength: JunoSpace.snug)
                 Button("Review", action: openReview)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .controlSize(.small)
                     .help("Open the changes beside the thread (⌥⌘R)")
                     .accessibilityIdentifier("juno.code.transcript.review").contentShape(.rect)

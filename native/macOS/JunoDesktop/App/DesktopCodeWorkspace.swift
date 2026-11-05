@@ -1933,7 +1933,7 @@ private struct DesktopCodeRemoteCanvas: View {
                         }
                     } label: {
                         JunoIconView(.stop, size: 14)
-                            .frame(width: 22, height: 22)
+                            .frame(width: 28, height: 28)
                     }
                     .buttonStyle(.junoGlass)
                     .tint(Color.junoDanger)
@@ -1943,7 +1943,7 @@ private struct DesktopCodeRemoteCanvas: View {
                 }
                 Button(action: send) {
                     JunoIconView(.send, size: 14)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 28, height: 28)
                 }
                 .junoProminentGlassButton()
                 .disabled(!canSend || trimmed.isEmpty)

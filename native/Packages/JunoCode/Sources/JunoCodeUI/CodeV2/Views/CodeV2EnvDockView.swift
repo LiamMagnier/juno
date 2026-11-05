@@ -91,7 +91,7 @@ public struct CodeV2EnvDockView: View {
                 guard tab == .screen, frames.contains(where: { $0.status == .running || $0.status == .pending }) else { return nil }
                 return AnyView(
                     Button("Stop") { Task { await session.interrupt() } }
-                        .buttonStyle(.bordered).controlSize(.small)
+                        .buttonStyle(.junoGlass).controlSize(.small)
                         .keyboardShortcut(.cancelAction)
                         .help("Stop using the computer (Esc)")
                         .padding(.trailing, JunoSpace.tight)

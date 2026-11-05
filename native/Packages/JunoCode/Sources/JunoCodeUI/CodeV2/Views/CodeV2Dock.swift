@@ -198,7 +198,7 @@ public struct CodeV2ChangesPane: View {
                     .contentShape(.rect)
                 if let commit {
                     Button("Commit…", action: commit)
-                        .buttonStyle(.bordered).controlSize(.small)
+                        .buttonStyle(.junoGlass).controlSize(.small)
                         .disabled(files.isEmpty)
                         .contentShape(.rect)
                 }
@@ -320,7 +320,7 @@ struct CodeV2Hunk: View {
                     .padding(.horizontal, JunoSpace.snug).padding(.top, 2)
             } else if hovering, let revert {
                 Button("Revert", action: revert)
-                    .buttonStyle(.bordered).controlSize(.small)
+                    .buttonStyle(.junoGlass).controlSize(.small)
                     .padding(.horizontal, JunoSpace.snug).padding(.top, 2)
                     .contentShape(.rect)
             }
