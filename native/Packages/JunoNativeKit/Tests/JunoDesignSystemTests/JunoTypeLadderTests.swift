@@ -33,7 +33,7 @@ final class JunoTypeLadderTests: XCTestCase {
         Expected(rung: .reading, generated: JunoGeneratedType.reading, size: 16, lineHeight: 1.7, tracking: 0, weight: .regular, face: .sans, name: "reading"),
         Expected(rung: .body, generated: JunoGeneratedType.body, size: 15, lineHeight: 1.6, tracking: 0, weight: .regular, face: .sans, name: "body"),
         Expected(rung: .prose, generated: JunoGeneratedType.reading, size: 16, lineHeight: 1.7, tracking: 0, weight: .regular, face: .sans, name: "prose"),
-        Expected(rung: .ui, generated: JunoGeneratedType.ui, size: 13, lineHeight: 1.5, tracking: 0, weight: .regular, face: .sans, name: "ui"),
+        Expected(rung: .ui, generated: JunoGeneratedType.ui, size: 13.5, lineHeight: 20.0 / 13.5, tracking: 0, weight: .regular, face: .sans, name: "ui"),
         Expected(rung: .label, generated: JunoGeneratedType.label, size: 12, lineHeight: 1.4, tracking: 0.01, weight: .medium, face: .sans, name: "label"),
         Expected(rung: .caption, generated: JunoGeneratedType.caption, size: 12, lineHeight: 1.4, tracking: 0, weight: .regular, face: .sans, name: "caption"),
         Expected(rung: .micro, generated: JunoGeneratedType.micro, size: 12, lineHeight: 1.4, tracking: 0, weight: .regular, face: .mono, name: "micro"),
