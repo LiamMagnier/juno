@@ -1,4 +1,5 @@
-// Vendored into the Alevr env server from native/desktop-electron/src/providers/acp/schema.ts.
+// Vendored into the Alevr env server from the retired Electron desktop app
+// (native/desktop-electron/src/providers/acp/schema.ts, removed 2026-11); this copy is now the source.
 // Change: NewSessionParams also accepts ACP HTTP MCP servers (mcpCapabilities.http).
 /**
  * Agent Client Protocol — wire schemas.

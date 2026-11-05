@@ -28,11 +28,11 @@ const SHEET_TITLE = {
 };
 const PASS = process.env.PASS_LABEL || "Alevr Orbit · agent characters · pass 1";
 const HERE_REPO = path.resolve(here, "../../..");
-const NEWSREADER = path.join(HERE_REPO, "native/desktop-electron/src/renderer/public/fonts/Newsreader-Variable.woff2");
+const NEWSREADER = path.join(HERE_REPO, "public/fonts/newsreader-regular.ttf");
 const f = (p) => "file://" + path.resolve(p);
 const FONT = `Inter, "SF Pro Text", -apple-system, system-ui, sans-serif`;
 const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=block" rel="stylesheet">
-<style>@font-face{font-family:"Newsreader";src:url("${"file://" + NEWSREADER}") format("woff2");font-weight:200 800;font-display:block}</style>`;
+<style>@font-face{font-family:"Newsreader";src:url("${"file://" + NEWSREADER}") format("truetype");font-weight:400;font-display:block}</style>`;
 
 function page(theme, w, body, extra = "") {
   const t = THEMES[theme];

@@ -50,16 +50,6 @@ runner/env-server/node_modules
 runner/env-server/dist
 runner/agent-core/dist
 
-# Juno Desktop (Electron). Self-contained sub-workspace with its own lockfile,
-# built in CI. `out/` is electron-vite's bundle output; `dist/` is the packaged
-# .app/.dmg. The generated design tokens under src/renderer/styles ARE tracked,
-# because the drift gate byte-compares them.
-native/desktop-electron/node_modules
-native/desktop-electron/out
-native/desktop-electron/dist
-native/desktop-electron/coverage
-native/desktop-electron/test-results
-native/desktop-electron/playwright-report
 
 # Release artifacts: the build products themselves are large binaries and are
 # reproducible from a tagged commit. The delivery documentation and the current

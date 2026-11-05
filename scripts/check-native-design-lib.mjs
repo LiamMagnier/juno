@@ -34,7 +34,7 @@ import { loadEnforce, matchesAny } from "../eslint-rules/enforce.mjs";
 
 const root = process.cwd();
 
-/** Every tree that ships Swift to a user. `desktop-electron` is TypeScript. */
+/** Every tree that ships Swift to a user. */
 const SWIFT_ROOTS = [
   "native/Packages",
   "native/macOS",

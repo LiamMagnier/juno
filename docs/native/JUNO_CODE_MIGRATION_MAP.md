@@ -14,7 +14,7 @@ exists, not on the historical audit material in `docs/native/archive/`.
 | Native relay client | `JunoNativeKit/Sources/JunoCodeKit` | Authenticated backend client, ordered event outbox, SSE reading | Replace string kinds incrementally with adapters to the Core protocol. |
 | Server relay | `src/app/api/code`, `src/lib/code-remote-sessions.ts`, Prisma models | Device ownership, idempotent commands, session cache, event persistence/SSE | Negotiate protocol versions and preserve the Core envelope's IDs and sequence rules. |
 | TypeScript runtime | `runner/agent-core` | Provider adapters, agent loop, sandbox tools, session persistence, subagents | Reuse through a signed host process; do not duplicate it in SwiftUI. |
-| Electron host | `native/desktop-electron/src/agent-host` | Typed Zod IPC, multiplexing, request correlation, approval replay handling, shutdown/reaping | Reuse its host protocol/lifecycle concepts, not Electron as the flagship desktop UI. |
+| Electron host | `native/desktop-electron/src/agent-host` (removed 2026-11; still readable in git history) | Typed Zod IPC, multiplexing, request correlation, approval replay handling, shutdown/reaping | Reuse its host protocol/lifecycle concepts, not Electron as the flagship desktop UI. |
 | macOS GUI | `native/macOS/JunoDesktop` | Composition root and Code/Remote presentation | Become a `JunoCodeHosting` client; preserve its current local capability ownership during extraction. |
 | iOS GUI | `native/iOS/JunoMobile` | Remote orchestration presentation | Remain relay-only: no local filesystem, shell, or credential authority. |
 
