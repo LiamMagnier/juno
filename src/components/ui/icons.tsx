@@ -2,13 +2,12 @@
  * Alevr's icon set. The ONLY module in the web app that call sites import a
  * glyph from: every component, page, menu and dialog draws its icons here.
  *
- * ONE PROFESSIONAL FAMILY (owner, 5 Nov 2026: "the icons still look ugly,
- * rework it from the ground"). Every glyph is drawn by Phosphor, one family
- * of 1,500 glyphs on one 256 unit grid with one set of curves, caps and
- * corner radii, so a menu, the composer and the sidebar read as one hand.
- * The house V3 drawings (`juno-icons/`) stay for the dev galleries and the
- * native generator; product surfaces no longer paint them. Third-party BRAND
- * marks (provider and connector logos) are their own assets.
+ * DRAWN IN HOUSE (owner, 6 Nov 2026: "draw them the best way possible with
+ * motion design"). Every glyph is an Alevr Line drawing (alevr-glyphs.ts):
+ * one 24 unit grid, one round line whose width is set per rendered size, the
+ * same 3 unit corner as the menus. No stock library is painted on a product
+ * surface. The older V3 drawings (`juno-icons/`) stay for the dev galleries
+ * and the native generator. Third-party BRAND marks are their own assets.
  *
  * NAMES ARE STABLE. The exports keep the spellings the codebase already used
  * (`ChevronDown`, `Loader2`, `Settings`), so moving to the family touched this
@@ -16,245 +15,23 @@
  * concept's drawing is a one-line change here and reaches every surface.
  *
  * OPTICAL SIZE comes from the size a call site asks for (`size-4`, `size`):
- * 14 px and under paint the bold cut, larger glyphs the thin regular cut
- * (`weightFor`).
+ * `lineFor` keeps the line near 1.4 px at 16 and 1.5 px at 20.
  *
- * MOTION IS OPT-IN (G46, INTERACTION_SPEC I-7). A glyph plays its hover
- * gesture only inside a control marked `data-jicon-articulate` (or inside a
- * `data-jicon-articulate="within"` region), only under a fine pointer, never
- * on keyboard focus, and only for destinations: the sidebar's New chat and
- * destination rows, the product switch, an empty state's actions. Lists,
- * menus, the composer and the message actions stay still
- * (juno-icons/icons.css). An icon-only button marked `.jicon-trigger` gets
- * the press dip (0.97, 70 ms). The old per-glyph `motion` prop is accepted
- * and ignored.
+ * MOTION. Each drawing names one hover gesture (`data-m`): a chevron leans
+ * the way it points, the gear turns a tooth, the bin lifts its lid, a check
+ * draws itself. It plays while the control around the glyph is hovered by a
+ * fine pointer, never on keyboard focus, and is off under reduced motion
+ * (signature.css §6). The old per-glyph `motion` prop is accepted and ignored.
  *
  * STATE. `weight="fill"`, `fill="currentColor"` or a `fill-*` class ask for the
  * "on" drawing (a pinned pin, a filled square); a drawing without one stays
  * outlined rather than borrowing another state.
  *
- * Server-component safe: the drawings come from Phosphor's SSR entry, which
- * reads no context and has no hooks.
+ * Server-component safe: the drawings are static markup, no context, no hooks.
  */
 import type { ComponentPropsWithoutRef, JSX, Ref } from "react";
 
-import {
-  AlignBottom as PhAlignBottom,
-  AlignCenterHorizontal as PhAlignCenterHorizontal,
-  AlignCenterVertical as PhAlignCenterVertical,
-  AlignLeft as PhAlignLeft,
-  AlignRight as PhAlignRight,
-  AlignTop as PhAlignTop,
-  Archive as PhArchive,
-  ArrowCircleUp as PhArrowCircleUp,
-  ArrowCounterClockwise as PhArrowCounterClockwise,
-  ArrowDown as PhArrowDown,
-  ArrowElbowDownRight as PhArrowElbowDownRight,
-  ArrowLeft as PhArrowLeft,
-  ArrowLineDown as PhArrowLineDown,
-  ArrowLineUp as PhArrowLineUp,
-  ArrowRight as PhArrowRight,
-  ArrowSquareOut as PhArrowSquareOut,
-  ArrowUUpLeft as PhArrowUUpLeft,
-  ArrowUUpRight as PhArrowUUpRight,
-  ArrowUp as PhArrowUp,
-  ArrowUpRight as PhArrowUpRight,
-  ArrowsClockwise as PhArrowsClockwise,
-  ArrowsHorizontal as PhArrowsHorizontal,
-  ArrowsIn as PhArrowsIn,
-  ArrowsInLineVertical as PhArrowsInLineVertical,
-  ArrowsOut as PhArrowsOut,
-  ArrowsOutLineVertical as PhArrowsOutLineVertical,
-  ArrowsVertical as PhArrowsVertical,
-  At as PhAt,
-  Bell as PhBell,
-  Binoculars as PhBinoculars,
-  BookOpen as PhBookOpen,
-  BookmarkSimple as PhBookmarkSimple,
-  Books as PhBooks,
-  BracketsCurly as PhBracketsCurly,
-  Brain as PhBrain,
-  Briefcase as PhBriefcase,
-  Broadcast as PhBroadcast,
-  Calculator as PhCalculator,
-  CalendarDots as PhCalendarDots,
-  Camera as PhCamera,
-  CaretDown as PhCaretDown,
-  CaretLeft as PhCaretLeft,
-  CaretRight as PhCaretRight,
-  CaretUp as PhCaretUp,
-  CaretUpDown as PhCaretUpDown,
-  ChatCenteredText as PhChatCenteredText,
-  ChatCircle as PhChatCircle,
-  ChatsCircle as PhChatsCircle,
-  Check as PhCheck,
-  CheckCircle as PhCheckCircle,
-  Checks as PhChecks,
-  Circle as PhCircle,
-  CircleDashed as PhCircleDashed,
-  CircleNotch as PhCircleNotch,
-  Clock as PhClock,
-  ClockCounterClockwise as PhClockCounterClockwise,
-  Cloud as PhCloud,
-  CloudArrowUp as PhCloudArrowUp,
-  Code as PhCode,
-  Coins as PhCoins,
-  Columns as PhColumns,
-  Confetti as PhConfetti,
-  Copy as PhCopy,
-  Cpu as PhCpu,
-  CreditCard as PhCreditCard,
-  Crop as PhCrop,
-  Crosshair as PhCrosshair,
-  Cube as PhCube,
-  Cursor as PhCursor,
-  Database as PhDatabase,
-  DeviceMobile as PhDeviceMobile,
-  DeviceTablet as PhDeviceTablet,
-  DotsSixVertical as PhDotsSixVertical,
-  DotsThree as PhDotsThree,
-  DownloadSimple as PhDownloadSimple,
-  Envelope as PhEnvelope,
-  EnvelopeSimple as PhEnvelopeSimple,
-  Eraser as PhEraser,
-  Export as PhExport,
-  Eye as PhEye,
-  EyeSlash as PhEyeSlash,
-  FileArrowUp as PhFileArrowUp,
-  FileCode as PhFileCode,
-  FileMagnifyingGlass as PhFileMagnifyingGlass,
-  FilePlus as PhFilePlus,
-  FileText as PhFileText,
-  FileXls as PhFileXls,
-  FilmStrip as PhFilmStrip,
-  Fingerprint as PhFingerprint,
-  Fire as PhFire,
-  FloppyDisk as PhFloppyDisk,
-  FlowArrow as PhFlowArrow,
-  Folder as PhFolder,
-  FolderOpen as PhFolderOpen,
-  FolderSimple as PhFolderSimple,
-  FolderSimpleDashed as PhFolderSimpleDashed,
-  FolderSimpleLock as PhFolderSimpleLock,
-  FrameCorners as PhFrameCorners,
-  GearSix as PhGearSix,
-  GitBranch as PhGitBranch,
-  GitDiff as PhGitDiff,
-  GitFork as PhGitFork,
-  GitPullRequest as PhGitPullRequest,
-  Globe as PhGlobe,
-  GraduationCap as PhGraduationCap,
-  HandPalm as PhHandPalm,
-  Image as PhImage,
-  ImageBroken as PhImageBroken,
-  ImageSquare as PhImageSquare,
-  Info as PhInfo,
-  Kanban as PhKanban,
-  Key as PhKey,
-  KeyReturn as PhKeyReturn,
-  Keyboard as PhKeyboard,
-  Laptop as PhLaptop,
-  Layout as PhLayout,
-  Lightning as PhLightning,
-  LineSegment as PhLineSegment,
-  Link as PhLink,
-  LinkBreak as PhLinkBreak,
-  List as PhList,
-  ListBullets as PhListBullets,
-  ListChecks as PhListChecks,
-  ListDashes as PhListDashes,
-  ListPlus as PhListPlus,
-  Lock as PhLock,
-  LockOpen as PhLockOpen,
-  MagnifyingGlass as PhMagnifyingGlass,
-  MagnifyingGlassMinus as PhMagnifyingGlassMinus,
-  MapTrifold as PhMapTrifold,
-  Megaphone as PhMegaphone,
-  Microphone as PhMicrophone,
-  MicrophoneSlash as PhMicrophoneSlash,
-  Minus as PhMinus,
-  Monitor as PhMonitor,
-  MonitorPlay as PhMonitorPlay,
-  Moon as PhMoon,
-  MusicNotes as PhMusicNotes,
-  NotePencil as PhNotePencil,
-  Notebook as PhNotebook,
-  Package as PhPackage,
-  PaperPlaneTilt as PhPaperPlaneTilt,
-  Paperclip as PhPaperclip,
-  Pause as PhPause,
-  PauseCircle as PhPauseCircle,
-  PenNib as PhPenNib,
-  PencilSimple as PhPencilSimple,
-  PencilSimpleLine as PhPencilSimpleLine,
-  PhoneDisconnect as PhPhoneDisconnect,
-  Planet as PhPlanet,
-  Play as PhPlay,
-  PlayCircle as PhPlayCircle,
-  Plug as PhPlug,
-  Plus as PhPlus,
-  Presentation as PhPresentation,
-  Printer as PhPrinter,
-  Prohibit as PhProhibit,
-  Pulse as PhPulse,
-  PushPin as PhPushPin,
-  PushPinSlash as PhPushPinSlash,
-  Question as PhQuestion,
-  Quotes as PhQuotes,
-  Receipt as PhReceipt,
-  Repeat as PhRepeat,
-  Robot as PhRobot,
-  Screencast as PhScreencast,
-  Scroll as PhScroll,
-  SealCheck as PhSealCheck,
-  Selection as PhSelection,
-  SelectionAll as PhSelectionAll,
-  SelectionBackground as PhSelectionBackground,
-  SelectionPlus as PhSelectionPlus,
-  Shapes as PhShapes,
-  ShieldCheck as PhShieldCheck,
-  ShieldSlash as PhShieldSlash,
-  ShieldWarning as PhShieldWarning,
-  SidebarSimple as PhSidebarSimple,
-  Sigma as PhSigma,
-  SignOut as PhSignOut,
-  SkipBack as PhSkipBack,
-  SlidersHorizontal as PhSlidersHorizontal,
-  Sparkle as PhSparkle,
-  SpeakerHigh as PhSpeakerHigh,
-  Square as PhSquare,
-  SquaresFour as PhSquaresFour,
-  Stack as PhStack,
-  StackSimple as PhStackSimple,
-  Star as PhStar,
-  Stop as PhStop,
-  StopCircle as PhStopCircle,
-  Sun as PhSun,
-  Table as PhTable,
-  Target as PhTarget,
-  TerminalWindow as PhTerminalWindow,
-  TextAlignLeft as PhTextAlignLeft,
-  TextT as PhTextT,
-  ThumbsDown as PhThumbsDown,
-  ThumbsUp as PhThumbsUp,
-  Timer as PhTimer,
-  Trash as PhTrash,
-  Tray as PhTray,
-  UploadSimple as PhUploadSimple,
-  User as PhUser,
-  UserGear as PhUserGear,
-  Users as PhUsers,
-  UsersThree as PhUsersThree,
-  VideoCamera as PhVideoCamera,
-  Warning as PhWarning,
-  WarningCircle as PhWarningCircle,
-  Waveform as PhWaveform,
-  WifiSlash as PhWifiSlash,
-  Wrench as PhWrench,
-  X as PhX,
-  XCircle as PhXCircle,
-} from "@phosphor-icons/react/dist/ssr";
-import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
+import { DISPLAY_OVERRIDES, GLYPHS, type Glyph } from "@/components/ui/alevr-glyphs";
 import { cn } from "@/lib/utils";
 
 /** Kept for call sites written against the previous set; the family has one weight and an "on" drawing. */
@@ -307,262 +84,20 @@ function numeric(value: number | string | undefined): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** Which drawing each export shows. Changing a concept's drawing is a one-line change here. */
-const DRAWING: Record<string, PhosphorIcon> = {
-  JunoChat: PhChatCircle,
-  JunoCode: PhCode,
-  JunoDesign: PhPenNib,
-  JunoLibrary: PhBooks,
-  JunoAgents: PhUsersThree,
-  JunoOrbit: PhPlanet,
-  CallMic: PhMicrophone,
-  CallMicOff: PhMicrophoneSlash,
-  CallSettings: PhSlidersHorizontal,
-  CallStop: PhStop,
-  CallEnd: PhPhoneDisconnect,
-  ChevronDown: PhCaretDown,
-  ChevronUp: PhCaretUp,
-  ChevronLeft: PhCaretLeft,
-  ChevronRight: PhCaretRight,
-  ChevronsUpDown: PhCaretUpDown,
-  ArrowLeft: PhArrowLeft,
-  ArrowRight: PhArrowRight,
-  ArrowUp: PhArrowUp,
-  ArrowDown: PhArrowDown,
-  AtSign: PhAt,
-  CornerDownLeft: PhKeyReturn,
-  ArrowUpRight: PhArrowUpRight,
-  ArrowUpToLine: PhArrowLineUp,
-  ArrowDownToLine: PhArrowLineDown,
-  CornerDownRight: PhArrowElbowDownRight,
-  ExternalLink: PhArrowSquareOut,
-  LogOut: PhSignOut,
-  Undo2: PhArrowUUpLeft,
-  Redo2: PhArrowUUpRight,
-  RefreshCw: PhArrowsClockwise,
-  RotateCcw: PhArrowCounterClockwise,
-  Repeat: PhRepeat,
-  History: PhClockCounterClockwise,
-  Maximize2: PhArrowsOut,
-  Minimize2: PhArrowsIn,
-  UnfoldVertical: PhArrowsOutLineVertical,
-  FoldVertical: PhArrowsInLineVertical,
-  WrapText: PhTextAlignLeft,
-  Menu: PhList,
-  MoreHorizontal: PhDotsThree,
-  GripVertical: PhDotsSixVertical,
-  PanelLeft: PhSidebarSimple,
-  PanelLeftOpen: PhSidebarSimple,
-  PanelLeftClose: PhSidebarSimple,
-  SidebarOpen: PhSidebarSimple,
-  SidebarClose: PhSidebarSimple,
-  PanelRightOpen: PhSidebarSimple,
-  PanelRightClose: PhSidebarSimple,
-  Plus: PhPlus,
-  Minus: PhMinus,
-  X: PhX,
-  Check: PhCheck,
-  Copy: PhCopy,
-  Trash2: PhTrash,
-  Archive: PhArchive,
-  ArchiveRestore: PhArrowCounterClockwise,
-  Download: PhDownloadSimple,
-  Upload: PhUploadSimple,
-  UploadCloud: PhCloudArrowUp,
-  FileUp: PhFileArrowUp,
-  Save: PhFloppyDisk,
-  Send: PhPaperPlaneTilt,
-  Share2: PhExport,
-  Printer: PhPrinter,
-  Search: PhMagnifyingGlass,
-  SearchX: PhMagnifyingGlassMinus,
-  TextSearch: PhFileMagnifyingGlass,
-  FileSearch: PhFileMagnifyingGlass,
-  Pencil: PhPencilSimple,
-  Edit3: PhPencilSimpleLine,
-  SquarePen: PhNotePencil,
-  NotebookPen: PhNotebook,
-  PenTool: PhPenNib,
-  Eraser: PhEraser,
-  Pin: PhPushPin,
-  PinOff: PhPushPinSlash,
-  Star: PhStar,
-  BookmarkPlus: PhBookmarkSimple,
-  ThumbsUp: PhThumbsUp,
-  ThumbsDown: PhThumbsDown,
-  Link2: PhLink,
-  Link2Off: PhLinkBreak,
-  Crop: PhCrop,
-  Scan: PhSelection,
-  ListPlus: PhListPlus,
-  ListMinus: PhListDashes,
-  ArrowUpCircle: PhArrowCircleUp,
-  Play: PhPlay,
-  PlayCircle: PhPlayCircle,
-  Pause: PhPause,
-  PauseCircle: PhPauseCircle,
-  StopCircle: PhStopCircle,
-  Square: PhSquare,
-  SkipBack: PhSkipBack,
-  Mic: PhMicrophone,
-  MicOff: PhMicrophoneSlash,
-  AudioLines: PhWaveform,
-  Volume2: PhSpeakerHigh,
-  PhoneOff: PhPhoneDisconnect,
-  Radio: PhBroadcast,
-  Video: PhVideoCamera,
-  Film: PhFilmStrip,
-  Camera: PhCamera,
-  Music2: PhMusicNotes,
-  Image: PhImage,
-  ImagePlus: PhImageSquare,
-  ImageOff: PhImageBroken,
-  MonitorUp: PhScreencast,
-  MonitorX: PhMonitorPlay,
-  MessageCircle: PhChatCircle,
-  MessageCircleQuestion: PhQuestion,
-  MessageSquare: PhChatCenteredText,
-  MessageSquareText: PhChatCenteredText,
-  MessageSquarePlus: PhNotePencil,
-  MessagesSquare: PhChatsCircle,
-  TextQuote: PhQuotes,
-  Folder: PhFolder,
-  FolderClosed: PhFolder,
-  FolderOpen: PhFolderOpen,
-  FolderCode: PhFolderSimple,
-  FolderInput: PhFolderSimpleDashed,
-  FolderLock: PhFolderSimpleLock,
-  FolderKanban: PhKanban,
-  FileText: PhFileText,
-  FilePlus: PhFilePlus,
-  Calculator: PhCalculator,
-  FileCode: PhFileCode,
-  FileCode2: PhFileCode,
-  FileSpreadsheet: PhFileXls,
-  Paperclip: PhPaperclip,
-  Inbox: PhTray,
-  Bell: PhBell,
-  Mail: PhEnvelope,
-  MailWarning: PhEnvelopeSimple,
-  BookOpen: PhBookOpen,
-  ScrollText: PhScroll,
-  ReceiptText: PhReceipt,
-  Layers: PhStack,
-  Layers3: PhStackSimple,
-  Boxes: PhPackage,
-  Component: PhCube,
-  Shapes: PhShapes,
-  Frame: PhFrameCorners,
-  Group: PhSelectionAll,
-  SquareDashed: PhSelectionBackground,
-  SquareDashedMousePointer: PhSelectionPlus,
-  MousePointer2: PhCursor,
-  Crosshair: PhCrosshair,
-  Hand: PhHandPalm,
-  Type: PhTextT,
-  LayoutGrid: PhSquaresFour,
-  LayoutTemplate: PhLayout,
-  Columns2: PhColumns,
-  List: PhListBullets,
-  ListChecks: PhListChecks,
-  ListTodo: PhChecks,
-  Table: PhTable,
-  Table2: PhTable,
-  Presentation: PhPresentation,
-  Map: PhMapTrifold,
-  Globe: PhGlobe,
-  Cloud: PhCloud,
-  Database: PhDatabase,
-  Cpu: PhCpu,
-  Cube: PhCube,
-  Monitor: PhMonitor,
-  Laptop: PhLaptop,
-  Smartphone: PhDeviceMobile,
-  Tablet: PhDeviceTablet,
-  Keyboard: PhKeyboard,
-  Terminal: PhTerminalWindow,
-  Code2: PhCode,
-  Braces: PhBracketsCurly,
-  GitBranch: PhGitBranch,
-  GitFork: PhGitFork,
-  GitCompare: PhGitDiff,
-  GitPullRequest: PhGitPullRequest,
-  GitPullRequestDraft: PhGitPullRequest,
-  Plug: PhPlug,
-  Wrench: PhWrench,
-  Settings: PhGearSix,
-  Settings2: PhSlidersHorizontal,
-  SlidersHorizontal: PhSlidersHorizontal,
-  Workflow: PhFlowArrow,
-  Bot: PhRobot,
-  Brain: PhBrain,
-  Telescope: PhBinoculars,
-  Sparkles: PhSparkle,
-  Zap: PhLightning,
-  Flame: PhFire,
-  PartyPopper: PhConfetti,
-  Megaphone: PhMegaphone,
-  GraduationCap: PhGraduationCap,
-  BriefcaseBusiness: PhBriefcase,
-  Target: PhTarget,
-  Coins: PhCoins,
-  CreditCard: PhCreditCard,
-  Sigma: PhSigma,
-  Slash: PhLineSegment,
-  Activity: PhPulse,
-  Timer: PhTimer,
-  Clock: PhClock,
-  CalendarClock: PhCalendarDots,
-  User: PhUser,
-  Users: PhUsers,
-  UserPen: PhUserGear,
-  KeyRound: PhKey,
-  Fingerprint: PhFingerprint,
-  Lock: PhLock,
-  LockOpen: PhLockOpen,
-  ShieldCheck: PhShieldCheck,
-  ShieldAlert: PhShieldWarning,
-  ShieldOff: PhShieldSlash,
-  Eye: PhEye,
-  EyeOff: PhEyeSlash,
-  Sun: PhSun,
-  Moon: PhMoon,
-  Loader2: PhCircleNotch,
-  Circle: PhCircle,
-  CircleDashed: PhCircleDashed,
-  CheckCircle2: PhCheckCircle,
-  XCircle: PhXCircle,
-  AlertCircle: PhWarningCircle,
-  AlertTriangle: PhWarning,
-  TriangleAlert: PhWarning,
-  Info: PhInfo,
-  HelpCircle: PhQuestion,
-  BadgeCheck: PhSealCheck,
-  Ban: PhProhibit,
-  CircleSlash: PhProhibit,
-  WifiOff: PhWifiSlash,
-  AlignStartHorizontal: PhAlignTop,
-  AlignCenterHorizontal: PhAlignCenterVertical,
-  AlignEndHorizontal: PhAlignBottom,
-  AlignStartVertical: PhAlignLeft,
-  AlignCenterVertical: PhAlignCenterHorizontal,
-  AlignEndVertical: PhAlignRight,
-  AlignHorizontalDistributeCenter: PhArrowsHorizontal,
-  AlignVerticalDistributeCenter: PhArrowsVertical,
-};
-
 /**
- * A thin, precise line (owner, 6 Nov 2026; reference picked: Claude.ai):
- * the regular cut from 16 px up (1 px at 16, 1.25 at 20), so the glyph sits a
- * step quieter than its label; the bold cut only at 14 px and under, where a
- * 0.9 px line would break up on a 1x screen.
+ * The line a glyph paints, in device-independent pixels, per rendered size:
+ * crisp at 14 and 16 (1.25, 1.4), the house 1.5 from 18, then growing with the
+ * box so a 32 px empty-state glyph is not a hairline.
  */
-function weightFor(px: number): "regular" | "bold" {
-  return px <= 14 ? "bold" : "regular";
+function lineFor(px: number): number {
+  const target = px <= 14 ? 1.25 : px <= 17 ? 1.4 : px <= 22 ? 1.5 : px * 0.068;
+  return Math.round(((target * 24) / px) * 1000) / 1000;
 }
 
-function glyph(_concept: string, displayName: string): IconComponent {
-  const Drawing = DRAWING[displayName];
+function glyph(concept: string, displayName: string): IconComponent {
+  const drawing: Glyph | undefined = DISPLAY_OVERRIDES[displayName] ?? GLYPHS[concept];
+  if (!drawing && process.env.NODE_ENV !== "production") throw new Error(`No Alevr drawing for ${concept}`);
+  const g: Glyph = drawing ?? { b: "" };
   function AlevrGlyph({
     ref,
     className,
@@ -574,23 +109,35 @@ function glyph(_concept: string, displayName: string): IconComponent {
     motion: _motion,
     mirrored,
     alt,
+    style,
     ...rest
   }: IconProps) {
     const labelled = rest["aria-label"] != null || rest["aria-labelledby"] != null || alt != null;
     const on = weight === "fill" || (fill != null && fill !== "none" && fill !== "transparent") || (className != null && FILLED.test(className));
     const px = classSize(className) ?? numeric(size) ?? 24;
+    const markup = on && g.on ? g.on : g.b;
     return (
-      <Drawing
+      <svg
         ref={ref}
-        size={px}
-        weight={on ? "fill" : weightFor(px)}
-        mirrored={mirrored}
-        className={cn("icon", className)}
+        xmlns="http://www.w3.org/2000/svg"
+        width={px}
+        height={px}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={lineFor(px)}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={cn("icon ag", className)}
+        style={mirrored ? { transform: "scaleX(-1)", ...style } : style}
         data-glyph={displayName}
+        data-m={g.m}
+        data-on={on && g.on ? "" : undefined}
         {...rest}
         role={labelled ? "img" : undefined}
         aria-hidden={labelled ? undefined : true}
         aria-label={rest["aria-label"] ?? alt}
+        dangerouslySetInnerHTML={{ __html: markup }}
       />
     );
   }

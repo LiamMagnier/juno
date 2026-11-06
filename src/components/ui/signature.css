@@ -100,53 +100,132 @@
 
 /* ── 2. (Glass on floating layers was removed 6 Nov 2026: menus are solid, see 4.) */
 
-/* ── 3. Spring motion ────────────────────────────────────────────────────── */
-
-/* Menus and popovers settle on the snap spring (critically damped: no
-   overshoot on a menu that merely opened) and leave on the fast rung. */
+/* ── 3. Motion: floating layers and the switch ─────────────────────────────
+   Menus and popovers arrive from their trigger on a strong ease-out (Emil
+   Kowalski's curve: fast start, long settle), 180ms, scale .96 plus 4px of
+   travel toward the trigger; they leave in 120ms on opacity and a .98 settle,
+   no travel, so a dismissed menu does not seem to go anywhere. Dialogs are
+   bigger, so they take 240ms and stay centred. */
+:root {
+  --alv-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --alv-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
 .data-\[state\=open\]\:animate-pop-in[data-state="open"] {
-  animation: pop-in var(--spring-snap-dur, 256ms) var(--spring-snap, var(--ease-out-expo)) both;
+  animation: pop-in 180ms var(--alv-ease-out) both;
+}
+.data-\[state\=closed\]\:animate-pop-out[data-state="closed"] {
+  animation: alv-pop-out 120ms var(--ease-out-soft) both;
 }
 .cmenu.cmenu.cmenu[data-state="open"] {
-  animation: cmenu-in var(--spring-snap-dur, 256ms) var(--spring-snap, var(--ease-out-expo)) both;
+  animation: cmenu-in 180ms var(--alv-ease-out) both;
 }
-/* Dialogs arrive on the standard spring, a touch slower than a menu because
-   they are bigger, and exit on the exit rung. */
 .data-\[state\=open\]\:animate-modal-in[data-state="open"] {
-  animation: pop-in var(--spring-standard-dur, 272ms) var(--spring-standard, var(--ease-out-expo)) both;
+  animation: pop-in 240ms var(--alv-ease-out) both;
+}
+@keyframes alv-pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
 }
 
-/* The switch: on is the foreground ink with a thumb in the page's ground,
-   the quiet Claude.ai form (owner, 6 Nov 2026), and the thumb lands with the
-   reward spring's 1% settle, the one place a control earns a hint of bounce
-   (a toggle is a commit). */
+/* The switch: on is the foreground ink with a thumb in the page's ground (the
+   quiet form, owner 6 Nov 2026). The thumb travels on the reward spring and
+   stretches 3px while pressed, the way a real toggle gives under a thumb
+   before it flips; it lands round again. */
 button[role="switch"][data-state="checked"] {
   background-color: hsl(var(--foreground));
   border-color: hsl(var(--foreground));
 }
 button[role="switch"] > span {
-  transition: transform var(--spring-reward-dur, 320ms) var(--spring-reward, var(--ease-out-soft));
+  transition: transform var(--spring-reward-dur, 320ms) var(--spring-reward, var(--alv-ease-out));
+}
+button[role="switch"] > span > span {
+  transition:
+    background-color 160ms var(--ease-out-soft),
+    width 160ms var(--alv-ease-out),
+    margin 160ms var(--alv-ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  button[role="switch"]:active > span > span {
+    width: 19px;
+  }
+  button[role="switch"][data-state="checked"]:active > span > span {
+    margin-left: -3px;
+  }
 }
 button[role="switch"][data-state="checked"] > span > span,
 .dark button[role="switch"][role="switch"][data-state="checked"][data-state="checked"] > span > span {
   background-color: hsl(var(--background));
 }
 
-/* ── 4. Menus, from zero (owner, 6 Nov 2026: "even more AI slop"; reference
-   picked by the owner: Claude.ai) ───────────────────────────────────────────
-   A solid, warm-neutral sheet with a fine edge and a short soft throw; compact
-   32px rows at 14px; a 16px glyph in a thin precise line, a step quieter than
-   the label; the hover a faint warm wash, never a colour. No glass, no
-   blue-filled selection. Destructive rows keep red ink over a red wash. */
+/* ── 4. Menus (owner, 6 Nov 2026: "rework the design completely of all the
+   menus") ────────────────────────────────────────────────────────────────────
+   One sheet for every floating list: the kebab menus, the account menu, the
+   composer's menus and their flyouts are all `.cmenu` now, so they share the
+   glide (one highlight that slides from row to row under the pointer and
+   jumps under the arrow keys), the entrance, and these numbers:
+
+     sheet  16px corners, 6px inset, a hairline, a lit top edge and a two
+            step shadow: a tight contact shadow and a long soft throw
+     rows   34px (44 on touch), 10px corners (16 − 6, concentric), 14px type,
+            an 18px glyph in the second ink that comes up to the label's ink
+            and plays its gesture when the row is under the pointer
+     wash   a neutral 6% of the ink, never a colour; red for destructive  */
+
+.cmenu.cmenu.cmenu {
+  --cm-radius: 16px;
+  --cm-pad: 6px;
+  border-radius: 16px;
+  border: 1px solid hsl(30 8% 14% / 0.09);
+  background-color: hsl(var(--popover));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.75),
+    0 1px 2px hsl(30 10% 10% / 0.05),
+    0 4px 8px -2px hsl(30 10% 10% / 0.04),
+    0 16px 40px -12px hsl(30 10% 10% / 0.18);
+}
+.dark .cmenu.cmenu.cmenu {
+  border-color: hsl(40 10% 96% / 0.08);
+  background-color: hsl(var(--popover));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.06),
+    0 1px 2px hsl(0 0% 0% / 0.3),
+    0 18px 44px -10px hsl(0 0% 0% / 0.62);
+}
+/* Popovers that are not menus (the model card, the date picker, the hover
+   cards) take the same sheet so they read as the same material. */
+.z-popper.surface-float:not(.cmenu),
+.z-popper.overlay-glass:not(.cmenu) {
+  border-radius: 16px;
+  border: 1px solid hsl(30 8% 14% / 0.09);
+  background-color: hsl(var(--popover));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.75),
+    0 1px 2px hsl(30 10% 10% / 0.05),
+    0 16px 40px -12px hsl(30 10% 10% / 0.18);
+}
+.dark .z-popper.surface-float:not(.cmenu),
+.dark .z-popper.overlay-glass:not(.cmenu) {
+  border-color: hsl(40 10% 96% / 0.08);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.06),
+    0 18px 44px -10px hsl(0 0% 0% / 0.62);
+}
 
 .menu-item.menu-item,
 .cmenu.cmenu.cmenu [role^="menuitem"] {
-  min-height: 32px;
+  min-height: 34px;
   gap: 10px;
-  padding: 0 8px;
-  border-radius: 8px;
+  padding: 0 10px 0 8px;
+  border-radius: 10px;
   font-size: 14px;
   line-height: 20px;
+  letter-spacing: -0.003em;
 }
 @media (pointer: coarse) {
   .menu-item.menu-item,
@@ -154,77 +233,102 @@ button[role="switch"][data-state="checked"] > span > span,
     min-height: 44px;
   }
 }
+.cmenu.cmenu.cmenu [role^="menuitem"] > svg:first-child:not([class*="size-"]),
+.cmenu.cmenu.cmenu [role^="menuitem"] > span:first-child > svg:only-child:not([class*="size-"]) {
+  width: 18px;
+  height: 18px;
+}
 .menu-item.menu-item svg:not([class*="text-"]),
 .cmenu.cmenu.cmenu [role^="menuitem"] > svg:first-child,
 .cmenu.cmenu.cmenu [role^="menuitem"] > span:first-child > svg:only-child {
-  color: hsl(var(--foreground) / 0.62);
+  color: hsl(var(--foreground) / 0.56);
+  transition: color 120ms var(--ease-out-soft);
 }
 .menu-item.menu-item[data-highlighted] svg:not([class*="text-"]),
-.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] > svg:first-child {
-  color: hsl(var(--foreground) / 0.9);
+.menu-item.menu-item[data-state="open"] svg:not([class*="text-"]),
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] > svg:first-child,
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] > span:first-child > svg:only-child {
+  color: hsl(var(--foreground));
+  transition-duration: 0ms;
+}
+/* The trailing chevron of a row that opens a flyout. */
+.cmenu.cmenu.cmenu .menu-item__chevron {
+  color: hsl(var(--foreground) / 0.4);
 }
 
 .menu-item.menu-item[data-highlighted],
 .menu-item.menu-item[data-state="open"] {
-  background-color: hsl(30 8% 50% / 0.09);
+  background-color: hsl(30 8% 14% / 0.06);
   color: hsl(var(--foreground));
 }
 .dark .menu-item.menu-item[data-highlighted],
 .dark .menu-item.menu-item[data-state="open"] {
-  background-color: hsl(40 10% 92% / 0.07);
+  background-color: hsl(40 10% 96% / 0.075);
 }
 .menu-item.menu-item.danger-hover[data-highlighted] {
   background-color: hsl(var(--destructive) / 0.08);
   color: hsl(var(--destructive-ink, var(--destructive)));
 }
+/* Inside a gliding sheet the row draws no fill of its own; the glide is it. */
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted],
+.cmenu.cmenu.cmenu [role^="menuitem"]:focus {
+  background-color: transparent;
+}
+.cmenu.cmenu.cmenu [role^="menuitem"][data-state="open"]:not([data-highlighted]) {
+  background-color: hsl(30 8% 14% / 0.045);
+}
+.dark .cmenu.cmenu.cmenu [role^="menuitem"][data-state="open"]:not([data-highlighted]) {
+  background-color: hsl(40 10% 96% / 0.05);
+}
 .cmenu-glide.cmenu-glide {
-  border-radius: 8px;
-  background-color: hsl(30 8% 50% / 0.09);
+  border-radius: 10px;
+  background-color: hsl(30 8% 14% / 0.06);
+  transition:
+    transform 200ms var(--alv-ease-out),
+    width 200ms var(--alv-ease-out),
+    height 200ms var(--alv-ease-out),
+    opacity 120ms var(--ease-out-soft);
+}
+.cmenu-glide.cmenu-glide[data-instant="true"] {
+  transition: opacity 120ms var(--ease-out-soft);
 }
 .dark .cmenu-glide.cmenu-glide {
-  background-color: hsl(40 10% 92% / 0.07);
+  background-color: hsl(40 10% 96% / 0.075);
 }
 .cmenu-glide.cmenu-glide[data-destructive="true"] {
-  background-color: hsl(var(--destructive) / 0.08);
+  background-color: hsl(var(--destructive) / 0.09);
 }
 
-/* The sheet: solid popover ground, 14px corners (concentric with 8px rows
-   in the 6px inset), a fine edge and a short soft throw. */
-.z-popper.surface-float,
-.z-popper.overlay-glass,
-.cmenu.cmenu.cmenu {
-  border-radius: 14px;
-  border: 1px solid hsl(30 10% 20% / 0.1);
-  background-color: hsl(var(--popover));
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  box-shadow:
-    0 1px 1px hsl(30 10% 10% / 0.03),
-    0 6px 20px -4px hsl(30 10% 10% / 0.1);
-}
-.dark .z-popper.surface-float,
-.dark .z-popper.overlay-glass,
-.dark .cmenu.cmenu.cmenu {
-  border-color: hsl(40 10% 92% / 0.09);
-  box-shadow: 0 10px 30px -6px hsl(0 0% 0% / 0.55);
-}
-.cmenu.cmenu.cmenu {
-  --cm-radius: 14px;
-  --cm-pad: 6px;
+/* Section heads: the label rung in the second ink, set in from the row text. */
+.cmenu.cmenu.cmenu [role="group"] > [class*="menu-label"],
+.cmenu.cmenu.cmenu .cmenu-label {
+  padding: 8px 10px 4px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: hsl(var(--foreground) / 0.5);
 }
 
 /* Group breaks: a fine line inset to the row padding. */
 .cmenu.cmenu.cmenu [role="separator"] {
-  margin: 4px 8px;
-  background-color: hsl(30 10% 20% / 0.08);
+  height: 1px;
+  margin: 5px 10px;
+  background-color: hsl(30 8% 14% / 0.07);
 }
 [role="menu"] > [role="separator"] {
-  margin-inline: 8px;
-  background-color: hsl(30 10% 20% / 0.08);
+  margin-inline: 10px;
+  background-color: hsl(30 8% 14% / 0.07);
 }
 .dark .cmenu.cmenu.cmenu [role="separator"],
 .dark [role="menu"] > [role="separator"] {
-  background-color: hsl(40 10% 92% / 0.08);
+  background-color: hsl(40 10% 96% / 0.08);
+}
+
+/* A checked row's tick is the label's ink, never the accent, and draws
+   itself in when the row turns on. */
+.cmenu.cmenu.cmenu [role="menuitemcheckbox"][data-state="checked"] .gdraw,
+.cmenu.cmenu.cmenu [role="menuitemradio"][data-state="checked"] .gdraw {
+  animation: alv-draw 260ms var(--alv-ease-out) both;
 }
 
 /* ── 5. One interface voice ─────────────────────────────────────────────────
@@ -238,4 +342,107 @@ button[role="switch"][data-state="checked"] > span > span,
   line-height: 16px;
   font-weight: 500;
   letter-spacing: 0;
+}
+
+/* ── 6. The icons move (Alevr Line, alevr-glyphs.ts) ─────────────────────────
+   Each glyph names one gesture (`data-m`) and wraps the part that moves in
+   `.gm` / `.gm2`. The gesture plays while the control around it is under a
+   fine pointer: a chevron leans the way it points, a plus turns a quarter,
+   the gear turns one tooth, the bin lifts its lid, the copy sheet slides
+   forward, a check draws itself. Held gestures are transitions, so they ease
+   out in about 200ms and reverse from wherever they are when the pointer
+   leaves; the one-shots (spin, swing, wave, blink, pop, draw) are short
+   keyframes. Never on keyboard focus (hover only), never on touch, and off
+   under reduced motion: the glyph is the same drawing at rest. */
+.ag .gd,
+.ag .gf {
+  fill: currentColor;
+  stroke: none;
+}
+.ag .gdash {
+  stroke-dasharray: 2.25 2.75;
+}
+.ag .gdraw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+.ag .gm,
+.ag .gm2,
+.ag .gw {
+  transform-box: view-box;
+  transform-origin: 12px 12px;
+}
+
+@keyframes alv-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .ag .gm,
+  .ag .gm2 {
+    transition: transform 220ms var(--alv-ease-out);
+  }
+  .ag[data-m="spin"] .gm,
+  .ag[data-m="turn"] .gm,
+  .ag[data-m="ccw"] .gm,
+  .ag[data-m="cw"] .gm,
+  .ag[data-m="rot"] .gm {
+    transition-duration: 360ms;
+  }
+
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="r"] .gm { transform: translateX(1.5px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="l"] .gm { transform: translateX(-1.5px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="u"] .gm { transform: translateY(-1.5px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="d"] .gm { transform: translateY(1.5px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="ne"] .gm { transform: translate(1.25px, -1.25px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="rot"] .gm { transform: rotate(90deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="turn"] .gm { transform: rotate(45deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="spin"] .gm { transform: rotate(180deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="ccw"] .gm { transform: rotate(-120deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="cw"] .gm { transform: rotate(120deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="lid"] .gm { transform: translateY(-1.5px) rotate(-10deg); transform-origin: 5px 6.5px; }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="lift"] .gm { transform: translateY(-1.5px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shift"] .gm { transform: translate(-1px, -1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shift"] .gm2 { transform: translate(1px, 1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="tilt"] .gm { transform: rotate(-12deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="squeeze"] .gm { transform: translateY(1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="squeeze"] .gm2 { transform: translateY(-1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="grow"] .gm { transform: translate(1px, -1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="grow"] .gm2 { transform: translate(-1px, 1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shrink"] .gm { transform: translate(-1px, 1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shrink"] .gm2 { transform: translate(1px, -1px); }
+
+  /* One-shots. */
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="wiggle"] .gm { animation: alv-wiggle 420ms var(--alv-ease-out); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="swing"] .gm { animation: alv-swing 560ms var(--alv-ease-out); transform-origin: 12px 4px; }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="pop"] .gm { animation: alv-pop 320ms var(--alv-ease-out); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="pop"]:not(:has(.gm)) { animation: alv-pop 320ms var(--alv-ease-out); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="blink"] .gm { animation: alv-blink 300ms var(--alv-ease-in-out); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="wave"] .gw { animation: alv-wave 520ms var(--alv-ease-in-out) calc(var(--i) * 60ms); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="draw"] .gdraw { animation: alv-draw 300ms var(--alv-ease-out); }
+}
+
+@keyframes alv-wiggle {
+  0%, 100% { transform: rotate(0); }
+  30% { transform: rotate(-10deg); }
+  65% { transform: rotate(6deg); }
+}
+@keyframes alv-swing {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(14deg); }
+  45% { transform: rotate(-10deg); }
+  70% { transform: rotate(5deg); }
+}
+@keyframes alv-pop {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(1.14); }
+}
+@keyframes alv-blink {
+  0%, 100% { transform: scaleY(1); }
+  45% { transform: scaleY(0.1); }
+}
+@keyframes alv-wave {
+  0%, 100% { transform: scaleY(1); }
+  40% { transform: scaleY(0.55); }
 }

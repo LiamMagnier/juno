@@ -2,8 +2,7 @@
 
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { ChevronRight } from "@/components/ui/icons";
-import { StatusIcons } from "@/lib/app-icons";
+import { Check, ChevronRight } from "@/components/ui/icons";
 import {
   menuGlyphInkClass,
   menuLabelClass,
@@ -11,6 +10,7 @@ import {
   menuSeparatorClass,
   menuShellClass,
 } from "@/components/ui/menu-recipe";
+import { MenuGlide } from "@/components/chat/composer-menu";
 import { cn } from "@/lib/utils";
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
@@ -34,6 +34,8 @@ const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
  */
 const menuShell = cn(
   menuShellClass,
+  // Every dropdown is the composer's sheet (signature.css, section 4): one glide, one entrance.
+  "cmenu",
   "min-w-[11rem] overflow-y-auto overscroll-contain",
   "max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height,24rem))]",
 );
@@ -58,7 +60,7 @@ const menuIndicator =
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
->(({ className, sideOffset = 4, collisionPadding = 8, ...props }, ref) => (
+>(({ className, sideOffset = 4, collisionPadding = 8, children, ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.Content
       ref={ref}
@@ -66,7 +68,10 @@ const DropdownMenuContent = React.forwardRef<
       collisionPadding={collisionPadding}
       className={cn(menuShell, className)}
       {...props}
-    />
+    >
+      <MenuGlide />
+      {children}
+    </DropdownMenuPrimitive.Content>
   </DropdownMenuPrimitive.Portal>
 ));
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName;
@@ -98,14 +103,17 @@ DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayNam
 const DropdownMenuSubContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
->(({ className, collisionPadding = 8, ...props }, ref) => (
+>(({ className, collisionPadding = 8, children, ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.SubContent
       ref={ref}
       collisionPadding={collisionPadding}
       className={cn(menuShell, className)}
       {...props}
-    />
+    >
+      <MenuGlide />
+      {children}
+    </DropdownMenuPrimitive.SubContent>
   </DropdownMenuPrimitive.Portal>
 ));
 DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayName;
@@ -158,7 +166,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
         {/* `text-primary`, like the tick in the composer's `+` menu and the
             one in Select. A checked row is the one row in a menu carrying the
             accent, and it was the only one of the three left in plain ink. */}
-        <StatusIcons.success className="size-4 text-primary" />
+        <Check className="size-4 text-foreground" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}
