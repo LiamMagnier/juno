@@ -183,6 +183,27 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoMobile.uitests
         TEST_TARGET_NAME: JunoMobile
+  JunoMobileWave2Tests:
+    # Release QA compiles the measured suites without the legacy Debug-only
+    # preview fixtures. The host app keeps its shipping optimization settings.
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/Performance
+      - path: Tests/Snapshots/Support
+      - path: Tests/Wave2
+        optional: true
+    dependencies:
+      - target: JunoMobile
+    configFiles:
+      Debug: ../../Config/JunoMobile-Debug.xcconfig
+      Stable: ../../Config/JunoMobile-Stable.xcconfig
+      Next: ../../Config/JunoMobile-Next.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoMobile.wave2tests
+        PRODUCT_NAME: $(TARGET_NAME)
 schemes:
   JunoMobile:
     build:
@@ -219,3 +240,12 @@ schemes:
       config: Next
     archive:
       config: Next
+  JunoMobile-Wave2:
+    build:
+      targets:
+        JunoMobile: all
+        JunoMobileWave2Tests: [test]
+    test:
+      config: Stable
+      targets:
+        - JunoMobileWave2Tests
