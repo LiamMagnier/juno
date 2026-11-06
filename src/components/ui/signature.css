@@ -113,8 +113,10 @@
 .data-\[state\=open\]\:animate-pop-in[data-state="open"] {
   animation: pop-in 180ms var(--alv-ease-out) both;
 }
-.data-\[state\=closed\]\:animate-pop-out[data-state="closed"] {
-  animation: alv-pop-out 120ms var(--ease-out-soft) both;
+@media (prefers-reduced-motion: no-preference) {
+  .data-\[state\=closed\]\:animate-pop-out[data-state="closed"] {
+    animation: alv-pop-out 120ms var(--ease-out-soft) both;
+  }
 }
 .cmenu.cmenu.cmenu[data-state="open"] {
   animation: cmenu-in 180ms var(--alv-ease-out) both;
