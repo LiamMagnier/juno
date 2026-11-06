@@ -225,8 +225,9 @@ final class JunoTokenConsumptionTests: XCTestCase {
     /// back, and a retune on the web shows up as a deliberate edit here.
     func testTheAccentTriplesComeBackOutOfTheProjection() {
         let web: [JunoAccent: (light: (Double, Double, Double), dark: (Double, Double, Double))] = [
-            // Graphite keeps the historical persisted key for compatibility.
-            .coral: ((216, 0.09, 0.11), (220, 0.07, 0.91)),
+            // The historical persisted key, now Indigo, the Alevr blue (owner,
+            // 5 Nov 2026: "Add a signature look").
+            .coral: ((229, 0.63, 0.48), (229, 0.68, 0.58)),
             // Ultramarine is retuned to Cobalt (spec D26 / S7): presence never
             // doubles as an accent, so it is no longer the --presence pair.
             .ultramarine: ((205, 0.78, 0.36), (205, 0.70, 0.60)),
