@@ -63,7 +63,7 @@ test.describe("First send", () => {
 
     await page.getByRole("button", { name: /^Add files and more/ }).click();
     const chooser = page.waitForEvent("filechooser");
-    await page.getByRole("menuitem", { name: /Add (photos and )?files/ }).click();
+    await page.getByRole("menuitem", { name: /^(Photos and files|Files)/ }).click();
     await (await chooser).setFiles({ name: "quarterly-notes.txt", mimeType: "text/plain", buffer: Buffer.from("Revenue rose in the third quarter.") });
     await expect(page.getByRole("button", { name: "Remove quarterly-notes.txt" })).toBeVisible();
 
