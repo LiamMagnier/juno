@@ -224,7 +224,7 @@ export const COMPOSER_SPRING = spring.standard;
  */
 const COMPOSER_FIELD_METRICS =
   // eslint-disable-next-line design-system/no-raw-text-size -- 16px exactly: iOS Safari zooms the page into any focused field below it, and body-lg (17px) is a different measure.
-  "block w-full min-h-[2.875rem] coarse:min-h-[3.25rem] px-4 pb-1 pt-4 text-base leading-relaxed";
+  "block w-full min-h-[2.875rem] coarse:min-h-[3.25rem] px-5 pb-1 pt-4 text-base leading-relaxed";
 
 /**
  * EQUAL INSETS (owner rule, 2026-10-02): the field's box starts 16px from the
@@ -379,7 +379,7 @@ export function ComposerArmedMark({
       type="button"
       onClick={onOpen}
       aria-label={openLabel}
-      className="inline-flex h-full min-w-0 items-center gap-1.5 rounded-r-full pr-[9px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="inline-flex h-full min-w-0 items-center gap-1.5 rounded-r-full pr-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       <span className={cn("truncate", labelClassName)}>{label}</span>
       {detail && (
@@ -395,12 +395,12 @@ export function ComposerArmedMark({
   return (
     <span
       className={cn(
-        // A true pill: 26px tall, fully round, 8px of optical air on both
-        // sides (6px of padding plus the 2px the 16px glyph sits inside its
-        // 20px box on the left; 10px after the label on the right, where
-        // the text's own side bearing is ~0). The label is the button
+        // A pill in the composer's button row, the row's own 32px height,
+        // fully round, 8px of optical air on the left (4px padding, 2px
+        // margin, the glyph's 2px inset in its 20px box) and 10px after the
+        // label, where round ends read tighter. The label is the button
         // filling the rest, so the whole right of the pill opens it.
-        "armed-pill group/armed inline-flex h-[26px] min-w-0 items-center gap-1 rounded-full pl-1 align-middle text-ui font-medium leading-none text-foreground",
+        "armed-pill group/armed inline-flex h-8 min-w-0 shrink items-center gap-1 rounded-full pl-1 text-ui font-medium leading-none text-foreground coarse:h-10",
         "motion-safe:animate-pop-in",
       )}
     >

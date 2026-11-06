@@ -2328,7 +2328,7 @@ function AttentionRow({
     <div
       data-active={active ? "" : undefined}
       data-conversation-row={item.conversationId ?? undefined}
-      className={cn("group relative flex min-h-8 items-center rounded-control coarse:min-h-11", LIST_ROW_TRANSITION, listRowClass(active))}
+      className={cn("sidebar-list-row group relative flex min-h-8 items-center rounded-control coarse:min-h-11", LIST_ROW_TRANSITION, listRowClass(active))}
     >
       <Link
         ref={menu.linkRef}
@@ -2618,7 +2618,7 @@ function navRowClass(collapsed: boolean, active: boolean) {
     // The rail: 36px targets on a 52px column (44 under a coarse pointer).
     // The old 44px tiles made every glyph sit in a slab of grey when hovered
     // or selected, which is what read as "too big".
-    collapsed ? "size-9 justify-center px-0 coarse:size-11" : "gap-2.5 px-2 coarse:h-11",
+    collapsed ? "size-9 justify-center px-0 coarse:size-11" : "sidebar-nav-row gap-2.5 px-2 coarse:h-11",
     // NO `bg-` on the active row: its fill is the travelling `motion.span`
     // inside it (see NavRow). Painting it here too would leave a hard-edged
     // copy of the fill sitting under the one that slides, so the old row's ink

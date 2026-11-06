@@ -51,7 +51,6 @@ import {
   ComposerAttachmentRow,
   ComposerPrimaryAction,
   ComposerArmedMark,
-  ComposerFieldLead,
   ComposerShell,
   composerFieldClass,
   composerIconButtonClass,
@@ -911,22 +910,6 @@ function ComposerImpl({
   const enabledConnectorIdsRef = React.useRef(connectorsEnabled);
   enabledConnectorIdsRef.current = connectorsEnabled;
   const textareaRef = React.useRef<ContextFieldElement>(null);
-  /*
-   * ── The field tier's bookkeeping ──────────────────────────────────────────
-   *
-   * `leadWidth` is how wide the marks drawn over the start of the field are
-   * (a skill, Deep Field: what this one message runs as); it becomes the
-   * field's `text-indent`, so the first word lands after them. Measured, never
-   * assumed: a mark holds a skill's name.
-   *
-   * `leadRef` is written to directly while the draft scrolls, because doing it
-   * through state would re-render this component on every frame of a scroll.
-   */
-  const [leadWidth, setLeadWidth] = React.useState(0);
-  const leadRef = React.useRef<HTMLSpanElement>(null);
-  const onFieldScroll = React.useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
-    if (leadRef.current) leadRef.current.style.transform = `translateY(${-e.currentTarget.scrollTop}px)`;
-  }, []);
   const rootRef = React.useRef<HTMLDivElement>(null);
   /** The composer surface: every layer it opens is placed outside this box. */
   const shellRef = React.useRef<HTMLDivElement>(null);
@@ -2601,8 +2584,6 @@ function ComposerImpl({
    * literal class: Tailwind scans source text.
    */
   const armedLabelClass = armedMarks.length > 1 ? "hidden @[30rem]:inline" : undefined;
-  /* The indent the field owes the marks, and ZERO the moment they are gone:
-     nothing re-measures a group that has unmounted. */
   const leadMarks = armedMarks.map((mark) => (
     <ComposerArmedMark
       key={mark.id}
@@ -2618,7 +2599,6 @@ function ComposerImpl({
       disabled={controlsLocked}
     />
   ));
-  const leadIndent = leadMarks.length > 0 ? leadWidth : 0;
 
   /**
    * The + menu, as data. Three sections in Claude's order: what you bring in,
@@ -3490,7 +3470,6 @@ function ComposerImpl({
                   aria-label={fieldLabel}
                   value={text}
                   onChange={(e) => setDraftText(e.target.value)}
-                  onScroll={onFieldScroll}
                   onKeyDown={onKeyDown}
                   onPaste={onPaste}
                   // Live through a generation: the draft for the next message is
@@ -3524,15 +3503,7 @@ function ComposerImpl({
                   // into a focused field below 16px. The home's field is taller
                   // at rest; density elsewhere comes from the autosize caps.
                   className={cn(composerFieldClass, frame === "landing" && "min-h-[3.5rem] max-[760px]:min-h-[3.25rem]")}
-                  // The marks drawn over the head of the field, as a hole in
-                  // the first line: `text-indent` indents one line, not a block.
-                  style={leadIndent ? { textIndent: leadIndent } : undefined}
                 />
-                {leadMarks.length > 0 && (
-                  <ComposerFieldLead onWidth={setLeadWidth} spanRef={leadRef}>
-                    {leadMarks}
-                  </ComposerFieldLead>
-                )}
               </div>
             )
           }
@@ -3546,6 +3517,12 @@ function ComposerImpl({
                 tooltip="Add files and more"
                 sections={plusSections}
               />
+              {/* What is armed for the next message, as pills in the row
+                  beside the + that armed it (owner, 6 Nov 2026: inside the
+                  text they read as misplaced). */}
+              {leadMarks.length > 0 && (
+                <span className="composer-armed-row flex min-w-0 items-center gap-1.5">{leadMarks}</span>
+              )}
               {voiceCall?.status}
             </>
           }

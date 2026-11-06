@@ -563,7 +563,7 @@ button[role="switch"][data-state="checked"] > span > span,
   background-color: hsl(40 10% 96% / 0.1);
 }
 .armed-pill > button:first-child {
-  margin-left: 2px;
+  margin-left: 4px;
 }
 
 @media (prefers-contrast: more) {
@@ -574,5 +574,50 @@ button[role="switch"][data-state="checked"] > span > span,
   .composer-surface.composer-surface:focus-within,
   .dark .composer-surface.composer-surface:focus-within {
     border-color: hsl(var(--foreground) / 0.65);
+  }
+}
+
+/* ── 10. The sidebar's rhythm (app-sidebar.tsx) ──────────────────────────────
+   One pitch for every destination (34px), one radius for every fill (10px),
+   two inks: destinations in the near-full ink at a half-step of weight,
+   conversation titles a step quieter at the book weight, section heads the
+   quietest. Sections sit 20px apart so a heading belongs to the list under
+   it, not the one above. */
+.sidebar-nav-row.sidebar-nav-row {
+  height: 34px;
+  border-radius: 10px;
+  gap: 11px;
+}
+.sidebar-nav-row .text-nav {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 450;
+  letter-spacing: -0.006em;
+}
+.sidebar-nav-row:not(.sidebar-row-selected) {
+  color: hsl(var(--foreground) / 0.82);
+}
+.sidebar-list-row.sidebar-list-row {
+  min-height: 32px;
+  border-radius: 10px;
+  font-size: 14px;
+  letter-spacing: -0.003em;
+}
+.sidebar-list-row:not(.sidebar-row-selected) {
+  color: hsl(var(--foreground) / 0.7);
+}
+.sidebar-list-row:not(.sidebar-row-selected):hover {
+  color: hsl(var(--foreground) / 0.9);
+}
+[data-sidebar-section] + [data-sidebar-section],
+section[data-sidebar-section]:not(:first-child) {
+  margin-top: 20px;
+}
+[data-sidebar-section] .shell-annot.shell-annot {
+  color: hsl(var(--foreground) / 0.48);
+}
+@media (pointer: coarse) {
+  .sidebar-nav-row.sidebar-nav-row {
+    height: 44px;
   }
 }
