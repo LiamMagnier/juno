@@ -237,7 +237,7 @@ const OPENAI_FORMATS: SelectOption = {
   ],
 };
 
-function gptImage(modelId: string, generation: "2.5" | "2" | "1"): MediaCapabilities {
+function gptImage(modelId: string, generation: "2.6" | "2.5" | "2" | "1"): MediaCapabilities {
   const sizes = generation === "1" ? GPT_IMAGE_1_SIZES : GPT_IMAGE_2_SIZES;
   const quality: MediaChoice[] = [
     { value: "auto", label: "Auto" },
@@ -310,7 +310,13 @@ function gptImage(modelId: string, generation: "2.5" | "2" | "1"): MediaCapabili
     },
     sources: OPENAI_SOURCES,
     unverified:
-      generation === "2"
+      generation === "2.6"
+        ? [
+            "quality: the image reference names xhigh and max for the 2.5 models only, so 2.6 offers auto to high.",
+            "background: transparency is documented for the 2.5 models only, so it is not offered on 2.6.",
+            "outputFormat: svg and gif appear in the reference enum (gif behind a preview), not offered yet.",
+          ]
+        : generation === "2"
         ? ["background: transparent is 'in preview' for gpt-image-2, so it is not offered."]
         : generation === "1"
           ? ["background: the reference only says transparency is 'available for supported GPT Image models' without naming gpt-image-1.x."]
@@ -588,7 +594,7 @@ function veo(modelId: string, lite: boolean): MediaCapabilities {
 // "360p" | "720p" | "1080p" | "4k", 720p by default, 1080p and 4K upscaled.
 // There is no length field: a clip runs 3-10s and the prompt steers it. Audio
 // always comes with the video; one video per interaction.
-function geminiOmni(modelId: string): MediaCapabilities {
+function geminiOmni(modelId: string, maxSeconds: 10 | 15): MediaCapabilities {
   return {
     modelId,
     kind: "video",
@@ -608,7 +614,7 @@ function geminiOmni(modelId: string): MediaCapabilities {
       "https://ai.google.dev/gemini-api/docs/omni",
       "https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash",
     ],
-    unverified: ["duration: output is 3-10s but the request has no length field (the prompt steers it), so no length control."],
+    unverified: [`duration: output is 3-${maxSeconds}s but the documented request has no length field (the prompt steers it), so no length control.`],
   };
 }
 
@@ -937,6 +943,8 @@ function lyria(modelId: string, variant: "3.5" | "pro" | "clip"): MediaCapabilit
 // ---------------------------------------------------------------------------
 
 const ENTRIES: MediaCapabilities[] = [
+  gptImage("openai:gpt-image-2.6-sunburst", "2.6"),
+  gptImage("openai:gpt-image-2.6-flare", "2.6"),
   gptImage("openai:gpt-image-2.5-sunburst", "2.5"),
   gptImage("openai:gpt-image-2.5-flare", "2.5"),
   gptImage("openai:gpt-image-2", "2"),
@@ -962,7 +970,8 @@ const ENTRIES: MediaCapabilities[] = [
   veo("google:veo-3.1-generate-preview", false),
   veo("google:veo-3.1-fast-generate-preview", false),
   veo("google:veo-3.1-lite-generate-preview", true),
-  geminiOmni("google:gemini-omni-1.1-flash"),
+  geminiOmni("google:gemini-omni-1.2-flash", 15),
+  geminiOmni("google:gemini-omni-1.1-flash", 10),
   grokVideo("xai:grok-imagine-video", "classic"),
   grokVideo("xai:grok-imagine-video-1.5", "1.5"),
   grokVideo("xai:grok-imagine-video-1.5-lite", "1.5-lite"),

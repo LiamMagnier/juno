@@ -205,6 +205,7 @@ function runningTurn(): TurnItem[] {
   return [
     { id: "u2", turnId: "turn2", kind: "user_message", text: "Run the cart suite before you call it done.", createdAt: at(1.2), delivery: "send" },
     { id: "r2", turnId: "turn2", kind: "reasoning", text: "Typecheck first, then the filtered suite.", streaming: false, summary: true, createdAt: at(1.1) },
+    { id: "p2", turnId: "turn2", kind: "todo_list", todos: [{ text: "Fix the rounding in cart totals", status: "completed" }, { text: "Typecheck", status: "completed" }, { text: "Run the cart suite", status: "in_progress" }, { text: "Update the README", status: "pending" }], createdAt: at(1.05) },
     { id: "x2", turnId: "turn2", kind: "command_execution", callId: "c7", command: "pnpm typecheck", output: "Done in 17.6s", exitCode: 0, durationMs: 18_000, status: "completed", createdAt: at(1) },
     { id: "x3", turnId: "turn2", kind: "command_execution", callId: "c8", command: "pnpm test --filter cart", output: "✓ cart/total.server.test.ts (9)\n✓ cart/useCartTotal.test.tsx (6)\n… cart/checkout.e2e.test.ts", status: "running", createdAt: at(0.7) },
   ];

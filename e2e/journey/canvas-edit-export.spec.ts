@@ -121,7 +121,14 @@ test.describe("Canvas edit and export", () => {
 
     // The edit survives a reload: the canvas reopens on v2 with it.
     await page.reload();
-    await page.getByRole("button", { name: `Open ${SMOKE_ARTIFACT_TITLE} in canvas` }).first().click();
+    // A click that lands before the reloaded page hydrates does nothing (the
+    // server-rendered card has no handler yet), so press again until the
+    // canvas opens rather than waiting on a fixed delay.
+    const reopened = page.getByRole("button", { name: `Open ${SMOKE_ARTIFACT_TITLE} in canvas` }).first();
+    await expect(async () => {
+      await reopened.click();
+      await expect(page.getByRole("button", { name: "Close canvas" })).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
     await expect(page.getByRole("button", { name: "Version history, v2" })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(EDIT.split(":")[0]).first()).toBeVisible();
   });

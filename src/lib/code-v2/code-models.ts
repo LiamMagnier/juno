@@ -34,7 +34,7 @@ export const CODE_MODEL_RANKING: readonly string[] = [
   "anthropic:claude-sonnet-5-5",
   "google:gemini-3.8-flash",
   "xai:grok-4.7",
-  "openai:gpt-5.6-terra",
+  "openai:gpt-6.1-terra",
   "zhipu:glm-5.3",
   "moonshot:kimi-k3.1-pro",
   "deepseek:deepseek-v4-pro",

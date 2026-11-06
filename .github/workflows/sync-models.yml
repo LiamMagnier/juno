@@ -45,7 +45,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      SYNC_BRANCH: model-sync/${{ github.run_id }}
+      # One long-lived branch, PR and issue instead of a new set every night.
+      # Each run regenerates the same two files from main, so the newest run
+      # always supersedes the previous ones; a fresh branch per run left a pile
+      # of identical PRs and issues (10 + 15 by 2026-11-05).
+      SYNC_BRANCH: model-sync/daily
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -97,12 +101,14 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         shell: bash
         run: |
-          git switch -c "$SYNC_BRANCH"
+          git switch -C "$SYNC_BRANCH"
           git config user.name "juno-model-bot"
           git config user.email "juno-model-bot@users.noreply.github.com"
           git add src/lib/benchmarks.generated.ts scripts/model-radar-seen.json
           git commit -m "chore(models): refresh benchmarks and model radar"
-          git push origin "$SYNC_BRANCH"
+          # The branch is bot-owned and rebuilt from main each run, so the
+          # open PR always shows exactly one up-to-date commit.
+          git push --force origin "$SYNC_BRANCH"
 
       # Until the repository allows it (Settings > Actions > General > Workflow
       # permissions > "Allow GitHub Actions to create and approve pull
@@ -113,12 +119,29 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         shell: bash
         run: |
-          if ! gh pr create \
+          set -euo pipefail
+          existing=$(gh pr list --state open --head "$SYNC_BRANCH" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            # The force-push above already refreshed it.
+            echo "Updated the open model refresh PR #$existing."
+            current="$existing"
+          elif gh pr create \
             --base main \
             --head "$SYNC_BRANCH" \
             --title "chore(models): benchmark and radar refresh" \
-            --body "Automated pricing benchmark and industry-radar update. No model is added to the catalog by this job; new models are curated by hand from their docs."; then
+            --body "Automated pricing benchmark and industry-radar update, refreshed in place every night. No model is added to the catalog by this job; new models are curated by hand from their docs."; then
+            current=$(gh pr list --state open --head "$SYNC_BRANCH" --json number --jq '.[0].number // empty')
+          else
             echo "::warning::Could not open the pull request. Review the pushed branch: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$SYNC_BRANCH"
+            current=""
+          fi
+          # Close refresh PRs left on the old one-branch-per-run scheme.
+          if [ -n "$current" ]; then
+            gh pr list --state open --json number,headRefName \
+              --jq ".[] | select(.headRefName | startswith(\"model-sync/\")) | select(.headRefName != \"$SYNC_BRANCH\") | .number" |
+            while read -r old; do
+              gh pr close "$old" --delete-branch --comment "Superseded by #$current, which is refreshed in place every night." || true
+            done
           fi
 
       - name: Open model-watch issue for newly announced models
@@ -130,10 +153,22 @@ jobs:
             { echo; echo "## validate:models failed (needs a person)"; echo; echo '```'; cat /tmp/validate-models.log; echo '```'; } >> /tmp/model-radar-report.md
           fi
           if [ -s /tmp/model-radar-report.md ]; then
-            gh issue create \
-              --title "Model watch: new provider releases detected" \
-              --label model-watch \
-              --body-file /tmp/model-radar-report.md
+            # Keep one open model-watch issue: the report lists everything not
+            # yet merged into main, so tonight's body replaces last night's.
+            open_issues=$(gh issue list --state open --label model-watch --limit 100 --json number --jq 'sort_by(.number) | reverse | .[].number')
+            keep=$(echo "$open_issues" | head -n1)
+            if [ -n "$keep" ]; then
+              gh issue edit "$keep" --body-file /tmp/model-radar-report.md
+              echo "Refreshed model-watch issue #$keep."
+              echo "$open_issues" | tail -n +2 | while read -r old; do
+                [ -n "$old" ] && gh issue close "$old" --reason "not planned" --comment "Superseded by #$keep." || true
+              done
+            else
+              gh issue create \
+                --title "Model watch: new provider releases detected" \
+                --label model-watch \
+                --body-file /tmp/model-radar-report.md
+            fi
           fi
 
       - name: Fail when the catalogue is invalid

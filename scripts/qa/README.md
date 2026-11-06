@@ -165,8 +165,8 @@ except the external gates (platform `ci`: `design.contrast-matrix`,
 `design.lint`), which their own CI jobs measure and no browser run can; they
 print as `ext` lines instead. (P1 enforces both, so without that exception
 every full run on a branch carrying P1 failed with "recorded no measurement".)
-Native suites write records (`Wave2PerfReport.swift`, not on this branch yet)
-that the same command evaluates against the same budgets.
+Native suites write records (`Wave2PerfReport.swift`, see § Native) that the
+same command evaluates against the same budgets.
 
 ```sh
 npm run qa:gates               # every gate, its owner and its live state
@@ -236,13 +236,25 @@ until someone reproduces it on a WebKit they can debug or a real iPhone.
 
 ## Native
 
-The native half of PR #99 (the `Wave2*` performance and snapshot support in
-both apps, the `JunoDesktop-Wave2` / `JunoMobile-Wave2` schemes,
-`native-perf.sh` and the "Native gates (Release)" job) is **not on this
-branch**. It was left out when the web harness was ported (ledger P1-5): it
-cannot be compiled or run on Linux, its iOS `.pbxproj` conflicts here, and a
-75-minute macOS job on every `src/**` pull request contradicts native.yml's
-macOS-minutes budget. Land it from #99, rebased, on a machine with Xcode.
+The native half of PR #99 lives in both apps' `Tests/Performance` and
+`Tests/Snapshots/Support` (the `Wave2*` metric, report, clock, occlusion,
+snapshot, variant and geometry-export helpers, plus their own tests). The
+dedicated `JunoDesktop-Wave2` / `JunoMobile-Wave2` schemes compile those suites
+against the Stable (Release) host apps; the legacy preview snapshots keep their
+Debug-only fixtures in the general test bundles.
 
-Until then the gate catalog's macOS and iOS gates simply record nothing, and
-the `design.bubble-composer-parity` summary combines web geometry only.
+```sh
+npm run qa:native-perf                          # both platforms, every suite
+bash scripts/qa/native-perf.sh --platform macos # one platform
+```
+
+CI runs the same script in the **native design gates** workflow
+(`.github/workflows/design-gates-native.yml`), which is manual only: the job
+takes up to 75 macOS minutes, and running it on every `src/**` pull request
+would break native.yml's macOS-minutes budget. Trigger it from Actions before a
+release or when a change touches the Wave2 suites.
+
+The JSON records the native suites write (`Wave2PerfReport.swift`) are
+evaluated by `gates.ts evaluate` against the same budgets. The pull-request
+design-gates summary still combines web geometry only, since the native job
+does not run there.

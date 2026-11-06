@@ -21,7 +21,8 @@ final class JunoTypeLadderTests: XCTestCase {
         let name: String
     }
 
-    /// §8.2 with errata 8 applied: `ui` is ×1.5 and `bodyLarge` ×1.6. P1 (spec
+    /// §8.2 with errata 8 applied: `bodyLarge` is ×1.6. Graphite (docs/design/
+    /// direction-2026-11) sets `ui` at 13.5 on a 20px line. P1 (spec
     /// D16, §3.5) sets page-title at 500, raises `caption` from 11 to 12/1.4 and
     /// aliases the retired `micro` to it, so no rung is under the 12pt floor.
     private let ladder: [Expected] = [

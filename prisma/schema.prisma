@@ -125,6 +125,7 @@ model User {
   mutationReceipts            MutationReceipt[]
   codeWorkspaces              CodeWorkspace[]
   codeEnvironments            CodeEnvironment[]
+  codeHookTrusts              CodeHookTrust[]
   codeAutoFixWatches          CodeAutoFixWatch[]
   chatFirstSubmissionReceipts ChatFirstSubmissionReceipt[]
   toolInvocations             ToolInvocation[]
@@ -196,6 +197,7 @@ model User {
 
   messageRecallIndex MessageRecallIndex[]
   skillCandidates    SkillCandidate[]
+
   @@index([image])
 }
 
@@ -238,9 +240,9 @@ model Connection {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   syncStates ConnectorSyncState[]
-  events ConnectorSyncEvent[]
+  events     ConnectorSyncEvent[]
 
   @@unique([userId, provider])
   @@index([userId])
@@ -249,24 +251,26 @@ model Connection {
 /// Parent-scoped: every query joins Connection.userId. Private cursor state is encrypted.
 model ConnectorSyncState {
   connectionId String
-  stream String
-  state String @db.Text
-  updatedAt DateTime @default(now())
-  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  stream       String
+  state        String     @db.Text
+  updatedAt    DateTime   @default(now())
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
   @@id([connectionId, stream])
 }
 
 /// Durable, deduplicated event outbox. Disconnect cascades to cursors and events.
 model ConnectorSyncEvent {
-  id BigInt @id @default(autoincrement())
+  id           BigInt     @id @default(autoincrement())
   connectionId String
-  stream String
-  eventKey String @db.Text
-  eventType String
-  resourceId String @db.Text
-  payload String @db.Text
-  createdAt DateTime @default(now())
-  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  stream       String
+  eventKey     String     @db.Text
+  eventType    String
+  resourceId   String     @db.Text
+  payload      String     @db.Text
+  createdAt    DateTime   @default(now())
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
   @@unique([connectionId, stream, eventKey])
   @@index([connectionId, id])
 }
@@ -278,38 +282,38 @@ model ConnectorSyncEvent {
  * Connection. All config reads and writes are scoped to the owning user.
  */
 model UserMcpServer {
-  id            String    @id @default(cuid())
-  userId        String
-  name          String
-  url           String    @db.Text
+  id             String    @id @default(cuid())
+  userId         String
+  name           String
+  url            String    @db.Text
   /// Full Authorization header value (e.g. "Bearer …"), encrypted at rest.
-  authHeader    String?   @db.Text
+  authHeader     String?   @db.Text
   /// header | oauth; OAuth credentials remain encrypted in Connection.
-  authMode      String    @default("header")
-  description   String?   @db.Text
-  serverName    String?
-  disabledTools String[] @default([])
-  toolCatalog   Json?
+  authMode       String    @default("header")
+  description    String?   @db.Text
+  serverName     String?
+  disabledTools  String[]  @default([])
+  toolCatalog    Json?
   toolsCheckedAt DateTime?
   /// Master switch. Disabled rows stay listed but never resolve to a connector.
-  enabled       Boolean   @default(true)
+  enabled        Boolean   @default(true)
   /// untested | ok | error — last connection test only, not a live probe.
-  status        String    @default("untested")
+  status         String    @default("untested")
   /// Why the last test failed, shown on the tile. Cleared when a test passes.
   /// getActiveConnectors still skips a broken row quietly at generation time
   /// (a chat must not die because one connector is down); this is how the
   /// person finds out without guessing.
-  lastError     String?   @db.Text
-  lastCheckedAt DateTime?
+  lastError      String?   @db.Text
+  lastCheckedAt  DateTime?
   /// Tool count from the last successful test, so the directory can say
   /// "12 tools" without opening a connection on every list.
-  toolCount     Int       @default(0)
+  toolCount      Int       @default(0)
   /// Tool names from the last successful test (display / connector picker).
-  tools         String[]  @default([])
+  tools          String[]  @default([])
   /// Optional handle from the server's initialize result, for display only.
-  accountLabel  String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  accountLabel   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -669,68 +673,68 @@ model Folder {
 }
 
 model Conversation {
-  id                String    @id @default(cuid())
-  userId            String
+  id                    String    @id @default(cuid())
+  userId                String
   // Durable creation surface. NULL means the conversation predates precise
   // origin metadata or arrived through a legacy caller that only sent web|app.
-  origin            String?
+  origin                String?
   // Idempotency key for creation + the first saved Quick/native submission.
   // Scoped to the account so retries cannot create parallel conversations.
-  clientRequestId   String?
-  title             String    @default("New chat")
-  titleSource       String    @default("default")
-  model             String    @default("claude-opus-4-8")
+  clientRequestId       String?
+  title                 String    @default("New chat")
+  titleSource           String    @default("default")
+  model                 String    @default("claude-opus-4-8")
   // Alevr Code v2: the thread's role routing (orchestrator, workers, reviewer,
   // explorer, compaction, preset, budget), a contract `RoleRouting`
   // (src/lib/code-v2/contracts.ts) validated by src/lib/code-v2/role-routing.ts.
   // Null = the session's single model, as before. Only kind "code" uses it.
-  codeRouting       Json?
+  codeRouting           Json?
   // Which surface owns this conversation: "chat" (web + app chat) or "code"
   // (Juno Code sessions synced from the app).
-  kind              String    @default("chat")
+  kind                  String    @default("chat")
   // For kind "code": the app-side workspace (project folder) the session
   // belongs to, so the website can group sessions the way the app does.
   // codeWorkspaceKey is the stable identity (CodeWorkspace.key) when known;
   // name/path are display + device metadata that can change without forking
   // the session's workspace attribution.
-  codeWorkspaceName String?
-  codeWorkspacePath String?
-  codeWorkspaceKey  String?
-  pinned            Boolean   @default(false)
+  codeWorkspaceName     String?
+  codeWorkspacePath     String?
+  codeWorkspaceKey      String?
+  pinned                Boolean   @default(false)
   // Archived chats stay fully readable and searchable but leave the sidebar's
   // Recent list. Nullable timestamp rather than a boolean so "when" is kept.
-  archivedAt        DateTime?
-  folderId          String?
-  projectId         String?
+  archivedAt            DateTime?
+  folderId              String?
+  projectId             String?
   // Branch-from-here: the conversation this one was forked from (plain pointer,
   // not a relation — the source may be deleted independently).
-  forkedFromId      String?
+  forkedFromId          String?
   // Tool connectors (github/figma/notion…) the user turned on for this chat.
   // Persisted so they stay active for every later prompt without re-toggling.
-  activeConnectors  String[]  @default([])
+  activeConnectors      String[]  @default([])
   // The agent this is the thread of (docs/design/AGENTS.md §3). A plain
   // pointer, not a relation, for the reason WorkSession.conversationId gives:
   // either side can go first, and an agent retired while its thread is kept
   // leaves a chat, not a dangling foreign key. `kind` stays "chat" — an agent's
   // thread is a conversation with someone in it, not a new kind of one.
-  agentId           String?
+  agentId               String?
   // This conversation's own "Let conversations message each other" toggle:
   // "on", "off", or NULL to follow the account setting for its kind.
-  crossMessages     String?
+  crossMessages         String?
   // How often a task started from this chat stops to ask: one of the Work
   // approval modes ("conservative" | "balanced" | "permissive", the wire
   // values in src/lib/work/domain.ts), or NULL for the default. Chosen from
   // the chat composer; a project's or an agent's stricter mode still wins at
   // dispatch (src/lib/chat/task-approval-mode.ts).
-  taskApprovalMode  String?
+  taskApprovalMode      String?
   // "Memory off for this chat" (src/lib/chat/memory-off.ts): its turns read no
   // memory and save or forget nothing, and the background reader skips it.
   // Narrows the account's memoryEnabled; it can never turn memory on. Set from
   // the chat's menu or the composer's +, and on the first send of a new chat.
-  memoryOff         Boolean   @default(false)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  lastMessageAt     DateTime  @default(now())
+  memoryOff             Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  lastMessageAt         DateTime  @default(now())
   // Context trimming (src/lib/chat/history-summary-store.ts): the rolling
   // summary of the messages that have left the model's history window,
   // encrypted like a message body; how many of the oldest messages it covers;
@@ -1401,23 +1405,23 @@ model MessageRecallIndex {
 /// again (`key`). Kept apart from MemoryEntry on purpose: memory is what is
 /// known, a skill is how to do something (src/lib/procedural-memory.ts).
 model SkillCandidate {
-  id        String   @id @default(cuid())
-  userId    String
-  projectId String?
+  id         String   @id @default(cuid())
+  userId     String
+  projectId  String?
   /// Stable identity of the repeated method, so a refresh updates rather than duplicates.
-  key       String
+  key        String
   /// Taken from the runs' own titles — never written by a model.
-  title     String
+  title      String
   /// { examples: string[], tools: string[], sessionIds: string[] }
-  method    Json
-  runCount  Int      @default(0)
+  method     Json
+  runCount   Int      @default(0)
   lastSeenAt DateTime
   /// pending | accepted | dismissed
-  status    String   @default("pending")
+  status     String   @default("pending")
   /// The skill it became, once accepted.
-  skillId   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  skillId    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1501,10 +1505,10 @@ model Artifact {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  user         User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversation Conversation?         @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  message      Message?              @relation(fields: [messageId], references: [id], onDelete: SetNull)
-  project      Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user         User?                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation?          @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message      Message?               @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  project      Project?               @relation(fields: [projectId], references: [id], onDelete: SetNull)
   versions     ArtifactVersion[]
   shares       Share[]
   draft        ArtifactDraft?
@@ -2540,21 +2544,21 @@ enum ShareAudience {
 }
 
 model Share {
-  id             String    @id @default(cuid())
-  token          String    @unique // long random URL slug (not the cuid)
+  id             String        @id @default(cuid())
+  token          String        @unique // long random URL slug (not the cuid)
   userId         String
   kind           ShareKind
   conversationId String?
   artifactId     String?
-  title          String    @default("") // denormalized for lists + OG cards
-  snapshotAt     DateTime  @default(now())
+  title          String        @default("") // denormalized for lists + OG cards
+  snapshotAt     DateTime      @default(now())
   /// The last message of the branch that was shown when the snapshot was
   /// taken. The public page renders that message's ancestors, so editing or
   /// switching branches after sharing never changes what the link shows.
   /// NULL on links made before branches: they read the shown path up to
   /// snapshotAt, and the first branch operation in their chat pins them.
   leafMessageId  String?
-  views          Int       @default(0)
+  views          Int           @default(0)
   revokedAt      DateTime?
   /// Removed by Juno (admin takedown), as distinct from revoked by its owner.
   /// A taken-down link 404s, drops out of the owner's list, and its target
@@ -2562,7 +2566,7 @@ model Share {
   /// src/lib/share-moderation.ts.
   takenDownAt    DateTime?
   takenDownBy    String?
-  takedownReason String?   @db.Text
+  takedownReason String?       @db.Text
   /// A snapshot the owner's client sent with the link, for a Code session whose
   /// transcript lives on the owner's Mac rather than in Message rows: only the
   /// person's messages and the final answers, secrets redacted on the server,
@@ -2573,7 +2577,7 @@ model Share {
   /// lookup skips it, and src/lib/share-people.ts checks the viewer against
   /// `recipients` (the rules are src/lib/share-people-core.ts).
   audience       ShareAudience @default(LINK)
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime      @default(now())
 
   user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation Conversation?    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -3247,26 +3251,26 @@ model WorkSession {
 
   // --- the work ledger's task fields (src/lib/work/board.ts) ----------------
   /// The durable goal this task advances, when one does (`AgentGoal.id`).
-  goalId               String?
+  goalId              String?
   /// Which step of that goal: the milestone id, or "next" for a goal without milestones.
-  goalStepKey          String?
+  goalStepKey         String?
   /// Tasks that must complete before this one may start. Same account, checked on write.
-  dependsOnSessionIds  String[] @default([])
+  dependsOnSessionIds String[]  @default([])
   /// When it should be done by. Past it the board says overdue; nothing is killed.
-  deadlineAt           DateTime?
+  deadlineAt          DateTime?
   /// What "done" means for this task, checked by the person or the goal's driver.
-  completionCriteria   String?  @db.Text
+  completionCriteria  String?   @db.Text
   /// Attempts this task may get from automatic retries (a person may always retry).
-  maxAttempts          Int      @default(1)
+  maxAttempts         Int       @default(1)
   /// completed: every dependency must have completed. settled: every dependency
   /// must have ended, however it ended (a team's critic and lead work with
   /// whatever the specialists produced; that is failure containment).
-  dependencyMode       String   @default("completed")
+  dependencyMode      String    @default("completed")
   /// A temporary specialist team (src/lib/agents/team.ts): "lead" on the task
   /// the person asked for, the node's role (researcher | engineer | designer |
   /// critic | synthesis) on each member's task, whose `parentSessionId` is the
   /// lead. Null for every ordinary task.
-  teamRole             String?
+  teamRole            String?
 
   title       String
   titleSource String @default("default")
@@ -3483,15 +3487,15 @@ model WorkRun {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  session   WorkSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  host      WorkHost?      @relation(fields: [hostId], references: [id], onDelete: SetNull)
-  schedule  WorkSchedule?  @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
-  events    WorkEvent[]
-  approvals WorkApproval[]
-  io        WorkRunIO[]
-  commands  WorkCommand[]
-  toolRuns  ToolRun[]
+  session              WorkSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  host                 WorkHost?             @relation(fields: [hostId], references: [id], onDelete: SetNull)
+  schedule             WorkSchedule?         @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  events               WorkEvent[]
+  approvals            WorkApproval[]
+  io                   WorkRunIO[]
+  commands             WorkCommand[]
+  toolRuns             ToolRun[]
   computerShellOutputs ComputerShellOutput[]
 
   @@unique([sessionId, attempt])
@@ -4094,10 +4098,10 @@ model WorkSchedule {
   /// reading or turning into a pull request.
   codeRuns CodeTask[]
 
+  @@unique([userId, proposalKey])
   @@index([enabled, nextRunAt])
   @@index([userId, createdAt])
   @@index([hostId, enabled])
-  @@unique([userId, proposalKey])
 }
 
 /// One firing condition attached to a schedule.
@@ -4252,21 +4256,21 @@ model WorkAuditEvent {
 // ----------------------------------------------------------------------------
 
 model SpendPeriod {
-  id                String   @id @default(cuid())
-  userId            String
+  id                  String   @id @default(cuid())
+  userId              String
   /// Billing-period key, matching the window ApiSpend is aggregated over.
-  period            String
+  period              String
   /// Settled cost of finished work. Moves only when a reservation settles.
-  committedMicroUsd BigInt   @default(0)
+  committedMicroUsd   BigInt   @default(0)
   /// Estimated cost of work that is in flight. Held against the ceiling so a
   /// long stream cannot be joined by a second one that only sees settled spend.
-  reservedMicroUsd  BigInt   @default(0)
+  reservedMicroUsd    BigInt   @default(0)
   /// Spend above the plan budget that this period has drawn from usage
   /// credits (UsageCredit). Part of the period's ceiling: plan budget + this +
   /// credit still available. See src/lib/credits.ts.
-  creditDrawnMicroUsd BigInt @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  creditDrawnMicroUsd BigInt   @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   reservations SpendReservation[]
@@ -4312,19 +4316,19 @@ model ReferralCode {
 /// A referred sign-up. Rewarded (both sides get REFERRAL_CREDIT_EUR) on the
 /// referred account's first successful paid subscription payment.
 model Referral {
-  id             String    @id @default(cuid())
-  referrerId     String
-  referredUserId String    @unique
-  code           String
+  id              String    @id @default(cuid())
+  referrerId      String
+  referredUserId  String    @unique
+  code            String
   /// pending | rewarded | rejected
-  status         String    @default("pending")
+  status          String    @default("pending")
   /// Why a referral was not rewarded (self_referral, referrer_cap, ...).
-  reason         String?
-  rewardedAt     DateTime?
+  reason          String?
+  rewardedAt      DateTime?
   /// The Stripe invoice that triggered the reward.
   stripeInvoiceId String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   referrer     User @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
   referredUser User @relation("ReferralReferred", fields: [referredUserId], references: [id], onDelete: Cascade)
@@ -4382,32 +4386,32 @@ model SpendReservation {
 // ----------------------------------------------------------------------------
 
 model KnowledgeDocument {
-  id             String    @id @default(cuid())
-  userId         String
-  projectId      String?
-  attachmentId   String?
-  fileName       String
-  mimeType       String
+  id                 String    @id @default(cuid())
+  userId             String
+  projectId          String?
+  attachmentId       String?
+  fileName           String
+  mimeType           String
   /// Content hash. Re-uploading identical bytes must not re-index them.
-  checksum       String
+  checksum           String
   /// queued | extracting | ocr | indexing | ready | degraded | failed | stale | tombstoned
-  state          String    @default("queued")
+  state              String    @default("queued")
   /// Which extractor produced the blocks, and its version, so a parser fix can
   /// find every document that needs reindexing.
-  parser         String?
-  parserVersion  String?
+  parser             String?
+  parserVersion      String?
   /// Monotonic per (userId, checksum) chain. A replacement supersedes rather
   /// than overwrites, so citations into the old version keep resolving.
-  version        Int       @default(1)
-  supersededById String?
-  pageCount      Int?
+  version            Int       @default(1)
+  supersededById     String?
+  pageCount          Int?
   /// Why the state is degraded or failed, in words a reader can act on.
-  error          String?   @db.Text
+  error              String?   @db.Text
   /// Tombstone retained so old citation ids resolve to a clear deletion state.
-  deletedAt      DateTime?
-  createdAt      DateTime  @default(now())
-  indexedAt      DateTime?
-  updatedAt      DateTime  @updatedAt
+  deletedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  indexedAt          DateTime?
+  updatedAt          DateTime  @updatedAt
   /// pending | embedding | embedded | lexical_only. Chunks are written at
   /// ingest with no vectors; the embedding sweep fills them off the upload
   /// path, under the account's background-provider policy (PRJ-1).
@@ -4780,15 +4784,15 @@ model Agent {
 
   /// active | paused. A paused agent keeps everything and starts nothing: its
   /// routines are switched off with it and back on when it resumes.
-  status    String  @default("active")
+  status          String  @default("active")
   /// Whether it reflects on its own (ideas and goal check-ins).
-  proactive Boolean @default(true)
+  proactive       Boolean @default(true)
   /// none | profile | full. How much of the person's own memory its turns and
   /// tasks may read (src/lib/memory-scope.ts). Its own notes are always its own.
   /// Set by the person only — never by the agent's self-configuration tools.
-  memoryAccess String @default("profile")
+  memoryAccess    String  @default("profile")
   /// The starting point it was hired from. Copy and defaults only.
-  template  String?
+  template        String?
   /// cloud | mac. Where its tasks, routines and goal steps run. Mac work goes
   /// through the Work relay to the person's own Mac and is refused, never
   /// moved to the cloud, when that Mac is offline. Set by the person only.
@@ -4818,15 +4822,15 @@ model Agent {
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  goals        AgentGoal[]
-  ideas        AgentIdea[]
-  notes        AgentNote[]
-  events       AgentEvent[]
-  computer     AgentComputer?
-  setupChanges AgentSetupChange[]
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goals          AgentGoal[]
+  ideas          AgentIdea[]
+  notes          AgentNote[]
+  events         AgentEvent[]
+  computer       AgentComputer?
+  setupChanges   AgentSetupChange[]
   demonstrations AgentDemonstration[]
-  credentials  AgentCredential[]
+  credentials    AgentCredential[]
 
   @@index([userId, deletedAt, sortOrder])
 }
@@ -4858,31 +4862,31 @@ model AgentGoal {
   // second queue.
 
   /// [{id, title, done, sessionId?, doneAt?}], in order. At most 12.
-  milestones      Json      @default("[]")
+  milestones         Json      @default("[]")
   /// ["The report cites at least 5 primary sources", …]. At most 8.
-  successCriteria Json      @default("[]")
+  successCriteria    Json      @default("[]")
   /// [{kind, text, at}] — what is stopping it now, in the person's words.
-  blockers        Json      @default("[]")
+  blockers           Json      @default("[]")
   /// 0..100, derived from milestones and stored so lists need no join.
-  progress        Int       @default(0)
+  progress           Int       @default(0)
   /// One sentence: what happens next, or what it is waiting for.
-  nextAction      String?   @db.Text
+  nextAction         String?   @db.Text
   /// The goal's own spend cap across all its tasks, micro-USD. Null: the agent's cap applies.
-  budgetMicroUsd  Int?
-  spentMicroUsd   Int       @default(0)
+  budgetMicroUsd     Int?
+  spentMicroUsd      Int       @default(0)
   /// Bounded execution: tasks this goal may start in total before it asks to
   /// continue. 0 means the goal is not driven at all (a reflection topic, as
   /// every goal was before durable goals): the sweep never starts its work.
-  maxRuns         Int       @default(0)
-  runsUsed        Int       @default(0)
+  maxRuns            Int       @default(0)
+  runsUsed           Int       @default(0)
   /// Attempts one milestone gets (an interrupted run that did nothing is retried within this).
-  maxAttemptsPerStep Int    @default(2)
+  maxAttemptsPerStep Int       @default(2)
   /// The driver's lease, so two sweeps (or a sweep and a press) never advance one goal twice.
-  advanceLeaseUntil DateTime?
-  lastAdvancedAt  DateTime?
+  advanceLeaseUntil  DateTime?
+  lastAdvancedAt     DateTime?
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
@@ -5460,7 +5464,7 @@ model WebPageCache {
   admission    String
   links        Json?
   hits         Int                      @default(0)
-  searchVector Unsupported("tsvector")?    @default(dbgenerated("(setweight(to_tsvector('simple'::regconfig, COALESCE(title, ''::text)), 'A'::\"char\") || setweight(to_tsvector('simple'::regconfig, \"left\"(COALESCE(text, ''::text), 100000)), 'B'::\"char\"))"))
+  searchVector Unsupported("tsvector")? @default(dbgenerated("(setweight(to_tsvector('simple'::regconfig, COALESCE(title, ''::text)), 'A'::\"char\") || setweight(to_tsvector('simple'::regconfig, \"left\"(COALESCE(text, ''::text), 100000)), 'B'::\"char\"))"))
 
   @@index([contentHash])
   @@index([host])
@@ -5607,14 +5611,14 @@ model ProviderKeyUsage {
 // ----------------------------------------------------------------------------
 
 model CodeLinkHost {
-  userId     String
-  deviceId   String
-  lastPullAt DateTime
-  appVersion String?
+  userId         String
+  deviceId       String
+  lastPullAt     DateTime
+  appVersion     String?
   /// Hub numbering of the device's global event stream.
-  globalSeq  Int      @default(0)
+  globalSeq      Int      @default(0)
   /// Whether the Mac's latest pull said the user shared its terminal.
-  terminalShared Boolean @default(false)
+  terminalShared Boolean  @default(false)
 
   @@id([userId, deviceId])
 }
@@ -5707,4 +5711,29 @@ model ConversationMessageLink {
   @@index([userId, fromRef, createdAt])
   @@index([userId, chainId])
   @@index([userId, dedupeKey, createdAt])
+}
+
+/// A repository's `.alevr/hooks.json`, reviewed by its owner for cloud runs.
+/// Trust is the SHA-256 of the exact file bytes: an edited file is a new hash
+/// and needs a new review. runner-context hands the hashes for the task's
+/// repository to the runner as `hooks.trustedHashes`; the clone can never
+/// grant itself trust. See docs/rework/program/MCP_RUNTIME_HOOKS.md.
+model CodeHookTrust {
+  id         String   @id @default(cuid())
+  userId     String
+  /// Lower-cased, so `Owner/Repo` and `owner/repo` are one repository.
+  repoOwner  String
+  repoName   String
+  /// 64 lower-case hex characters.
+  configHash String
+  /// The reviewed bytes as text, so the list shows what was approved.
+  config     String   @db.Text
+  /// The branch or ref the reviewed copy was read from (display only).
+  ref        String?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, repoOwner, repoName, configHash])
+  @@index([userId, createdAt])
 }

@@ -331,7 +331,7 @@ enum SettingsSnapshotFixtures {
             ),
             settingsModel: world.world.memorySettingsModel,
             services: services,
-            modelCatalog: world.world.conversationModel.selectableModels ?? [],
+            modelCatalog: world.world.conversationModel.selectableModels,
             saves: saves
         )
         context.previewSettings = settings(world: world, accent: accent)

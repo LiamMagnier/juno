@@ -45,7 +45,7 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 ## Models
 
 <!-- coverage:models:start -->
-56 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
+57 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
 
 | Model | Adapter | roundTrip | parallel | toolImages | runCodeE2E | skillE2E | Compatible |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -56,7 +56,7 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 | `openai:gpt-6-astra` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-6.1-sol` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-6-luna` | openai-responses | untested | untested | untested | untested | untested | no |
-| `openai:gpt-5.6-terra` | openai-responses | untested | untested | untested | untested | untested | no |
+| `openai:gpt-6.1-terra` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-5.5-pro` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-5.4-mini` | openai-responses | untested | untested | untested | untested | untested | no |
 | `google:gemini-4-argon` | gemini-native | untested | untested | untested | untested | untested | no |
@@ -69,6 +69,7 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 | `zhipu:glm-5.3` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `zhipu:glm-5.3-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `zhipu:glm-5.3-flashx` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `zhipu:glm-5.3-flashx-legal` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `zhipu:glm-4.7-flash` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `zhipu:glm-4.7-flashx` | openai-compatible | untested | untested | n/a | untested | untested | no |
 | `zhipu:glm-4.6v-flashx` | openai-compatible | untested | untested | untested | untested | untested | no |

@@ -48,6 +48,20 @@ test("it opens a pull request against main and keeps the model-watch issue", (t)
   assert.match(SYNC, /--label model-watch/);
 });
 
+test("it reuses one refresh PR and one model-watch issue instead of piling up", (t) => {
+  if (!SYNC) {
+    t.skip("sync-models.yml not present");
+    return;
+  }
+  // A per-run branch (model-sync/${{ github.run_id }}) opened a new PR and a
+  // new issue every night, each superseding the last.
+  assert.match(SYNC, /SYNC_BRANCH:\s*model-sync\/daily\b/);
+  assert.doesNotMatch(SYNC, /SYNC_BRANCH:\s*model-sync\/\$\{\{/);
+  assert.match(SYNC, /gh pr list --state open --head "\$SYNC_BRANCH"/, "the open refresh PR is not looked up");
+  assert.match(SYNC, /gh issue list --state open --label model-watch/, "the open model-watch issue is not looked up");
+  assert.match(SYNC, /gh issue edit/, "the model-watch issue is not refreshed in place");
+});
+
 test("nothing about what the watch detects was weakened", (t) => {
   if (!SYNC) {
     t.skip("sync-models.yml not present");

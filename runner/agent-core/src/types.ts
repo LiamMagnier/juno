@@ -70,6 +70,8 @@ export interface ApprovalRequest {
   toolName: string;
   input: unknown;
   risk: RiskLevel;
+  /** Configuration trust review must reach a person even in Full access. */
+  requiresHuman?: boolean;
   /** Human-readable line explaining what is being approved, e.g. the shell command. */
   summary: string;
   /** Set when a SUBAGENT (not the root agent) is asking. */
