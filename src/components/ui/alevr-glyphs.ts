@@ -56,6 +56,10 @@ const flipY = (inner: string) => `<g transform="matrix(1 0 0 -1 0 24)">${inner}<
 const dashed = (inner: string) => `<g class="gdash">${inner}</g>`;
 const wave = (...bars: string[]) => bars.map((d, i) => `<g class="gw" style="--i:${i}"><path d="${d}"/></g>`).join("");
 
+/** Struck through: the slash cuts a clean gap through what it crosses (the house gap), then draws on top. */
+const SLASHED = (inner: string) =>
+  `<defs><mask id="ag-slash" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/><path d="M3.5 3.5l17 17" stroke="#000" stroke-width="4.5" stroke-linecap="round"/></mask></defs><g mask="url(#ag-slash)">${inner}</g><path d="M3.5 3.5l17 17"/>`;
+
 /** A gear: n teeth, tip radius R, root radius r, tooth half-angle at the tip and the flank width, in degrees. */
 function gear(n: number, Rt: number, r: number, tip: number, flank: number): string {
   const pt = (rad: number, deg: number) => {
@@ -109,12 +113,12 @@ export const GLYPHS: Record<string, Glyph> = {
     m: "lift",
   },
   crew: { b: C(8, 9, 3) + C(16, 9, 3) + P("M2.75 19.5a5.25 5.25 0 0 1 10.5 0", "M13.4 15a5.25 5.25 0 0 1 7.85 4.5"), m: "lift" },
-  orbit: { b: C(12, 12, 3) + `<ellipse cx="12" cy="12" rx="9.25" ry="3.75" transform="rotate(-28 12 12)"/>`, m: "turn" },
+  orbit: { b: C(12, 12, 5) + `<g transform="rotate(-22 12 12)">` + P("M2 12.75a10 3.4 0 0 0 20 0", "M2 12.75c0-1 1.05-1.9 2.9-2.6", "M22 12.75c0-1-1.05-1.9-2.9-2.6") + `</g>`, m: "turn" },
   agent: { b: BOT + `<g class="gm">${D(9, 13.75, 1.25)}${D(15, 13.75, 1.25)}</g>`, m: "blink" },
 
   // call
   mic: { b: M(R(9, 3, 6, 11.5, 3)) + P("M5.5 11a6.5 6.5 0 0 0 13 0", "M12 17.5V21"), m: "lift" },
-  "mic-off": { b: P("M15 9.5V6a3 3 0 0 0-5.6-1.5", "M9 9v2.5a3 3 0 0 0 4.9 2.3", "M5.5 11a6.5 6.5 0 0 0 10.6 5", "M18.5 11a6.5 6.5 0 0 1-.4 2.2", "M12 17.5V21", "M4 4l16 16") },
+  "mic-off": { b: SLASHED(R(9, 3, 6, 11.5, 3) + P("M5.5 11a6.5 6.5 0 0 0 13 0", "M12 17.5V21")) },
   customize: { b: P("M4 7h8", "M17.5 7H20", "M4 17h2.5", "M12 17h8") + M(C(14.75, 7, 2.25)) + M2(C(9.25, 17, 2.25)), m: "shift" },
   stop: { b: R(6, 6, 12, 12, 3), on: `<rect class="gf" x="6" y="6" width="12" height="12" rx="3"/>` },
   "end-call": { b: M(P("M3.4 13.6c4.7-4.3 12.5-4.3 17.2 0l-.5 2.3a1.2 1.2 0 0 1-1.5.9l-2.7-.8a1.2 1.2 0 0 1-.85-1.1v-1.6a9.5 9.5 0 0 0-6.1 0v1.6a1.2 1.2 0 0 1-.85 1.1l-2.7.8a1.2 1.2 0 0 1-1.5-.9Z")), m: "d" },
@@ -139,7 +143,7 @@ export const GLYPHS: Record<string, Glyph> = {
   "sign-out": { b: P("M10 4.5H7.5a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3H10") + M(P("M15.5 8l4 4-4 4", "M19.5 12h-10")), m: "r" },
   undo: { b: M(P("M9 14L4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 0 11H11")), m: "l" },
   redo: { b: M(P("M15 14l5-5-5-5", "M20 9H9.5a5.5 5.5 0 0 0 0 11H13")), m: "r" },
-  refresh: { b: M(P("M19.5 10.5A7.75 7.75 0 0 0 5.6 7.5", "M4.5 4v4h4", "M4.5 13.5a7.75 7.75 0 0 0 13.9 3", "M19.5 20v-4h-4")), m: "spin" },
+  refresh: { b: M(P("M4.5 12a7.5 7.5 0 0 1 12.8-5.3L19.5 9", "M19.5 4.5V9H15", "M19.5 12a7.5 7.5 0 0 1-12.8 5.3L4.5 15", "M4.5 19.5V15H9")), m: "spin" },
   retry: { b: M(P(LOOP_CCW, "M4.5 4.5V9H9")), m: "ccw" },
   repeat: { b: P("M4 11V9.5a3 3 0 0 1 3-3h12.5", "M20 13v1.5a3 3 0 0 1-3 3H4.5") + M(P("M16.5 3.5l3 3-3 3")) + M2(P("M7.5 20.5l-3-3 3-3")), m: "shift" },
   history: { b: P(LOOP_CCW, "M4.5 4.5V9H9") + M(P("M12 8v4l2.75 1.75")), m: "turn" },
@@ -194,7 +198,7 @@ export const GLYPHS: Record<string, Glyph> = {
   // media
   image: { b: R(3.5, 4.5, 17, 15, 3) + M(C(9, 10, 1.75)) + P("M20.5 15l-4.2-4.2a1.5 1.5 0 0 0-2.1 0L5 19.5"), m: "u" },
   "image-plus": { b: P("M20.5 11V7.5a3 3 0 0 0-3-3h-11a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3H12", "M3.5 16l4-4a1.5 1.5 0 0 1 2.1 0L13 15.5") + C(9, 9.5, 1.5) + M(P("M18 14v6", "M15 17h6")), m: "rot" },
-  "image-off": { b: P("M8.5 4.5h9a3 3 0 0 1 3 3v9", "M19.6 19.4a3 3 0 0 1-2.1.6h-11a3 3 0 0 1-3-3v-11a3 3 0 0 1 .9-2.1", "M3.5 16l4-4a1.5 1.5 0 0 1 2.1 0L16 18.5", "M3.5 3.5l17 17") },
+  "image-off": { b: SLASHED(R(3.5, 4.5, 17, 15, 3) + C(9, 10, 1.75) + P("M20.5 15l-4.2-4.2a1.5 1.5 0 0 0-2.1 0L5 19.5")) },
   camera: { b: P("M4 9a2.5 2.5 0 0 1 2.5-2.5h1.4a1.5 1.5 0 0 0 1.25-.67l.8-1.16A1.5 1.5 0 0 1 11.2 4h1.6a1.5 1.5 0 0 1 1.25.67l.8 1.16a1.5 1.5 0 0 0 1.25.67h1.4A2.5 2.5 0 0 1 20 9v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17Z") + M(C(12, 12.75, 3.5)), m: "pop" },
   film: { b: R(4, 3.5, 16, 17, 3) + P("M8 3.5v17", "M16 3.5v17", "M4 12h16", "M4 7.75h4", "M16 7.75h4", "M4 16.25h4", "M16 16.25h4") },
   video: { b: R(3, 6, 13, 12, 3) + M(P("M16 10.5l4.2-2.6a.5.5 0 0 1 .8.4v7.4a.5.5 0 0 1-.8.4L16 13.5")), m: "r" },
@@ -214,10 +218,10 @@ export const GLYPHS: Record<string, Glyph> = {
   laptop: { b: R(4.5, 4.5, 15, 10.5, 2) + P("M2.5 19h19") },
   computer: { b: MONITOR },
   "screen-share": { b: MONITOR + M(P("M12 13V8", "M9.5 10.5L12 8l2.5 2.5")), m: "u" },
-  "screen-off": { b: MONITOR + P("M9.75 8l4.5 4.5", "M14.25 8l-4.5 4.5") },
+  "screen-off": { b: SLASHED(MONITOR) },
   screenshot: { b: M(P("M4 8.5V7a3 3 0 0 1 3-3h1.5", "M15.5 4H17a3 3 0 0 1 3 3v1.5", "M20 15.5V17a3 3 0 0 1-3 3h-1.5", "M8.5 20H7a3 3 0 0 1-3-3v-1.5")) + C(12, 12, 2.5), m: "squeeze" },
   keyboard: { b: R(2.5, 6, 19, 12, 3) + P("M7.5 14.5h9") + D(7, 10, 1) + D(10.33, 10, 1) + D(13.66, 10, 1) + D(17, 10, 1) },
-  offline: { b: D(12, 19, 1.25) + P("M8.75 15.5a4.6 4.6 0 0 1 6.5 0", "M5.25 12a9.6 9.6 0 0 1 3.4-2.1", "M18.75 12a9.6 9.6 0 0 0-5.5-2.85", "M2 8.5A14.5 14.5 0 0 1 6 6.1", "M22 8.5A14.5 14.5 0 0 0 10.6 4.6", "M3.5 3.5l17 17") },
+  offline: { b: SLASHED(D(12, 19, 1.25) + P("M8.75 15.5a4.6 4.6 0 0 1 6.5 0", "M5.25 12a9.6 9.6 0 0 1 13.5 0", "M2 8.5a14.5 14.5 0 0 1 20 0")) },
 
   // selection and canvas
   selection: { b: dashed(R(4, 4, 16, 16, 3)) },
@@ -279,7 +283,7 @@ export const GLYPHS: Record<string, Glyph> = {
   upgrade: { b: RING + M(P("M12 16V8", "M8.5 11.5L12 8l3.5 3.5")), m: "u" },
   shield: { b: P(SHIELD) + DRAW("M9 12l2 2 4-4"), m: "draw" },
   "shield-alert": { b: P(SHIELD, "M12 8.5v4") + D(12, 15.5, 0.95) },
-  "shield-off": { b: P("M19 11.3c0 1.3-.2 2.5-.7 3.6", "M16.4 18.4c-1.2 1-2.7 1.8-4.4 2.4-4.1-1.5-7-4.7-7-9.2V6.1", "M8.6 4.8L12 3.5l7 2.6v2.4", "M3.5 3.5l17 17") },
+  "shield-off": { b: SLASHED(P(SHIELD)) },
   lock: { b: R(5, 10.5, 14, 10, 3) + M(P("M8 10.5V7.5a4 4 0 0 1 8 0v3")) + D(12, 15.5, 1.25), m: "u" },
   unlock: { b: R(5, 10.5, 14, 10, 3) + M(P("M8 10.5V7.5a4 4 0 0 1 7.75-1.4")) + D(12, 15.5, 1.25), m: "u" },
   key: { b: M(C(8, 15.5, 4.5) + P("M11.25 12.25L20 3.5", "M16.5 7l2.5 2.5", "M18.25 5.25l2 2")), m: "turn" },
@@ -299,7 +303,7 @@ export const GLYPHS: Record<string, Glyph> = {
   memory: { b: P("M13 3.5H8a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3V12", "M3.5 8h3", "M3.5 12h3", "M3.5 16h3") + M(P("M18.4 3.6a1.9 1.9 0 0 1 2.7 2.7L15 12.4l-3.4.9.9-3.4Z")), m: "wiggle" },
   sources: { b: P("M12 6.5C10.2 5 7.7 4.5 3.5 4.5v14c4.2 0 6.7.5 8.5 2 1.8-1.5 4.3-2 8.5-2v-14c-4.2 0-6.7.5-8.5 2Z", "M12 6.5v14"), m: "pop" },
   learn: { b: M(P("M12 4.5L2.5 9l9.5 4.5L21.5 9Z")) + P("M6.5 11v4.5c0 1.4 2.5 3 5.5 3s5.5-1.6 5.5-3V11", "M21.5 9v5"), m: "lift" },
-  thought: { b: P("M12 5.5a3 3 0 0 0-5.6-1.4A3 3 0 0 0 4 8.5a3.5 3.5 0 0 0 .5 6.3A3 3 0 0 0 7.5 19a3 3 0 0 0 4.5 1.5Z", "M12 5.5a3 3 0 0 1 5.6-1.4A3 3 0 0 1 20 8.5a3.5 3.5 0 0 1-.5 6.3A3 3 0 0 1 16.5 19a3 3 0 0 1-4.5 1.5Z", "M12 5.5v15") , m: "pop" },
+  thought: { b: M(P("M12 3a6 6 0 0 0-3.4 10.95c.55.38.9 1 .9 1.67V16.5h5v-.88c0-.67.35-1.29.9-1.67A6 6 0 0 0 12 3Z")) + P("M9.5 19h5", "M10.5 21.5h3"), m: "pop" },
   "deep-field": { b: C(7, 16, 3.5) + C(17, 16, 3.5) + P("M10.5 16V8a2 2 0 0 0-2-2H7.4a2 2 0 0 0-1.95 1.55L3.6 15.2", "M13.5 16V8a2 2 0 0 1 2-2h1.1a2 2 0 0 1 1.95 1.55l1.85 7.65", "M10.5 11h3"), m: "lift" },
 
   // time and nature
@@ -312,16 +316,16 @@ export const GLYPHS: Record<string, Glyph> = {
   globe: { b: RING + P("M3.5 12h17") + M(P("M12 3.5c2.3 2.4 3.5 5.2 3.5 8.5s-1.2 6.1-3.5 8.5c-2.3-2.4-3.5-5.2-3.5-8.5S9.7 5.9 12 3.5Z")), m: "squeeze" },
   map: { b: P("M9 4.5L3.5 6.5v13l5.5-2 6 2 5.5-2v-13l-5.5 2Z", "M9 4.5v13", "M15 6.5v13"), m: "pop" },
   link: { b: M(P("M9.5 17H7a5 5 0 0 1 0-10h2.5")) + M2(P("M14.5 7H17a5 5 0 0 1 0 10h-2.5")) + P("M8.5 12h7"), m: "squeeze" },
-  "link-off": { b: P("M9.5 17H7a5 5 0 0 1-1.6-9.75", "M14.5 7H17a5 5 0 0 1 2.2 9.5", "M8.5 12h3", "M3.5 3.5l17 17") },
+  "link-off": { b: SLASHED(P("M9.5 17H7a5 5 0 0 1 0-10h2.5", "M14.5 7H17a5 5 0 0 1 0 10h-2.5", "M8.5 12h7")) },
   star: { b: M(P(STAR)), on: F(STAR), m: "pop" },
   bolt: { b: M(P("M13 3L5 13.5h6.5L11 21l8-10.5h-6.5Z")), m: "pop" },
   pin: { b: M(P(PIN, "M12 14.5v6")), on: F("M10.25 3.5h3.5v5.25l3 3.75v2h-9.5v-2l3-3.75Z") + P("M9.5 3.5h5", "M12 14.5v6"), m: "tilt" },
-  unpin: { b: P("M9.5 3.5h5", "M13.75 3.5v5.25l1.3 1.6", "M10.25 3.5v2", "M9.2 10.25l-1.95 2.25v2h7.5", "M12 14.5v6", "M3.5 3.5l17 17") },
-  bookmark: { b: M(P("M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v15.5L12 16.5l-6.5 4V5A1.5 1.5 0 0 1 7 3.5Z")) + P("M12 7.5v5", "M9.5 10h5"), m: "pop" },
+  unpin: { b: SLASHED(P(PIN, "M12 14.5v6")) },
+  bookmark: { b: M(P("M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v15.5L12 16.5l-6.5 4V5A1.5 1.5 0 0 1 7 3.5Z")), on: F("M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v15.5L12 16.5l-6.5 4V5A1.5 1.5 0 0 1 7 3.5Z"), m: "pop" },
   "thumbs-up": { b: M(P(THUMB) + THUMB_CUFF), m: "tilt" },
   "thumbs-down": { b: flipY(M(P(THUMB) + THUMB_CUFF)), m: "tilt" },
   eye: { b: P("M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z") + M(C(12, 12, 3)), m: "blink" },
-  "eye-off": { b: P("M10.6 5.6c.45-.07.92-.1 1.4-.1 6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.2 3", "M6.6 6.6C3.9 8.4 2.5 12 2.5 12S6 18.5 12 18.5a9.3 9.3 0 0 0 5.4-1.6", "M9.9 9.9a3 3 0 0 0 4.2 4.2", "M3.5 3.5l17 17") },
+  "eye-off": { b: SLASHED(P("M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z") + C(12, 12, 3)) },
   appearance: { b: M(P("M12 3l4.5 7.5h-9Z")) + C(7.5, 16.5, 4) + R(13, 12.5, 8, 8, 2), m: "turn" },
   coins: { b: C(9.5, 9.5, 5.75) + M(P("M17.2 9.9a5.75 5.75 0 1 1-7.3 7.3")), m: "shift" },
   billing: { b: R(3, 5.5, 18, 13, 3) + P("M3 10h18") + M(P("M7 14.75h3")), m: "r" },
