@@ -778,12 +778,14 @@ jobs:
       # firewall.sh's rules, puts canary addresses on lo and runs the egress
       # proxy on the bridge, exactly as setup-vm.sh arranges the VM. The runner
       # is a disposable VM; the suite refuses a host that already has the network.
+      # sudo on ubuntu-latest now ignores -E ("preserving the entire environment
+      # is not supported"), so every root step names the variables it passes.
       - name: Agent-computer boundary, a real computer behind firewall.sh and egress-proxy.py
         env:
           JUNO_COMPUTER_DOCKER_TESTS: "1"
           JUNO_BOUNDARY_REQUIRE_ALL: "1"
           PYTHONDONTWRITEBYTECODE: "1"
-        run: sudo -E env "PATH=$PATH" python3 scripts/sandbox-boundary-check.py tests.test_computer_boundary
+        run: sudo env "PATH=$PATH" JUNO_COMPUTER_DOCKER_TESTS="$JUNO_COMPUTER_DOCKER_TESTS" JUNO_BOUNDARY_REQUIRE_ALL="$JUNO_BOUNDARY_REQUIRE_ALL" PYTHONDONTWRITEBYTECODE="$PYTHONDONTWRITEBYTECODE" python3 scripts/sandbox-boundary-check.py tests.test_computer_boundary
 
   # Agent computers end to end, on a real computer, for both providers
   # (docs/design/agents-v2/COMPUTERS_2026-10.md S4): CDP through the gate,
@@ -876,7 +878,7 @@ jobs:
         run: '"$RUNNER_TEMP/host-venv/bin/python" -m unittest discover -s tests -p test_computer_pipe.py -v'
 
       - name: Put the computers' network, firewall and egress proxy on the runner
-        run: sudo -E env "PATH=$PATH" python3 tests/computer_host_fixture.py up
+        run: sudo env "PATH=$PATH" PYTHONDONTWRITEBYTECODE="$PYTHONDONTWRITEBYTECODE" python3 tests/computer_host_fixture.py up
 
       # As root: the suite drives docker through the production broker, which
       # updates the egress map the fixture's root-owned watcher keeps.
@@ -885,7 +887,7 @@ jobs:
           JUNO_COMPUTER_E2E: "1"
           JUNO_COMPUTER_E2E_PROVIDER: docker
           JUNO_COMPUTER_E2E_EVIDENCE: ${{ runner.temp }}/e2e-evidence
-        run: sudo -E env "PATH=$PATH" npx tsx --test tests/computer-real-e2e.test.ts
+        run: sudo env "PATH=$PATH" PYTHONDONTWRITEBYTECODE="$PYTHONDONTWRITEBYTECODE" COMPUTER_MIN_FREE_MEMORY_MB="$COMPUTER_MIN_FREE_MEMORY_MB" COMPUTER_MIN_FREE_DISK_GB="$COMPUTER_MIN_FREE_DISK_GB" COMPUTER_MEMORY_MB="$COMPUTER_MEMORY_MB" JUNO_COMPUTER_TEST_SLACK="$JUNO_COMPUTER_TEST_SLACK" JUNO_COMPUTER_E2E="$JUNO_COMPUTER_E2E" JUNO_COMPUTER_E2E_PROVIDER="$JUNO_COMPUTER_E2E_PROVIDER" JUNO_COMPUTER_E2E_EVIDENCE="$JUNO_COMPUTER_E2E_EVIDENCE" npx tsx --test tests/computer-real-e2e.test.ts
 
       # deploy/computer-host/local/run-local.sh --nginx: TLS through the
       # generated nginx config with a private name-constrained CA, the
@@ -894,7 +896,7 @@ jobs:
       - name: Start the computer host (run-local.sh --nginx)
         env:
           JUNO_COMPUTER_HOST_PYTHON: ${{ runner.temp }}/host-venv/bin/python
-        run: sudo -E env "PATH=$PATH" python3 tests/computer_host_fixture.py host-up
+        run: sudo env "PATH=$PATH" PYTHONDONTWRITEBYTECODE="$PYTHONDONTWRITEBYTECODE" JUNO_COMPUTER_HOST_PYTHON="$JUNO_COMPUTER_HOST_PYTHON" python3 tests/computer_host_fixture.py host-up
 
       - name: End to end, remote provider (a separate computer host, over TLS)
         env:
@@ -903,7 +905,7 @@ jobs:
           JUNO_COMPUTER_E2E_EVIDENCE: ${{ runner.temp }}/e2e-evidence
         run: |
           . /run/juno-computer-fixture/host.env
-          sudo -E env "PATH=$PATH" npx tsx --test tests/computer-real-e2e.test.ts
+          sudo env "PATH=$PATH" PYTHONDONTWRITEBYTECODE="$PYTHONDONTWRITEBYTECODE" COMPUTER_MIN_FREE_MEMORY_MB="$COMPUTER_MIN_FREE_MEMORY_MB" COMPUTER_MIN_FREE_DISK_GB="$COMPUTER_MIN_FREE_DISK_GB" COMPUTER_MEMORY_MB="$COMPUTER_MEMORY_MB" JUNO_COMPUTER_TEST_SLACK="$JUNO_COMPUTER_TEST_SLACK" JUNO_COMPUTER_E2E="$JUNO_COMPUTER_E2E" JUNO_COMPUTER_E2E_PROVIDER="$JUNO_COMPUTER_E2E_PROVIDER" JUNO_COMPUTER_E2E_EVIDENCE="$JUNO_COMPUTER_E2E_EVIDENCE" COMPUTER_HOST_URL="$COMPUTER_HOST_URL" NODE_EXTRA_CA_CERTS="$NODE_EXTRA_CA_CERTS" RELAY_COMPUTER_HOSTS="$RELAY_COMPUTER_HOSTS" JUNO_COMPUTER_E2E_HOST_STATE="$JUNO_COMPUTER_E2E_HOST_STATE" npx tsx --test tests/computer-real-e2e.test.ts
 
       - name: Logs of the fixture and the host
         if: always()
@@ -928,7 +930,7 @@ jobs:
       # removes what a fixture could have added. Never pass it on a real host.
       - name: Take the fixture down
         if: always()
-        run: sudo -E env "PATH=$PATH" python3 tests/computer_host_fixture.py down --disposable-host
+        run: sudo env "PATH=$PATH" PYTHONDONTWRITEBYTECODE="$PYTHONDONTWRITEBYTECODE" python3 tests/computer_host_fixture.py down --disposable-host
 
   build-and-deploy:
     needs: [test, unit-tests, runner, migrations, exec-boundary, computer-boundary]
