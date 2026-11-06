@@ -16,8 +16,8 @@
  * concept's drawing is a one-line change here and reaches every surface.
  *
  * OPTICAL SIZE comes from the size a call site asks for (`size-4`, `size`):
- * 14 px and under paint the bold cut, larger glyphs the regular cut, so the
- * line stays near the weight of the label it sits beside (`weightFor`).
+ * 14 px and under paint the bold cut, larger glyphs the thin regular cut
+ * (`weightFor`).
  *
  * MOTION IS OPT-IN (G46, INTERACTION_SPEC I-7). A glyph plays its hover
  * gesture only inside a control marked `data-jicon-articulate` (or inside a
@@ -552,10 +552,10 @@ const DRAWING: Record<string, PhosphorIcon> = {
 };
 
 /**
- * The line follows the painted size, the way a type family's optical sizes do:
- * at 14 px and under the bold cut (1.3 px line) so a small glyph keeps the
- * same ink as the 13.5 px label beside it; from 15 px the regular cut (1 to
- * 1.25 px). Measured against the label's stem, not chosen by eye.
+ * A thin, precise line (owner, 6 Nov 2026; reference picked: Claude.ai):
+ * the regular cut from 16 px up (1 px at 16, 1.25 at 20), so the glyph sits a
+ * step quieter than its label; the bold cut only at 14 px and under, where a
+ * 0.9 px line would break up on a 1x screen.
  */
 function weightFor(px: number): "regular" | "bold" {
   return px <= 14 ? "bold" : "regular";

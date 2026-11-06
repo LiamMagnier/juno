@@ -10,11 +10,8 @@
  *      row's check, a selection, the composer's focus. Like a system tint
  *      colour: one hue, used for "this is yours / this is on", never for
  *      decoration. Surfaces and text keep their neutral ramps.
- *   2. RESTRAINED GLASS, ONLY ON THINGS THAT FLOAT. Menus, popovers and
- *      tooltips are a translucent material over the page (blur + saturate),
- *      never glass on glass and never on content or dialogs. Under
- *      `prefers-reduced-transparency` and `prefers-contrast: more` they go
- *      back to solid.
+ *   2. SOLID FLOATING SHEETS (revised 6 Nov 2026). Menus and popovers are a
+ *      solid popover ground with a soft throw; the 5 Nov glass is gone.
  *   3. SPRING MOTION. Floating layers open on the generated springs
  *      (`--spring-*`, the same definitions framer and SwiftUI read), close
  *      faster than they open, and a switch's thumb lands with the reward
@@ -101,37 +98,7 @@
     0 4px 12px -4px hsl(var(--primary) / 0.4);
 }
 
-/* ── 2. Glass on floating layers ─────────────────────────────────────────── */
-
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .z-popper.surface-float,
-  .z-popper.overlay-glass,
-  .cmenu.cmenu.cmenu {
-    background-color: hsl(var(--popover) / var(--glass-alpha));
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  }
-  /* A lit top edge is what makes a translucent sheet read as a material. */
-  .z-popper.surface-float,
-  .z-popper.overlay-glass,
-  .cmenu.cmenu.cmenu {
-    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.5), var(--shadow-float);
-  }
-  .dark .z-popper.surface-float,
-  .dark .z-popper.overlay-glass,
-  .dark .cmenu.cmenu.cmenu {
-    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.07), var(--shadow-float);
-  }
-}
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  .z-popper.surface-float,
-  .z-popper.overlay-glass,
-  .cmenu.cmenu.cmenu {
-    background-color: hsl(var(--popover));
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
+/* ── 2. (Glass on floating layers was removed 6 Nov 2026: menus are solid, see 4.) */
 
 /* ── 3. Spring motion ────────────────────────────────────────────────────── */
 
@@ -163,73 +130,99 @@ button[role="switch"] > span {
   background-color: hsl(0 0% 100%);
 }
 
-/* ── 4. Menus: the tinted selection ─────────────────────────────────────────
-   Owner, 5 Nov 2026: "the icons, menus and things still look ugly, rework it
-   from the ground". A grey wash under the pointer is every web app's menu.
-   The highlighted row is now the tint itself, white label and white glyph,
-   the way a Mac menu selects: the menu reads as an instrument of the
-   product, and the one row Enter will pick cannot be mistaken. It lands in
-   0ms (the recipe's timing) so a fast pointer never smears blue down a list.
-   A destructive row selects in the destructive colour, so the one row that
-   cannot be undone never looks like Rename under the pointer.
-   Hairlines inset to the rows' text edge (8px) instead of running to the
-   shell, so a group break reads as a pause, not as a second panel. */
+/* ── 4. Menus, from zero (owner, 6 Nov 2026: "even more AI slop"; reference
+   picked by the owner: Claude.ai) ───────────────────────────────────────────
+   A solid, warm-neutral sheet with a fine edge and a short soft throw; compact
+   32px rows at 14px; a 16px glyph in a thin precise line, a step quieter than
+   the label; the hover a faint warm wash, never a colour. No glass, no
+   blue-filled selection. Destructive rows keep red ink over a red wash. */
+
+.menu-item.menu-item,
+.cmenu.cmenu.cmenu [role^="menuitem"] {
+  min-height: 32px;
+  gap: 10px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 20px;
+}
+@media (pointer: coarse) {
+  .menu-item.menu-item,
+  .cmenu.cmenu.cmenu [role^="menuitem"] {
+    min-height: 44px;
+  }
+}
+.menu-item.menu-item svg:not([class*="text-"]),
+.cmenu.cmenu.cmenu [role^="menuitem"] > svg:first-child,
+.cmenu.cmenu.cmenu [role^="menuitem"] > span:first-child > svg:only-child {
+  color: hsl(var(--foreground) / 0.62);
+}
+.menu-item.menu-item[data-highlighted] svg:not([class*="text-"]),
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] > svg:first-child {
+  color: hsl(var(--foreground) / 0.9);
+}
 
 .menu-item.menu-item[data-highlighted],
 .menu-item.menu-item[data-state="open"] {
-  background-color: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+  background-color: hsl(30 8% 50% / 0.09);
+  color: hsl(var(--foreground));
 }
-.menu-item.menu-item[data-highlighted] svg,
-.menu-item.menu-item[data-state="open"] svg,
-.menu-item.menu-item[data-highlighted] .text-muted-foreground,
-.menu-item.menu-item[data-state="open"] .text-muted-foreground {
-  color: hsl(var(--primary-foreground) / 0.86);
+.dark .menu-item.menu-item[data-highlighted],
+.dark .menu-item.menu-item[data-state="open"] {
+  background-color: hsl(40 10% 92% / 0.07);
 }
 .menu-item.menu-item.danger-hover[data-highlighted] {
-  background-color: hsl(var(--destructive));
-  color: hsl(0 0% 100%);
+  background-color: hsl(var(--destructive) / 0.08);
+  color: hsl(var(--destructive-ink, var(--destructive)));
 }
-.menu-item.menu-item.danger-hover[data-highlighted] svg {
-  color: hsl(0 0% 100%);
+.cmenu-glide.cmenu-glide {
+  border-radius: 8px;
+  background-color: hsl(30 8% 50% / 0.09);
 }
-
-/* The composer's menus draw their highlight as one gliding pill under the
-   rows (composer-menu.tsx), so the pill takes the tint and the row above it
-   takes the white ink. */
-.cmenu-glide.cmenu-glide,
 .dark .cmenu-glide.cmenu-glide {
-  background-color: hsl(var(--primary));
+  background-color: hsl(40 10% 92% / 0.07);
 }
 .cmenu-glide.cmenu-glide[data-destructive="true"] {
-  background-color: hsl(var(--destructive));
-}
-.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted],
-.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] svg,
-.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] .text-muted-foreground,
-.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] .text-destructive {
-  color: hsl(var(--primary-foreground));
-  transition-duration: 0ms;
-}
-.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] .text-muted-foreground {
-  color: hsl(var(--primary-foreground) / 0.8);
-}
-/* An open flyout's parent row keeps a quiet tint while the pointer is in the
-   flyout, so the path back is still lit without two blue rows at once. */
-.cmenu.cmenu.cmenu [role^="menuitem"][data-state="open"]:not([data-highlighted]) {
-  background-color: hsl(var(--primary) / 0.12);
-}
-/* A switch inside the selected row: blue on blue would vanish, so the track
-   goes to a white wash and the thumb stays white. */
-.menu-item[data-highlighted] button[role="switch"][data-state="checked"],
-.cmenu [role^="menuitem"][data-highlighted] [data-switch-track][data-on="true"],
-.cmenu [role^="menuitem"][data-highlighted] .bg-primary {
-  background-color: hsl(0 0% 100% / 0.38);
-  border-color: transparent;
+  background-color: hsl(var(--destructive) / 0.08);
 }
 
+/* The sheet: solid popover ground, 14px corners (concentric with 8px rows
+   in the 6px inset), a fine edge and a short soft throw. */
+.z-popper.surface-float,
+.z-popper.overlay-glass,
+.cmenu.cmenu.cmenu {
+  border-radius: 14px;
+  border: 1px solid hsl(30 10% 20% / 0.1);
+  background-color: hsl(var(--popover));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow:
+    0 1px 1px hsl(30 10% 10% / 0.03),
+    0 6px 20px -4px hsl(30 10% 10% / 0.1);
+}
+.dark .z-popper.surface-float,
+.dark .z-popper.overlay-glass,
+.dark .cmenu.cmenu.cmenu {
+  border-color: hsl(40 10% 92% / 0.09);
+  box-shadow: 0 10px 30px -6px hsl(0 0% 0% / 0.55);
+}
+.cmenu.cmenu.cmenu {
+  --cm-radius: 14px;
+  --cm-pad: 6px;
+}
+
+/* Group breaks: a fine line inset to the row padding. */
 .cmenu.cmenu.cmenu [role="separator"] {
-  margin: 5px 8px;
+  margin: 4px 8px;
+  background-color: hsl(30 10% 20% / 0.08);
+}
+[role="menu"] > [role="separator"] {
+  margin-inline: 8px;
+  background-color: hsl(30 10% 20% / 0.08);
+}
+.dark .cmenu.cmenu.cmenu [role="separator"],
+.dark [role="menu"] > [role="separator"] {
+  background-color: hsl(40 10% 92% / 0.08);
 }
 
 /* ── 5. One interface voice ─────────────────────────────────────────────────
