@@ -139,7 +139,7 @@ test("Cobalt: the accent stored as ultramarine is hsl(205 78% 36%), labelled, an
   assert.equal(cobalt?.label, "Cobalt");
   assert.equal(cobalt?.color, "hsl(205 78% 36%)");
   for (const a of ACCENTS) assert.ok(a.label && /^[A-Z][a-z]+$/.test(a.label), `${a.id} has no human label`);
-  assert.equal(ACCENTS.find((a) => a.id === "coral")?.label, "Graphite");
+  assert.equal(ACCENTS.find((a) => a.id === "coral")?.label, "Indigo");
 });
 
 test("shell, gesture and timing tokens are declared with the spec's values (§3.12, §4.2)", () => {
@@ -224,7 +224,8 @@ test("scroll-edge bands fade from their own surface, not the page, where the gro
 });
 
 test("type rungs a fontSize cannot finish, and the corner-shape enhancement", () => {
-  assert.match(stripped, /:where\(\.text-label, \.text-kbd\) \{\s*font-family: var\(--font-mono\)[^;]*;\s*font-variant-numeric: tabular-nums;/);
+  assert.match(stripped, /:where\(\.text-label\) \{\s*font-variant-numeric: tabular-nums;\s*\}/);
+  assert.match(stripped, /:where\(\.text-kbd\) \{\s*font-family: var\(--font-mono\)[^;]*;\s*font-variant-numeric: tabular-nums;/);
   assert.match(stripped, /@media \(max-width: 639\.98px\) \{\s*\.text-page-title\.text-page-title \{ font-size: 1\.75rem; \}/);
   assert.match(stripped, /@supports \(corner-shape: superellipse\(1\.5\)\) \{\s*:where\(\.rounded-composer, \.rounded-card, \.rounded-panel/);
 });

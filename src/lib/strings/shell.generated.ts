@@ -2,7 +2,7 @@
 // Do not edit: change the contract and run `npm run shell:contract:generate`.
 // `npm run shell:contract:check` fails CI when this file is stale.
 //
-// shell-contract-digest: e2726b1aad5b0aafcab4e514a970d2a867a02ff6ad9d903fd9b97658317b5176
+// shell-contract-digest: 454af1268ac276292dccdfc9336c201e62f128512f148149104dd4ca0bc6b0b9
 
 /** The languages the table carries. */
 export const SHELL_LOCALES = ["en","fr"] as const;

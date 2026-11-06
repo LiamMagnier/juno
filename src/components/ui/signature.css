@@ -1,0 +1,623 @@
+/*
+ * ALEVR SIGNATURE (owner decision, 5 Nov 2026: "Add a signature look").
+ *
+ * Graphite stays the ground: neutral surfaces, one type system, the radius
+ * ladder. On top of it this sheet adds the three things the owner picked:
+ *
+ *   1. ONE TINT. Alevr Blue, the brand board's own colour (BRAND_IDENTITY.md, the
+ *      Presence row, read from --presence), becomes the tint of everything you can
+ *      set or act on: the primary button, a switch that is on, the chosen
+ *      row's check, a selection, the composer's focus. Like a system tint
+ *      colour: one hue, used for "this is yours / this is on", never for
+ *      decoration. Surfaces and text keep their neutral ramps.
+ *   2. SOLID FLOATING SHEETS (revised 6 Nov 2026). Menus and popovers are a
+ *      solid popover ground with a soft throw; the 5 Nov glass is gone.
+ *   3. SPRING MOTION. Floating layers open on the generated springs
+ *      (`--spring-*`, the same definitions framer and SwiftUI read), close
+ *      faster than they open, and a switch's thumb lands with the reward
+ *      spring's 1% settle. Reduced motion keeps the fades (the globals.css
+ *      tiers swap every spring for --ease-out-soft and collapse travel).
+ *
+ * It is one file imported after globals.css so the whole identity can be
+ * read, tuned or reverted in one place.
+ */
+
+:root {
+  /* The tint follows the stored accent; "coral" (every default account) is
+     Alevr Blue: 7.5:1 under a white label in light. */
+  --tint: var(--presence);
+  --tint-foreground: 0 0% 100%;
+  --glass-alpha: 0.78;
+  --glass-blur: 22px;
+}
+.dark {
+  --glass-alpha: 0.72;
+}
+
+/* ── 1. The tint ─────────────────────────────────────────────────────────── */
+
+/* The coral (default) accent values live in globals.css, so the token
+   generator projects them to Swift; this sheet only says where they paint. */
+
+::selection {
+  background-color: hsl(var(--primary) / 0.22);
+}
+.dark ::selection {
+  background-color: hsl(var(--primary) / 0.34);
+}
+
+/* THE COMPOSER'S MATERIAL (owner, 6 Nov 2026: "the drop shadow looks bad").
+   The old stack ended in a 56px bloom 22px below the box, a grey haze that
+   made the field float like a modal. Now it rests ON the page: a hairline,
+   a 1px contact shadow and one short ambient layer. Focus steps the hairline
+   up and lengthens the ambient layer a little; nothing coloured, no halo.
+   Only box-shadow and border-color move, on the strong ease-out at 200ms. */
+.composer-surface.composer-surface {
+  caret-color: hsl(var(--foreground));
+  border-color: hsl(30 8% 14% / 0.1);
+  box-shadow:
+    0 1px 1px hsl(30 10% 10% / 0.03),
+    0 2px 6px -2px hsl(30 10% 10% / 0.05),
+    0 10px 24px -14px hsl(30 10% 10% / 0.1);
+  transition:
+    border-color 160ms var(--ease-out-soft),
+    box-shadow 200ms var(--alv-ease-out);
+}
+.composer-surface.composer-surface:focus-within {
+  border-color: hsl(30 8% 14% / 0.17);
+  box-shadow:
+    0 1px 1px hsl(30 10% 10% / 0.04),
+    0 3px 8px -3px hsl(30 10% 10% / 0.07),
+    0 14px 32px -16px hsl(30 10% 10% / 0.14);
+}
+.dark .composer-surface.composer-surface {
+  border-color: hsl(40 10% 96% / 0.1);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.05),
+    0 1px 2px hsl(0 0% 0% / 0.35),
+    0 12px 28px -14px hsl(0 0% 0% / 0.6);
+}
+.dark .composer-surface.composer-surface:focus-within {
+  border-color: hsl(40 10% 96% / 0.17);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.06),
+    0 1px 2px hsl(0 0% 0% / 0.4),
+    0 16px 36px -16px hsl(0 0% 0% / 0.7);
+}
+
+/* The send arrow sits on a solid disc, where a 1.5px line thins against the
+   fill; it takes a heavier line there (2.25 units of 24 is 1.7px at 18px). */
+.composer-primary-action[data-face="send"] .ag,
+.composer-primary-action[data-face="stop"] .ag {
+  stroke-width: 2.25;
+}
+
+/* Sidebar destinations: 18px glyphs in the second ink at rest, so a row
+   reads as label-first; the row's hover and selection bring them to full
+   ink (app-sidebar.tsx, NavRow). */
+.sidebar-nav-glyph {
+  color: hsl(var(--foreground) / 0.62);
+}
+.dark .sidebar-nav-glyph {
+  color: hsl(var(--foreground) / 0.66);
+}
+
+/* Send is a solid ink disc while there is something to send, the one heavy
+   mark on the composer; empty, the disc stays the quiet voice entry. */
+.composer-primary-action[data-face="send"]:not(:disabled) {
+  background-color: hsl(var(--foreground));
+  color: hsl(var(--background));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.16),
+    0 1px 2px hsl(30 10% 10% / 0.18),
+    0 4px 10px -4px hsl(30 10% 10% / 0.3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .composer-primary-action[data-face="send"]:not(:disabled):hover {
+    background-color: hsl(var(--foreground) / 0.86);
+    filter: none;
+  }
+}
+
+/* The primary button: the tint with a lit top edge and a short coloured
+   throw, so it reads as a physical key rather than a flat swatch. */
+.control-primary {
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.2),
+    inset 0 -1px 0 hsl(0 0% 0% / 0.08),
+    0 1px 2px hsl(var(--primary) / 0.28),
+    0 4px 12px -4px hsl(var(--primary) / 0.4);
+}
+
+/* ── 2. (Glass on floating layers was removed 6 Nov 2026: menus are solid, see 4.) */
+
+/* ── 3. Motion: floating layers and the switch ─────────────────────────────
+   Menus and popovers arrive from their trigger on a strong ease-out (Emil
+   Kowalski's curve: fast start, long settle), 180ms, scale .96 plus 4px of
+   travel toward the trigger; they leave in 120ms on opacity and a .98 settle,
+   no travel, so a dismissed menu does not seem to go anywhere. Dialogs are
+   bigger, so they take 240ms and stay centred. */
+:root {
+  --alv-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --alv-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+.data-\[state\=open\]\:animate-pop-in[data-state="open"] {
+  animation: pop-in 180ms var(--alv-ease-out) both;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .data-\[state\=closed\]\:animate-pop-out[data-state="closed"] {
+    animation: alv-pop-out 120ms var(--ease-out-soft) both;
+  }
+}
+.cmenu.cmenu.cmenu[data-state="open"] {
+  animation: cmenu-in 180ms var(--alv-ease-out) both;
+}
+.data-\[state\=open\]\:animate-modal-in[data-state="open"] {
+  animation: pop-in 240ms var(--alv-ease-out) both;
+}
+@keyframes alv-pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+/* The switch: on is the foreground ink with a thumb in the page's ground (the
+   quiet form, owner 6 Nov 2026). The thumb travels on the reward spring and
+   stretches 3px while pressed, the way a real toggle gives under a thumb
+   before it flips; it lands round again. */
+button[role="switch"][data-state="checked"] {
+  background-color: hsl(var(--foreground));
+  border-color: hsl(var(--foreground));
+}
+button[role="switch"] > span {
+  transition: transform var(--spring-reward-dur, 320ms) var(--spring-reward, var(--alv-ease-out));
+}
+button[role="switch"] > span > span {
+  transition:
+    background-color 160ms var(--ease-out-soft),
+    width 160ms var(--alv-ease-out),
+    margin 160ms var(--alv-ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  button[role="switch"]:active > span > span {
+    width: 19px;
+  }
+  button[role="switch"][data-state="checked"]:active > span > span {
+    margin-left: -3px;
+  }
+}
+button[role="switch"][data-state="checked"] > span > span,
+.dark button[role="switch"][role="switch"][data-state="checked"][data-state="checked"] > span > span {
+  background-color: hsl(var(--background));
+}
+
+/* ── 4. Menus (owner, 6 Nov 2026: "rework the design completely of all the
+   menus") ────────────────────────────────────────────────────────────────────
+   One sheet for every floating list: the kebab menus, the account menu, the
+   composer's menus and their flyouts are all `.cmenu` now, so they share the
+   glide (one highlight that slides from row to row under the pointer and
+   jumps under the arrow keys), the entrance, and these numbers:
+
+     sheet  16px corners, 6px inset, a hairline, a lit top edge and a two
+            step shadow: a tight contact shadow and a long soft throw
+     rows   34px (44 on touch), 10px corners (16 − 6, concentric), 14px type,
+            an 18px glyph in the second ink that comes up to the label's ink
+            and plays its gesture when the row is under the pointer
+     wash   a neutral 6% of the ink, never a colour; red for destructive  */
+
+.cmenu.cmenu.cmenu {
+  --cm-radius: 16px;
+  --cm-pad: 6px;
+  border-radius: 18px;
+  border: 1px solid hsl(30 8% 14% / 0.09);
+  background-color: hsl(var(--popover));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.75),
+    0 1px 2px hsl(30 10% 10% / 0.05),
+    0 4px 8px -2px hsl(30 10% 10% / 0.04),
+    0 16px 40px -12px hsl(30 10% 10% / 0.18);
+}
+.dark .cmenu.cmenu.cmenu {
+  border-color: hsl(40 10% 96% / 0.08);
+  background-color: hsl(var(--popover));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.06),
+    0 1px 2px hsl(0 0% 0% / 0.3),
+    0 18px 44px -10px hsl(0 0% 0% / 0.62);
+}
+/* Popovers that are not menus (the model card, the date picker, the hover
+   cards) take the same sheet so they read as the same material. */
+.z-popper.surface-float:not(.cmenu),
+.z-popper.overlay-glass:not(.cmenu) {
+  border-radius: 16px;
+  border: 1px solid hsl(30 8% 14% / 0.09);
+  background-color: hsl(var(--popover));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.75),
+    0 1px 2px hsl(30 10% 10% / 0.05),
+    0 16px 40px -12px hsl(30 10% 10% / 0.18);
+}
+.dark .z-popper.surface-float:not(.cmenu),
+.dark .z-popper.overlay-glass:not(.cmenu) {
+  border-color: hsl(40 10% 96% / 0.08);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.06),
+    0 18px 44px -10px hsl(0 0% 0% / 0.62);
+}
+
+.menu-item.menu-item,
+.cmenu.cmenu.cmenu [role^="menuitem"] {
+  min-height: 36px;
+  gap: 11px;
+  padding: 0 10px 0 9px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: -0.003em;
+}
+@media (pointer: coarse) {
+  .menu-item.menu-item,
+  .cmenu.cmenu.cmenu [role^="menuitem"] {
+    min-height: 44px;
+  }
+}
+.cmenu.cmenu.cmenu [role^="menuitem"] > svg:first-child:not([class*="size-"]),
+.cmenu.cmenu.cmenu [role^="menuitem"] > span:first-child > svg:only-child:not([class*="size-"]) {
+  width: 18px;
+  height: 18px;
+}
+.menu-item.menu-item svg:not([class*="text-"]),
+.cmenu.cmenu.cmenu [role^="menuitem"] > svg:first-child,
+.cmenu.cmenu.cmenu [role^="menuitem"] > span:first-child > svg:only-child {
+  color: hsl(var(--foreground) / 0.56);
+  transition: color 120ms var(--ease-out-soft);
+}
+.menu-item.menu-item[data-highlighted] svg:not([class*="text-"]),
+.menu-item.menu-item[data-state="open"] svg:not([class*="text-"]),
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] > svg:first-child,
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted] > span:first-child > svg:only-child {
+  color: hsl(var(--foreground));
+  transition-duration: 0ms;
+}
+/* The trailing chevron of a row that opens a flyout. */
+.cmenu.cmenu.cmenu .menu-item__chevron {
+  color: hsl(var(--foreground) / 0.4);
+}
+
+.menu-item.menu-item[data-highlighted],
+.menu-item.menu-item[data-state="open"] {
+  background-color: hsl(30 8% 14% / 0.06);
+  color: hsl(var(--foreground));
+}
+.dark .menu-item.menu-item[data-highlighted],
+.dark .menu-item.menu-item[data-state="open"] {
+  background-color: hsl(40 10% 96% / 0.075);
+}
+.menu-item.menu-item.danger-hover[data-highlighted] {
+  background-color: hsl(var(--destructive) / 0.08);
+  color: hsl(var(--destructive-ink, var(--destructive)));
+}
+/* Inside a gliding sheet the row draws no fill of its own; the glide is it. */
+.cmenu.cmenu.cmenu [role^="menuitem"][data-highlighted],
+.cmenu.cmenu.cmenu [role^="menuitem"]:focus {
+  background-color: transparent;
+}
+.cmenu.cmenu.cmenu [role^="menuitem"][data-state="open"]:not([data-highlighted]) {
+  background-color: hsl(30 8% 14% / 0.045);
+}
+.dark .cmenu.cmenu.cmenu [role^="menuitem"][data-state="open"]:not([data-highlighted]) {
+  background-color: hsl(40 10% 96% / 0.05);
+}
+.cmenu-glide.cmenu-glide {
+  border-radius: 12px;
+  background-color: hsl(30 8% 14% / 0.06);
+  transition:
+    transform 200ms var(--alv-ease-out),
+    width 200ms var(--alv-ease-out),
+    height 200ms var(--alv-ease-out),
+    opacity 120ms var(--ease-out-soft);
+}
+.cmenu-glide.cmenu-glide[data-instant="true"] {
+  transition: opacity 120ms var(--ease-out-soft);
+}
+.dark .cmenu-glide.cmenu-glide {
+  background-color: hsl(40 10% 96% / 0.075);
+}
+.cmenu-glide.cmenu-glide[data-destructive="true"] {
+  background-color: hsl(var(--destructive) / 0.09);
+}
+
+/* Section heads: the label rung in the second ink, set in from the row text. */
+.cmenu.cmenu.cmenu [role="group"] > [class*="menu-label"],
+.cmenu.cmenu.cmenu .cmenu-label {
+  padding: 8px 10px 4px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: hsl(var(--foreground) / 0.5);
+}
+
+/* A sheet's one closing line: a fact the rows above would otherwise repeat. */
+.cmenu.cmenu.cmenu .cmenu-foot {
+  margin: 4px 4px 0;
+  padding: 8px 6px 4px;
+  border-top: 1px solid hsl(30 8% 14% / 0.07);
+  font-size: 12px;
+  line-height: 16px;
+  color: hsl(var(--foreground) / 0.5);
+}
+.dark .cmenu.cmenu.cmenu .cmenu-foot {
+  border-top-color: hsl(40 10% 96% / 0.08);
+}
+
+/* Group breaks: a fine line inset to the row padding. */
+.cmenu.cmenu.cmenu [role="separator"] {
+  height: 1px;
+  margin: 5px 10px;
+  background-color: hsl(30 8% 14% / 0.07);
+}
+[role="menu"] > [role="separator"] {
+  margin-inline: 10px;
+  background-color: hsl(30 8% 14% / 0.07);
+}
+.dark .cmenu.cmenu.cmenu [role="separator"],
+.dark [role="menu"] > [role="separator"] {
+  background-color: hsl(40 10% 96% / 0.08);
+}
+
+/* A checked row's tick is the label's ink, never the accent, and draws
+   itself in when the row turns on. */
+.cmenu.cmenu.cmenu [role="menuitemcheckbox"][data-state="checked"] .gdraw,
+.cmenu.cmenu.cmenu [role="menuitemradio"][data-state="checked"] .gdraw {
+  animation: alv-draw 260ms var(--alv-ease-out) both;
+}
+
+/* ── 5. One interface voice ─────────────────────────────────────────────────
+   The sidebar's section heads ("Recent", "Orbit") were set in tracked mono
+   11px, the homepage's annotation voice. Inside the app that read as debug
+   output beside the rows it heads. They are now the interface face at the
+   label rung, medium, so a heading and its rows are one family. */
+.shell-annot.shell-annot {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* ── 6. The icons move (Alevr Line, alevr-glyphs.ts) ─────────────────────────
+   Each glyph names one gesture (`data-m`) and wraps the part that moves in
+   `.gm` / `.gm2`. The gesture plays while the control around it is under a
+   fine pointer: a chevron leans the way it points, a plus turns a quarter,
+   the gear turns one tooth, the bin lifts its lid, the copy sheet slides
+   forward, a check draws itself. Held gestures are transitions, so they ease
+   out in about 200ms and reverse from wherever they are when the pointer
+   leaves; the one-shots (spin, swing, wave, blink, pop, draw) are short
+   keyframes. Never on keyboard focus (hover only), never on touch, and off
+   under reduced motion: the glyph is the same drawing at rest. */
+.ag .gd,
+.ag .gf {
+  fill: currentColor;
+  stroke: none;
+}
+.ag .gdash {
+  stroke-dasharray: 2.25 2.75;
+}
+.ag .gdraw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+.ag .gm,
+.ag .gm2,
+.ag .gw {
+  transform-box: view-box;
+  transform-origin: 12px 12px;
+}
+
+@keyframes alv-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .ag .gm,
+  .ag .gm2 {
+    transition: transform 220ms var(--alv-ease-out);
+  }
+  .ag[data-m="spin"] .gm,
+  .ag[data-m="turn"] .gm,
+  .ag[data-m="ccw"] .gm,
+  .ag[data-m="cw"] .gm,
+  .ag[data-m="rot"] .gm {
+    transition-duration: 360ms;
+  }
+
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="r"] .gm { transform: translateX(1.5px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="l"] .gm { transform: translateX(-1.5px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="u"] .gm { transform: translateY(-1.5px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="d"] .gm { transform: translateY(1.5px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="ne"] .gm { transform: translate(1.25px, -1.25px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="rot"] .gm { transform: rotate(90deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="turn"] .gm { transform: rotate(45deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="spin"] .gm { transform: rotate(180deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="ccw"] .gm { transform: rotate(-120deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="cw"] .gm { transform: rotate(120deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="lid"] .gm { transform: translateY(-1.5px) rotate(-10deg); transform-origin: 5px 6.5px; }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="lift"] .gm { transform: translateY(-1.5px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shift"] .gm { transform: translate(-1px, -1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shift"] .gm2 { transform: translate(1px, 1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="tilt"] .gm { transform: rotate(-12deg); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="squeeze"] .gm { transform: translateY(1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="squeeze"] .gm2 { transform: translateY(-1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="grow"] .gm { transform: translate(1px, -1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="grow"] .gm2 { transform: translate(-1px, 1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shrink"] .gm { transform: translate(-1px, 1px); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shrink"] .gm2 { transform: translate(1px, -1px); }
+
+  /* One-shots. */
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="wiggle"] .gm { animation: alv-wiggle 420ms var(--alv-ease-out); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="swing"] .gm { animation: alv-swing 560ms var(--alv-ease-out); transform-origin: 12px 4px; }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="pop"] .gm { animation: alv-pop 320ms var(--alv-ease-out); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="pop"]:not(:has(.gm)) { animation: alv-pop 320ms var(--alv-ease-out); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="blink"] .gm { animation: alv-blink 300ms var(--alv-ease-in-out); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="wave"] .gw { animation: alv-wave 520ms var(--alv-ease-in-out) calc(var(--i) * 60ms); }
+  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="draw"] .gdraw { animation: alv-draw 300ms var(--alv-ease-out); }
+}
+
+@keyframes alv-wiggle {
+  0%, 100% { transform: rotate(0); }
+  30% { transform: rotate(-10deg); }
+  65% { transform: rotate(6deg); }
+}
+@keyframes alv-swing {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(14deg); }
+  45% { transform: rotate(-10deg); }
+  70% { transform: rotate(5deg); }
+}
+@keyframes alv-pop {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(1.14); }
+}
+@keyframes alv-blink {
+  0%, 100% { transform: scaleY(1); }
+  45% { transform: scaleY(0.1); }
+}
+@keyframes alv-wave {
+  0%, 100% { transform: scaleY(1); }
+  40% { transform: scaleY(0.55); }
+}
+
+/* ── 8. The account sheet's head (user-menu.tsx) ─────────────────────────── */
+.acct-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 8px;
+}
+.acct-plan {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  color: hsl(var(--foreground) / 0.62);
+  box-shadow: inset 0 0 0 1px hsl(30 8% 14% / 0.12);
+}
+.dark .acct-plan {
+  box-shadow: inset 0 0 0 1px hsl(40 10% 96% / 0.14);
+}
+.acct-usage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 10px 8px 56px;
+}
+.acct-usage__bar {
+  position: relative;
+  flex: 1;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background-color: hsl(30 8% 14% / 0.08);
+}
+.dark .acct-usage__bar {
+  background-color: hsl(40 10% 96% / 0.1);
+}
+.acct-usage__bar > span {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: hsl(var(--foreground) / 0.7);
+  transform-origin: left center;
+  transition: transform 400ms var(--alv-ease-out);
+}
+
+/* ── 9. Armed pills (composer-shell.tsx, ComposerArmedMark) ──────────────────
+   A tool in force reads as a small, solid object: a faint ink fill with a
+   hairline ring and a lit top edge, not a flat grey slab. */
+.armed-pill {
+  background-color: hsl(30 8% 14% / 0.05);
+  box-shadow:
+    inset 0 0 0 1px hsl(30 8% 14% / 0.08),
+    inset 0 1px 0 hsl(0 0% 100% / 0.6);
+  transition: background-color 140ms var(--ease-out-soft);
+}
+.armed-pill:hover {
+  background-color: hsl(30 8% 14% / 0.08);
+}
+.dark .armed-pill {
+  background-color: hsl(40 10% 96% / 0.07);
+  box-shadow:
+    inset 0 0 0 1px hsl(40 10% 96% / 0.09),
+    inset 0 1px 0 hsl(0 0% 100% / 0.05);
+}
+.dark .armed-pill:hover {
+  background-color: hsl(40 10% 96% / 0.1);
+}
+.armed-pill > button:first-child {
+  margin-left: 4px;
+}
+
+@media (prefers-contrast: more) {
+  .composer-surface.composer-surface,
+  .dark .composer-surface.composer-surface {
+    border-color: hsl(var(--foreground) / 0.45);
+  }
+  .composer-surface.composer-surface:focus-within,
+  .dark .composer-surface.composer-surface:focus-within {
+    border-color: hsl(var(--foreground) / 0.65);
+  }
+}
+
+/* ── 10. The sidebar's rhythm (app-sidebar.tsx) ──────────────────────────────
+   One pitch for every destination (34px), one radius for every fill (10px),
+   two inks: destinations in the near-full ink at a half-step of weight,
+   conversation titles a step quieter at the book weight, section heads the
+   quietest. Sections sit 20px apart so a heading belongs to the list under
+   it, not the one above. */
+.sidebar-nav-row.sidebar-nav-row {
+  height: 34px;
+  border-radius: 10px;
+  gap: 11px;
+}
+.sidebar-nav-row .text-nav {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 450;
+  letter-spacing: -0.006em;
+}
+.sidebar-nav-row:not(.sidebar-row-selected) {
+  color: hsl(var(--foreground) / 0.82);
+}
+.sidebar-list-row.sidebar-list-row {
+  min-height: 32px;
+  border-radius: 10px;
+  font-size: 14px;
+  letter-spacing: -0.003em;
+}
+.sidebar-list-row:not(.sidebar-row-selected) {
+  color: hsl(var(--foreground) / 0.7);
+}
+.sidebar-list-row:not(.sidebar-row-selected):hover {
+  color: hsl(var(--foreground) / 0.9);
+}
+[data-sidebar-section] + [data-sidebar-section],
+section[data-sidebar-section]:not(:first-child) {
+  margin-top: 20px;
+}
+[data-sidebar-section] .shell-annot.shell-annot {
+  color: hsl(var(--foreground) / 0.48);
+}
+@media (pointer: coarse) {
+  .sidebar-nav-row.sidebar-nav-row {
+    height: 44px;
+  }
+}

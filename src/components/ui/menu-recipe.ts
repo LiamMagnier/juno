@@ -98,8 +98,10 @@ export const menuShellClass = `${menuShellFrameClass} nest-p-1.5`;
  * drawing in, a star filling).
  */
 export const menuRowClass =
-  "menu-item group/menu-item relative flex min-h-9 cursor-pointer select-none items-center gap-3 " +
-  "rounded-inner px-2.5 py-1.5 text-ui outline-none " +
+  // Graphite §4: 32 tall, gap 8, padding 6 / 8 (was 36, 12, 6 / 10), so a
+  // kebab menu, a select and the composer's menus are one row at one density.
+  "menu-item group/menu-item relative flex min-h-8 cursor-pointer select-none items-center gap-2 " +
+  "rounded-inner px-2 py-1.5 text-ui outline-none " +
   // 2026-10: a row also gives under the finger (0.985) and its open submenu
   // keeps the hover fill, so the path to the submenu stays lit.
   //
@@ -170,12 +172,12 @@ export const menuGlyphInkClass =
   "[:where(&:not([data-highlighted]))_svg]:[transition:color_var(--dur-fast)_var(--ease-out-soft)]";
 
 /**
- * The section head inside a menu. Shares the row's left edge (px-2.5) so a
+ * The section head inside a menu. Shares the row's left edge (px-2) so a
  * label and the rows under it start on one line — they were 2px apart, which
  * is the kind of gap nobody names and everybody feels.
  */
 export const menuLabelClass =
-  "px-2.5 pb-1 pt-1.5 text-caption font-medium text-muted-foreground";
+  "px-2 pb-1 pt-1.5 text-caption font-medium text-muted-foreground";
 
 /**
  * The hairline between groups. `-mx-1.5` cancels the shell's p-1.5 so it runs
@@ -189,7 +191,7 @@ export const menuLabelClass =
  * still lighter than the shell's own edge, which is the ordering that matters:
  * the hairline inside a panel must never out-draw the hairline around it.
  */
-export const menuSeparatorClass = "-mx-1.5 my-1 h-px bg-foreground/10";
+export const menuSeparatorClass = "mx-2 my-1 h-px bg-foreground/10";
 
 /**
  * THE WIDTH LADDER — two rungs, and the reason there are only two.

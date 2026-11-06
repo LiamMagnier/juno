@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/components/app/app-provider";
 import { PLANS, planRank } from "@/lib/plans";
-import { DotIdenticon, DotFillBar } from "@/components/signature/dot-matrix";
+import { DotIdenticon } from "@/components/signature/dot-matrix";
 import { cn } from "@/lib/utils";
 import type { ClientSpend } from "@/types/app";
 import type { ClientQuota } from "@/types/chat";
@@ -67,10 +67,10 @@ function MenuRow({
     <>
       {/* No ink on the slot: the row's recipe inks the glyph muted at rest
           and brightens it with the row, which a fixed colour here blocked. */}
-      <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>
+      <span className="flex size-[18px] shrink-0 items-center justify-center [&>svg]:size-[18px]">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {shortcut && (
-        <span className="shrink-0 font-mono text-caption tracking-[0.02em] text-muted-foreground">{shortcut}</span>
+        <span className="shrink-0 text-caption tabular-nums text-muted-foreground">{shortcut}</span>
       )}
     </>
   );
@@ -226,21 +226,19 @@ export function UserMenu({
         sideOffset={compact ? 12 : 6}
         className={cn(compact ? MENU_W_WIDE : "w-[var(--radix-dropdown-menu-trigger-width)] min-w-64", menuEntranceClass)}
       >
-        {/* Identity: who you are, on what plan, reachable where. The avatar
-            shares the rows' left edge (px-2.5), and the name and email share
-            one text column, so the header and the list below read as one
-            object. */}
-        <div className="flex items-center gap-3 px-2.5 pb-2.5 pt-2">
+        {/* Identity and the month in one block (owner, 6 Nov 2026: fewer
+            words). The avatar shares the rows' left edge, the plan is a small
+            quiet capsule on the name's line, and usage is one hairline meter
+            with its share, no caption: Settings › Usage says what it covers. */}
+        <div className="acct-head">
           <UserAvatar className="size-9" />
           <div className="min-w-0 flex-1">
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-center gap-2">
               <span translate="no" className="min-w-0 truncate text-ui font-medium tracking-[-0.005em] text-foreground">
                 {user.name ?? user.email?.split("@")[0]}
               </span>
-              {/* Words, not a pill: no badges anywhere (owner rule). Neutral,
-                  not the accent: a plan is a fact about the account. */}
-              <span translate="no" className="ml-auto shrink-0 text-caption text-muted-foreground">
-                {`${plan.name} plan`}
+              <span translate="no" className="acct-plan" title={planUsageCaption(quota.plan)}>
+                {plan.name}
               </span>
             </div>
             <span translate="no" className="mt-0.5 block truncate text-caption text-muted-foreground">
@@ -248,45 +246,20 @@ export function UserMenu({
             </span>
           </div>
         </div>
-
-        {/* Usage: the ONE place the quota is drawn. The sidebar footer says
-            nothing about usage below 80% and one word above it. A hairline
-            block rather than a filled one (the homepage's product windows draw
-            structure with 1px lines, not slabs), flush with the rows' edges and
-            at their radius, with its text on the rows' text column.
-
-            Every plan is metered by tokens now (Free included: a small
-            allowance on the fast models), so this reads the month's spend
-            against the enforced budget, as a share. The euro figures live in
-            Settings › Usage, where there is room to say what they mean. */}
-        <div className="rounded-control border border-foreground/[0.08] px-[9px] py-2.5">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-caption text-muted-foreground">
-              {quota.plan === "FREE" ? "Free allowance" : "This month"}
-            </span>
-            {/* tabular-nums: the share changes in place as replies land, and
-                proportional digits make the readout shuffle sideways. A share
-                is a figure (mono, like the menu's key hints); "No cap" is a
-                word and stays in the sans. */}
-            <span
-              className={cn(
-                "truncate text-caption tabular-nums text-foreground",
-                usedPct != null && "font-mono tracking-[0.02em]"
-              )}
-            >
-              {usedPct == null ? "No cap" : `${usedPct}% used`}
-            </span>
+        {usedPct != null && (
+          <div className="acct-usage" title={planUsageCaption(quota.plan)}>
+            <div className="acct-usage__bar" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={usedPct} aria-label={quota.plan === "FREE" ? "Free allowance used" : "Used this month"}>
+              <span style={{ transform: `scaleX(${Math.max(0.02, usedPct / 100)})` }} />
+            </div>
+            <span className="shrink-0 text-caption tabular-nums text-muted-foreground">{`${usedPct}%`}</span>
           </div>
-          {usedPct != null && <DotFillBar value={usedPct} max={100} dots={18} className="mt-2" />}
-          <p className="mt-1.5 text-caption leading-4 text-muted-foreground">{planUsageCaption(quota.plan)}</p>
-        </div>
+        )}
 
         <Separator />
 
         {/* The account: the profile (a year of tokens and models), then
             Settings, where the name and photo are edited. */}
         <DropdownMenuGroup>
-          <MenuRow href="/profile" onSelect={leave} icon={<User className="size-4" />} label="Profile" />
           <MenuRow
             onSelect={() => {
               leave();
@@ -295,6 +268,7 @@ export function UserMenu({
             icon={<AppIcons.settings className="size-4" />}
             label="Settings"
           />
+          <MenuRow href="/profile" onSelect={leave} icon={<User className="size-4" />} label="Profile" />
           {onOpenArchived && (
             <MenuRow onSelect={onOpenArchived} icon={<Archive className="size-4" />} label={archivedLabel} />
           )}
@@ -340,7 +314,7 @@ export function UserMenu({
               window.dispatchEvent(new CustomEvent("juno:shortcuts"));
             }}
             icon={<Keyboard className="size-4" />}
-            label="Keyboard shortcuts"
+            label="Shortcuts"
             shortcut={`${mod}/`}
           />
         </DropdownMenuGroup>
@@ -358,7 +332,7 @@ export function UserMenu({
           onSelect={() => void signOutToSignIn()}
           className={cn(rowHeight, "text-muted-foreground")}
         >
-          <LogOut className="size-4 shrink-0" />
+          <LogOut className="size-[18px] shrink-0" />
           <span>Sign out</span>
         </DropdownMenuItem>
       </DropdownMenuContent>

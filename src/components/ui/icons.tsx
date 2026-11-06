@@ -2,50 +2,36 @@
  * Alevr's icon set. The ONLY module in the web app that call sites import a
  * glyph from: every component, page, menu and dialog draws its icons here.
  *
- * EVERY GLYPH IS ALEVR'S OWN. The drawings are the V3 family in
- * `src/components/ui/juno-icons/` (drawings.ts, ported from the design lane,
- * plus extra.ts, the production additions drawn in the same grammar): a 24
- * unit construction grid with the live area 3 to 21, key stems on a 1.5 unit
- * lattice, one optical line (1.25 px at 16, 1.5 px from 18), round caps and
- * joins, continuous corners, the 1.5 unit house gap where a part stands in
- * front of another, and the house plus cut into the corner for "New". The
- * renderer fits every drawing to the device pixel grid for the size it is
- * painted at. No third-party glyph library is imported anywhere: the Phosphor
- * set this module used to wrap is gone (third-party BRAND marks, the provider
- * and connector logos, are their own assets and are not drawn here).
+ * DRAWN IN HOUSE (owner, 6 Nov 2026: "draw them the best way possible with
+ * motion design"). Every glyph is an Alevr Line drawing (alevr-glyphs.ts):
+ * one 24 unit grid, one round line whose width is set per rendered size, the
+ * same 3 unit corner as the menus. No stock library is painted on a product
+ * surface. The older V3 drawings (`juno-icons/`) stay for the dev galleries
+ * and the native generator. Third-party BRAND marks are their own assets.
  *
  * NAMES ARE STABLE. The exports keep the spellings the codebase already used
  * (`ChevronDown`, `Loader2`, `Settings`), so moving to the family touched this
  * file, not the call sites. Each export names the drawing it shows; changing a
  * concept's drawing is a one-line change here and reaches every surface.
  *
- * OPTICAL SIZE comes from where the glyph is painted, not from a prop. A call
- * site sizes a glyph with a class (`size-4`) or its parent does
- * (`[&_svg]:size-4.5`); the icon draws its first frame from the class it can
- * read and then measures itself, so the line, the small cut and the hinting
- * are always those of its real size.
+ * OPTICAL SIZE comes from the size a call site asks for (`size-4`, `size`):
+ * `lineFor` keeps the line near 1.4 px at 16 and 1.5 px at 20.
  *
- * MOTION IS OPT-IN (G46, INTERACTION_SPEC I-7). A glyph plays its hover
- * gesture only inside a control marked `data-jicon-articulate` (or inside a
- * `data-jicon-articulate="within"` region), only under a fine pointer, never
- * on keyboard focus, and only for destinations: the sidebar's New chat and
- * destination rows, the product switch, an empty state's actions. Lists,
- * menus, the composer and the message actions stay still
- * (juno-icons/icons.css). An icon-only button marked `.jicon-trigger` gets
- * the press dip (0.97, 70 ms). The old per-glyph `motion` prop is accepted
- * and ignored.
+ * MOTION. Each drawing names one hover gesture (`data-m`): a chevron leans
+ * the way it points, the gear turns a tooth, the bin lifts its lid, a check
+ * draws itself. It plays while the control around the glyph is hovered by a
+ * fine pointer, never on keyboard focus, and is off under reduced motion
+ * (signature.css §6). The old per-glyph `motion` prop is accepted and ignored.
  *
  * STATE. `weight="fill"`, `fill="currentColor"` or a `fill-*` class ask for the
  * "on" drawing (a pinned pin, a filled square); a drawing without one stays
  * outlined rather than borrowing another state.
  *
- * Server-component safe: this module has no hooks; the renderer it draws with
- * is a client component.
+ * Server-component safe: the drawings are static markup, no context, no hooks.
  */
 import type { ComponentPropsWithoutRef, JSX, Ref } from "react";
 
-import { Icon as AlevrIcon } from "@/components/ui/juno-icons";
-import { resolveCatalogIcon } from "@/components/ui/juno-icons/catalog";
+import { DISPLAY_OVERRIDES, GLYPHS, type Glyph } from "@/components/ui/alevr-glyphs";
 import { cn } from "@/lib/utils";
 
 /** Kept for call sites written against the previous set; the family has one weight and an "on" drawing. */
@@ -98,11 +84,22 @@ function numeric(value: number | string | undefined): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function glyph(name: string, displayName: string): IconComponent {
-  const drawing = resolveCatalogIcon(name);
-  const canFill = drawing?.on?.kind === "fill";
+/**
+ * The line a glyph paints, in device-independent pixels, per rendered size:
+ * crisp at 14 and 16 (1.25, 1.4), the house 1.5 from 18, then growing with the
+ * box so a 32 px empty-state glyph is not a hairline.
+ */
+function lineFor(px: number): number {
+  const target = px <= 14 ? 1.25 : px <= 17 ? 1.4 : px <= 22 ? 1.5 : px * 0.068;
+  return Math.round(((target * 24) / px) * 1000) / 1000;
+}
+
+function glyph(concept: string, displayName: string): IconComponent {
+  const drawing: Glyph | undefined = DISPLAY_OVERRIDES[displayName] ?? GLYPHS[concept];
+  if (!drawing && process.env.NODE_ENV !== "production") throw new Error(`No Alevr drawing for ${concept}`);
+  const g: Glyph = drawing ?? { b: "" };
   function AlevrGlyph({
-    ref: _ref,
+    ref,
     className,
     size,
     weight,
@@ -116,21 +113,31 @@ function glyph(name: string, displayName: string): IconComponent {
     ...rest
   }: IconProps) {
     const labelled = rest["aria-label"] != null || rest["aria-labelledby"] != null || alt != null;
-    const on = canFill && (weight === "fill" || (fill != null && fill !== "none" && fill !== "transparent") || (className != null && FILLED.test(className)));
+    const on = weight === "fill" || (fill != null && fill !== "none" && fill !== "transparent") || (className != null && FILLED.test(className));
     const px = classSize(className) ?? numeric(size) ?? 24;
+    const markup = on && g.on ? g.on : g.b;
     return (
-      <AlevrIcon
-        name={name}
-        size={px}
-        autoSize
-        state={on ? "active" : "rest"}
-        className={cn("icon", className)}
-        style={mirrored ? { ...style, scale: "-1 1" } : style}
+      <svg
+        ref={ref}
+        xmlns="http://www.w3.org/2000/svg"
+        width={px}
+        height={px}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={lineFor(px)}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={cn("icon ag", className)}
+        style={mirrored ? { transform: "scaleX(-1)", ...style } : style}
         data-glyph={displayName}
+        data-m={g.m}
+        data-on={on && g.on ? "" : undefined}
         {...rest}
         role={labelled ? "img" : undefined}
         aria-hidden={labelled ? undefined : true}
         aria-label={rest["aria-label"] ?? alt}
+        dangerouslySetInnerHTML={{ __html: markup }}
       />
     );
   }

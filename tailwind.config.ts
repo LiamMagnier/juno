@@ -234,7 +234,11 @@ const config: Config = {
         // The composer is a raised soft card and takes the panel rung. It is
         // distinct through placement and material, not an oversized novelty
         // radius.
-        composer: "26px",
+        // 6 Nov 2026 (owner: "the composer radius looks bad"): 24 → 28. The
+        // row's 36px discs (+, send) sit 10px in, so 18 + 10 = 28 is the
+        // radius that nests them concentrically; at 24 the corner pinched
+        // the send disc.
+        composer: "28px",
         // Marketing stages only: the painted plates and product shots on the
         // front door (landing, download, auth art). Never inside the product.
         stage: "28px",
@@ -247,7 +251,7 @@ const config: Config = {
         // chosen. They move WITH the shell — nesting reads as concentric only
         // while the inner radius stays a consistent fraction of the outer one,
         // so a shell that got 2px rounder hands its children a share of it.
-        "composer-control": "14px",
+        "composer-control": "16px",
         "composer-action": "16px",
         // The one user bubble (spec D6, sign-off S3): card radius, with an 8px
         // tuck on the logical end-end corner — `rounded-bubble

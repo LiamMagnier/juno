@@ -972,10 +972,15 @@
    *   Dark mode:  ≥ 4.5:1 against --background (30 7% 9%) for body text,
    *               ≥ 3.0:1 for large text/icons.
    */
-  /* "coral" is the id every account stores by default; it now names Graphite,
-     the brand's primary control, and inherits the base values above. */
-  :root[data-accent="coral"] { --primary: 216 9% 11%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 216 9% 11%; }
-  .dark[data-accent="coral"] { --primary: 220 7% 91%; --ring: 220 7% 91%; --primary-foreground: 216 9% 11%; --primary-ink: 220 7% 91%; }
+  /* "coral" is the id every account stores by default. Since the signature
+     decision (owner, 5 Nov 2026: "Add a signature look") it names ALEVR BLUE,
+     the brand board's one colour, as the tint of what you set or act on
+     (src/components/ui/signature.css says where it paints). Light is the
+     presence value; dark fills step down to 58% so a white label and a white
+     switch thumb keep 5:1, while dark INK keeps presence's lighter 75%.
+     Keyboard focus stays graphite (--ring), as for every accent. */
+  :root[data-accent="coral"] { --primary: 229 63% 48%; --ring: 220 9% 11%; --primary-foreground: 0 0% 100%; --primary-ink: 229 63% 48%; }
+  .dark[data-accent="coral"] { --primary: 229 68% 58%; --ring: 220 7% 91%; --primary-foreground: 0 0% 100%; --primary-ink: 229 61% 75%; }
   /* "ultramarine" is the stored id of COBALT (spec D26, owner sign-off S7).
      It used to be byte-identical to --presence, so a user who picked it
      painted every control in the one colour that means "Alevr is live here".
@@ -1889,22 +1894,42 @@
      soft two-layer shadow at rest (a contact line and a wide, low ambient)
      that deepens when the field takes focus, the way ChatGPT's and Claude's
      composers sit above the thread rather than in it. */
+  /* Graphite craft pass (Nov 2026): the composer is the one object on the
+     home, so it is built like one. A lit top edge (the inset highlight), a
+     contact line, a short key shadow and a long, low ambient: four layers
+     that read as a physical card resting on the page, not a box with a
+     drop shadow. Hover steps the edge up one notch on a fine pointer; focus
+     adds a 4px halo on the same hue as the edge, so the field says "you are
+     here" without colour. Shadows move on the expo decelerate at 220, fast
+     enough to follow the click that caused them. */
   .composer-surface {
     background-color: hsl(var(--card));
-    border: 1px solid hsl(var(--foreground) / 0.1);
+    border: 1px solid hsl(var(--foreground) / 0.09);
     box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.8),
       0 1px 2px hsl(var(--shadow-ink) / 0.04),
-      0 8px 28px -12px hsl(var(--shadow-ink) / 0.12);
+      0 6px 14px -6px hsl(var(--shadow-ink) / 0.06),
+      0 26px 56px -22px hsl(var(--shadow-ink) / 0.16);
     transition:
-      box-shadow var(--dur-slow) var(--ease-out-soft),
+      box-shadow 220ms var(--ease-out-expo),
       border-color var(--dur-fast) var(--ease-out-soft);
   }
   .dark .composer-surface {
-    background-color: hsl(var(--card) / 0.96);
+    background-color: hsl(var(--card));
+    background-image: linear-gradient(180deg, hsl(0 0% 100% / 0.03), hsl(0 0% 100% / 0) 64px);
     border-color: hsl(0 0% 100% / 0.09);
     box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / 0.05),
-      0 12px 36px -14px hsl(0 0% 0% / 0.7);
+      inset 0 1px 0 hsl(0 0% 100% / 0.07),
+      0 1px 2px hsl(0 0% 0% / 0.3),
+      0 20px 48px -18px hsl(0 0% 0% / 0.75);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .composer-surface:hover:not(:focus-within) {
+      border-color: hsl(var(--foreground) / 0.14);
+    }
+    .dark .composer-surface:hover:not(:focus-within) {
+      border-color: hsl(0 0% 100% / 0.13);
+    }
   }
   .composer-surface::after {
     content: "";
@@ -1912,7 +1937,7 @@
     /* The containing block is the padding box: -1px is the border's outer
        edge, so the ring continues the edge instead of floating off it. */
     inset: -1px;
-    border-radius: 26px;
+    border-radius: 29px; /* the 28px composer plus its 1px border */
     box-shadow: 0 0 0 1px hsl(var(--ring) / 0.55);
     opacity: 0;
     pointer-events: none;
@@ -1977,16 +2002,21 @@
   /* BRAND_IDENTITY.md: "a crisp edge and surface define it, with no drop
      shadow." Focus is the edge stepping up, not a lift. */
   .composer-surface:focus-within {
-    border-color: hsl(var(--foreground) / 0.18);
+    border-color: hsl(var(--foreground) / 0.2);
     box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.8),
+      0 0 0 4px hsl(var(--foreground) / 0.035),
       0 1px 2px hsl(var(--shadow-ink) / 0.05),
-      0 14px 40px -14px hsl(var(--shadow-ink) / 0.18);
+      0 8px 18px -8px hsl(var(--shadow-ink) / 0.08),
+      0 32px 64px -24px hsl(var(--shadow-ink) / 0.2);
   }
   .dark .composer-surface:focus-within {
-    border-color: hsl(0 0% 100% / 0.16);
+    border-color: hsl(0 0% 100% / 0.18);
     box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / 0.06),
-      0 16px 44px -14px hsl(0 0% 0% / 0.8);
+      inset 0 1px 0 hsl(0 0% 100% / 0.08),
+      0 0 0 4px hsl(0 0% 100% / 0.03),
+      0 1px 2px hsl(0 0% 0% / 0.3),
+      0 24px 56px -18px hsl(0 0% 0% / 0.85);
   }
   .composer-surface[data-kbd-focus],
   .dark .composer-surface[data-kbd-focus] {
@@ -2240,6 +2270,14 @@
     --scroll-fade-ground: var(--popover);
     color: hsl(var(--popover-foreground));
     box-shadow: var(--shadow-float);
+  }
+  /* On carbon a floating layer catches light on its top edge: a 1px inset
+     highlight above the float shadow, so a menu over a dark card reads as a
+     lifted sheet with a lit edge rather than a flat cut-out. Light mode needs
+     none; the shadow already separates it. */
+  .dark .overlay-glass,
+  .dark .surface-float {
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06), var(--shadow-float);
   }
   @media (prefers-contrast: more) {
     .overlay-glass,
@@ -4841,11 +4879,15 @@ html[data-vt="canvas"][data-vt-dir="close"]::view-transition-new(canvas-panel) {
   html[data-code-wrap="true"] .prose-juno pre code { white-space: pre-wrap; overflow-wrap: anywhere; }
 
   /* ---- Type rungs a fontSize entry cannot finish (spec §3.5) ----------------
-     `label` is JetBrains Mono 500 with tabular figures; `kbd` is the 11px
-     mono keycap rung. Zero specificity (`:where`), so an explicit `font-sans`
-     or `font-serif` beside the class still wins and only the inherited body
-     face is replaced. */
-  :where(.text-label, .text-kbd) {
+     `label` is the interface face at 500 with tabular figures (owner, 5 Nov
+     2026: the mono metadata voice read as debug output across every menu,
+     badge and readout; the native ladder already set it in the sans). `kbd`
+     stays the 11px mono keycap rung. Zero specificity (`:where`), so an
+     explicit `font-mono` or `font-serif` beside the class still wins. */
+  :where(.text-label) {
+    font-variant-numeric: tabular-nums;
+  }
+  :where(.text-kbd) {
     font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
     font-variant-numeric: tabular-nums;
   }

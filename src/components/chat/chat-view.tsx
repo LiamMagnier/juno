@@ -25,7 +25,7 @@ import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
 import { createComposerDraftSession } from "@/lib/chat/composer-draft-session";
 import { AnimatedTitle } from "@/components/app/animated-title";
-import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
+import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
 import { HomeStarters } from "@/components/chat/home-starters";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
@@ -1868,8 +1868,6 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const handoffArmedAtRef = React.useRef(0);
   const handoffFromTopRef = React.useRef<number | null>(null);
   const emptyComposerRef = React.useRef<HTMLDivElement>(null);
-  /** The home starters are on screen, so the field behind the composer calms (G34). */
-  const [startersShown, setStartersShown] = React.useState(false);
   const dockComposerRef = React.useRef<HTMLDivElement>(null);
   if (hasMessages !== handoffSeen) {
     // Render-phase adjustment (the documented React pattern), so the exit beat
@@ -2547,7 +2545,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       sendLocked={voiceSaving || !!voiceSaveError || voiceTurnSending}
       placeholder={
         privateMode
-          ? "How can I help you today?"
+          ? "Ask anything"
           : voiceSaving
             ? "Saving voice transcript…"
             : voiceSaveError
@@ -3084,7 +3082,12 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     ref={emptyComposerRef}
                     className="chat-home__composer relative isolate w-full"
                   >
-                    {!agent ? <HomeField visible={!privateMode && !chat.pendingClarification} calm={startersShown} /> : null}
+                    {/* No dot field behind the home composer any more (Graphite §1:
+                        no decorative drawing in the product). Masked to stay
+                        clear of the greeting, the chips and the tray, what was
+                        left on screen was broken arcs of dots beside the
+                        composer, which read as a rendering fault, not a mark.
+                        The construction stays on the marketing site. */}
                     {voiceOpen && voiceUi && <voiceUi.VoiceCallNotices voice={realtimeVoice} />}
                     {voiceSaveNotice}
                     {modelNoticeLine}
@@ -3101,7 +3104,6 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                         // A voice call owns the composer: a starter would seed
                         // text, or swap in an image model, under a live call.
                         hidden={Boolean(privateMode || chat.pendingClarification || voiceOpen || handoff === "leaving")}
-                        onShownChange={setStartersShown}
                       />
                     ) : null}
                   </div>

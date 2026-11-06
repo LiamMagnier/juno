@@ -103,18 +103,18 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertEqual(JunoRadius.message, 12)
 
         // These literals track the Soft UI ladder (docs/design/SOFT_UI.md
-        // §2.3, Graphite: menu 12): control 8 · field 10 · menu 12 · card 12 · popover 12 ·
-        // panel 16 · composer 26 (the floating composer, tailwind.config.ts; it was 22 in V3,
+        // §2.3, Graphite retune Nov 2026): control 8 · field 10 · menu 12 · card 12 · popover 12 ·
+        // panel 16 · composer 24 (the floating composer, tailwind.config.ts; it was 26 before Graphite and 22 in V3,
         // docs/rework/brand/BRAND_IDENTITY.md). When the web retunes, the paired token
         // references above keep passing and only these numbers move — that
         // is this assertion doing its job, not failing at it.
         //
-        // 26 by way of the web's `rounded-composer`, never by way of
+        // 24 by way of the web's `rounded-composer`, never by way of
         // `--radius`: the rung once hardcoded 24 while claiming composer
         // parity, and `--radius` merely happened to sit nearby. See the note
         // on JunoRadius.composer.
         XCTAssertEqual(JunoRadius.composer, JunoGeneratedRadius.composer)
-        XCTAssertEqual(JunoRadius.composer, 26)
+        XCTAssertEqual(JunoRadius.composer, 24)
     }
 
     /// The redesign's radius names (§8.4 plus errata 9) are the web's own

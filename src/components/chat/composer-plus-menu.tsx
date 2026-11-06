@@ -219,8 +219,11 @@ export const PlusMenuRow = React.forwardRef<
       {detail && (
         <span
           className={cn(
-            "max-w-[7rem] shrink-0 truncate font-mono text-label font-normal tracking-[0.02em] text-muted-foreground tabular-nums",
-            keyHint && "coarse:hidden",
+            "max-w-[7rem] shrink-0 truncate font-sans text-label font-normal text-muted-foreground tabular-nums",
+            // Shortcut tags are not drawn in the menu (owner, 6 Nov 2026: the
+            // tags were clutter); the shortcut lives in its tooltip and the
+            // shortcuts sheet.
+            keyHint && "hidden",
           )}
         >
           {detail}
@@ -235,6 +238,7 @@ export const PlusMenuRow = React.forwardRef<
           aria-hidden="true"
           className={cn(
             "relative h-4 w-7 shrink-0 rounded-full transition-colors duration-base ease-out-expo",
+            // On is the label's own ink, not a colour (owner, 6 Nov 2026).
             ticked ? "bg-foreground" : "bg-foreground/[0.14]",
           )}
         >
@@ -243,8 +247,8 @@ export const PlusMenuRow = React.forwardRef<
               // On, the thumb takes the page's ground: the track is the
               // homepage's solid primary (near-white in the dark theme), and a
               // white thumb on it vanished. Off, a white thumb on a faint track.
-              "absolute left-0.5 top-0.5 size-3 rounded-full shadow-[0_1px_2px_rgb(0_0_0/0.18)] transition-[transform,background-color] duration-base ease-out-expo motion-reduce:transition-[background-color]",
-              ticked ? "translate-x-3 bg-background" : "bg-white",
+              "absolute left-0.5 top-0.5 size-3 rounded-full bg-background shadow-[0_1px_2px_rgb(0_0_0/0.18)] transition-[transform] [transition-duration:var(--spring-reward-dur)] [transition-timing-function:var(--spring-reward)] motion-reduce:transition-none",
+              ticked && "translate-x-3",
             )}
           />
         </span>
@@ -472,7 +476,7 @@ export function PlusMenu({
                         <PlusMenuGlyph icon={item.icon} />
                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
                         {item.detail && (
-                          <span className="max-w-[6rem] shrink-0 truncate font-mono text-label font-normal tracking-[0.02em] text-muted-foreground">
+                          <span className="max-w-[6rem] shrink-0 truncate font-sans text-label font-normal tabular-nums text-muted-foreground">
                             {item.detail}
                           </span>
                         )}

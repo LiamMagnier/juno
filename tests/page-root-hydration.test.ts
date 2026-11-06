@@ -603,8 +603,6 @@ const ITEMS_REVIEWED: Record<string, string> = {
   "src/components/app/app-page-header.tsx#Tooltip": `${NO_HTML_IDS} (a closed Radix tooltip writes no aria-describedby)`,
   "src/components/app/app-page-header.tsx#TooltipTrigger": `${NO_HTML_IDS} (a closed Radix tooltip writes no aria-describedby)`,
   "src/components/app/app-page-header.tsx#TooltipContent": `${NO_HTML_IDS} (not rendered while closed)`,
-  "src/components/code/code-landing.tsx#HomeField": `${NO_HTML_IDS} (the dot construction uses no useId)`,
-  "src/components/code/code-landing.tsx#CodeComposer": SAME_CHUNK("<HomeField>"),
   "src/components/compare-public/vs-parts.tsx#PublicAction": NO_HTML_IDS,
   "src/components/home/aleph.tsx#InView": NO_HTML_IDS,
   "src/components/home/bento.tsx#InView": NO_HTML_IDS,

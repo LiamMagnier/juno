@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: ed5b95b9a124e8c1
+// tokens-digest: 05067f3e2c19cbd1
 //
 
 import CoreGraphics
@@ -808,10 +808,10 @@ public extension JunoAccent {
         switch self {
         case .coral:
             JunoGeneratedAccentPalette(
-                primary: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)),
+                primary: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1776, 0.2885, 0.7824), dark: JunoColorToken(unchecked: 0.2944, 0.3991, 0.8656)),
                 ring: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.1067, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163)),
-                onPrimary: JunoGeneratedPair(light: JunoColorToken(unchecked: 1.0, 1.0, 1.0), dark: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199)),
-                ink: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1001, 0.108, 0.1199), dark: JunoColorToken(unchecked: 0.9037, 0.9079, 0.9163))
+                onPrimary: JunoGeneratedPair(light: JunoColorToken(unchecked: 1.0, 1.0, 1.0), dark: JunoColorToken(unchecked: 1.0, 1.0, 1.0)),
+                ink: JunoGeneratedPair(light: JunoColorToken(unchecked: 0.1776, 0.2885, 0.7824), dark: JunoColorToken(unchecked: 0.5975, 0.6534, 0.9025))
             )
         case .ultramarine:
             JunoGeneratedAccentPalette(
@@ -861,7 +861,7 @@ public extension JunoAccent {
     /// The web's label for this accent (`ACCENTS` in src/lib/accents.ts).
     var generatedLabel: String {
         switch self {
-        case .coral: "Graphite"
+        case .coral: "Indigo"
         case .ultramarine: "Cobalt"
         case .juniper: "Juniper"
         case .teal: "Teal"
@@ -1064,10 +1064,10 @@ public enum JunoGeneratedRadius {
     public static let popover: CGFloat = 12.0
     public static let surface: CGFloat = 12.0
     public static let bubble: CGFloat = 12.0
-    public static let composerControl: CGFloat = 14.0
     public static let panel: CGFloat = 16.0
+    public static let composerControl: CGFloat = 16.0
     public static let composerAction: CGFloat = 16.0
-    public static let composer: CGFloat = 26.0
+    public static let composer: CGFloat = 28.0
     public static let stage: CGFloat = 28.0
 }
 

@@ -425,7 +425,7 @@ export function ModelSelector({
   const openedByKeyboard = React.useRef(false);
   const effortContentRef = React.useRef<HTMLDivElement>(null);
   const focusEffortSlider = () =>
-    effortContentRef.current?.querySelector<HTMLInputElement>('input[type="range"]')?.focus();
+    effortContentRef.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"], input[type="range"]')?.focus();
 
   // Both popovers open at the chip, just above it and over the composer's
   // draft (composer-menu.tsx, "Where they open"); Radix flips one below only
