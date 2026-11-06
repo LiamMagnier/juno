@@ -118,7 +118,7 @@ jobs:
           --project=chromium-1440 --project=chromium-390 --project=webkit-390
       - name: Publish gate reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: design-gates-web
           path: |
@@ -128,7 +128,7 @@ jobs:
           if-no-files-found: warn
       - name: Publish screenshots and the Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: design-gates-screenshots
           path: |
@@ -169,7 +169,7 @@ jobs:
           npx tsx scripts/qa/gates.ts evaluate --require-enforced reports/web/design-gates reports/combined
       - name: Publish the summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: design-gates-summary
           path: reports/web/design-gates/summary.json
