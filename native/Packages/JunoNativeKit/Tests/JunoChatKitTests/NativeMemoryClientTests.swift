@@ -210,10 +210,17 @@ final class NativeMemoryClientTests: XCTestCase {
         XCTAssertTrue(hidden.isEmpty)
 
         _ = await model.remove(fact, kind: .delete)
-        try await Task.sleep(for: .milliseconds(200))
-        requests = await transport.recorded()
+        // The window is 50ms, but a loaded CI runner can take longer than any
+        // fixed sleep to fire it and apply the answer: wait for both, up to a
+        // generous cap, then assert exactly as before.
+        let deadline = ContinuousClock.now + .seconds(5)
+        var facts = await model.facts
+        repeat {
+            try await Task.sleep(for: .milliseconds(50))
+            requests = await transport.recorded()
+            facts = await model.facts
+        } while (requests.isEmpty || !facts.isEmpty) && ContinuousClock.now < deadline
         XCTAssertEqual(requests.map(\.path), ["/api/memory/f1"])
-        let facts = await model.facts
         XCTAssertTrue(facts.isEmpty)
     }
 
