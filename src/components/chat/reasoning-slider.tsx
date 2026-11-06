@@ -479,6 +479,26 @@ function EffortPanel({
     onChange(next.value);
     segRefs.current[options.indexOf(next)]?.focus();
   };
+  const reset = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={resetLabel}
+          disabled={disabled || !canReset}
+          onClick={() => defaultValue !== undefined && onChange(defaultValue)}
+          // Out of the layout while there is nowhere to go back to; the
+          // button and its name stay in the document.
+          className={cn(iconButton, !canReset && "hidden")}
+        >
+          <RotateCcw className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{resetLabel}</TooltipContent>
+    </Tooltip>
+  );
+  /** The quiet line under the depth: only where it has a switch to hold. */
+  const showsFoot = showsSpeed || !!onProModeChange || !panel;
   /*
    * THE THINKING SHEET, rebuilt from zero (owner, 6 Nov 2026: "rework the
    * components from the ground"). Three stacked parts, each one line:
@@ -491,6 +511,7 @@ function EffortPanel({
   return (
     <div className={cn("effort-sheet select-none", className)}>
       {panel ? (
+        <div className="flex items-center gap-1">
         <button
           type="button"
           onClick={panel.onOpenModels}
@@ -504,6 +525,8 @@ function EffortPanel({
           <span className="effort-sheet__more">Change</span>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" aria-hidden="true" />
         </button>
+        {reset}
+        </div>
       ) : null}
 
       <div
@@ -548,6 +571,7 @@ function EffortPanel({
         ))}
       </div>
 
+      {showsFoot ? (
       <div className="effort-sheet__foot">
         {showsSpeed ? (
           <Tooltip>
@@ -589,23 +613,9 @@ function EffortPanel({
         ) : null}
         <span className="flex-1" />
         {/* The product's tooltip, naming the rung it goes back to. */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              aria-label={resetLabel}
-              disabled={disabled || !canReset}
-              onClick={() => defaultValue !== undefined && onChange(defaultValue)}
-              // Hidden, not removed, while there is nowhere to go back to:
-              // the line keeps its height and the button its place.
-              className={cn(iconButton, !canReset && "invisible")}
-            >
-              <RotateCcw className="size-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>{resetLabel}</TooltipContent>
-        </Tooltip>
+        {panel ? null : reset}
       </div>
+      ) : null}
     </div>
   );
 }

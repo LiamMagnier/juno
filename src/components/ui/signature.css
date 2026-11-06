@@ -473,6 +473,8 @@ button[role="switch"][data-state="checked"] > span > span,
   gap: 6px;
 }
 .effort-sheet__model {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -539,9 +541,9 @@ button[role="switch"][data-state="checked"] > span > span,
   height: 30px;
   align-items: center;
   justify-content: center;
-  padding: 0 6px;
+  padding: 0 4px;
   border-radius: 9px;
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 16px;
   font-weight: 500;
   color: hsl(var(--foreground) / 0.55);

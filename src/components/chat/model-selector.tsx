@@ -631,7 +631,7 @@ export function ModelSelector({
                 side={side}
                 sideOffset={8}
                 collisionPadding={COMPOSER_MENU_COLLISION_PADDING}
-                className="w-[min(19rem,calc(100vw-1.5rem))] rounded-menu p-1.5"
+                className="w-[min(20.5rem,calc(100vw-1.5rem))] rounded-menu p-1.5"
                 aria-label="Thinking"
                 // By pointer, focus stays on the chip. By keyboard it lands on
                 // the slider: arrows change the rung, Shift+Tab reaches reset,
