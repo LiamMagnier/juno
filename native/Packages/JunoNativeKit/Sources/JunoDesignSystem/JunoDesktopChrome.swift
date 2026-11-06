@@ -62,6 +62,9 @@ public enum JunoInspectorMetrics {
 
 public extension View {
     /// Applies Juno's resizable navigation-column range.
+    ///
+    /// The column keeps the system's Liquid Glass sidebar (owner, 2026-11-05:
+    /// "keep the native glass look on the sidebar"); nothing here paints it.
     func junoSidebarColumn() -> some View {
         navigationSplitViewColumnWidth(
             min: JunoSidebarMetrics.minimum,

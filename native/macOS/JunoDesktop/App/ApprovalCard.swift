@@ -81,7 +81,7 @@ struct DesktopApprovalCard: View {
             } else {
                 // Identifiers, so mono.
                 Text("\(approval.connectorLabel) · \(approval.toolName)")
-                    .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                    .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -126,7 +126,7 @@ struct DesktopApprovalCard: View {
                             : isTask ? "Unanswered, this expires and the task does not start."
                             : "Unanswered, this expires and Alevr stops rather than acting on it."
                     )
-                        .junoFont(size: 11, relativeTo: .caption)
+                        .junoFont(size: 12, relativeTo: .caption)
                 }
                 .foregroundStyle(Color.junoSecondaryInk)
                 .padding(.top, JunoSpace.snug)
@@ -158,7 +158,7 @@ struct DesktopApprovalCard: View {
                 .foregroundStyle(answerable ? Color.junoWarningInk : Color.junoSecondaryInk)
             if !isTask {
                 Text(riskLabel)
-                    .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                    .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                     .foregroundStyle(riskInk)
                     .padding(.horizontal, JunoSpace.snug)
                     .frame(height: 20)
@@ -272,11 +272,11 @@ struct DesktopApprovalCard: View {
                 ForEach(rows, id: \.key) { entry in
                     HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                         Text(entry.key)
-                            .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                            .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                             .foregroundStyle(Color.junoSecondaryInk)
                             .frame(width: 112, alignment: .leading)
                         Text(Self.format(entry.value))
-                            .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                            .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                             .foregroundStyle(Color.junoForeground)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)

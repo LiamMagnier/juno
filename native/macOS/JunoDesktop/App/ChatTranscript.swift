@@ -238,7 +238,14 @@ struct DesktopTranscript: View {
         ScrollView {
             // The web's reading column, metric for metric: `max-w-3xl`
             // (768pt) at `space-y-6` (24pt) — see `message-list.tsx`.
+            // Each placement is computed once per pass, never per row: as
+            // computed properties read inside the ForEach they rebuilt the
+            // whole turn list for every visible row on every streamed chunk,
+            // O(rows × messages) per frame in a long chat.
             let research = researchPlacement
+            let work = workPlacement
+            let cross = crossPlacement
+            let workFoot = workAtFoot
             LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
                 ForEach(Array(model.selectedMessages.enumerated()), id: \.element.id) {
                     index, message in
@@ -256,17 +263,17 @@ struct DesktopTranscript: View {
                         researchRow(run)
                     }
                     // A task follows the reply after the turn that started it.
-                    ForEach(workPlacement[message.id] ?? []) { entry in
+                    ForEach(work[message.id] ?? []) { entry in
                         workRow(entry)
                     }
                     // Messages to and from the reader's other conversations,
                     // by time, as their own rows (never the reader's bubble).
-                    ForEach(crossPlacement.byMessage[message.id] ?? []) { cross in
+                    ForEach(cross.byMessage[message.id] ?? []) { cross in
                         crossRow(cross)
                     }
                 }
 
-                ForEach(crossPlacement.atFoot) { cross in
+                ForEach(cross.atFoot) { cross in
                     crossRow(cross)
                 }
 
@@ -277,7 +284,7 @@ struct DesktopTranscript: View {
 
                 // A task no turn on screen started: at the foot, as the web
                 // places one with no earlier question.
-                ForEach(workAtFoot) { entry in
+                ForEach(workFoot) { entry in
                     workRow(entry)
                 }
 

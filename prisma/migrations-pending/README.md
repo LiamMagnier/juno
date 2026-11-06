@@ -28,17 +28,19 @@ empty. Work is the opposite: every Work table already holds rows on live
 accounts, so the first Work write after this migration lands emits a change, and
 every installed client that predates the strings is finished.
 
-**Precondition, in full.** Both allowlists below must carry all twelve strings
+**Precondition, in full.** The Swift allowlist below must carry all twelve strings
 *and* the build carrying them must be the **oldest client in the field** —
 shipping the strings is necessary and not sufficient, because yesterday's
 installs are still out there.
 
 - `native/Packages/JunoNativeKit/Sources/JunoSync/NativeSyncAPIClient.swift`
-- `native/desktop-electron/src/main/sync/types.ts`
 
-**Status.** Both allowlists carry all twelve as of 2026-08-15 (verified by
-`tests/sync-work-entities.test.ts`, which also asserts the two clients agree
-exactly). What remains is adoption: wait until update telemetry shows no
+(The Electron desktop app kept a second allowlist; it was removed in 2026-11,
+so the Swift apps are the only sync client.)
+
+**Status.** The allowlist carries all twelve as of 2026-08-15 (verified by
+`tests/sync-work-entities.test.ts`, which also asserts the server never emits a
+type the Swift client does not know). What remains is adoption: wait until update telemetry shows no
 pre-0.15.7 client still syncing, then move this directory's migration into
 `prisma/migrations/` and deploy.
 

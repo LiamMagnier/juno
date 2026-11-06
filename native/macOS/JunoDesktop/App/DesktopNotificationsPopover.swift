@@ -286,7 +286,7 @@ struct DesktopNotificationRowView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Text(secondLine)
-                        .junoFont(size: 11, relativeTo: .caption)
+                        .junoFont(size: 12, relativeTo: .caption)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)

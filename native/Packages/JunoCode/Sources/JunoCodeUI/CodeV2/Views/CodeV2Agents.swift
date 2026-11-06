@@ -739,7 +739,7 @@ struct CodeV2ScreenBusyPanel: View {
                     }
                     if let open {
                         Button("Open conversation", action: open)
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.junoGlass)
                             .help("Go to \(busy.name)")
                             .contentShape(.rect)
                             .accessibilityIdentifier("alevr.code.screen.open-holder")

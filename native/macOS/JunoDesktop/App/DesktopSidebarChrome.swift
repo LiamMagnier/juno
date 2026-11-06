@@ -46,7 +46,8 @@ enum DesktopSidebarMetrics {
     static let prominentGlyphSize: CGFloat = JunoLayout.Row.touchGlyph
     static let prominentLabelSize: CGFloat = 15
     /// The web's `.shell-annot`: mono 11px, tracked 0.02em.
-    static let headingSize: CGFloat = 11
+    /// 12, the app-wide text floor (was 11).
+    static let headingSize: CGFloat = 12
     static let headingTracking: CGFloat = headingSize * 0.02
     static let accountHeight: CGFloat = JunoSpace.vast
 

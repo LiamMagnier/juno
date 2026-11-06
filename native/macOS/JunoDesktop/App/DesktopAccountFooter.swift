@@ -144,7 +144,7 @@ struct DesktopAccountFooter: View {
                         .truncationMode(.tail)
                     if let word {
                         Text(word.text)
-                            .junoFont(size: 11, relativeTo: .caption)
+                            .junoFont(size: 12, relativeTo: .caption)
                             .foregroundStyle(word.tone.color)
                             .lineLimit(1)
                     }
@@ -624,7 +624,7 @@ struct DesktopAccountPopover: View {
                         // Neutral, not the accent: a plan is a fact about the
                         // account. SF, like the rest of the menu's metadata.
                         Text(planName)
-                            .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
+                            .junoFont(size: 12, relativeTo: .caption2, weight: .medium)
                             .foregroundStyle(Color.junoSecondaryInk)
                             .padding(.horizontal, JunoSpace.snug)
                             .padding(.vertical, JunoSpace.micro)
@@ -657,13 +657,13 @@ struct DesktopAccountPopover: View {
                     .contentTransition(.numericText())
                     .lineLimit(1)
             }
-            .junoFont(size: 11, relativeTo: .caption2)
+            .junoFont(size: 12, relativeTo: .caption2)
 
             if let fraction = usage.fraction {
                 DesktopSidebarDotFillBar(fraction: fraction, tint: usage.meterTint)
             } else if let sentence = usage.sentence {
                 Text(sentence)
-                    .junoFont(size: 11, relativeTo: .caption2)
+                    .junoFont(size: 12, relativeTo: .caption2)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
             }

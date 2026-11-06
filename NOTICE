@@ -19,8 +19,6 @@ Third-Party and Vendored Notices
    - Newsreader font (`native/iOS/JunoMobile/Resources/Fonts/`):
      Copyright 2020 The Newsreader Project Authors. Licensed under the SIL Open Font
      License, Version 1.1 (see OFL.txt).
-   - JetBrains Mono font (`native/desktop-electron/src/renderer/public/fonts/`):
-     Copyright 2020 JetBrains s.r.o. Licensed under the Apache License, Version 2.0.
 
 3. Artifact Runtime Bundles (`native/macOS/JunoDesktop/Resources/ArtifactRuntime/`):
    - Mermaid (MIT License, Copyright Knut Sveidqvist)

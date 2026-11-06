@@ -409,11 +409,11 @@ struct CodeV2ApprovalTakeover: View {
                     .contentShape(.rect)
             }
             if request.action == .fileChange, let showDiff {
-                Button("Review", action: showDiff).buttonStyle(.bordered)
+                Button("Review", action: showDiff).buttonStyle(.junoGlass)
                     .contentShape(.rect)
             } else if options.contains(.acceptForSession) {
                 Button("Allow for Session") { respond(.acceptForSession) }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .keyboardShortcut(.return, modifiers: [.command, .shift])
                     .help("Allow for this session (⇧⌘↩)")
                     .contentShape(.rect)
@@ -575,7 +575,7 @@ struct CodeV2LimitedNotice: View {
             Spacer(minLength: 0)
             if let resumeAtReset {
                 Button("Wait", action: resumeAtReset)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .help("Continue when the plan window resets")
                     .contentShape(.rect)
             }

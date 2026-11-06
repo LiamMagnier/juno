@@ -347,7 +347,7 @@ struct ChatWorkRunCard: View {
                     JunoIconView(.task, size: 14)
                     Text("Task")
                 }
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoSecondaryInk)
                 .accessibilityHidden(true)
                 Text(title)
@@ -829,7 +829,7 @@ struct ChatWorkCurrentAction: View {
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
                     if let detail = action.detail {
                         Text(detail)
-                            .junoFont(size: 11, relativeTo: .caption)
+                            .junoFont(size: 12, relativeTo: .caption)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -861,7 +861,7 @@ struct ChatWorkCurrentAction: View {
 
     private func duration(at date: Date) -> some View {
         Text(ChatWorkFormat.duration(max(0, date.timeIntervalSince(action.startedAt))))
-            .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+            .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
             .monospacedDigit()
             .fixedSize()
     }
@@ -884,7 +884,7 @@ struct ChatWorkPlan: View {
                     .foregroundStyle(Color.junoForeground)
                     .accessibilityAddTraits(.isHeader)
                 Text("\(tally.done)/\(tally.total)")
-                    .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                    .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .monospacedDigit()
                     .accessibilityLabel("\(tally.done) of \(tally.total) steps done")
@@ -910,7 +910,7 @@ struct ChatWorkPlan: View {
                 .fixedSize(horizontal: false, vertical: true)
             if step.state == .unreported {
                 Text("never finished")
-                    .junoFont(size: 11, relativeTo: .caption)
+                    .junoFont(size: 12, relativeTo: .caption)
                     .foregroundStyle(Color.junoWarningInk)
                     .fixedSize()
             }
@@ -1006,7 +1006,7 @@ struct ChatWorkMeter: View {
             JunoIconView(icon, size: 12)
                 .foregroundStyle(Color.junoSecondaryInk)
             Text(value)
-                .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                 .foregroundStyle(Color.junoSecondaryInk)
                 .monospacedDigit()
         }
@@ -1170,7 +1170,7 @@ struct ChatWorkQuestionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Text(asked)
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoWarningInk)
             Text(question.text.isEmpty ? "Alevr has a question for you." : question.text)
                 .junoFont(size: 15, relativeTo: .body)

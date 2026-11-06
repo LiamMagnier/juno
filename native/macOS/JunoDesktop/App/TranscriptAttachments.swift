@@ -257,13 +257,13 @@ struct FileTile: View {
     private var caption: some View {
         VStack(alignment: .leading, spacing: JunoSpace.micro) {
             Text(attachment.stem)
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoForeground)
                 .lineLimit(1)
                 // The web's `truncate`: cut at the end, never mid-word.
                 .truncationMode(.tail)
             Text(attachment.captionMeta)
-                .junoFont(size: 10.5, relativeTo: .caption2)
+                .junoFont(size: 12, relativeTo: .caption2)
                 .monospacedDigit()
                 .foregroundStyle(Color.junoSecondaryInk)
                 .lineLimit(1)
@@ -857,7 +857,7 @@ struct MediaOverlayButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoForeground.opacity(hovered ? 1 : 0.85))
                 .padding(.horizontal, shape == .capsule ? 10 : 0)
                 .frame(minWidth: 28, minHeight: 28)
@@ -903,7 +903,7 @@ struct MediaPillButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(hovered ? Color.junoForeground : Color.junoForeground.opacity(0.8))
                 .padding(.horizontal, JunoSpace.close)
                 .frame(height: 28)

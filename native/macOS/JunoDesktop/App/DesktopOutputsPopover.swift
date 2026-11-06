@@ -564,7 +564,7 @@ struct DesktopOutputsPopover: View {
                         }
                         if row.files.count > 8 {
                             Text("+\(row.files.count - 8) more in the chat")
-                                .junoFont(size: 11, relativeTo: .caption2)
+                                .junoFont(size: 12, relativeTo: .caption2)
                                 .foregroundStyle(Color.junoSecondaryInk)
                                 .frame(height: 24, alignment: .leading)
                                 .padding(.horizontal, JunoSpace.tight)
@@ -604,7 +604,7 @@ private struct DesktopOutputFileRow: View {
                     .truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text("Open")
-                    .junoFont(size: 11, relativeTo: .caption2)
+                    .junoFont(size: 12, relativeTo: .caption2)
                     .foregroundStyle(Color.junoSecondaryInk)
             }
             .padding(.horizontal, JunoSpace.tight)

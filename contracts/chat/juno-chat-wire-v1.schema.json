@@ -341,7 +341,7 @@
             "quick_windows"
           ],
           "x-native": "web-only",
-          "x-native-note": "Durable creation metadata for a conversation created by this request. The Swift apps create conversations through sync; the Electron client (native/desktop-electron) sends main_macos here."
+          "x-native-note": "Durable creation metadata for a conversation created by this request. The Swift apps create conversations through sync, so only the web sends it."
         },
         "clientRequestId": {
           "type": "string",

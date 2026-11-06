@@ -295,9 +295,9 @@ struct ChatWorkDeliverables: View {
             HStack(spacing: 0) {
                 // The format is an identifier, so mono; the rest is words.
                 Text(file.artifact.kind.fileExtension.uppercased())
-                    .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                    .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                 Text(" \u{00B7} v\(file.artifact.currentVersion) \u{00B7} \(ChatWorkFormat.ago(file.artifact.updatedAt, now: now ?? Date()))")
-                    .junoFont(size: 11, relativeTo: .caption)
+                    .junoFont(size: 12, relativeTo: .caption)
                     .monospacedDigit()
             }
             .foregroundStyle(Color.junoSecondaryInk)

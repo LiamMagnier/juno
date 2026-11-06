@@ -372,7 +372,7 @@ struct CodeV2Receipt: View {
                     Button("Undo", action: undo).buttonStyle(.borderless)
                         .contentShape(.rect)
                 }
-                Button("Review", action: review).buttonStyle(.bordered)
+                Button("Review", action: review).buttonStyle(.junoGlass)
                     .contentShape(.rect)
             }
             .controlSize(.small)

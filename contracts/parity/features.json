@@ -159,7 +159,7 @@
         "/api/generate": "native",
         "/api/models": {
           "status": "web-only",
-          "note": "The web's model list. The apps read /api/v1/models; the Electron client (native/desktop-electron) still reads this one."
+          "note": "The web's model list. The apps read /api/v1/models."
         },
         "/api/v1/models": "native"
       }

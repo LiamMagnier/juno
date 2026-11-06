@@ -94,7 +94,7 @@ walk(join(root, "src/app/(app)"), (file) => {
 
 function swiftFiles() {
   const files = [];
-  const skip = (name) => name === "Tests" || name === "UITests" || name.endsWith("Tests") || name === ".build" || name === "node_modules" || name === "desktop-electron" || name === "JunoPreviewSupport";
+  const skip = (name) => name === "Tests" || name === "UITests" || name.endsWith("Tests") || name === ".build" || name === "node_modules" || name === "JunoPreviewSupport";
   const visit = (directory) => {
     for (const name of readdirSync(directory).sort()) {
       const path = join(directory, name);

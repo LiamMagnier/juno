@@ -345,7 +345,7 @@ struct DesktopSharePopover: View {
             }
             HStack(spacing: JunoSpace.snug) {
                 Text(Self.caption(for: share))
-                    .junoFont(size: 11, relativeTo: .caption2)
+                    .junoFont(size: 12, relativeTo: .caption2)
                     .monospacedDigit()
                     .foregroundStyle(Color.junoSecondaryInk)
                     .lineLimit(1)

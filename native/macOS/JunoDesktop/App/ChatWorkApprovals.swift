@@ -214,7 +214,7 @@ struct ChatWorkApprovalCard: View {
                 HStack(spacing: JunoSpace.tight) {
                     JunoIconView(.clock, size: 11)
                     Text(WorkApprovalWords.expiryFootnote)
-                        .junoFont(size: 11, relativeTo: .caption)
+                        .junoFont(size: 12, relativeTo: .caption)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(Color.junoSecondaryInk)
@@ -230,7 +230,7 @@ struct ChatWorkApprovalCard: View {
                 .foregroundStyle(Color.junoWarningInk)
                 .accessibilityHidden(true)
             Text(WorkApprovalWords.decisionHeader)
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoWarningInk)
             ChatWorkRiskPill(risk: approval.risk)
             Spacer(minLength: JunoSpace.snug)
@@ -242,7 +242,7 @@ struct ChatWorkApprovalCard: View {
     private var asked: some View {
         if let createdAt = approval.createdAt {
             Text(ChatWorkFormat.ago(createdAt, now: clock))
-                .junoFont(size: 11, relativeTo: .caption)
+                .junoFont(size: 12, relativeTo: .caption)
                 .monospacedDigit()
                 .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize()
@@ -339,7 +339,7 @@ struct ChatWorkApprovalCard: View {
                             }
                         }
                     }
-                    .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                    .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                     .padding(.horizontal, JunoSpace.cozy)
                     .padding(.vertical, JunoSpace.snug)
                     .background(Color.junoSecondary, in: RoundedRectangle(cornerRadius: JunoRadius.md, style: .continuous))
@@ -438,7 +438,7 @@ struct ChatWorkApprovalCard: View {
         let trimmed = amendment.trimmingCharacters(in: .whitespacesAndNewlines)
         return VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Text(WorkApprovalWords.amendPrompt)
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoWarningInk)
             TextEditor(text: $amendment)
                 .junoFont(size: 13, relativeTo: .callout)
@@ -516,7 +516,7 @@ struct ChatWorkApprovalCard: View {
             HStack(spacing: JunoSpace.tight) {
                 JunoIconView(.clock, size: 11)
                 Text(WorkApprovalWords.settledLine(approval, expired: expired) { ChatWorkFormat.ago($0, now: clock) })
-                    .junoFont(size: 11, relativeTo: .caption)
+                    .junoFont(size: 12, relativeTo: .caption)
                     .monospacedDigit()
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -550,7 +550,7 @@ struct ChatWorkRiskPill: View {
                 JunoIconView(.security, size: 10)
             }
             Text(WorkApprovalWords.riskLabel(risk))
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
         }
         .foregroundStyle(ink)
         .padding(.horizontal, JunoSpace.snug)

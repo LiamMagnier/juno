@@ -282,13 +282,15 @@ test("synced Work payloads withhold what their REST shapes already withhold", ()
   }
 });
 
-test("no entity type is half-rolled-out across the two client allowlists", () => {
+test("the server never syncs an entity type the Swift client does not know", () => {
   /*
    * `requireEntityType` throws on a string it does not know, and that aborts the
    * whole page rather than skipping a row — an unknown type does not degrade, it
-   * stops that account syncing on that device for everything. So the two clients
-   * must never disagree: a type in one list and not the other means one platform
-   * is already receiving something the other will choke on.
+   * stops that account syncing on that device for everything. So every type the
+   * server can emit must already be in the Swift allowlist.
+   *
+   * The Swift apps are the only sync client: the Electron desktop app, which
+   * kept a second allowlist this test compared against, was removed in 2026-11.
    *
    * This is also the gate on the Work rollout. The trigger migration is
    * deliberately not applied and its header says why: unlike project_workspace,
@@ -300,33 +302,19 @@ test("no entity type is half-rolled-out across the two client allowlists", () =>
     "native/Packages/JunoNativeKit/Sources/JunoSync/NativeSyncAPIClient.swift",
     "utf8"
   );
-  const electron = readFileSync("native/desktop-electron/src/main/sync/types.ts", "utf8");
-
   const swiftList = swift.match(/entityTypes: Set<String> = \[([\s\S]*?)\]/);
   assert.ok(swiftList, "NativeSyncAPIClient no longer declares entityTypes as a set literal");
   const swiftTypes = new Set([...swiftList[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]));
 
-  const electronList = electron.match(/SYNC_ENTITY_TYPES = \[([\s\S]*?)\] as const;/);
-  assert.ok(electronList, "the Electron sync types list is no longer a plain array literal");
-  const electronTypes = new Set([...electronList[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]));
+  const server = readFileSync("src/lib/sync-entities.ts", "utf8");
+  const loaderBlock = server.match(/const loaders: Record<string, EntityLoader> = \{([\s\S]*?)\n\};/);
+  assert.ok(loaderBlock, "sync-entities.ts no longer declares its loaders as one object literal");
+  const serverTypes = [...loaderBlock[1].matchAll(/^  ([a-z_]+): async/gm)].map((m) => m[1]);
+  assert.ok(serverTypes.length > 20, `parsed only ${serverTypes.length} server entity types`);
 
-  const disagreements = [...new Set([...swiftTypes, ...electronTypes])].filter(
-    (type) => swiftTypes.has(type) !== electronTypes.has(type)
-  );
   assert.deepEqual(
-    disagreements.sort(),
-    // Empty, and it must stay empty.
-    //
-    // `project_workspace` used to be the documented exception — added to the
-    // Swift client ahead of its writer, against an empty table, so the string
-    // would already be in the field. The Electron client simply never got it,
-    // and encoding that here turned a one-sided omission into an expected
-    // value. It is now in both, so the exception is gone and the honest
-    // assertion is that the two clients agree exactly.
-    //
-    // A deliberate ahead-of-writer addition is still allowed; it just has to go
-    // into BOTH lists, which is the whole point of this test.
+    serverTypes.filter((type) => !swiftTypes.has(type)).sort(),
     [],
-    "an entity type reached one client and not the other"
+    "the server can sync an entity type the Swift client would reject"
   );
 });

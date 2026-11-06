@@ -756,10 +756,10 @@ struct DesktopToolCallDetail: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             Text(title)
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoSecondaryInk)
             Text(text)
-                .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                 .foregroundStyle(Color.junoForeground)
                 .textSelection(.enabled)
                 .lineLimit(showsAll.wrappedValue ? nil : lines)
@@ -778,7 +778,7 @@ struct DesktopToolCallDetail: View {
             }
             if truncated {
                 Text("Shortened: only the start was kept.")
-                    .junoFont(size: 11, relativeTo: .caption)
+                    .junoFont(size: 12, relativeTo: .caption)
                     .foregroundStyle(Color.junoSecondaryInk)
             }
         }
