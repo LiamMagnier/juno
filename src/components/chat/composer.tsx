@@ -2801,6 +2801,7 @@ function ComposerImpl({
           label: "Mention a file, app or agent",
           icon: AtSign,
           detail: "@",
+          keyHint: true,
           onSelect: () => {
             // After the menu has handed focus back, so the "@" lands in the field.
             window.setTimeout(() => textareaRef.current?.openMention(), 0);

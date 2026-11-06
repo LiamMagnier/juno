@@ -116,18 +116,20 @@
   animation: pop-in var(--spring-standard-dur, 272ms) var(--spring-standard, var(--ease-out-expo)) both;
 }
 
-/* The switch: the track takes the tint when on, and the thumb lands with the
+/* The switch: on is the foreground ink with a thumb in the page's ground,
+   the quiet Claude.ai form (owner, 6 Nov 2026), and the thumb lands with the
    reward spring's 1% settle, the one place a control earns a hint of bounce
    (a toggle is a commit). */
 button[role="switch"][data-state="checked"] {
-  background-color: hsl(var(--primary));
-  border-color: hsl(var(--primary));
+  background-color: hsl(var(--foreground));
+  border-color: hsl(var(--foreground));
 }
 button[role="switch"] > span {
   transition: transform var(--spring-reward-dur, 320ms) var(--spring-reward, var(--ease-out-soft));
 }
-.dark button[role="switch"][data-state="checked"] > span > span {
-  background-color: hsl(0 0% 100%);
+button[role="switch"][data-state="checked"] > span > span,
+.dark button[role="switch"][role="switch"][data-state="checked"][data-state="checked"] > span > span {
+  background-color: hsl(var(--background));
 }
 
 /* ── 4. Menus, from zero (owner, 6 Nov 2026: "even more AI slop"; reference

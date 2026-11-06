@@ -220,7 +220,10 @@ export const PlusMenuRow = React.forwardRef<
         <span
           className={cn(
             "max-w-[7rem] shrink-0 truncate font-sans text-label font-normal text-muted-foreground tabular-nums",
-            keyHint && "coarse:hidden",
+            // Shortcut tags are not drawn in the menu (owner, 6 Nov 2026: the
+            // tags were clutter); the shortcut lives in its tooltip and the
+            // shortcuts sheet.
+            keyHint && "hidden",
           )}
         >
           {detail}
@@ -235,8 +238,8 @@ export const PlusMenuRow = React.forwardRef<
           aria-hidden="true"
           className={cn(
             "relative h-4 w-7 shrink-0 rounded-full transition-colors duration-base ease-out-expo",
-            // On is the signature tint, as every switch is (signature.css).
-            ticked ? "bg-primary" : "bg-foreground/[0.14]",
+            // On is the label's own ink, not a colour (owner, 6 Nov 2026).
+            ticked ? "bg-foreground" : "bg-foreground/[0.14]",
           )}
         >
           <span
@@ -244,7 +247,7 @@ export const PlusMenuRow = React.forwardRef<
               // On, the thumb takes the page's ground: the track is the
               // homepage's solid primary (near-white in the dark theme), and a
               // white thumb on it vanished. Off, a white thumb on a faint track.
-              "absolute left-0.5 top-0.5 size-3 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.18)] transition-[transform] [transition-duration:var(--spring-reward-dur)] [transition-timing-function:var(--spring-reward)] motion-reduce:transition-none",
+              "absolute left-0.5 top-0.5 size-3 rounded-full bg-background shadow-[0_1px_2px_rgb(0_0_0/0.18)] transition-[transform] [transition-duration:var(--spring-reward-dur)] [transition-timing-function:var(--spring-reward)] motion-reduce:transition-none",
               ticked && "translate-x-3",
             )}
           />
