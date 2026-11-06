@@ -2545,7 +2545,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       sendLocked={voiceSaving || !!voiceSaveError || voiceTurnSending}
       placeholder={
         privateMode
-          ? "How can I help you today?"
+          ? "Ask anything"
           : voiceSaving
             ? "Saving voice transcript…"
             : voiceSaveError

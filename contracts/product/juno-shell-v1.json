@@ -246,20 +246,20 @@
       "rows": [
         {
           "id": "files",
-          "label": "Add photos and files",
+          "label": "Photos and files",
           "kind": "action",
           "icon": "ComposerIcons.attach"
         },
         {
           "id": "voice-files",
-          "label": "Add files",
+          "label": "Files",
           "kind": "action",
           "icon": "ComposerIcons.attach",
           "variantOf": "files"
         },
         {
           "id": "screenshot",
-          "label": "Take a screenshot",
+          "label": "Screenshot",
           "kind": "action",
           "icon": "Scan",
           "optional": true
@@ -272,35 +272,27 @@
         },
         {
           "id": "library",
-          "label": "Add from Library",
+          "label": "From Library",
           "kind": "action",
           "icon": "AppIcons.library"
         },
         {
           "id": "google-drive",
-          "label": "Add from Google Drive",
+          "label": "Google Drive",
           "kind": "action",
           "icon": "Cloud",
           "optional": true
         },
         {
           "id": "onedrive",
-          "label": "Add from OneDrive",
+          "label": "OneDrive",
           "kind": "action",
           "icon": "Cloud",
           "optional": true
         },
         {
-          "id": "mention",
-          "label": "Mention a file, app or agent",
-          "kind": "action",
-          "icon": "AtSign",
-          "nativeIcon": "textCursor",
-          "optional": true
-        },
-        {
           "id": "project",
-          "label": "Add to project",
+          "label": "Project",
           "kind": "sub",
           "icon": "AppIcons.projects",
           "optional": true
@@ -314,7 +306,7 @@
         },
         {
           "id": "skill",
-          "label": "Run a skill",
+          "label": "Skills",
           "kind": "sub",
           "icon": "AppIcons.skills",
           "optional": true
@@ -357,10 +349,6 @@
             "onedrive"
           ],
           [
-            "mention",
-            "skill"
-          ],
-          [
             "image",
             "research",
             "search",
@@ -368,7 +356,8 @@
           ],
           [
             "project",
-            "connectors"
+            "connectors",
+            "skill"
           ]
         ],
         "voice": [

@@ -2,18 +2,18 @@
 
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, ShieldCheck } from "@/components/ui/icons";
+import { Check, ChevronDown, ShieldAlert, ShieldCheck, Zap } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { composerChevronClass, composerChipClass } from "@/components/ui/composer-shell";
-import { COMPOSER_MENU_COLLISION_PADDING, composerMenuClass, MenuGlide, MenuLabel, MenuScrollEdges } from "@/components/chat/composer-menu";
-import { StatusIcons } from "@/lib/app-icons";
+import { COMPOSER_MENU_COLLISION_PADDING, composerMenuClass, MenuGlide } from "@/components/chat/composer-menu";
 import {
   DEFAULT_WORK_PERMISSION_POLICY,
   WORK_APPROVAL_MODE_HINT,
   WORK_APPROVAL_MODE_LABEL,
 } from "@/lib/work/domain";
-import { CHAT_TASK_MODES, CHAT_TASK_MODE_NOTE, type ChatTaskMode } from "@/lib/chat/task-approval-mode";
+import { CHAT_TASK_MODES, type ChatTaskMode } from "@/lib/chat/task-approval-mode";
 import { cn } from "@/lib/utils";
 
 /*
@@ -34,6 +34,17 @@ import { cn } from "@/lib/utils";
  * shields are spoken for by approvals themselves, and a shield in the
  * composer would read as an approval already waiting.
  */
+
+/**
+ * The menu's rows say the mode in two or three words (owner, 6 Nov 2026:
+ * "reduce text if it's not useful"). The whole sentence stays in the row's
+ * tooltip and its accessible name, and the Work surfaces keep the long labels.
+ */
+const MODE_ROW: Record<ChatTaskMode, { Icon: IconComponent; label: string }> = {
+  conservative: { Icon: ShieldCheck, label: "Ask every time" },
+  balanced: { Icon: ShieldAlert, label: "Ask when risky" },
+  permissive: { Icon: Zap, label: "Don’t ask" },
+};
 
 export function TaskModeChip({
   chosen,
@@ -110,66 +121,42 @@ export function TaskModeChip({
         // sentence, and Skip's names five exceptions.
         // Capped to the room above the composer; the rows scroll and the
         // footer stays pinned, so the always-ask line is never cut off.
-        className={cn(
-          "flex max-h-[min(30rem,var(--radix-dropdown-menu-content-available-height))] w-[min(18rem,calc(100vw-1.5rem))] flex-col",
-          composerMenuClass,
-        )}
+        className={cn("w-[min(15.75rem,calc(100vw-1.5rem))]", composerMenuClass)}
       >
         <MenuGlide />
-        <MenuLabel>How often tasks from this chat ask</MenuLabel>
-        <div className="cmenu-scroll -mx-1.5 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5">
-          <MenuScrollEdges />
-          <DropdownMenuPrimitive.RadioGroup
-            value={selected}
-            onValueChange={(value) => {
-              const next = CHAT_TASK_MODES.find((mode) => mode === value);
-              if (next && next !== selected) onChange(next);
-            }}
-          >
-            {CHAT_TASK_MODES.map((mode) => {
-              const note = CHAT_TASK_MODE_NOTE[mode];
-              return (
-                <DropdownMenuPrimitive.RadioItem
-                  key={mode}
-                  value={mode}
-                  className="group/mode relative flex cursor-default select-none items-start gap-2 outline-none"
-                >
-                  {/* Graphite §4: the selection slot leads (a 16px check) and
-                      the chosen label takes weight 500. Ink stays foreground;
-                      colour is for state, and a tick already says it. */}
-                  <span className="mt-2 grid size-4 shrink-0 place-items-center" aria-hidden="true">
-                    <DropdownMenuPrimitive.ItemIndicator>
-                      <StatusIcons.success className="size-3.5 text-foreground" />
-                    </DropdownMenuPrimitive.ItemIndicator>
-                  </span>
-                  <span className="min-w-0 flex-1 py-1.5">
-                    <span className="flex items-center gap-2">
-                      <span className="group-data-[state=checked]/mode:font-medium">{WORK_APPROVAL_MODE_LABEL[mode]}</span>
-                      {mode === DEFAULT_WORK_PERMISSION_POLICY && (
-                        <span className="text-label text-muted-foreground">Default</span>
-                      )}
-                    </span>
-                    <span className="block whitespace-normal text-caption text-muted-foreground [text-wrap:pretty]">
-                      {WORK_APPROVAL_MODE_HINT[mode]}
-                      {note ? ` ${note}` : ""}
-                    </span>
-                  </span>
-                </DropdownMenuPrimitive.RadioItem>
-              );
-            })}
-          </DropdownMenuPrimitive.RadioGroup>
-        </div>
-        <div className="relative z-[1] -mx-1.5 mt-1.5 space-y-1 border-t border-border/60 px-3.5 pb-1 pt-2 text-caption text-muted-foreground [text-wrap:pretty]">
-          {/* Why the mode in the chip is not the one ticked above. Each reason
-              is one whole sentence, so it is translated as one. */}
-          {narrowedBy === "project" && (
-            <p className="text-muted-foreground">This project’s settings hold its tasks to a stricter mode than the one you picked.</p>
-          )}
-          {narrowedBy === "agent" && (
-            <p className="text-muted-foreground">This agent is set to ask more often, so its tasks follow its setting.</p>
-          )}
-          <p>Sending, publishing, paying and deleting always ask, whichever mode you pick.</p>
-        </div>
+        <DropdownMenuPrimitive.RadioGroup
+          value={selected}
+          onValueChange={(value) => {
+            const next = CHAT_TASK_MODES.find((mode) => mode === value);
+            if (next && next !== selected) onChange(next);
+          }}
+        >
+          {CHAT_TASK_MODES.map((mode) => {
+            const { Icon, label: rowLabel } = MODE_ROW[mode];
+            return (
+              <DropdownMenuPrimitive.RadioItem
+                key={mode}
+                value={mode}
+                title={WORK_APPROVAL_MODE_HINT[mode]}
+                className="group/mode relative flex cursor-default select-none items-center outline-none"
+              >
+                <Icon aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate">{rowLabel}</span>
+                <span className="sr-only">{WORK_APPROVAL_MODE_LABEL[mode]}</span>
+                <DropdownMenuPrimitive.ItemIndicator forceMount className="grid size-[18px] place-items-center data-[state=unchecked]:invisible" aria-hidden="true">
+                  <Check className="size-[18px] text-foreground" />
+                </DropdownMenuPrimitive.ItemIndicator>
+              </DropdownMenuPrimitive.RadioItem>
+            );
+          })}
+        </DropdownMenuPrimitive.RadioGroup>
+        <p className="cmenu-foot">
+          {narrowedBy === "project"
+            ? "This project holds its tasks to a stricter mode."
+            : narrowedBy === "agent"
+              ? "This agent asks more often, so its tasks follow it."
+              : "Sending, publishing, paying and deleting always ask."}
+        </p>
       </DropdownMenuContent>
     </DropdownMenu>
   );

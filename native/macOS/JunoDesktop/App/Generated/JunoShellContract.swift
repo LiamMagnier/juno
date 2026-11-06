@@ -14,7 +14,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "e2726b1aad5b0aafcab4e514a970d2a867a02ff6ad9d903fd9b97658317b5176"
+    static let digest = "19421e9874f14251b3e2bb2b95e3de6bb3a5b7aefc6c4cadcace79d04c31bf60"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -335,7 +335,6 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
     case library
     case googleDrive = "google-drive"
     case onedrive
-    case mention
     case project
     case connectors
     case skill
@@ -354,17 +353,16 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
     /// The web's words.
     var label: String {
         switch self {
-        case .files: "Add photos and files"
-        case .voiceFiles: "Add files"
-        case .screenshot: "Take a screenshot"
+        case .files: "Photos and files"
+        case .voiceFiles: "Files"
+        case .screenshot: "Screenshot"
         case .sketch: "Sketch"
-        case .library: "Add from Library"
-        case .googleDrive: "Add from Google Drive"
-        case .onedrive: "Add from OneDrive"
-        case .mention: "Mention a file, app or agent"
-        case .project: "Add to project"
+        case .library: "From Library"
+        case .googleDrive: "Google Drive"
+        case .onedrive: "OneDrive"
+        case .project: "Project"
         case .connectors: "Apps"
-        case .skill: "Run a skill"
+        case .skill: "Skills"
         case .image: "Create image"
         case .research: "Deep research"
         case .search: "Web search"
@@ -375,17 +373,16 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
     /// The words in Title Case, for a menu.
     var title: String {
         switch self {
-        case .files: "Add Photos and Files"
-        case .voiceFiles: "Add Files"
-        case .screenshot: "Take a Screenshot"
+        case .files: "Photos and Files"
+        case .voiceFiles: "Files"
+        case .screenshot: "Screenshot"
         case .sketch: "Sketch"
-        case .library: "Add from Library"
-        case .googleDrive: "Add from Google Drive"
-        case .onedrive: "Add from OneDrive"
-        case .mention: "Mention a File, App or Agent"
-        case .project: "Add to Project"
+        case .library: "From Library"
+        case .googleDrive: "Google Drive"
+        case .onedrive: "OneDrive"
+        case .project: "Project"
         case .connectors: "Apps"
-        case .skill: "Run a Skill"
+        case .skill: "Skills"
         case .image: "Create Image"
         case .research: "Deep Research"
         case .search: "Web Search"
@@ -402,7 +399,6 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .library: .action
         case .googleDrive: .action
         case .onedrive: .action
-        case .mention: .action
         case .project: .submenu
         case .connectors: .submenu
         case .skill: .submenu
@@ -422,7 +418,6 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .library: .library
         case .googleDrive: .cloud
         case .onedrive: .cloud
-        case .mention: .textCursor
         case .project: .projects
         case .connectors: .connections
         case .skill: .skills
@@ -443,7 +438,6 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .library: false
         case .googleDrive: true
         case .onedrive: true
-        case .mention: true
         case .project: true
         case .connectors: true
         case .skill: true
@@ -464,7 +458,6 @@ enum JunoShellPlusRow: String, CaseIterable, Sendable {
         case .library: nil
         case .googleDrive: nil
         case .onedrive: nil
-        case .mention: nil
         case .project: nil
         case .connectors: nil
         case .skill: nil
@@ -484,9 +477,8 @@ enum JunoShellPlusMenu {
     /// The chat composer's groups, in order.
     static let chat: [[JunoShellPlusRow]] = [
         [.files, .screenshot, .sketch, .library, .googleDrive, .onedrive],
-        [.mention, .skill],
         [.image, .research, .search, .memory],
-        [.project, .connectors],
+        [.project, .connectors, .skill],
     ]
 
     /// The voice composer's groups, in order.

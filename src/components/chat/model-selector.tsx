@@ -425,7 +425,7 @@ export function ModelSelector({
   const openedByKeyboard = React.useRef(false);
   const effortContentRef = React.useRef<HTMLDivElement>(null);
   const focusEffortSlider = () =>
-    effortContentRef.current?.querySelector<HTMLInputElement>('input[type="range"]')?.focus();
+    effortContentRef.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"], input[type="range"]')?.focus();
 
   // Both popovers open at the chip, just above it and over the composer's
   // draft (composer-menu.tsx, "Where they open"); Radix flips one below only
@@ -631,7 +631,7 @@ export function ModelSelector({
                 side={side}
                 sideOffset={8}
                 collisionPadding={COMPOSER_MENU_COLLISION_PADDING}
-                className="w-[min(18.5rem,calc(100vw-1.5rem))] rounded-menu p-3"
+                className="w-[min(19rem,calc(100vw-1.5rem))] rounded-menu p-1.5"
                 aria-label="Thinking"
                 // By pointer, focus stays on the chip. By keyboard it lands on
                 // the slider: arrows change the rung, Shift+Tab reaches reset,

@@ -46,45 +46,46 @@
   background-color: hsl(var(--primary) / 0.34);
 }
 
-/* The composer's focus is the brand board's other use of the colour
-   ("Presence: live work, voice, composer focus"): a tinted edge and a soft
-   4px halo, and the caret in the tint. */
+/* The composer at rest is a sheet of paper with one hairline and a long soft
+   shadow; focused, the hairline darkens a step and the shadow deepens. No
+   coloured ring: the caret is the only tint (owner, 6 Nov 2026, "premium,
+   sleek", the Claude/ChatGPT composers). */
 .composer-surface {
   caret-color: hsl(var(--primary));
+  transition:
+    border-color 160ms var(--ease-out-soft),
+    box-shadow 220ms var(--ease-out-soft);
 }
-.composer-surface:focus-within,
-.dark .composer-surface:focus-within {
-  border-color: hsl(var(--primary) / 0.5);
+.composer-surface:focus-within {
+  border-color: hsl(30 8% 14% / 0.16);
   box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.6),
-    0 0 0 4px hsl(var(--primary) / 0.12),
-    0 1px 2px hsl(var(--shadow-ink) / 0.05),
-    0 8px 18px -8px hsl(var(--shadow-ink) / 0.08),
-    0 32px 64px -24px hsl(var(--shadow-ink) / 0.2);
+    inset 0 1px 0 hsl(0 0% 100% / 0.7),
+    0 1px 2px hsl(30 10% 10% / 0.04),
+    0 8px 20px -10px hsl(30 10% 10% / 0.1),
+    0 28px 60px -28px hsl(30 10% 10% / 0.22);
 }
 .dark .composer-surface:focus-within {
+  border-color: hsl(40 10% 96% / 0.16);
   box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.08),
-    0 0 0 4px hsl(var(--primary) / 0.16),
+    inset 0 1px 0 hsl(0 0% 100% / 0.07),
     0 1px 2px hsl(0 0% 0% / 0.3),
     0 24px 56px -18px hsl(0 0% 0% / 0.85);
 }
 
-/* Send is the tint while there is something to send: the one coloured spot
-   on the composer, and only when it means "go". Empty, the disc stays the
-   quiet voice entry (contracts/product/juno-shell-v1.json, "quiet"). */
+/* Send is a solid ink disc while there is something to send, the one heavy
+   mark on the composer; empty, the disc stays the quiet voice entry. */
 .composer-primary-action[data-face="send"]:not(:disabled) {
-  background-color: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+  background-color: hsl(var(--foreground));
+  color: hsl(var(--background));
   box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.22),
-    0 1px 2px hsl(var(--primary) / 0.3),
-    0 4px 12px -4px hsl(var(--primary) / 0.45);
+    inset 0 1px 0 hsl(0 0% 100% / 0.16),
+    0 1px 2px hsl(30 10% 10% / 0.18),
+    0 4px 10px -4px hsl(30 10% 10% / 0.3);
 }
 @media (hover: hover) and (pointer: fine) {
   .composer-primary-action[data-face="send"]:not(:disabled):hover {
-    background-color: hsl(var(--primary));
-    filter: brightness(1.08);
+    background-color: hsl(var(--foreground) / 0.86);
+    filter: none;
   }
 }
 
@@ -178,7 +179,7 @@ button[role="switch"][data-state="checked"] > span > span,
 .cmenu.cmenu.cmenu {
   --cm-radius: 16px;
   --cm-pad: 6px;
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid hsl(30 8% 14% / 0.09);
   background-color: hsl(var(--popover));
   -webkit-backdrop-filter: none;
@@ -221,10 +222,10 @@ button[role="switch"][data-state="checked"] > span > span,
 
 .menu-item.menu-item,
 .cmenu.cmenu.cmenu [role^="menuitem"] {
-  min-height: 34px;
-  gap: 10px;
-  padding: 0 10px 0 8px;
-  border-radius: 10px;
+  min-height: 36px;
+  gap: 11px;
+  padding: 0 10px 0 9px;
+  border-radius: 12px;
   font-size: 14px;
   line-height: 20px;
   letter-spacing: -0.003em;
@@ -283,7 +284,7 @@ button[role="switch"][data-state="checked"] > span > span,
   background-color: hsl(40 10% 96% / 0.05);
 }
 .cmenu-glide.cmenu-glide {
-  border-radius: 10px;
+  border-radius: 12px;
   background-color: hsl(30 8% 14% / 0.06);
   transition:
     transform 200ms var(--alv-ease-out),
@@ -309,6 +310,19 @@ button[role="switch"][data-state="checked"] > span > span,
   line-height: 16px;
   font-weight: 500;
   color: hsl(var(--foreground) / 0.5);
+}
+
+/* A sheet's one closing line: a fact the rows above would otherwise repeat. */
+.cmenu.cmenu.cmenu .cmenu-foot {
+  margin: 4px 4px 0;
+  padding: 8px 6px 4px;
+  border-top: 1px solid hsl(30 8% 14% / 0.07);
+  font-size: 12px;
+  line-height: 16px;
+  color: hsl(var(--foreground) / 0.5);
+}
+.dark .cmenu.cmenu.cmenu .cmenu-foot {
+  border-top-color: hsl(40 10% 96% / 0.08);
 }
 
 /* Group breaks: a fine line inset to the row padding. */
@@ -447,4 +461,196 @@ button[role="switch"][data-state="checked"] > span > span,
 @keyframes alv-wave {
   0%, 100% { transform: scaleY(1); }
   40% { transform: scaleY(0.55); }
+}
+
+/* ── 7. The thinking sheet (reasoning-slider.tsx, EffortPanel) ───────────────
+   A model row, a segmented depth control with one gliding raised pill, and a
+   quiet line of paid modes. The pill is one element that translates by its
+   own width per rung, so a change is a single compositor move. */
+.effort-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.effort-sheet__model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 8px 0 10px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: hsl(var(--foreground));
+  transition: background-color 120ms var(--ease-out-soft);
+}
+.effort-sheet__model:hover,
+.effort-sheet__model:focus-visible {
+  background-color: hsl(30 8% 14% / 0.06);
+  outline: none;
+}
+.dark .effort-sheet__model:hover,
+.dark .effort-sheet__model:focus-visible {
+  background-color: hsl(40 10% 96% / 0.075);
+}
+.effort-sheet__more {
+  font-size: 13px;
+  font-weight: 400;
+  color: hsl(var(--foreground) / 0.5);
+}
+.effort-seg {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--seg-count), minmax(0, 1fr));
+  padding: 3px;
+  border-radius: 12px;
+  background-color: hsl(30 8% 14% / 0.055);
+}
+.dark .effort-seg {
+  background-color: hsl(40 10% 96% / 0.07);
+}
+.effort-seg[aria-disabled="true"] {
+  opacity: 0.55;
+}
+.effort-seg__pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / var(--seg-count));
+  border-radius: 9px;
+  background-color: hsl(var(--popover));
+  box-shadow:
+    0 0 0 0.5px hsl(30 8% 14% / 0.08),
+    0 1px 2px hsl(30 10% 10% / 0.1),
+    0 2px 6px -1px hsl(30 10% 10% / 0.08);
+  transform: translateX(calc(100% * var(--seg-i)));
+  transition: transform 240ms var(--alv-ease-out);
+}
+.dark .effort-seg__pill {
+  background-color: hsl(40 6% 30%);
+  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.4);
+}
+.effort-seg__item {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: hsl(var(--foreground) / 0.55);
+  transition: color 160ms var(--ease-out-soft);
+}
+.effort-seg__item[aria-checked="true"] {
+  color: hsl(var(--foreground));
+}
+.effort-seg__item:hover:not([aria-checked="true"]):not(:disabled) {
+  color: hsl(var(--foreground) / 0.8);
+}
+.effort-seg__item:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .effort-seg__item {
+    height: 40px;
+  }
+}
+.effort-sheet__foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 2px 0 4px;
+}
+.effort-toggle {
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: hsl(var(--foreground) / 0.6);
+  box-shadow: inset 0 0 0 1px hsl(30 8% 14% / 0.1);
+  transition:
+    background-color 140ms var(--ease-out-soft),
+    color 140ms var(--ease-out-soft),
+    transform 120ms var(--alv-ease-out);
+}
+.dark .effort-toggle {
+  box-shadow: inset 0 0 0 1px hsl(40 10% 96% / 0.12);
+}
+.effort-toggle:hover:not(:disabled) {
+  color: hsl(var(--foreground));
+}
+.effort-toggle:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.effort-toggle[aria-pressed="true"] {
+  background-color: hsl(var(--foreground));
+  color: hsl(var(--background));
+  box-shadow: none;
+}
+.effort-toggle:disabled {
+  opacity: 0.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .effort-seg__pill {
+    transition: none;
+  }
+}
+
+/* ── 8. The account sheet's head (user-menu.tsx) ─────────────────────────── */
+.acct-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 8px;
+}
+.acct-plan {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  color: hsl(var(--foreground) / 0.62);
+  box-shadow: inset 0 0 0 1px hsl(30 8% 14% / 0.12);
+}
+.dark .acct-plan {
+  box-shadow: inset 0 0 0 1px hsl(40 10% 96% / 0.14);
+}
+.acct-usage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 10px 8px 56px;
+}
+.acct-usage__bar {
+  position: relative;
+  flex: 1;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background-color: hsl(30 8% 14% / 0.08);
+}
+.dark .acct-usage__bar {
+  background-color: hsl(40 10% 96% / 0.1);
+}
+.acct-usage__bar > span {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: hsl(var(--foreground) / 0.7);
+  transform-origin: left center;
+  transition: transform 400ms var(--alv-ease-out);
 }

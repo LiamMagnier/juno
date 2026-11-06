@@ -100,16 +100,14 @@ import Testing
     @Test func thePlusMenusRowsAreTheContractsInTitleCase() {
         #expect(JunoShellPlusMenu.chat == [
             [.files, .screenshot, .sketch, .library, .googleDrive, .onedrive],
-            [.mention, .skill],
             [.image, .research, .search, .memory],
-            [.project, .connectors],
+            [.project, .connectors, .skill],
         ])
         #expect(JunoShellPlusMenu.chat.joined().map(\.title) == [
-            "Add Photos and Files", "Take a Screenshot", "Sketch", "Add from Library",
-            "Add from Google Drive", "Add from OneDrive",
-            "Mention a File, App or Agent", "Run a Skill",
+            "Photos and Files", "Screenshot", "Sketch", "From Library",
+            "Google Drive", "OneDrive",
             "Create Image", "Deep Research", "Web Search", "Memory",
-            "Add to Project", "Apps",
+            "Project", "Apps", "Skills",
         ])
         #expect(JunoShellPlusMenu.label == "Add")
         // The paperclip the Mac drew as `.paperclip` is the registry's

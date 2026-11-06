@@ -78,10 +78,12 @@ test("the chip's words reach the translation catalog whole", async () => {
   const chip = collectFromSource(read("../src/components/chat/task-mode-chip.tsx"), "task-mode-chip.tsx");
   for (const sentence of [
     "Tasks from this chat",
-    "How often tasks from this chat ask",
-    "This project’s settings hold its tasks to a stricter mode than the one you picked.",
-    "This agent is set to ask more often, so its tasks follow its setting.",
-    "Sending, publishing, paying and deleting always ask, whichever mode you pick.",
+    "Ask every time",
+    "Ask when risky",
+    "Don’t ask",
+    "This project holds its tasks to a stricter mode.",
+    "This agent asks more often, so its tasks follow it.",
+    "Sending, publishing, paying and deleting always ask.",
   ]) {
     assert.equal(chip.has(sentence), true, sentence);
   }

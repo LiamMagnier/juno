@@ -33,7 +33,6 @@ import {
   Search,
   SquareDashedMousePointer,
   TextQuote,
-  AtSign,
   Pencil,
   Cloud,
 } from "@/components/ui/icons";
@@ -145,7 +144,6 @@ import type {
 import type { SendOptions, SendResult } from "@/hooks/use-chat";
 import { readSkillInvocation, useChatSkills, YOURS_SOURCE_LABEL } from "@/components/chat/use-chat-skills";
 import { ComposerSkillsPanel } from "@/components/skills/composer-skills-panel";
-import { ComposerTray } from "@/components/chat/composer-tray";
 import { ComposerMediaParams, useMediaParams } from "@/components/chat/composer-media-params";
 import { MenuEmpty, MenuLabel, MenuSearch, MenuSkeleton } from "@/components/chat/composer-menu";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
@@ -844,7 +842,7 @@ function ComposerImpl({
               // message is asked for; after it, the next one follows up.
               frame === "dock"
               ? "Ask a follow-up"
-              : "How can I help you today?"));
+              : "Ask anything"));
   const submissionScope = `${privateMode ? "private" : "saved"}:${conversationId ?? "new"}`;
   const localDraftSession = React.useMemo(() => createComposerDraftSession(submissionScope), [submissionScope]);
   const draftSession = sharedDraftSession ?? localDraftSession;
@@ -2444,8 +2442,12 @@ function ComposerImpl({
   const selectedProject = selectedProjectId
     ? (projects.find((p) => p.id === selectedProjectId) ?? null)
     : null;
-  /** The home's tray (composer-tray.tsx): a brand-new chat on the landing frame only. */
-  const showTray = frame === "landing" && !conversationId && !privateMode && !voiceActive && !steerMode;
+  /*
+   * No tray under the composer any more (owner, 6 Nov 2026: "rework the
+   * composer from zero"). Project, Apps and Skills live in the + menu's last
+   * group everywhere, and what is in force shows as a removable chip above
+   * the field. `composer-tray.tsx` keeps only the generation row.
+   */
   const canAttach = features.storage && !privateMode;
   // One reason, three rows: whichever of the two gates is shut is the one the
   // row should name. Never a row that silently vanishes.
@@ -2752,7 +2754,7 @@ function ComposerImpl({
     ? {
         kind: "sub",
         id: "skill",
-        label: "Run a skill",
+        label: "Skills",
         icon: AppIcons.skills,
         // Only while one is armed, like the research row's depth: a name on an
         // unarmed row reads as the state rather than as what it would be.
@@ -2770,8 +2772,8 @@ function ComposerImpl({
           kind: "toggle",
           id: "research",
           label: FEATURE_NAMES.research.label,
-          // A branded mode carries its plain descriptor (D-038).
-          description: FEATURE_NAMES.research.description,
+          // The plain descriptor stays the row's accessible name; on screen
+          // the name alone, so the sheet reads as a list of switches.
           ariaLabel: FEATURE_NAMES.research.accessibleLabel,
           icon: ComposerIcons.research,
           checked: research,
@@ -2792,33 +2794,7 @@ function ComposerImpl({
         }
       : null;
 
-  /** The + menu's "Mention" row: an "@" at the caret, and the palette opens on it. */
-  const mentionRow: PlusMenuItem | null =
-    !privateMode && !voiceActive && modality === "chat"
-      ? {
-          kind: "action",
-          id: "mention",
-          label: "Mention a file, app or agent",
-          icon: AtSign,
-          detail: "@",
-          keyHint: true,
-          onSelect: () => {
-            // After the menu has handed focus back, so the "@" lands in the field.
-            window.setTimeout(() => textareaRef.current?.openMention(), 0);
-          },
-        }
-      : null;
 
-  /*
-   * ONE DOOR EACH. On the home, the tray under the composer already holds
-   * Select project, Apps and Skills (composer-tray.tsx), so the + menu leaves
-   * those three rows out there. Everywhere the tray is not drawn (a thread's
-   * dock, incognito, steering) the + menu stays their only door and keeps
-   * them. With an image, video or music model the tray keeps only Project,
-   * so Apps and Skills stay in the + menu then.
-   */
-  const trayHasProject = showTray;
-  const trayHasAppsAndSkills = showTray && !mediaParams.caps;
 
   /*
    * A drive's row is drawn only while that drive is connected: offering to
@@ -2840,7 +2816,7 @@ function ComposerImpl({
           {
             kind: "action",
             id: voiceCanSeeImages ? "files" : "voice-files",
-            label: voiceCanSeeImages ? "Add photos and files" : "Add files",
+            label: voiceCanSeeImages ? "Photos and files" : "Files",
             icon: ComposerIcons.attach,
             detail: attachShortcut,
             keyHint: true,
@@ -2851,7 +2827,7 @@ function ComposerImpl({
           {
             kind: "action",
             id: "library",
-            label: "Add from Library",
+            label: "From Library",
             icon: AppIcons.library,
             disabled: !canAttach,
             note: attachNote,
@@ -2868,7 +2844,7 @@ function ComposerImpl({
           {
             kind: "action",
             id: "files",
-            label: "Add photos and files",
+            label: "Photos and files",
             icon: ComposerIcons.attach,
             detail: attachShortcut,
             keyHint: true,
@@ -2883,7 +2859,7 @@ function ComposerImpl({
                 {
                   kind: "action" as const,
                   id: "screenshot",
-                  label: "Take a screenshot",
+                  label: "Screenshot",
                   icon: Scan,
                   disabled: !canAttach,
                   note: attachNote,
@@ -2896,8 +2872,6 @@ function ComposerImpl({
             id: "sketch",
             label: "Sketch",
             icon: Pencil,
-            detail: "/sketch",
-            keyHint: true,
             disabled: !canAttach,
             note: attachNote,
             // After the menu has handed focus back, so the sheet keeps it.
@@ -2906,7 +2880,7 @@ function ComposerImpl({
           {
             kind: "action",
             id: "library",
-            label: "Add from Library",
+            label: "From Library",
             icon: AppIcons.library,
             disabled: !canAttach,
             note: attachNote,
@@ -2917,7 +2891,7 @@ function ComposerImpl({
                 {
                   kind: "action" as const,
                   id: "google-drive",
-                  label: "Add from Google Drive",
+                  label: "Google Drive",
                   icon: Cloud,
                   disabled: !canAttach,
                   note: attachNote,
@@ -2930,7 +2904,7 @@ function ComposerImpl({
                 {
                   kind: "action" as const,
                   id: "onedrive",
-                  label: "Add from OneDrive",
+                  label: "OneDrive",
                   icon: Cloud,
                   disabled: !canAttach,
                   note: attachNote,
@@ -2939,9 +2913,6 @@ function ComposerImpl({
               ]
             : []),
         ],
-        // Name things in the sentence: what "@" and "/" do, taught here so the
-        // placeholder never has to be a syntax lesson.
-        [...(mentionRow ? [mentionRow] : []), ...(skillRow && !trayHasAppsAndSkills ? [skillRow] : [])],
         // How this message is answered: the Deep Field mode, then the two
         // switches people actually flip (C19).
         [
@@ -2985,19 +2956,19 @@ function ComposerImpl({
         ],
         // Where this chat sits and what it can reach.
         [
-          ...(!privateMode && !trayHasProject
+          ...(!privateMode
             ? [
                 {
                   kind: "sub" as const,
                   id: "project",
-                  label: "Add to project",
+                  label: "Project",
                   icon: AppIcons.projects,
                   detail: selectedProject?.name,
                   render: projectPanel,
                 },
               ]
             : []),
-          ...(showConnectors && !trayHasAppsAndSkills
+          ...(showConnectors
             ? [
                 {
                   kind: "sub" as const,
@@ -3012,6 +2983,7 @@ function ComposerImpl({
                 },
               ]
             : []),
+          ...(skillRow ? [skillRow] : []),
         ],
       ];
 
@@ -3109,18 +3081,14 @@ function ComposerImpl({
 
       {/* Existing chats get the persistent scope bar at the top of the chat
           instead; the chip only announces where a brand-new chat will land. */}
-      {selectedProject && !privateMode && !conversationId && !showTray && (
+      {selectedProject && !privateMode && !conversationId && (
         <div className="mb-2 flex">
           {/* Muted glyph on the caption rung (14px, gap-1.5): the folder is a
               label on the chip, not a state, so it does not take the accent. */}
           <span className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border bg-card pl-2.5 pr-1 font-sans text-label font-normal text-muted-foreground motion-safe:animate-rise-in">
             <AppIcons.projects aria-hidden="true" className="size-3.5" />
-            <span>
-              {"New chat in "}
-              <span className="font-medium text-foreground">
-                {selectedProject.name}
-              </span>
-            </span>
+            <span className="sr-only">New chat in </span>
+            <span className="max-w-[14rem] truncate font-medium text-foreground">{selectedProject.name}</span>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -3730,26 +3698,8 @@ function ComposerImpl({
             {sketch.dialog}
         </div>
       </DictationSwap>
-      {showTray && (
-        <ComposerTray
-          projectName={selectedProject?.name ?? null}
-          connectors={attachedConnectors}
-          onOpenProjects={loadProjects}
-          onOpenApps={() => void refreshConnectors()}
-          onOpenSkills={() => setSkillsWanted(true)}
-          projectPanel={projectPanel}
-          appsPanel={showConnectors ? connectorsPanel : null}
-          skillsPanel={skillRow ? skillsPanel : null}
-          disabled={plusLocked}
-          params={
-            mediaParams.caps ? (
-              <ComposerMediaParams modelId={model} state={mediaParams} disabled={plusLocked} side="top" />
-            ) : null
-          }
-        />
-      )}
-      {/* In a thread the generation row gets the shelf to itself. */}
-      {!showTray && mediaParams.caps && !voiceActive && !steerMode && (
+      {/* The generation row (image, video and music models) keeps its shelf. */}
+      {mediaParams.caps && !voiceActive && !steerMode && (
         <div className="composer-tray composer-tray--params">
           <ComposerMediaParams modelId={model} state={mediaParams} disabled={plusLocked} side="top" />
         </div>
