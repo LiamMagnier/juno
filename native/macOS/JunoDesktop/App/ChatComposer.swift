@@ -3069,7 +3069,7 @@ struct ComposerPendingSteers: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             Text(header)
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoSecondaryInk)
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 ForEach(steers) { steer in
@@ -3114,7 +3114,7 @@ struct ComposerPendingSteers: View {
                     }
                 }
             }
-            .junoFont(size: 11, relativeTo: .caption)
+            .junoFont(size: 12, relativeTo: .caption)
             .foregroundStyle(Color.junoSecondaryInk)
             .monospacedDigit()
             .fixedSize()

@@ -513,7 +513,7 @@ struct InlineArtifactMeta: View {
                 .transition(.opacity)
             }
         }
-        .junoFont(size: 11, relativeTo: .caption2)
+        .junoFont(size: 12, relativeTo: .caption2)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: status)
         .accessibilityElement(children: .combine)
     }
@@ -574,7 +574,7 @@ struct InlineArtifactOpenStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption2, weight: .medium)
                 .foregroundStyle(hovered ? Color.junoForeground : Color.junoSecondaryInk)
                 .padding(.horizontal, JunoSpace.close)
                 .frame(minHeight: 28)
@@ -604,7 +604,7 @@ struct InlineArtifactConsole: View {
                     .foregroundStyle(Color.junoSecondaryInk)
                     .accessibilityHidden(true)
                 Text("Console")
-                    .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
+                    .junoFont(size: 12, relativeTo: .caption2, weight: .medium)
                     .foregroundStyle(Color.junoSecondaryInk)
                 Spacer(minLength: 0)
             }
@@ -615,12 +615,12 @@ struct InlineArtifactConsole: View {
                 VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     if entries.isEmpty {
                         Text("No console output yet.")
-                            .junoFont(size: 11, relativeTo: .caption2)
+                            .junoFont(size: 12, relativeTo: .caption2)
                             .foregroundStyle(Color.junoSecondaryInk)
                     } else {
                         ForEach(entries.suffix(80)) { entry in
                             Text(entry.text)
-                                .junoFont(size: 10.5, relativeTo: .caption2, design: .monospaced)
+                                .junoFont(size: 12, relativeTo: .caption2, design: .monospaced)
                                 .lineSpacing(4)
                                 .foregroundStyle(ink(entry.level))
                                 .fixedSize(horizontal: false, vertical: true)
@@ -727,7 +727,7 @@ struct ArtifactCodeSurface: View {
                     }
                     Color.clear.frame(height: JunoSpace.cozy).id(Self.tail)
                 }
-                .junoFont(size: 10.5, relativeTo: .caption2, design: .monospaced)
+                .junoFont(size: 12, relativeTo: .caption2, design: .monospaced)
                 .lineSpacing(6)
                 .textSelection(.enabled)
                 .padding(.top, JunoSpace.cozy)

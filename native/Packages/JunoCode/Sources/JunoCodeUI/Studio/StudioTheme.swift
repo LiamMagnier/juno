@@ -37,11 +37,12 @@ public enum Studio {
         /// Secondary facts beside a label: 12.
         public static let meta = SwiftUI.Font.system(.callout)
         public static let metaEmphasis = SwiftUI.Font.system(.callout, weight: .medium)
-        /// Section headings in lists; the floor. 11, regular — no eyebrows.
-        public static let caption = SwiftUI.Font.system(.subheadline)
+        /// Section headings in lists; the floor. 12, regular — no eyebrows
+        /// (was 11; the app-wide text floor is 12, as in Chat).
+        public static let caption = SwiftUI.Font.system(.callout)
         /// Code, paths, commands: JetBrains Mono's role, the system mono.
         public static let mono = SwiftUI.Font.system(.callout, design: .monospaced)
-        public static let monoSmall = SwiftUI.Font.system(.subheadline, design: .monospaced)
+        public static let monoSmall = SwiftUI.Font.system(.callout, design: .monospaced)
         /// Numbers that tick — elapsed time, diff counts — so they do not jitter.
         public static let metaDigits = SwiftUI.Font.system(.callout).monospacedDigit()
         public static let labelDigits = SwiftUI.Font.system(.body).monospacedDigit()
@@ -106,18 +107,21 @@ public enum Studio {
 
     // MARK: Geometry
 
-    /// DESIGN §3.1 radii: control 8, field 10, card 12, popover 12, menu 14,
-    /// panel 16, composer 22.
+    /// The shared radius ladder, by name. Code used to keep its own numbers
+    /// (menu 14, bubble 18, composer 22) beside Chat's generated tokens, so the
+    /// same kind of surface had a different corner in each mode. Every rung
+    /// now forwards to ``JunoGeneratedRadius``: a token change on the web
+    /// reaches Chat and Code together.
     public enum Radius {
-        public static let small: CGFloat = 6
-        public static let row: CGFloat = 8
-        public static let control: CGFloat = 8
-        public static let field: CGFloat = 10
-        public static let card: CGFloat = 12
-        public static let menu: CGFloat = 14
-        public static let panel: CGFloat = 16
-        public static let bubble: CGFloat = 18
-        public static let composer: CGFloat = 22
+        public static let small: CGFloat = JunoGeneratedRadius.xs
+        public static let row: CGFloat = JunoGeneratedRadius.md
+        public static let control: CGFloat = JunoGeneratedRadius.control
+        public static let field: CGFloat = JunoGeneratedRadius.field
+        public static let card: CGFloat = JunoGeneratedRadius.card
+        public static let menu: CGFloat = JunoGeneratedRadius.menu
+        public static let panel: CGFloat = JunoGeneratedRadius.panel
+        public static let bubble: CGFloat = JunoGeneratedRadius.bubble
+        public static let composer: CGFloat = JunoGeneratedRadius.composer
     }
 
     public enum Metrics {

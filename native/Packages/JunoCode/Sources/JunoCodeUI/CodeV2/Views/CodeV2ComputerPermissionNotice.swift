@@ -40,7 +40,7 @@ struct CodeV2ComputerPermissionNotice: View {
             Spacer(minLength: 0)
             if let permission = content.openPermission {
                 Button("Not now", action: dismiss)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .contentShape(.rect)
                     .accessibilityIdentifier("alevr.code.computer-permission.dismiss")
                 Button("Open Settings") { NSWorkspace.shared.open(permission.privacySettingsURL) }

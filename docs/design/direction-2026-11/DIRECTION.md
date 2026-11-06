@@ -221,6 +221,11 @@ collapses, loops stop.
 
 **Same layout as the web, native components, glass only on controls.**
 
+> **Owner override, 2026-11-05 (macOS):** "keep the native glass look on the
+> sidebar and components use native liquid glass components." The Mac keeps
+> the system Liquid Glass sidebar and the native glass controls; the
+> "sidebar opaque" line below no longer applies to macOS.
+
 - **macOS:** an opaque content column on `--background`, sidebar on `--sidebar`
   (opaque, was glass), toolbar with system Liquid Glass controls. Glass only in
   the five sanctioned places (composer cluster, ⌘K, find bar, toast host,

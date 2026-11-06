@@ -137,7 +137,7 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/code/console` | POST | Native | JunoChatKit | The console document a chat code block or a Live UI exercise answer runs in (JavaScript, TypeScript, Python, SQL), built from the web's own builder; the apps load it in a WKWebView for Run. |
 | `/api/code/run` | GET, POST | Planned |  | Run a chat code block or a Live UI exercise answer in the hosted sandbox (C, C++, Java, Go, Rust, Ruby, PHP, Lua, Perl, Bash); the web's Run button. The apps have no Run button yet. |
 | `/api/generate` | POST | Native | JunoChatKit, JunoCodeBridge |  |
-| `/api/models` | GET | Web only |  | The web's model list. The apps read /api/v1/models; the Electron client (native/desktop-electron) still reads this one. |
+| `/api/models` | GET | Web only |  | The web's model list. The apps read /api/v1/models. |
 | `/api/v1/models` | GET | Native | JunoChatKit |  |
 
 <a id="conversations"></a>

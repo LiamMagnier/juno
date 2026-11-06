@@ -140,7 +140,7 @@ struct StudioApprovalPrompt: View {
                     } label: {
                         Text("Always Allow")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.junoGlass)
                     .accessibilityIdentifier("juno.code.approval.always")
                     // Said where it goes, because for screen input that is
                     // every project, not this one: no project file may allow it.

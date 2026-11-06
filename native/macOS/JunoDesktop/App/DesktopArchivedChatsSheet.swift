@@ -240,7 +240,7 @@ private struct DesktopArchivedChatRow: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Text(Self.archivedLabel(conversation.archivedAt, locale: locale))
-                            .junoFont(size: 11, relativeTo: .caption2)
+                            .junoFont(size: 12, relativeTo: .caption2)
                             .monospacedDigit()
                             .foregroundStyle(Color.junoSecondaryInk)
                             .lineLimit(1)
@@ -257,7 +257,7 @@ private struct DesktopArchivedChatRow: View {
             .frame(minHeight: 48)
             if let failure {
                 Text(failure)
-                    .junoFont(size: 11, relativeTo: .caption2)
+                    .junoFont(size: 12, relativeTo: .caption2)
                     .foregroundStyle(Color.junoDestructiveInk)
                     .padding(.horizontal, JunoSpace.snug)
                     .padding(.bottom, JunoSpace.snug)

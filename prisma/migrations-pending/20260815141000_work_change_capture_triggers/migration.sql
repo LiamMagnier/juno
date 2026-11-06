@@ -14,11 +14,11 @@
 -- live accounts: the first Work write after this migration lands emits a
 -- change, and every installed client that predates the strings is finished.
 --
--- The two allowlists that must ship first:
+-- The allowlist that must ship first (the Swift apps are the only sync
+-- client; the Electron app's second list was removed in 2026-11):
 --   native/Packages/JunoNativeKit/Sources/JunoSync/NativeSyncAPIClient.swift
---   native/desktop-electron/src/main/sync/types.ts
 --
--- Both need: work_session, work_run, work_approval, work_artifact,
+-- It needs: work_session, work_run, work_approval, work_artifact,
 -- work_artifact_version, work_host, work_file_grant, work_session_connector,
 -- work_skill, work_skill_version, work_schedule, work_trigger.
 -- ============================================================================

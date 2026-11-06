@@ -70,7 +70,7 @@ public struct CodeCommandPaletteView: View {
                 .onKeyPress(.escape) { dismiss(); return .handled }
                 .accessibilityIdentifier("juno.code.command-palette.field")
             Text("esc")
-                .junoFont(size: 10, relativeTo: .caption2, weight: .medium, design: .rounded)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium, design: .rounded)
                 .junoMetaInk()
                 .padding(.horizontal, JunoSpace.tight)
                 .padding(.vertical, 2)
@@ -147,7 +147,7 @@ public struct CodeCommandPaletteView: View {
                 Spacer(minLength: JunoSpace.snug)
                 if let shortcut = item.shortcut {
                     Text(shortcut)
-                        .junoFont(size: 11, relativeTo: .caption2, weight: .medium, design: .rounded)
+                        .junoFont(size: 12, relativeTo: .caption, weight: .medium, design: .rounded)
                         .junoMetaInk()
                 }
             }

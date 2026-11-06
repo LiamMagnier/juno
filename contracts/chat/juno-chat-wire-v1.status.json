@@ -60,7 +60,7 @@
     "request.crossReply.linkId": "native",
     "request.origin": {
       "status": "web-only",
-      "note": "Durable creation metadata for a conversation created by this request. The Swift apps create conversations through sync; the Electron client (native/desktop-electron) sends main_macos here."
+      "note": "Durable creation metadata for a conversation created by this request. The Swift apps create conversations through sync, so only the web sends it."
     },
     "request.clientRequestId": {
       "status": "web-only",

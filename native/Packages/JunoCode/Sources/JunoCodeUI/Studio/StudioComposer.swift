@@ -369,7 +369,9 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         .padding(.bottom, JunoSpace.snug)
     }
 
-    /// Send / Stop: a 32pt ink disc (Code v2 DESIGN §5.6). Ink, not coral —
+    /// Send / Stop: a 32pt ink disc (Code v2 DESIGN §5.6), the same object
+    /// as Chat's primary disc: audio lines, arrow up and stop at Chat's glyph
+    /// sizes (16 / 16 / 12), so the two modes' composers read as one. Ink, not coral —
     /// coral is kept for working and needs-you; a quiet well while there is
     /// nothing to send.
     private var hasDraft: Bool {
@@ -381,7 +383,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         if !hasDraft, !isRunning, !isSending, speech?.callRow == nil, let talk = speech?.talk {
             // Nothing to send: the slot is voice, as on the web and in Chat.
             Button(action: talk) {
-                JunoIconView(.audioLines, size: 15, weight: .bold)
+                JunoIconView(.audioLines, size: 16, weight: .bold)
                     .foregroundStyle(Studio.Surface.canvas)
                     .frame(width: Studio.Metrics.sendButton, height: Studio.Metrics.sendButton)
                     .background(Circle().fill(Studio.Ink.primary))
@@ -397,7 +399,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
             || (isRunning && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
         {
             Button(action: stop) {
-                JunoIconView(.stop, size: 10, weight: .fill)
+                JunoIconView(.stop, size: 12, weight: .bold)
                     .foregroundStyle(Studio.Surface.canvas)
                     .frame(width: Studio.Metrics.sendButton, height: Studio.Metrics.sendButton)
                     .background(Circle().fill(Studio.Ink.primary))
@@ -413,7 +415,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
             .transition(.scale(scale: JunoMotion.scaleFrom(0.9, reduceMotion: reduceMotion)).combined(with: .opacity))
         } else {
             Button(action: submit) {
-                JunoIconView(.send, size: 14, weight: .bold)
+                JunoIconView(.arrowUp, size: 16, weight: .bold)
                     .foregroundStyle(Studio.Surface.canvas)
                     .frame(width: Studio.Metrics.sendButton, height: Studio.Metrics.sendButton)
                     .background(Circle().fill(Studio.Ink.primary))

@@ -872,6 +872,22 @@ struct DesktopCodeWorkspace: View {
                     NSWorkspace.shared.activateFileViewerSelecting([root])
                 }
                 .disabled(controller?.context == nil)
+                // The editors and terminals on this Mac, as T3 Code offers:
+                // hand the session's folder to the tool you review it in.
+                Menu("Open In") {
+                    let targets = DesktopEditorTarget.installed()
+                    if targets.isEmpty {
+                        Text("No editor or terminal found")
+                    }
+                    ForEach(targets) { target in
+                        Button(target.name) {
+                            guard let root = controller?.context?.access.rootURL else { return }
+                            target.open(root)
+                        }
+                    }
+                }
+                .disabled(controller?.context == nil)
+                .accessibilityIdentifier("juno.code.open-in")
                 Button("Copy Transcript", action: copyTranscript)
                     .disabled(controller == nil)
                 Divider()
@@ -1917,7 +1933,7 @@ private struct DesktopCodeRemoteCanvas: View {
                         }
                     } label: {
                         JunoIconView(.stop, size: 14)
-                            .frame(width: 22, height: 22)
+                            .frame(width: 28, height: 28)
                     }
                     .buttonStyle(.junoGlass)
                     .tint(Color.junoDanger)
@@ -1927,7 +1943,7 @@ private struct DesktopCodeRemoteCanvas: View {
                 }
                 Button(action: send) {
                     JunoIconView(.send, size: 14)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 28, height: 28)
                 }
                 .junoProminentGlassButton()
                 .disabled(!canSend || trimmed.isEmpty)
@@ -2170,5 +2186,58 @@ enum DesktopCodeSkills {
             },
             manage: manage.map { open in { @MainActor in open() } }
         )
+    }
+}
+
+// MARK: - Open In
+
+/// An editor or terminal installed on this Mac that can open a Code session's
+/// folder ("Open In" in the session's More menu).
+///
+/// Found by bundle identifier through Launch Services, so only what is really
+/// installed is offered and nothing is spawned through a shell. Opening goes
+/// through `NSWorkspace` with the folder as the document, which every one of
+/// these apps treats as "open this project".
+struct DesktopEditorTarget: Identifiable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let appURL: URL
+
+    /// Editors first, then terminals, each in rough order of popularity.
+    static let known: [(id: String, name: String)] = [
+        ("com.microsoft.VSCode", "Visual Studio Code"),
+        ("com.todesktop.230313mzl4w4u92", "Cursor"),
+        ("com.exafunction.windsurf", "Windsurf"),
+        ("dev.zed.Zed", "Zed"),
+        ("com.apple.dt.Xcode", "Xcode"),
+        ("com.sublimetext.4", "Sublime Text"),
+        ("com.panic.Nova", "Nova"),
+        ("com.jetbrains.intellij", "IntelliJ IDEA"),
+        ("com.jetbrains.WebStorm", "WebStorm"),
+        ("com.apple.Terminal", "Terminal"),
+        ("com.googlecode.iterm2", "iTerm"),
+        ("com.mitchellh.ghostty", "Ghostty"),
+        ("dev.warp.Warp-Stable", "Warp"),
+    ]
+
+    @MainActor
+    static func installed(workspace: NSWorkspace = .shared) -> [DesktopEditorTarget] {
+        known.compactMap { entry in
+            workspace.urlForApplication(withBundleIdentifier: entry.id).map {
+                DesktopEditorTarget(id: entry.id, name: entry.name, appURL: $0)
+            }
+        }
+    }
+
+    @MainActor
+    func open(_ folder: URL, workspace: NSWorkspace = .shared) {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        let name = name
+        workspace.open([folder], withApplicationAt: appURL, configuration: configuration) { _, error in
+            if let error {
+                NSLog("Alevr Code: could not open the folder in %@: %@", name, error.localizedDescription)
+            }
+        }
     }
 }

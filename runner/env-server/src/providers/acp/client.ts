@@ -1,4 +1,5 @@
-// Vendored into the Alevr env server from native/desktop-electron/src/providers/acp/client.ts
+// Vendored into the Alevr env server from the retired Electron desktop app
+// (native/desktop-electron/src/providers/acp/client.ts, removed 2026-11); this copy is now the source.
 // (same repository, unshipped Electron app). Changes: LaunchCommand inlined, client name "alevr-env".
 /**
  * ACP transport — JSON-RPC 2.0 over a child process's stdio.

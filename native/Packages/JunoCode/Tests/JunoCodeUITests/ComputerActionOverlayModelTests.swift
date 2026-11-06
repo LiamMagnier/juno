@@ -30,8 +30,13 @@ final class ComputerActionOverlayModelTests: XCTestCase {
         model.apply(cue(.acting))
         model.apply(cue(.settled(succeeded: false)))
         XCTAssertNotNil(model.mark)
-        try await Task.sleep(for: .milliseconds(150))
-        XCTAssertNil(model.mark)
+        // A busy CI runner can hold the main actor past a fixed sleep, so wait
+        // for the linger to end with a generous ceiling instead of one guess.
+        let deadline = ContinuousClock.now + .seconds(3)
+        while model.mark != nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertNil(model.mark, "the mark goes once the linger ends")
     }
 
     func testANewActionKeepsTheOverlayUp() async throws {

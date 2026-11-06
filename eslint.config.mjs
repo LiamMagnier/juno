@@ -43,7 +43,7 @@ const config = [
       // `**/.claude/**` as well as `.claude/**`: flat-config ignores are
       // relative to this file, so the bare pattern only ever matched the one at
       // the repository root. An agent worktree nested under a subproject —
-      // native/desktop-electron/.claude/worktrees/… — was still walked, and
+      // e.g. relay/.claude/worktrees/… — was still walked, and
       // being a full checkout it duplicates every file in the repo, so `eslint .`
       // reported thousands of errors from a copy of code it had already linted.
       ".claude/**",
@@ -57,13 +57,6 @@ const config = [
       ".worktrees/**",
       "**/.worktrees/**",
       "runner/**",
-      // The Electron client is a standalone package — its own package.json,
-      // tsconfig, eslint config and node_modules, same as `relay` and `runner`.
-      // It was untracked until it was committed, at which point `eslint .` began
-      // walking it with the WEB app's rules and failing on `require()` in its
-      // CommonJS build configs. It lints itself in the `desktop` workflow, which
-      // is where its rules live. (tsconfig.json excludes it for the same reason.)
-      "native/desktop-electron/**",
       // Native build products are generated artifacts, not application source.
       // They can contain minified WebView bundles and Swift/Xcode intermediates
       // that produce false positives when ESLint walks the repository root.

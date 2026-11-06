@@ -387,7 +387,7 @@ struct DesktopMessageRow: View {
             // A state, so the interface face: mono is for code, ids, counts
             // and costs (§10.2 rule 6). The web sets it in its mono voice.
             Text("Not sent")
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoDestructiveInk)
             if let retrySend = actions.retrySend {
                 Button(action: retrySend) {

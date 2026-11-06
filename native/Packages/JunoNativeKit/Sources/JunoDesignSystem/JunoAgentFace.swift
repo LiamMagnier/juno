@@ -1173,6 +1173,11 @@ public struct JunoAgentFace: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.junoAgentGazeField) private var gazeField
     @Environment(\.junoAgentFaceTrigger) private var trigger
+    #if os(macOS)
+    /// False while the window is in the background: nobody is watching the
+    /// face move, so the rig stops drawing (see ``frameInterval``).
+    @Environment(\.appearsActive) private var appearsActive
+    #endif
 
     @State private var epoch = Date.timeIntervalSinceReferenceDate
     @State private var previousState: JunoAgentState?
@@ -1225,8 +1230,28 @@ public struct JunoAgentFace: View {
 
     private var hovered: Bool { ownHover || trigger.hovered }
 
+    /// Whether the rig draws at all. Every face ran a 30 fps timeline for as
+    /// long as it was on screen — each Orbit row in the sidebar, each card on
+    /// the Agents page — even with the window in the background, which kept
+    /// the whole app redrawing at rest.
+    private var isRigPaused: Bool {
+        if reduceMotion { return true }
+        #if os(macOS)
+        if !appearsActive { return true }
+        #endif
+        return false
+    }
+
+    /// How often the rig redraws. A small face resting (ready, asleep,
+    /// blocked) only breathes, which reads the same at 10 fps; hover, a
+    /// press and every busy state get the full 30.
+    private var frameInterval: TimeInterval {
+        let resting = state == .idle || state == .sleeping || state == .blocked
+        return resting && !hovered && !isDetailed ? 1.0 / 10.0 : 1.0 / 30.0
+    }
+
     public var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: frameInterval, paused: isRigPaused)) { context in
             let now = context.date.timeIntervalSinceReferenceDate
             let pose = JunoAgentFaceRig.pose(rigInput, now: now, reduceMotion: reduceMotion)
             Canvas(opaque: false, rendersAsynchronously: false) { canvas, _ in

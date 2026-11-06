@@ -112,7 +112,7 @@ struct DesktopChatSidebar: View {
         DesktopChatSidebarContent.pinnedProjects(from: projectModel?.projects ?? [])
     }
 
-    private var isBootstrapping: Bool {
+    private func isBootstrapping(_ chats: [NativeConversation]) -> Bool {
         guard chats.isEmpty else { return false }
         if model.phase == .loading { return true }
         guard let syncModel = configuration.syncModel else { return false }
@@ -120,13 +120,17 @@ struct DesktopChatSidebar: View {
     }
 
     var body: some View {
+        // Filtered and sorted once per pass and handed down: as computed
+        // properties, `chats` and `needsYou` re-sorted every conversation five
+        // or more times per render, and the column renders on every sync tick.
         let all = chats
-        let excluded = Set(needsYou.map(\.id))
+        let waiting = DesktopChatSidebarContent.needsYou(from: all, runs: runs)
+        let excluded = Set(waiting.map(\.id))
         let recent = DesktopChatSidebarContent.recent(from: all, excluding: excluded)
         let projects = pinnedProjects
 
         return ScrollViewReader { proxy in
-            list(recent: recent, projects: projects, all: all)
+            list(recent: recent, projects: projects, all: all, needsYou: waiting)
                 // Rename… from the title menu (or a row menu reached through
                 // search) names a chat whose row may be folded away, past the
                 // loaded page of Recent, or scrolled out of sight — and the
@@ -142,13 +146,14 @@ struct DesktopChatSidebar: View {
     private func list(
         recent: [NativeConversation],
         projects: [NativeProject],
-        all: [NativeConversation]
+        all: [NativeConversation],
+        needsYou: [NativeConversation]
     ) -> some View {
         List(selection: $selection) {
             navigationBlock
 
             if !needsYou.isEmpty {
-                needsYouHeader
+                needsYouHeader(count: needsYou.count)
                 ForEach(needsYou) { conversationRow($0) }
             }
 
@@ -191,7 +196,7 @@ struct DesktopChatSidebar: View {
                                 .onAppear { loadMoreIfLast(conversation, in: recent) }
                         }
                     }
-                } else if isBootstrapping {
+                } else if isBootstrapping(all) {
                     DesktopSidebarLoadingRows()
                 } else if all.isEmpty, projects.isEmpty {
                     emptyRecent
@@ -353,8 +358,8 @@ struct DesktopChatSidebar: View {
     /// while it is on it draws as the column's one selected row: the column
     /// shows these chats and nothing else, which is the fact a selection
     /// states. The column's signature detail.
-    private var needsYouHeader: some View {
-        DesktopNeedsYouHeader(count: needsYou.count, isFiltering: filterToNeedsYou) {
+    private func needsYouHeader(count: Int) -> some View {
+        DesktopNeedsYouHeader(count: count, isFiltering: filterToNeedsYou) {
             filterToNeedsYou.toggle()
         }
         .padding(.leading, DesktopSidebarMetrics.glyphEdge - DesktopSidebarMetrics.listOrigin)
