@@ -2490,7 +2490,7 @@ function NavRow({
           on, cross-faded on the `fast` rung. The ink change and the glyph's
           one gesture (sidebar-motion-icon.tsx) are the whole of the row's
           hover, with the fill behind them. */}
-      <span className="relative flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground group-data-[active]:text-foreground group-data-[state=open]:text-foreground [&_svg]:size-4">
+      <span className="sidebar-nav-glyph relative flex size-5 shrink-0 items-center justify-center transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground group-data-[active]:text-foreground group-data-[state=open]:text-foreground [&_svg]:size-[18px]">
         {icon}
         {/* The rail's signal, on the glyph's top-right corner, where the bell
             and the other marks leave the box empty. Later in the tree than

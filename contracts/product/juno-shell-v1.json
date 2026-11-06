@@ -376,7 +376,7 @@
         {
           "id": "send",
           "fill": "accent",
-          "icon": "Send"
+          "icon": "ArrowUp"
         },
         {
           "id": "stop",

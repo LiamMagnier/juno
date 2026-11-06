@@ -234,9 +234,11 @@ const config: Config = {
         // The composer is a raised soft card and takes the panel rung. It is
         // distinct through placement and material, not an oversized novelty
         // radius.
-        // Graphite (DIRECTION.md §2.3, approved 31 Oct 2026): 26 → 24, so the
-        // 8px-inset actions (16) and controls (16) nest concentrically.
-        composer: "24px",
+        // 6 Nov 2026 (owner: "the composer radius looks bad"): 24 → 28. The
+        // row's 36px discs (+, send) sit 10px in, so 18 + 10 = 28 is the
+        // radius that nests them concentrically; at 24 the corner pinched
+        // the send disc.
+        composer: "28px",
         // Marketing stages only: the painted plates and product shots on the
         // front door (landing, download, auth art). Never inside the product.
         stage: "28px",

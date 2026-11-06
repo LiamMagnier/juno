@@ -1937,7 +1937,7 @@
     /* The containing block is the padding box: -1px is the border's outer
        edge, so the ring continues the edge instead of floating off it. */
     inset: -1px;
-    border-radius: 25px; /* the 24px composer plus its 1px border */
+    border-radius: 29px; /* the 28px composer plus its 1px border */
     box-shadow: 0 0 0 1px hsl(var(--ring) / 0.55);
     opacity: 0;
     pointer-events: none;

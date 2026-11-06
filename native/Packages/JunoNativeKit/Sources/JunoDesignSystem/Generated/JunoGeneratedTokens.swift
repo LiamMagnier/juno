@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: 73942bcc5f80e1a6
+// tokens-digest: 05067f3e2c19cbd1
 //
 
 import CoreGraphics
@@ -1067,7 +1067,7 @@ public enum JunoGeneratedRadius {
     public static let panel: CGFloat = 16.0
     public static let composerControl: CGFloat = 16.0
     public static let composerAction: CGFloat = 16.0
-    public static let composer: CGFloat = 24.0
+    public static let composer: CGFloat = 28.0
     public static let stage: CGFloat = 28.0
 }
 

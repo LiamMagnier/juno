@@ -14,7 +14,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "19421e9874f14251b3e2bb2b95e3de6bb3a5b7aefc6c4cadcace79d04c31bf60"
+    static let digest = "454af1268ac276292dccdfc9336c201e62f128512f148149104dd4ca0bc6b0b9"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,
@@ -509,7 +509,7 @@ enum JunoShellPrimaryFace: String, CaseIterable, Sendable {
     /// The glyph, or nil where the system draws the face (a spinner).
     var icon: JunoIcon? {
         switch self {
-        case .send: .send
+        case .send: .arrowUp
         case .stop: .stop
         case .voice: .audioLines
         case .busy: nil

@@ -4,7 +4,7 @@ import * as React from "react";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
-import { AudioLines, Loader2, Send, Square } from "@/components/ui/icons";
+import { ArrowUp, AudioLines, Loader2, Square } from "@/components/ui/icons";
 
 import { ActionIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -279,7 +279,7 @@ export const composerFieldClass = cn(
  * (0.97 over the press rung) like every other control that answers a press.
  */
 export const composerChipClass =
-  "group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-full px-2.5 font-sans text-label text-muted-foreground transition-[background-color,color,opacity,transform] duration-fast ease-out-soft [transition-duration:var(--dur-fast),var(--dur-fast),var(--dur-fast),var(--dur-press)] active:scale-[0.97] motion-reduce:active:scale-100 hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 coarse:h-10";
+  "group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-full pl-2.5 pr-2 font-sans text-label text-muted-foreground transition-[background-color,color,opacity,transform] duration-fast ease-out-soft [transition-duration:var(--dur-fast),var(--dur-fast),var(--dur-fast),var(--dur-press)] active:scale-[0.97] motion-reduce:active:scale-100 hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 coarse:h-10";
 
 /* ————————————————————————————————————————————————————————————————————————
  * The field tier: armed marks and connector mentions, inside the draft
@@ -379,7 +379,7 @@ export function ComposerArmedMark({
       type="button"
       onClick={onOpen}
       aria-label={openLabel}
-      className="inline-flex min-w-0 items-center gap-1.5 rounded-control py-0.5 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="inline-flex h-full min-w-0 items-center gap-1.5 rounded-r-full pr-[9px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       <span className={cn("truncate", labelClassName)}>{label}</span>
       {detail && (
@@ -395,7 +395,12 @@ export function ComposerArmedMark({
   return (
     <span
       className={cn(
-        "group/armed inline-flex min-w-0 items-center gap-1 rounded-control bg-accent pl-1 align-baseline font-medium text-foreground",
+        // A true pill: 26px tall, fully round, 8px of optical air on both
+        // sides (6px of padding plus the 2px the 16px glyph sits inside its
+        // 20px box on the left; 10px after the label on the right, where
+        // the text's own side bearing is ~0). The label is the button
+        // filling the rest, so the whole right of the pill opens it.
+        "armed-pill group/armed inline-flex h-[26px] min-w-0 items-center gap-1 rounded-full pl-1 align-middle text-ui font-medium leading-none text-foreground",
         "motion-safe:animate-pop-in",
       )}
     >
@@ -404,7 +409,7 @@ export function ComposerArmedMark({
         onClick={onRemove}
         disabled={disabled}
         aria-label={removeLabel}
-        className="relative grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors duration-fast ease-out-soft hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+        className="relative grid size-5 shrink-0 place-items-center rounded-full text-foreground transition-colors duration-fast ease-out-soft hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
       >
         <span
           aria-hidden
@@ -728,10 +733,10 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
               </motion.span>
             ) : (
               <motion.span key="send" className={FACE_LAYER} {...FACE_MOTION} aria-hidden="true">
-                {/* The bold cut: the one glyph on the row set on a solid
-                    accent disc, where the regular line thins against the fill
-                    — the same weight Claude and ChatGPT give their send arrow. */}
-                <Send weight="bold" className="size-4" />
+                {/* An up arrow, the send mark people already read in every
+                    assistant; the paper plane read as e-mail. Heavier line on
+                    the disc (signature.css) so it holds against the fill. */}
+                <ArrowUp className="size-[18px]" />
               </motion.span>
             )}
           </AnimatePresence>

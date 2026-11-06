@@ -174,6 +174,12 @@ const atStop = (i: number, count: number) => {
  */
 export const EffortPanelContext = React.createContext<{ modelName: string; onOpenModels: () => void } | null>(null);
 
+const PANEL_THUMB = 28;
+/** Where stop `i` of `count` sits on the panel track (4px inset at each end). */
+const panelStop = (i: number, count: number) => {
+  const t = count > 1 ? i / (count - 1) : 0;
+  return `calc(${(t * 100).toFixed(4)}% + ${(PANEL_THUMB / 2 + 4 - t * (PANEL_THUMB + 8)).toFixed(3)}px)`;
+};
 
 export function ReasoningSlider({
   options,
@@ -467,155 +473,182 @@ function EffortPanel({
   const panel = React.useContext(EffortPanelContext);
   const count = options.length;
   const current = options[index];
+  const head = panelStop(index, count);
   const canReset = defaultValue !== undefined && current?.value !== defaultValue;
   const defaultLabel = options.find((option) => option.value === defaultValue)?.label;
   const resetLabel = defaultLabel ? `Reset to default (${defaultLabel})` : "Reset to the model's default";
   const iconButton =
-    "pressable grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35 motion-reduce:active:scale-100 coarse:size-11";
-  const segRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
-  const step = (to: number) => {
-    const next = options[Math.max(0, Math.min(count - 1, to))];
-    if (!next || disabled) return;
-    onChange(next.value);
-    segRefs.current[options.indexOf(next)]?.focus();
-  };
-  const reset = (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={resetLabel}
-          disabled={disabled || !canReset}
-          onClick={() => defaultValue !== undefined && onChange(defaultValue)}
-          // Out of the layout while there is nowhere to go back to; the
-          // button and its name stay in the document.
-          className={cn(iconButton, !canReset && "hidden")}
-        >
-          <RotateCcw className="size-3.5" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{resetLabel}</TooltipContent>
-    </Tooltip>
-  );
-  /** The quiet line under the depth: only where it has a switch to hold. */
-  const showsFoot = showsSpeed || !!onProModeChange || !panel;
-  /*
-   * THE THINKING SHEET, rebuilt from zero (owner, 6 Nov 2026: "rework the
-   * components from the ground"). Three stacked parts, each one line:
-   *   the model, as a row that opens the catalogue;
-   *   the depth, as a segmented control whose raised pill glides between
-   *     rungs on the compositor (it replaced a 36px track with a knob, which
-   *     read as a volume slider rather than a choice among four words);
-   *   the paid modes and reset, small, on one quiet line under it.
-   */
+    "pressable grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35 motion-reduce:active:scale-100 coarse:size-11";
   return (
-    <div className={cn("effort-sheet select-none", className)}>
-      {panel ? (
+    <div className={cn("select-none", className)}>
+      {/* One line: the speed control and Pro on the left, the rung and its
+          model in the middle, reset on the right. The side columns share a
+          width so the rung stays centred whichever controls the model has. */}
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
         <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={panel.onOpenModels}
-          // The name alone ("Claude Opus 5.5") did not say this is how
-          // the model is changed.
-          aria-label={`Change model, currently ${panel.modelName}`}
-          aria-haspopup="dialog"
-          className="effort-sheet__model group"
-        >
-          <span className="min-w-0 flex-1 truncate text-left" translate="no">{panel.modelName}</span>
-          <span className="effort-sheet__more">Change</span>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" aria-hidden="true" />
-        </button>
-        {reset}
+          {showsSpeed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  // A toggle's name is the setting, and aria-pressed says
+                  // whether it is on: "Fast mode, toggle button, not
+                  // pressed". It used to be the current state ("Standard
+                  // speed, not pressed"), which read backwards. The step a
+                  // press takes, and its price, is the tooltip (its
+                  // description).
+                  aria-label={speedTier === "ultra" ? "Ultra fast mode" : "Fast mode"}
+                  aria-pressed={speedTier !== "off"}
+                  disabled={disabled}
+                  onClick={cycleSpeed}
+                  className={cn(
+                    iconButton,
+                    // On (Fast or Ultra fast): the same filled ink circle as
+                    // the Pro capsule, glyph inverted; the bolt count tells
+                    // the two apart. Off stays a quiet unfilled glyph.
+                    speedTier !== "off" && "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+                  )}
+                >
+                  <SpeedGlyph tier={speedTier} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{speedAction}</TooltipContent>
+            </Tooltip>
+          ) : null}
+          {onProModeChange ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  // The setting's name; aria-pressed says whether it is on
+                  // ("Pro mode, toggle button, pressed"). "Pro on: …" said the
+                  // state twice. The press and its cost are the tooltip.
+                  aria-pressed={proMode}
+                  aria-label="Pro mode"
+                  disabled={disabled}
+                  onClick={() => onProModeChange(!proMode)}
+                  className={cn(
+                    // A capsule beside the bolt, in the same group: filled ink
+                    // when on, a hairline when off.
+                    "pressable inline-flex h-8 shrink-0 items-center rounded-full border px-2.5 text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35 coarse:h-9 motion-reduce:active:scale-100",
+                    proMode
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  Pro
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{proModeAction(proMode)}</TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
-      ) : null}
+        <div className="flex min-w-0 flex-col items-center">
+          <span key={current?.label} className="text-body font-medium text-foreground motion-safe:animate-fade-in">
+            {current?.label}
+          </span>
+          {panel ? (
+            // 24px to the eye on every screen, so the rung and its model stay
+            // one tight pair; under a coarse pointer the hit area reaches 10px
+            // past it above and below (44px), the way FilterChip's does.
+            // Growing the button itself to 44px pushed the name 34px under
+            // the rung and left reset floating between the two lines.
+            <button
+              type="button"
+              onClick={panel.onOpenModels}
+              // The name alone ("Claude Opus 5.5") did not say this is how
+              // the model is changed.
+              aria-label={`Change model, currently ${panel.modelName}`}
+              aria-haspopup="dialog"
+              className="group relative inline-flex min-h-6 max-w-full items-center gap-0.5 rounded-control px-1.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft after:absolute after:inset-x-0 hover:text-foreground coarse:after:-inset-y-2.5"
+            >
+              <span className="truncate" translate="no">{panel.modelName}</span>
+              <ChevronRight className="size-3.5 shrink-0 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+        <div className="flex justify-end">
+          {/* The product's tooltip, like the bolt's beside it (a native
+              title= drew a second tooltip style), naming the rung it goes
+              back to. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={resetLabel}
+                disabled={disabled || !canReset}
+                onClick={() => defaultValue !== undefined && onChange(defaultValue)}
+                className={iconButton}
+              >
+                <RotateCcw className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{resetLabel}</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
 
-      <div
-        role="radiogroup"
-        aria-label="Thinking effort"
-        aria-disabled={disabled || undefined}
-        className="effort-seg"
-        style={{ ["--seg-count" as string]: count, ["--seg-i" as string]: index }}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-            event.preventDefault();
-            step(index + 1);
-          } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-            event.preventDefault();
-            step(index - 1);
-          } else if (event.key === "Home") {
-            event.preventDefault();
-            step(0);
-          } else if (event.key === "End") {
-            event.preventDefault();
-            step(count - 1);
-          }
-        }}
-      >
-        <span aria-hidden="true" className="effort-seg__pill" />
+      <div className={cn("relative mt-3 h-9 w-full", disabled && "opacity-55")}>
+        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full bg-foreground/[0.07] dark:bg-white/[0.08]">
+          <div
+            className={cn(
+              // A mid-tone in both themes, the white knob marking the place.
+              // Light used to be near-black (foreground/85): at Max a solid
+              // black slab, the heaviest object in the composer, where dark
+              // mode drew the same control in a calm grey.
+              "absolute inset-0 rounded-full bg-foreground/[0.22] transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-opacity dark:bg-white/25",
+              index === 0 && "opacity-0",
+            )}
+            // The fill is a pill that holds the knob with the track's own 4px
+            // inset on every side (36px track, 28px knob): it ends 4px past the
+            // knob, so at the last rung it meets the track's end with no sliver
+            // of the empty track showing, and the radii stay concentric.
+            style={{ transform: `translateX(calc(-100% + ${head} + ${PANEL_THUMB / 2 + 4}px))` }}
+          />
+        </div>
         {options.map((option, i) => (
-          <button
-            key={`seg-${option.value}-${option.label}`}
-            ref={(node) => {
-              segRefs.current[i] = node;
-            }}
-            type="button"
-            role="radio"
-            aria-checked={i === index}
-            tabIndex={i === index ? 0 : -1}
-            disabled={disabled}
-            onClick={() => onChange(option.value)}
-            className="effort-seg__item"
-          >
-            <span className="truncate">{option.label}</span>
-          </button>
+          <span
+            key={`panel-stop-${option.value}-${option.label}`}
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast ease-out-soft",
+              i < index ? "bg-background/55" : i === index ? "bg-transparent" : "bg-foreground/25"
+            )}
+            style={{ left: panelStop(i, count) }}
+          />
         ))}
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-full">
+          <div
+            className="absolute inset-0 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
+            style={{ transform: `translateX(${head})` }}
+          >
+            <div className="absolute left-0 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.18),0_2px_8px_rgb(0_0_0/0.12)]" />
+          </div>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={count - 1}
+          step={1}
+          value={index}
+          disabled={disabled}
+          aria-label="Thinking effort"
+          aria-valuetext={current?.label ?? String(index)}
+          onChange={(event) => {
+            const next = options[Number(event.target.value)];
+            if (next) onChange(next.value);
+          }}
+          className="peer absolute inset-0 m-0 h-full w-full cursor-pointer appearance-none bg-transparent opacity-0 focus-visible:outline-none disabled:cursor-not-allowed"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -inset-[3px] rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100"
+        />
       </div>
 
-      {showsFoot ? (
-      <div className="effort-sheet__foot">
-        {showsSpeed ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                // A toggle's name is the setting, and aria-pressed says
-                // whether it is on. The step a press takes, and its price,
-                // is the tooltip (its description).
-                aria-label={speedTier === "ultra" ? "Ultra fast mode" : "Fast mode"}
-                aria-pressed={speedTier !== "off"}
-                disabled={disabled}
-                onClick={cycleSpeed}
-                className="effort-toggle"
-              >
-                <SpeedGlyph tier={speedTier} boltClassName="size-3.5" />
-                <span>{speedTier === "ultra" ? "Ultra fast" : "Fast"}</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{speedAction}</TooltipContent>
-          </Tooltip>
-        ) : null}
-        {onProModeChange ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-pressed={proMode}
-                aria-label="Pro mode"
-                disabled={disabled}
-                onClick={() => onProModeChange(!proMode)}
-                className="effort-toggle"
-              >
-                Pro
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{proModeAction(proMode)}</TooltipContent>
-          </Tooltip>
-        ) : null}
-        <span className="flex-1" />
-        {/* The product's tooltip, naming the rung it goes back to. */}
-        {panel ? null : reset}
-      </div>
-      ) : null}
+      {/* Pro: a separate axis from the rung (the GPT-5.6 line reasons in a
+          deeper mode on the same model), so a switch under the track rather
+          than another stop on it. Only drawn where the model has the mode. */}
     </div>
   );
 }

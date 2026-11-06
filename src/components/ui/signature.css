@@ -46,30 +46,60 @@
   background-color: hsl(var(--primary) / 0.34);
 }
 
-/* The composer at rest is a sheet of paper with one hairline and a long soft
-   shadow; focused, the hairline darkens a step and the shadow deepens. No
-   coloured ring: the caret is the only tint (owner, 6 Nov 2026, "premium,
-   sleek", the Claude/ChatGPT composers). */
-.composer-surface {
-  caret-color: hsl(var(--primary));
+/* THE COMPOSER'S MATERIAL (owner, 6 Nov 2026: "the drop shadow looks bad").
+   The old stack ended in a 56px bloom 22px below the box, a grey haze that
+   made the field float like a modal. Now it rests ON the page: a hairline,
+   a 1px contact shadow and one short ambient layer. Focus steps the hairline
+   up and lengthens the ambient layer a little; nothing coloured, no halo.
+   Only box-shadow and border-color move, on the strong ease-out at 200ms. */
+.composer-surface.composer-surface {
+  caret-color: hsl(var(--foreground));
+  border-color: hsl(30 8% 14% / 0.1);
+  box-shadow:
+    0 1px 1px hsl(30 10% 10% / 0.03),
+    0 2px 6px -2px hsl(30 10% 10% / 0.05),
+    0 10px 24px -14px hsl(30 10% 10% / 0.1);
   transition:
     border-color 160ms var(--ease-out-soft),
-    box-shadow 220ms var(--ease-out-soft);
+    box-shadow 200ms var(--alv-ease-out);
 }
-.composer-surface:focus-within {
-  border-color: hsl(30 8% 14% / 0.16);
+.composer-surface.composer-surface:focus-within {
+  border-color: hsl(30 8% 14% / 0.17);
   box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.7),
-    0 1px 2px hsl(30 10% 10% / 0.04),
-    0 8px 20px -10px hsl(30 10% 10% / 0.1),
-    0 28px 60px -28px hsl(30 10% 10% / 0.22);
+    0 1px 1px hsl(30 10% 10% / 0.04),
+    0 3px 8px -3px hsl(30 10% 10% / 0.07),
+    0 14px 32px -16px hsl(30 10% 10% / 0.14);
 }
-.dark .composer-surface:focus-within {
-  border-color: hsl(40 10% 96% / 0.16);
+.dark .composer-surface.composer-surface {
+  border-color: hsl(40 10% 96% / 0.1);
   box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.07),
-    0 1px 2px hsl(0 0% 0% / 0.3),
-    0 24px 56px -18px hsl(0 0% 0% / 0.85);
+    inset 0 1px 0 hsl(0 0% 100% / 0.05),
+    0 1px 2px hsl(0 0% 0% / 0.35),
+    0 12px 28px -14px hsl(0 0% 0% / 0.6);
+}
+.dark .composer-surface.composer-surface:focus-within {
+  border-color: hsl(40 10% 96% / 0.17);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.06),
+    0 1px 2px hsl(0 0% 0% / 0.4),
+    0 16px 36px -16px hsl(0 0% 0% / 0.7);
+}
+
+/* The send arrow sits on a solid disc, where a 1.5px line thins against the
+   fill; it takes a heavier line there (2.25 units of 24 is 1.7px at 18px). */
+.composer-primary-action[data-face="send"] .ag,
+.composer-primary-action[data-face="stop"] .ag {
+  stroke-width: 2.25;
+}
+
+/* Sidebar destinations: 18px glyphs in the second ink at rest, so a row
+   reads as label-first; the row's hover and selection bring them to full
+   ink (app-sidebar.tsx, NavRow). */
+.sidebar-nav-glyph {
+  color: hsl(var(--foreground) / 0.62);
+}
+.dark .sidebar-nav-glyph {
+  color: hsl(var(--foreground) / 0.66);
 }
 
 /* Send is a solid ink disc while there is something to send, the one heavy
@@ -463,153 +493,6 @@ button[role="switch"][data-state="checked"] > span > span,
   40% { transform: scaleY(0.55); }
 }
 
-/* ── 7. The thinking sheet (reasoning-slider.tsx, EffortPanel) ───────────────
-   A model row, a segmented depth control with one gliding raised pill, and a
-   quiet line of paid modes. The pill is one element that translates by its
-   own width per rung, so a change is a single compositor move. */
-.effort-sheet {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.effort-sheet__model {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 8px 0 10px;
-  border-radius: 12px;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
-  color: hsl(var(--foreground));
-  transition: background-color 120ms var(--ease-out-soft);
-}
-.effort-sheet__model:hover,
-.effort-sheet__model:focus-visible {
-  background-color: hsl(30 8% 14% / 0.06);
-  outline: none;
-}
-.dark .effort-sheet__model:hover,
-.dark .effort-sheet__model:focus-visible {
-  background-color: hsl(40 10% 96% / 0.075);
-}
-.effort-sheet__more {
-  font-size: 13px;
-  font-weight: 400;
-  color: hsl(var(--foreground) / 0.5);
-}
-.effort-seg {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(var(--seg-count), minmax(0, 1fr));
-  padding: 3px;
-  border-radius: 12px;
-  background-color: hsl(30 8% 14% / 0.055);
-}
-.dark .effort-seg {
-  background-color: hsl(40 10% 96% / 0.07);
-}
-.effort-seg[aria-disabled="true"] {
-  opacity: 0.55;
-}
-.effort-seg__pill {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
-  width: calc((100% - 6px) / var(--seg-count));
-  border-radius: 9px;
-  background-color: hsl(var(--popover));
-  box-shadow:
-    0 0 0 0.5px hsl(30 8% 14% / 0.08),
-    0 1px 2px hsl(30 10% 10% / 0.1),
-    0 2px 6px -1px hsl(30 10% 10% / 0.08);
-  transform: translateX(calc(100% * var(--seg-i)));
-  transition: transform 240ms var(--alv-ease-out);
-}
-.dark .effort-seg__pill {
-  background-color: hsl(40 6% 30%);
-  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.4);
-}
-.effort-seg__item {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  height: 30px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 4px;
-  border-radius: 9px;
-  font-size: 12.5px;
-  line-height: 16px;
-  font-weight: 500;
-  color: hsl(var(--foreground) / 0.55);
-  transition: color 160ms var(--ease-out-soft);
-}
-.effort-seg__item[aria-checked="true"] {
-  color: hsl(var(--foreground));
-}
-.effort-seg__item:hover:not([aria-checked="true"]):not(:disabled) {
-  color: hsl(var(--foreground) / 0.8);
-}
-.effort-seg__item:focus-visible {
-  outline: 2px solid hsl(var(--ring));
-  outline-offset: -2px;
-}
-@media (pointer: coarse) {
-  .effort-seg__item {
-    height: 40px;
-  }
-}
-.effort-sheet__foot {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  padding: 0 2px 0 4px;
-}
-.effort-toggle {
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  gap: 4px;
-  padding: 0 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  color: hsl(var(--foreground) / 0.6);
-  box-shadow: inset 0 0 0 1px hsl(30 8% 14% / 0.1);
-  transition:
-    background-color 140ms var(--ease-out-soft),
-    color 140ms var(--ease-out-soft),
-    transform 120ms var(--alv-ease-out);
-}
-.dark .effort-toggle {
-  box-shadow: inset 0 0 0 1px hsl(40 10% 96% / 0.12);
-}
-.effort-toggle:hover:not(:disabled) {
-  color: hsl(var(--foreground));
-}
-.effort-toggle:active:not(:disabled) {
-  transform: scale(0.96);
-}
-.effort-toggle[aria-pressed="true"] {
-  background-color: hsl(var(--foreground));
-  color: hsl(var(--background));
-  box-shadow: none;
-}
-.effort-toggle:disabled {
-  opacity: 0.4;
-}
-@media (prefers-reduced-motion: reduce) {
-  .effort-seg__pill {
-    transition: none;
-  }
-}
-
 /* ── 8. The account sheet's head (user-menu.tsx) ─────────────────────────── */
 .acct-head {
   display: flex;
@@ -655,4 +538,41 @@ button[role="switch"][data-state="checked"] > span > span,
   background-color: hsl(var(--foreground) / 0.7);
   transform-origin: left center;
   transition: transform 400ms var(--alv-ease-out);
+}
+
+/* ── 9. Armed pills (composer-shell.tsx, ComposerArmedMark) ──────────────────
+   A tool in force reads as a small, solid object: a faint ink fill with a
+   hairline ring and a lit top edge, not a flat grey slab. */
+.armed-pill {
+  background-color: hsl(30 8% 14% / 0.05);
+  box-shadow:
+    inset 0 0 0 1px hsl(30 8% 14% / 0.08),
+    inset 0 1px 0 hsl(0 0% 100% / 0.6);
+  transition: background-color 140ms var(--ease-out-soft);
+}
+.armed-pill:hover {
+  background-color: hsl(30 8% 14% / 0.08);
+}
+.dark .armed-pill {
+  background-color: hsl(40 10% 96% / 0.07);
+  box-shadow:
+    inset 0 0 0 1px hsl(40 10% 96% / 0.09),
+    inset 0 1px 0 hsl(0 0% 100% / 0.05);
+}
+.dark .armed-pill:hover {
+  background-color: hsl(40 10% 96% / 0.1);
+}
+.armed-pill > button:first-child {
+  margin-left: 2px;
+}
+
+@media (prefers-contrast: more) {
+  .composer-surface.composer-surface,
+  .dark .composer-surface.composer-surface {
+    border-color: hsl(var(--foreground) / 0.45);
+  }
+  .composer-surface.composer-surface:focus-within,
+  .dark .composer-surface.composer-surface:focus-within {
+    border-color: hsl(var(--foreground) / 0.65);
+  }
 }

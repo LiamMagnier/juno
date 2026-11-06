@@ -57,7 +57,7 @@ const RADIUS_TOKENS = {
 const SCALE_HELP =
   "micro 2 · sm 4 · xs 6 · control 8 (md) · field 10 · card 12 · popover 12 · " +
   "surface 12 · lg 12 · menu 12 · composer-control 16 · composer-action 16 · panel 16 · " +
-  "composer 24 · stage 28 (marketing only) · full · logo (24%)";
+  "composer 28 · stage 28 (marketing only) · full · logo (24%)";
 
 const ARBITRARY_RADIUS = /rounded(?:-[a-z]{1,2})?-\[([^\]]+)\]/g;
 
@@ -257,7 +257,7 @@ export const RADIUS_PX = {
   "bubble-tuck": 8,
   menu: 12,
   panel: 16,
-  composer: 24,
+  composer: 28,
   stage: 28,
 };
 
@@ -280,8 +280,7 @@ export const PX_TO_TOKEN = {
   10: "field",
   12: "card",
   16: "panel",
-  24: "composer",
-  28: "stage",
+  28: "composer",
 };
 
 /**
