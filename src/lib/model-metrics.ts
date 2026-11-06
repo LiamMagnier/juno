@@ -86,6 +86,9 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // GPT-6.1 Sol (2026-09-29): official $2/$10 and 1.05M context; scored like
     // GPT-6 Sol until a benchmark grades it.
     { hints: ["gpt-6.1-sol"], metric: official(2, 10, 1_050_000, 5, 9) },
+    // GPT-6.1 Terra (2026-11-05 read): official $1/$5 and 1.05M context; speed
+    // and intelligence carry over from GPT-5.6 Terra until a benchmark grades it.
+    { hints: ["gpt-6.1-terra"], metric: official(1, 5, 1_050_000, 8, 9) },
     { hints: ["gpt-6-sol"], metric: official(2, 10, 1_050_000, 5, 9) },
     { hints: ["gpt-6-luna"], metric: official(0.1, 0.5, 1_050_000, 9, 8) },
     { hints: ["gpt-5.6-sol"], metric: official(4, 20, 1_050_000, 5, 9) }, // II 58.9 #2 · 73 tok/s — $4/$20 on the model page
@@ -778,6 +781,8 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // GPT-6 Sol/Luna and GPT-5.6 Sol/Terra/Luna list none|low|medium|high|
       // xhigh|max, default medium.
       if (id.includes("gpt-6-sol") || id.includes("gpt-6-luna")) return caps(LMHXM, true, false, "medium");
+      // GPT-6.1 Terra: none|low|medium(default)|high|xhigh|max (model page, 2026-11-05).
+      if (id.includes("gpt-6.1-terra")) return caps(LMHXM, true, false, "medium");
       if (id.includes("gpt-5.6")) return caps(LMHXM, true, false, "medium");
       // The gpt-5.x-pro models: medium|high|xhigh, always reasoning. GPT-5.5
       // Pro defaults to high; 5.4 Pro to medium (5.2 Pro states no default).

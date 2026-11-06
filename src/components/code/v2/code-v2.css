@@ -319,6 +319,18 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-empty h1 button.proj:hover { text-decoration-color: hsl(var(--foreground) / 0.6); }
 
 /* ── Composer: the same object as Chat's ─────────────────────────────── */
+.cv2-plan { margin: 0 12px -10px; padding: 0 0 10px; border: 1px solid var(--cv2-edge); border-bottom: 0; border-radius: 14px 14px 0 0; background: hsl(var(--muted)); overflow: hidden; }
+.cv2-plan-head { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 6px 14px; background: transparent; border: 0; font: inherit; font-size: 13px; color: hsl(var(--muted-foreground)); text-align: left; cursor: pointer; }
+.cv2-plan-head:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; border-radius: 12px; }
+.cv2-plan-label { font-weight: 600; color: hsl(var(--foreground)); }
+.cv2-plan-count { font-variant-numeric: tabular-nums; }
+.cv2-plan-current { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: hsl(var(--prose)); }
+.cv2-plan-chev { font-size: 12px; }
+.cv2-plan-meter { height: 2px; margin: 0 14px; background: hsl(var(--muted-foreground) / 0.15); border-radius: 2px; }
+.cv2-plan-meter > span { display: block; height: 100%; background: hsl(var(--foreground) / 0.55); border-radius: 2px; transition: width var(--dur-fast, 120ms) var(--cv2-ease); }
+.cv2-plan-list { padding: 6px 14px 4px; max-height: 30vh; overflow-y: auto; font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .cv2-plan-meter > span { transition: none; } }
+@media (max-width: 640px) { .cv2-plan { margin: 0 6px -10px; } .cv2-plan-head { min-height: 44px; } }
 .cv2-cwrap { position: relative; padding: 0 32px 18px; }
 .cv2-cstack { display: flex; flex-direction: column; }
 .cv2-composer { position: relative; z-index: 2; background: hsl(var(--card)); border: 1px solid var(--cv2-edge); border-radius: 22px; padding: 12px 10px 8px 16px; transition: border-color var(--dur-fast, 120ms) var(--cv2-ease); }

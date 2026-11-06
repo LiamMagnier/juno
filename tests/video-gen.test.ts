@@ -9,17 +9,20 @@ test("Gemini Omni and Veo Lite are callable video catalog entries", () => {
   assert.equal(isGoogleOmniModel({ provider: "google", providerModel: "veo-3.1-lite-generate-preview" }), false);
   const veoLite = resolveModel("google:veo-3.1-lite-generate-preview");
   assert.ok(veoLite);
-  if (hasRetired({ retiresOn: "2026-10-22" })) assert.equal(veoLite.id, "google:gemini-omni-1.1-flash");
+  if (hasRetired({ retiresOn: "2026-10-22" })) assert.equal(veoLite.id, "google:gemini-omni-1.2-flash");
   else assert.equal(isGoogleOmniModel(veoLite), false);
-  // The GA model runs on the Omni path.
-  const omniGa = resolveModel("google:gemini-omni-1.1-flash");
-  assert.ok(omniGa);
-  assert.equal(isGoogleOmniModel(omniGa), true);
+  // Both GA models (1.2 current, 1.1 legacy) run on the Omni path.
+  for (const id of ["google:gemini-omni-1.2-flash", "google:gemini-omni-1.1-flash"]) {
+    const omniGa = resolveModel(id);
+    assert.ok(omniGa, id);
+    assert.equal(omniGa.id, id, `${id} answers as itself`);
+    assert.equal(isGoogleOmniModel(omniGa), true, id);
+  }
   // The preview retired on 30 Sep 2026: from then on it migrates to the GA
   // model, and the Omni code path still recognises its provider model id.
   assert.equal(isGoogleOmniModel({ provider: "google", providerModel: "gemini-omni-flash-preview" }), true);
   if (hasRetired({ retiresOn: "2026-09-30" })) {
-    assert.equal(migrateModelId("google:gemini-omni-flash-preview"), "google:gemini-omni-1.1-flash");
+    assert.equal(migrateModelId("google:gemini-omni-flash-preview"), "google:gemini-omni-1.2-flash");
   } else {
     const omni = resolveModel("google:gemini-omni-flash-preview");
     assert.ok(omni);

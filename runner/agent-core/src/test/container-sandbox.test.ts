@@ -1,5 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { bashTool } from '../tools/bash.js';
+import { BackgroundJobs } from '../harness/jobs.js';
 import {
   buildContainerArgs,
   containerSandboxFromEnv,
@@ -186,3 +191,34 @@ test('an unrecognised network value is treated as none, not as permissive', () =
   );
   assert.equal(config?.network, 'none');
 });
+
+for (const implementation of ['plain bash', 'foreground jobs'] as const) {
+  test(`${implementation}: container arguments never reach the host shell`, { skip: process.platform === 'win32' }, async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'alevr-container-argv-'));
+    const jobs = new BackgroundJobs();
+    try {
+      const bin = join(cwd, 'bin');
+      mkdirSync(bin);
+      // A fake CLI records argv without running the requested container command.
+      // This exercises the real process dispatch without requiring Docker.
+      writeFileSync(join(bin, 'docker'), "#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
+      chmodSync(join(bin, 'docker'), 0o755);
+      const marker = join(cwd, 'host-side-effect');
+      const command = `echo user-command; touch '${marker}'`;
+      const ctx = {
+        cwd,
+        env: { PATH: bin },
+        containerSandbox: { ...base, worktreeHostPath: `${cwd}; touch '${marker}'`, memory: '2g; echo unsafe' },
+      };
+      const result = implementation === 'plain bash'
+        ? await bashTool.execute({ command }, ctx)
+        : await jobs.runForeground(command, ctx, 5_000);
+      assert.equal(result.isError ?? false, false, result.output);
+      const args = result.output.trimEnd().split('\n');
+      assert.ok(args.includes(`--volume=${ctx.containerSandbox.worktreeHostPath}:/work`));
+      assert.ok(args.includes('--memory=2g; echo unsafe'));
+      assert.equal(args.at(-1), command);
+      assert.equal(existsSync(marker), false, 'container argv cannot execute on the host');
+    } finally { jobs.killAll(); rmSync(cwd, { recursive: true, force: true }); }
+  });
+}

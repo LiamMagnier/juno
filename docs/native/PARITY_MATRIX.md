@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-385 routes: 230 native, 79 planned, 58 web only, 18 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+387 routes: 230 native, 80 planned, 58 web only, 19 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -35,7 +35,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 6 | 2 | 0 |
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 9 | 3 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 14 | 2 | 0 | 0 |
-| [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 3 |
+| [Connections](#connections) | 2/2 | 2/2 | 16 | 1 | 5 | 4 |
 | [Skills](#skills) | 4/5 | 2/5 (+1 partial) | 10 | 7 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
 | [Activity](#activity) | 1/1 | 1/1 | 1 | 0 | 1 | 0 |
@@ -45,7 +45,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Agents](#agents) | 4/4 | 4/4 | 18 | 16 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 1 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
-| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 31 | 16 | 6 | 1 |
+| [Juno Code](#code) | 3/5 (+2 partial) | 0/5 (+4 partial) | 31 | 17 | 6 | 1 |
 | [Settings, notifications and announcements](#settings) | 3/3 | 3/3 | 12 | 5 | 2 | 0 |
 | [Plans and billing](#billing) | 1/2 | 0/2 | 7 | 0 | 0 | 1 |
 | [Roadmap and Compare](#community) | 0/3 | 0/3 | 0 | 0 | 4 | 0 |
@@ -327,6 +327,7 @@ Design is a type of artifact (register #73).
 | `/api/mcp/servers/test` | POST | Native | JunoChatKit | Mac only: Test in the add sheet before saving. |
 | `/api/connectors/[id]/sync` | POST | Web only |  | Authenticated first-party incremental sync entrypoint; native clients do not expose a sync action yet. |
 | `/api/mcp/first-party/[id]` | POST | Internal |  | First-party provider adapter called only by the server MCP dispatcher with a short-lived connector token. |
+| `/api/mcp/session` | POST | Internal |  | Authenticated env-server and cloud-engine bridge to owner-scoped user MCP tools through the approval and audit broker; no native UI calls this route directly. |
 
 <a id="skills"></a>
 
@@ -573,6 +574,7 @@ Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parit
 | `/api/runs/approval` | POST | Native | JunoCodeKit | REA 8: answer a live run's pending approval from the iPhone; Code answers queue for the Mac, Work answers go through the Work decision route. |
 | `/api/code/environments` | GET, POST | Planned |  | Cloud environments (/code/customize). |
 | `/api/code/environments/[id]` | GET, PATCH, DELETE | Planned |  | As /api/code/environments. |
+| `/api/code/hooks` | GET, POST, DELETE | Planned |  | Review a repository's .alevr/hooks.json and approve its exact bytes for cloud runs (/code/customize). |
 | `/api/code/github/branches` | GET | Planned |  | The base-branch list for a cloud run. |
 | `/api/code/github/pulls` | GET | Native | JunoCodeKit |  |
 | `/api/code/github/skills` | GET | Planned |  | A repository's own skills for a cloud run's Skills selector. |

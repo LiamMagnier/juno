@@ -142,13 +142,16 @@ function FileLink({ path, onOpen }: { path: string; onOpen?: () => void }) {
   );
 }
 
-function Checklist({ steps }: { steps: { text: string; status: string }[] }) {
+export function Checklist({ steps }: { steps: { text: string; status: string }[] }) {
   return (
     <div className="cv2-checks">
       {steps.map((s, i) => (
         <div key={i} className={cn("cv2-checkrow", s.status === "completed" && "done")}>
           <Glyph name={s.status === "completed" ? "check-circle" : s.status === "in_progress" ? "circle-dashed" : "circle"} size={14} />
-          <span>{s.text}</span>
+          <span>
+            <span className="sr-only">{s.status === "completed" ? "Done: " : s.status === "in_progress" ? "In progress: " : "To do: "}</span>
+            {s.text}
+          </span>
         </div>
       ))}
     </div>

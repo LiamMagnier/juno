@@ -577,6 +577,10 @@
         "/api/mcp/first-party/[id]": {
           "status": "internal",
           "note": "First-party provider adapter called only by the server MCP dispatcher with a short-lived connector token."
+        },
+        "/api/mcp/session": {
+          "status": "internal",
+          "note": "Authenticated env-server and cloud-engine bridge to owner-scoped user MCP tools through the approval and audit broker; no native UI calls this route directly."
         }
       }
     },
@@ -1064,6 +1068,10 @@
         "/api/code/environments/[id]": {
           "status": "planned",
           "note": "As /api/code/environments."
+        },
+        "/api/code/hooks": {
+          "status": "planned",
+          "note": "Review a repository's .alevr/hooks.json and approve its exact bytes for cloud runs (/code/customize)."
         },
         "/api/code/github/branches": {
           "status": "planned",
