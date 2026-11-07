@@ -105,13 +105,14 @@ test("the copy is plain, sentence-case English and never names the codename", ()
   }
 });
 
-test("the home draws the starters over a field that stays calm, typing included", () => {
+test("the home draws no starters, over a field that stays calm, typing included", () => {
   const view = read("src/components/chat/chat-view.tsx");
-  assert.match(view, /<HomeStarters\s+composerRef=\{emptyComposerRef\}/);
-  // The home's dot field is gone (Graphite §1); nothing draws behind the starters.
+  // Owner, 7 Nov 2026: no starter chips under the home composer.
+  assert.doesNotMatch(view, /<HomeStarters/);
+  // The arrival focus the chips carried outlives them: New chat still puts the caret in the composer.
+  assert.match(view, /<HomeArrivalFocus\s+hidden=\{Boolean\(privateMode \|\| chat\.pendingClarification \|\| voiceOpen \|\| handoff === "leaving"\)\}/);
+  // The home's dot field is gone (Graphite §1); nothing draws behind the composer.
   assert.doesNotMatch(view, /<HomeField/);
-  // Incognito, a clarification, a voice call and the send handoff each put the row away.
-  assert.match(view, /hidden=\{Boolean\(privateMode \|\| chat\.pendingClarification \|\| voiceOpen \|\| handoff === "leaving"\)\}/);
   const field = read("src/components/chat/empty-state.tsx");
   const homeField = field.slice(field.indexOf("export function HomeField"), field.indexOf("function PrivateField"));
   // Typing hides the starters; that must not bring the field forward or light it blue under the mouse.

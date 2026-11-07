@@ -259,7 +259,7 @@ export function MessageList(props: MessageListProps) {
   // Announce that a reply finished, once, instead of streaming every token to
   // the screen reader as it arrives. `content` is deliberately NOT a dependency:
   // the announcement fires on the streaming edge, not on each delta.
-  const [completionAnnouncement, setCompletionAnnouncement] = React.useState("");
+  const [completionAnnouncement, setCompletionAnnouncement] = React.useState<{ text: string; slot: 0 | 1 }>({ text: "", slot: 0 });
   const wasStreamingRef = React.useRef(false);
   const last = messages[messages.length - 1];
   const lastStreaming = Boolean(last?.streaming);
@@ -267,12 +267,11 @@ export function MessageList(props: MessageListProps) {
     const finished = wasStreamingRef.current && !lastStreaming;
     wasStreamingRef.current = lastStreaming;
     if (!finished || !last || last.role !== "ASSISTANT") return;
-    if (last.error) {
-      setCompletionAnnouncement("Response failed.");
-      return;
-    }
     const words = (last.content ?? "").trim().split(/\s+/).filter(Boolean).length;
-    setCompletionAnnouncement(`Response complete, ${words} ${words === 1 ? "word" : "words"}.`);
+    const text = last.error ? "Response failed." : `Response complete, ${words} ${words === 1 ? "word" : "words"}.`;
+    // Alternate live regions so consecutive identical results still change
+    // the DOM and are announced by assistive technology.
+    setCompletionAnnouncement((previous) => ({ text, slot: previous.slot === 0 ? 1 : 0 }));
     // `last` is read only on the edge; re-running per delta is exactly what this
     // effect exists to avoid.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -281,14 +280,16 @@ export function MessageList(props: MessageListProps) {
   return (
     <div className={cn("relative min-h-0 flex-1", props.className)}>
       {/*
-        The single speaking element for stream completion. Outside the transcript
+        The speaking elements for stream completion. Outside the transcript
         so it is not also inside role="log", and data-no-auto-translate so the
         AutoTranslate MutationObserver does not rewrite the text and trigger a
         second announcement in the translated locale.
       */}
-      <span className="sr-only" role="status" aria-live="polite" data-no-auto-translate>
-        {completionAnnouncement}
-      </span>
+      {[0, 1].map((slot) => (
+        <span key={slot} className="sr-only" role="status" aria-live="polite" data-no-auto-translate>
+          {completionAnnouncement.slot === slot ? completionAnnouncement.text : ""}
+        </span>
+      ))}
       {messages.length > VIRTUALIZE_AFTER && (
         <button
           type="button"

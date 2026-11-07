@@ -69,7 +69,7 @@ test("incognito draws nothing behind its mark or its copy, and its copy is types
 });
 
 test("the tray's project control says Project, never a cut 'Select proj…'", () => {
-  const row = TRAY.slice(TRAY.indexOf('<div className="composer-tray" data-disabled'));
+  const row = TRAY.slice(TRAY.indexOf('<div className="composer-tray composer-tray--dock" data-disabled'));
   // Under 340px the word steps out and the icon stays (composer.css).
   assert.match(row, /<span className="composer-tray__project-word truncate">\{projectName \?\? "Project"\}<\/span>/);
   assert.doesNotMatch(row, /\?\? "Select project"\}<\/span>/, "the long default label is gone from view");
@@ -78,6 +78,6 @@ test("the tray's project control says Project, never a cut 'Select proj…'", ()
   // The tooltip is always there: with no project the word can drop to the icon alone.
   assert.match(row, /<TooltipContent>\{projectName \?\? "Select project"\}<\/TooltipContent>/);
   // The media row's control still opens its panel from the tray's end.
-  const media = TRAY.slice(TRAY.indexOf("if (params) {"), TRAY.indexOf('<div className="composer-tray" data-disabled'));
+  const media = TRAY.slice(TRAY.indexOf("if (params) {"), TRAY.indexOf('<div className="composer-tray composer-tray--dock" data-disabled'));
   assert.match(media, /align="end"/);
 });

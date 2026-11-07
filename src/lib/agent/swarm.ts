@@ -270,8 +270,9 @@ export class AgentSwarmCoordinator {
         // Run task asynchronously
         (async () => {
           const timeoutMs = task.timeoutMs || this.defaultTimeoutMs;
+          let timeout: ReturnType<typeof setTimeout> | undefined;
           const timeoutPromise = new Promise<{ success: boolean; output: string; error: string }>((_, reject) => {
-            setTimeout(() => reject(new Error(`Task '${task.id}' timed out after ${timeoutMs}ms`)), timeoutMs);
+            timeout = setTimeout(() => reject(new Error(`Task '${task.id}' timed out after ${timeoutMs}ms`)), timeoutMs);
           });
 
           try {
@@ -333,6 +334,7 @@ export class AgentSwarmCoordinator {
               source: task.role,
             });
           } finally {
+            clearTimeout(timeout);
             running.delete(task.id);
           }
         })();

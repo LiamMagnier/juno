@@ -124,6 +124,18 @@ export function tokenOf(node: HTMLElement): ContextToken | null {
   }
 }
 
+/**
+ * A token element that no longer carries its own label as its last text: an
+ * editing command emptied it (WebKit deletes the contents of a
+ * contenteditable=false span rather than the span). It must go whole.
+ */
+export function isDamagedToken(node: HTMLElement): boolean {
+  const token = tokenOf(node);
+  if (!token) return false;
+  const last = node.lastChild;
+  return !(last && last.nodeType === 3 && last.textContent === token.label);
+}
+
 /** Select exactly one node, so an editing command acts on it whole. */
 export function selectNode(node: Node) {
   const range = document.createRange();

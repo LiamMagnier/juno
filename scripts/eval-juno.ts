@@ -28,8 +28,8 @@ const liveCall: LiveCall = async ({ model, effort, prompt, webSearch, probeTools
   const tools = probeTools ? probeToolset() : null;
   const started = performance.now();
   let text = "";
-  let input = 0;
-  let output = 0;
+  let input: number | null = null;
+  let output: number | null = null;
   const sources: { title: string; url: string; snippet: string }[] = [];
   for await (const event of streamChat({
     model,
@@ -61,7 +61,7 @@ function line(r: EvalRecord): string {
   const status = r.mode === "not_run" ? "NOT RUN" : r.success ? "PASS" : "FAIL";
   const cost = r.costMicroUsd == null ? "-" : `$${(r.costMicroUsd / 1_000_000).toFixed(5)}`;
   const latency = r.latencyMs == null ? "-" : `${(r.latencyMs / 1000).toFixed(1)}s${r.latencySource === "router_estimate" ? "~" : ""}`;
-  const cite = r.citationQuality == null ? "" : ` cite=${r.citationQuality}`;
+  const cite = r.citationQuality == null ? "" : ` source-metadata=${r.citationQuality}`;
   return `  ${status.padEnd(7)} ${r.mode.padEnd(7)} ${r.category.padEnd(22)} ${(r.model ?? "-").padEnd(34)} ${(r.effort ?? "-").padEnd(8)} ${latency.padStart(7)} ${cost.padStart(10)} tools=${r.toolCount ?? "-"}${cite}  ${r.notes}${r.errors.length ? ` errors=${r.errors.join("; ")}` : ""}`;
 }
 
@@ -79,7 +79,7 @@ async function main() {
   });
   const s = summarize(records);
   console.log(
-    `\n  ${s.passed}/${s.ran} passed, ${s.notRun} not run (of ${s.total} categories). Cost ${live ? "measured" : "priced from mock tokens"}: $${(s.costMicroUsd / 1_000_000).toFixed(4)}. "~" latency = router estimate.\n`
+    `\n  ${s.passed}/${s.ran} passed, ${s.notRun} not run (of ${s.total} categories). Estimated token cost ${live ? "from reported usage" : "from mock tokens"}: $${(s.costMicroUsd / 1_000_000).toFixed(4)} (${s.costUnavailable} run(s) without a cost estimate; excludes other charges). "~" latency = router estimate. Source metadata does not measure factual support.\n`
   );
 
   console.log("Auto router — where each task goes (all providers treated as configured):\n");
