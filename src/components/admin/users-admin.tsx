@@ -20,7 +20,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { AdminNav } from "@/components/admin/admin-nav";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { DotIdenticon } from "@/components/signature/dot-matrix";
 import { PLANS } from "@/lib/plans";
@@ -67,7 +66,7 @@ function formatDate(iso: string): string {
 // `text-caption` is exactly the 11px this used to spell out by hand, and it is
 // the rung the rest of the product's mono metadata sits on — the arbitrary value
 // meant admin was the only surface whose table headers could drift off the scale.
-const TH_CLASS = "px-4 py-2.5 font-mono text-caption font-medium text-muted-foreground";
+const TH_CLASS = "px-4 py-2.5 text-caption font-medium text-muted-foreground";
 
 export function UsersAdmin({ selfId }: { selfId: string }) {
   const [query, setQuery] = React.useState("");
@@ -244,17 +243,15 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
             only app pages with no back affordance at all. */}
         <AppPageHeader
           className="mb-0"
-          eyebrow="Owner"
           heading="Users"
           lede={
             data
               ? `${data.totals.users} ${data.totals.users === 1 ? "account" : "accounts"} · ${data.totals.activeThisMonth} active this month`
               : "Accounts, plans, and monthly usage."
           }
-          actions={<AdminNav current="users" reviewCount={data?.totals.flaggedCount ?? 0} />}
         />
 
-        <Card className="overflow-hidden p-0">
+        <Card className="adm-table overflow-hidden p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3">
             <div className="relative w-full max-w-xs">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -263,11 +260,11 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search name or email"
                 aria-label="Search users"
-                className="pl-9"
+                className="adm-search pl-9"
               />
             </div>
             {data && (
-              <p className="font-mono text-caption tabular-nums text-muted-foreground">
+              <p className="text-caption tabular-nums text-muted-foreground">
                 {total} {total === 1 ? "match" : "matches"}
               </p>
             )}
@@ -384,7 +381,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                             </div>
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 font-mono text-micro text-muted-foreground">
+                        <td className="whitespace-nowrap px-4 py-2.5 text-ui text-muted-foreground">
                           {formatDate(u.createdAt)}
                         </td>
                         <td className="px-4 py-2.5">
@@ -393,7 +390,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                             onValueChange={(value) => changePlan(u, value as Plan)}
                             disabled={isSelf}
                           >
-                            <SelectTrigger className="h-8 w-32 text-caption" aria-label={`Plan for ${u.email}`}>
+                            <SelectTrigger className="adm-plan-select h-8 w-28 text-ui" aria-label={`Plan for ${u.email}`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>

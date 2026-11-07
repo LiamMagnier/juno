@@ -1,0 +1,296 @@
+/*
+ * Admin: the persistent bar (admin-nav.tsx) and the Overview (admin-overview.tsx).
+ *
+ * One surface recipe for every card: a faint ink fill and a 1px inset
+ * hairline at 16px corners, the profile's recipe, so the owner's pages and
+ * the reader's own pages are cut from the same cloth.
+ */
+
+/* ── The bar ─────────────────────────────────────────────────────────────── */
+.admin-bar-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.18);
+}
+.admin-tab-pill {
+  background: hsl(var(--foreground) / 0.065);
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.06);
+}
+.dark .admin-tab-pill {
+  background: hsl(var(--foreground) / 0.09);
+}
+.admin-tab {
+  transition-property: color, transform;
+  transition-duration: var(--dur-fast), var(--dur-press);
+}
+.admin-tab:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-tab:active {
+    transform: none;
+  }
+}
+
+/* ── Overview ────────────────────────────────────────────────────────────── */
+.adm {
+  --adm-surface: hsl(var(--foreground) / 0.025);
+  --adm-edge: hsl(var(--foreground) / 0.07);
+  --adm-ink: hsl(var(--primary));
+  --adm-ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+.dark .adm {
+  --adm-surface: hsl(var(--foreground) / 0.035);
+  --adm-edge: hsl(var(--foreground) / 0.08);
+}
+.adm-card {
+  border-radius: 16px;
+  background: var(--adm-surface);
+  box-shadow: inset 0 0 0 1px var(--adm-edge);
+  padding: 18px 20px;
+}
+.adm-figure {
+  font-family: var(--font-serif), Newsreader, serif;
+  font-weight: 400;
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+  color: hsl(var(--foreground));
+}
+
+.adm-kpis {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container page (min-width: 56rem) {
+  .adm-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container page (max-width: 30rem) {
+  .adm-kpis .adm-figure {
+    font-size: 28px;
+  }
+}
+.adm-kpi-link {
+  outline: none;
+  transition: box-shadow 160ms var(--adm-ease), transform 160ms var(--adm-ease);
+}
+.adm-kpi-link:active {
+  transform: scale(0.985);
+}
+.adm-kpi-link:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--adm-edge), 0 0 0 2px hsl(var(--ring) / 0.55);
+}
+.adm-kpi-go {
+  transition: transform 160ms var(--adm-ease), color 160ms var(--adm-ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .adm-kpi-link:hover {
+    box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.16);
+  }
+  .adm-kpi-link:hover .adm-kpi-go {
+    transform: translateX(2px);
+    color: hsl(var(--foreground));
+  }
+  .adm-row:hover {
+    background: hsl(var(--foreground) / 0.04);
+  }
+  .adm-link:hover {
+    color: hsl(var(--foreground));
+  }
+}
+.adm-row {
+  transition: background-color 160ms var(--adm-ease);
+}
+
+.adm-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  border-radius: 999px;
+  padding: 1px 6px 1px 4px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.adm-delta-good {
+  color: hsl(var(--success, 142 60% 36%));
+  background: hsl(var(--success, 142 60% 36%) / 0.1);
+}
+.adm-delta-bad {
+  color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 0.1);
+}
+
+.adm-spark {
+  width: 96px;
+  height: 32px;
+  flex-shrink: 0;
+  overflow: visible;
+}
+.adm-spark-line {
+  fill: none;
+  stroke: var(--adm-ink);
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.adm-spark-area {
+  fill: hsl(var(--primary) / 0.08);
+}
+
+.adm-split {
+  display: grid;
+  gap: 12px;
+}
+@container page (min-width: 56rem) {
+  .adm-split {
+    grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+  }
+}
+
+.adm-bars {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(0, 1fr));
+  gap: 4px;
+  height: 148px;
+  align-items: end;
+}
+.adm-bar-slot {
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  cursor: default;
+}
+.adm-bar {
+  display: block;
+  width: 100%;
+  border-radius: 4px 4px 2px 2px;
+  background: var(--adm-ink);
+  transform-origin: bottom;
+  transition: opacity 160ms var(--adm-ease), background-color 160ms var(--adm-ease);
+}
+.adm-bar[data-zero] {
+  background: hsl(var(--foreground) / 0.1);
+}
+.adm-bar-slot[data-dim] .adm-bar {
+  opacity: 0.35;
+}
+
+.adm-share {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--adm-ink);
+  transform-origin: left;
+}
+
+.adm-plan {
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+  color: hsl(var(--foreground));
+  background: hsl(var(--foreground) / 0.06);
+}
+
+/* ── Arrival ────────────────────────────────────────────────────────────────
+   Cards rise on a 50ms stagger, the spend bars grow from the baseline left
+   to right, the model shares draw out, the sparklines trace. All transform
+   and opacity; reduced motion keeps the final state. */
+@media (prefers-reduced-motion: no-preference) {
+  .adm-rise {
+    animation: adm-rise 420ms var(--adm-ease) both;
+    animation-delay: calc(var(--i, 0) * 50ms);
+  }
+  .adm-bars-grow .adm-bar {
+    animation: adm-grow 520ms var(--adm-ease) both;
+    animation-delay: calc(240ms + var(--c, 0) * 12ms);
+  }
+  .adm-share {
+    animation: adm-grow-x 520ms var(--adm-ease) both;
+    animation-delay: calc(320ms + var(--i, 0) * 40ms);
+  }
+  .adm-spark-draw .adm-spark-line {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: adm-draw 700ms var(--adm-ease) 200ms forwards;
+  }
+  .adm-spark-draw .adm-spark-area {
+    opacity: 0;
+    animation: adm-fade 400ms var(--adm-ease) 600ms forwards;
+  }
+}
+@keyframes adm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes adm-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes adm-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes adm-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes adm-fade {
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── The section pages' tables and panels ────────────────────────────────────
+   Every Admin card wears the Overview's surface: the faint fill and inset
+   hairline instead of a bordered box, rows on hairlines a step quieter. */
+.admin-shell .adm-table {
+  border: 0;
+  border-radius: 16px;
+  background: hsl(var(--foreground) / 0.025);
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.07);
+}
+.dark .admin-shell .adm-table {
+  background: hsl(var(--foreground) / 0.035);
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.08);
+}
+.admin-shell .adm-table :is(thead tr, tbody tr) {
+  border-color: hsl(var(--foreground) / 0.06);
+}
+.admin-shell .adm-table > div:first-child {
+  border-color: hsl(var(--foreground) / 0.06);
+}
+.admin-shell .adm-search {
+  border-color: transparent;
+  background: hsl(var(--foreground) / 0.045);
+  border-radius: 999px;
+}
+.admin-shell .adm-search:focus-visible {
+  background: hsl(var(--background));
+  border-color: hsl(var(--border));
+}
+.admin-shell .adm-plan-select {
+  border-color: transparent;
+  background: hsl(var(--foreground) / 0.045);
+  border-radius: 999px;
+}
+.admin-shell .adm-plan-select:hover {
+  background: hsl(var(--foreground) / 0.07);
+}
+.adm-delta-neutral {
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--foreground) / 0.06);
+}

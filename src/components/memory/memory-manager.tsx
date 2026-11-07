@@ -23,6 +23,8 @@ import { PromptDock, type PromptDockHandle } from "@/components/memory/prompt-do
 import type { RecapExtras } from "@/components/memory/recap-view";
 import { ScopeBar } from "@/components/memory/scope-bar";
 import { SummaryPanel } from "@/components/memory/summary-panel";
+import { ReviewDeck } from "@/components/memory/review-deck";
+import { memoriesToReview } from "@/components/memory/memory-review";
 import { useBackfill, type BackfillState } from "@/components/memory/use-backfill";
 import { useDeferredRemoval } from "@/components/memory/use-deferred-removal";
 import { useMemory, type MemoryState } from "@/components/memory/use-memory";
@@ -130,6 +132,7 @@ export function MemoryManagerView({
   const [activityOpen, setActivityOpen] = React.useState(false);
   const [activityTab, setActivityTab] = React.useState<ActivityTab>("edits");
   const [composing, setComposing] = React.useState(false);
+  const [reviewOpen, setReviewOpen] = React.useState(false);
   // Tracked here rather than read off `memory.busy`, which is also true while
   // an instruction drafts: the Rebuild button spins only for a rebuild.
   const [rebuilding, setRebuilding] = React.useState(false);
@@ -204,6 +207,8 @@ export function MemoryManagerView({
     () => memoriesInScope(memory.memories ?? [], activeScope),
     [memory.memories, activeScope]
   );
+  // What Review asks about, in the scope on screen.
+  const reviewItems = React.useMemo(() => memoriesToReview(scopedMemories), [scopedMemories]);
   const projectSummary = activeScope
     ? memory.projectSummaries.find((summary) => summary.projectId === activeScope) ?? null
     : null;
@@ -443,6 +448,8 @@ export function MemoryManagerView({
                 setRebuilding(false);
               }}
               onOpenActivity={() => openActivity("edits")}
+              reviewCount={reviewItems.length}
+              onOpenReview={() => setReviewOpen(true)}
             >
               {/* The drafting model edits account-wide facts, so the bar is
                   offered only where the page is showing the account. */}
@@ -514,6 +521,13 @@ export function MemoryManagerView({
         resetting={memory.resetting}
         onExport={memory.exportMemory}
         onReset={resetMemory}
+      />
+      <ReviewDeck
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        items={reviewItems}
+        onConfirm={memory.confirmMemory}
+        onForget={(entry) => memory.forgetMemory(entry, { silent: true })}
       />
       <ActivitySheet
         open={activityOpen}
