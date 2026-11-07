@@ -143,7 +143,7 @@ export function LiveTimer({ timer }: { timer: Of<"timer"> }) {
   );
 
   const size = 176;
-  const stroke = 8;
+  const stroke = 6;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
 
@@ -176,7 +176,7 @@ export function LiveTimer({ timer }: { timer: Of<"timer"> }) {
         </svg>
         <span key={pulse} className={cn("live-timer-pulse pointer-events-none absolute inset-0 rounded-full", pulse === 0 && "hidden")} aria-hidden />
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 text-center">
-          <span key={`${s.at}-${s.finished}`} className="live-timer-label max-w-[70%] truncate text-caption font-medium uppercase tracking-[0.06em] text-[hsl(var(--live))]">
+          <span key={`${s.at}-${s.finished}`} className="live-timer-label max-w-[70%] truncate text-ui font-medium text-muted-foreground">
             {s.finished ? "Done" : cur.label}
           </span>
           <span className="text-[2.25rem] font-semibold leading-none tabular-nums tracking-[-0.03em]" role="timer" aria-live="off">
@@ -371,7 +371,7 @@ export function LiveSchedule({
                       aria-hidden
                       className={cn(
                         "mt-0.5 flex size-[1.125rem] shrink-0 items-center justify-center rounded-full border-2 transition-[background-color,border-color,transform] duration-base ease-spring motion-reduce:transition-[background-color,border-color]",
-                        on ? "scale-105 border-[hsl(var(--live))] bg-[hsl(var(--live))] text-white" : "border-foreground/30",
+                        on ? "scale-105 border-[hsl(var(--live))] bg-[hsl(var(--live))] text-background" : "border-foreground/30",
                       )}
                     >
                       {on ? <Check className="size-3 motion-safe:animate-pop-in" /> : null}

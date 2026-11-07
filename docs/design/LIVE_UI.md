@@ -123,6 +123,16 @@ taught only in the web-only `LIVE_UI_DO_SECTION`.
 
 ### 2.6 Card chrome (2026-11)
 
+- **One ink, flat card.** The 2026-10 card read as a template to the owner
+  ("AI slop": a blue "Interactive" badge, a soft drop shadow, a 20 px radius
+  with 14–16 px tiles inside, value pills, blue ticks and glows). Now: radius
+  16 with a 20 px inset and a hairline edge, no shadow; surfaces inside are
+  10 and controls 8 (segmented tracks 10 with a 3 px inset, so segments are
+  7); `--live` is the foreground ink, so ticks, the recommended option, the
+  slider fill and chart marks are ink at steps of strength; slider values are
+  plain figures; Reset and Expand are icon buttons on the title's line.
+- **Sharing is visible and optional.** The footer says the settings go with
+  the next message and offers "Don't share", which stops the view publishing.
 - **Expand.** Every finished view has an expand button: the same view, with
   the same values, in a wide dialog (a sheet on a phone). The inline card
   says it is open there until the dialog closes.

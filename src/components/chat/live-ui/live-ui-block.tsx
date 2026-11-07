@@ -1,14 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, RotateCcw, ArrowUpRight, SlidersHorizontal, Maximize2 } from "@/components/ui/icons";
+import { Check, Copy, RotateCcw, ArrowUpRight, Eye, EyeOff, Maximize2 } from "@/components/ui/icons";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LiveScope, interpolate, valueToString, type LiveValue } from "@/lib/live-ui/expr";
 import { LIVE_NULL_TEXT, platformFormatter, type LiveFormatter } from "@/lib/live-ui/format";
 import { liveInputs, parseLiveUI, settleLiveSpec, type LiveComponent, type LiveInput, type LiveSpec } from "@/lib/live-ui/spec";
 import { publishLiveView } from "@/lib/live-ui/view-state";
-import { PRODUCT_NAME } from "@/lib/brand/names";
 import { LiveInputControl, formatInputValue } from "@/components/chat/live-ui/live-ui-controls";
 import { LiveChart } from "@/components/chat/live-ui/live-ui-chart";
 import { LiveChecklist, LiveExplorer, LiveStops } from "@/components/chat/live-ui/live-ui-parts";
@@ -28,13 +27,13 @@ import { cn } from "@/lib/utils";
  * is stable across stream deltas, so the reader can drag a slider while the
  * rest of the view is still arriving and keep what they set.
  *
- * Chrome (2026-10 premium pass): a contained card, the way ChatGPT's
- * interactive answers sit in a reply — a soft raised surface with a 20 px
- * radius, an "Interactive" eyebrow so the reader knows it can be touched,
- * and the live accent (`--presence`, scoped as `--live` in live-ui.css) on
- * the parts that respond: the slider's range, the stepper's value, the first
- * chart series. Results count to their new value (useTweenedNumber) so a
- * change reads as movement, not a swap.
+ * Chrome (2026-11 rework): a flat card (radius 16, 20 px inset, hairline
+ * edge, no shadow) with nothing inside it rounder than 10, no "Interactive"
+ * badge, and one ink: every part that responds (slider fill, ticks, the
+ * recommended option, chart marks) is the foreground at steps of strength,
+ * not a brand blue. Reset and Expand are quiet icon buttons on the title's
+ * line. Results count to their new value (useTweenedNumber) so a change
+ * reads as movement, not a swap.
  */
 
 const INPUT_TYPES = new Set(["slider", "number", "stepper", "select", "toggle", "date", "input"]);
@@ -109,6 +108,8 @@ function LiveView({
   onPrompt?: (text: string) => void;
 }) {
   const [expanded, setExpanded] = React.useState(false);
+  // The reader can keep a view to themselves: nothing is published while off.
+  const [keepPrivate, setKeepPrivate] = React.useState(false);
   const [reports, setReports] = React.useState<Record<string, string>>({});
   const report = React.useCallback((key: string, line: string | null) => {
     setReports((r) => {
@@ -132,8 +133,8 @@ function LiveView({
   const linesKey = lines.join("\n");
   React.useEffect(() => {
     if (!messageId) return;
-    publishLiveView(`${messageId}:${viewId}`, linesKey ? { messageId, title: view.title, lines: linesKey.split("\n") } : null);
-  }, [messageId, viewId, view.title, linesKey]);
+    publishLiveView(`${messageId}:${viewId}`, linesKey && !keepPrivate ? { messageId, title: view.title, lines: linesKey.split("\n") } : null);
+  }, [messageId, viewId, view.title, linesKey, keepPrivate]);
   React.useEffect(() => () => publishLiveView(`${messageId}:${viewId}`, null), [messageId, viewId]);
   const shared = !!messageId && !!onPrompt && lines.length > 0;
 
@@ -149,7 +150,7 @@ function LiveView({
     <LiveReportContext.Provider value={report}>
       <section
         className={cn(
-          "juno-visual live-card @container relative my-6 p-5 text-foreground @[28rem]:p-6",
+          "juno-visual live-card @container relative my-6 p-5 text-foreground",
           "motion-safe:animate-rise-in",
         )}
         aria-label={view.title ?? "Interactive view"}
@@ -157,58 +158,62 @@ function LiveView({
         data-live-ui=""
         data-live-building={live ? "" : undefined}
       >
-        <header className="mb-5 flex min-h-8 items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <span className="live-eyebrow" data-live={live ? "" : undefined}>
-              <SlidersHorizontal className="size-3" aria-hidden />
-              {live ? "Building" : "Interactive"}
-            </span>
-            {view.title ? (
-              <h4 className="min-w-0 font-sans text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">{view.title}</h4>
-            ) : live ? (
-              <Skeleton className="h-5 w-48" />
-            ) : null}
-          </div>
-          <div className="-mr-1.5 -mt-1 flex shrink-0 items-center gap-1">
+        {/* No badge: the controls say the view can be touched. The actions sit
+            on the title's line, quiet until wanted. */}
+        <header className="mb-4 flex min-h-7 items-center justify-between gap-3">
+          {view.title ? (
+            <h4 className="min-w-0 font-sans text-[0.9375rem] font-semibold leading-snug tracking-[-0.01em]">{view.title}</h4>
+          ) : live ? (
+            <Skeleton className="h-4 w-44" />
+          ) : (
+            <span />
+          )}
+          <div className="-my-1 -mr-1.5 flex shrink-0 items-center gap-0.5">
             {state.dirty ? (
-              <button type="button" onClick={state.reset} className="live-chip shrink-0 motion-safe:animate-fade-in">
+              <button type="button" onClick={state.reset} className="live-icon-btn motion-safe:animate-fade-in" aria-label="Reset to the reply's values" title="Reset">
                 <RotateCcw className="size-3.5" aria-hidden />
-                Reset
               </button>
             ) : null}
             {!live && !empty ? (
               <button type="button" className="live-icon-btn" onClick={() => setExpanded(true)} aria-label="Expand view" title="Expand">
-                <Maximize2 className="size-4" aria-hidden />
+                <Maximize2 className="size-3.5" aria-hidden />
               </button>
             ) : null}
           </div>
         </header>
         {expanded ? null : body}
         {expanded ? (
-          <p className="py-6 text-center text-ui text-muted-foreground">Open in the expanded view.</p>
+          <p className="py-4 text-ui text-muted-foreground">Open in the expanded view.</p>
         ) : null}
         {shared ? (
           <div className="live-shared" role="status">
-            <span className="live-shared-dot" aria-hidden />
-            <span className="min-w-0 flex-1">{PRODUCT_NAME} sees what you set here when you send your next message.</span>
+            {keepPrivate ? <EyeOff className="size-3.5" aria-hidden /> : <Eye className="size-3.5" aria-hidden />}
+            <span className="min-w-0 flex-1">
+              {keepPrivate ? "Kept to this view" : "Shared with your next message"}
+            </span>
             <button
               type="button"
-              className="shrink-0 font-medium text-foreground underline-offset-4 hover:underline"
-              onClick={() => window.dispatchEvent(new CustomEvent("juno:composer-focus"))}
+              className="shrink-0 underline-offset-4 hover:text-foreground hover:underline focus-visible:underline"
+              onClick={() => setKeepPrivate((v) => !v)}
             >
-              Ask about it
+              {keepPrivate ? "Share them" : "Don't share"}
             </button>
+            {keepPrivate ? null : (
+              <button
+                type="button"
+                className="shrink-0 font-medium text-foreground underline-offset-4 hover:underline focus-visible:underline"
+                onClick={() => window.dispatchEvent(new CustomEvent("juno:composer-focus"))}
+              >
+                Ask about it
+              </button>
+            )}
           </div>
         ) : null}
       </section>
       <Dialog open={expanded} onOpenChange={setExpanded}>
         <DialogContent bare className="w-[min(64rem,calc(100vw-2rem))] max-w-none max-h-[calc(100dvh-2rem)] overflow-y-auto p-0">
           <div data-live-ui="" className="@container flex min-w-0 flex-col gap-5 p-6 sm:p-8">
-            <div className="flex min-w-0 flex-col gap-1.5 pr-10">
-              <span className="live-eyebrow">
-                <SlidersHorizontal className="size-3" aria-hidden />
-                Interactive
-              </span>
+            <div className="flex min-w-0 flex-col pr-10">
               <DialogTitle className="min-w-0 font-sans text-[1.25rem] font-semibold leading-snug tracking-[-0.02em]">
                 {view.title ?? "Interactive view"}
               </DialogTitle>
@@ -492,7 +497,7 @@ function Metric({
       <span
         className={cn(
           "min-w-0 break-words font-semibold tabular-nums leading-[1.1] tracking-[-0.025em] text-foreground",
-          metric.emphasis ? "text-[2.125rem] @[28rem]:text-[2.5rem]" : "text-[1.5rem]",
+          metric.emphasis ? "text-[2rem] @[28rem]:text-[2.25rem]" : "text-[1.375rem]",
         )}
       >
         {text}
@@ -569,7 +574,7 @@ function LiveTable({
                 scope="col"
                 style={{ textAlign: numeric[ci] ? "right" : "left" }}
                 className={cn(
-                  "border-b border-border/70 px-3.5 py-2.5 align-bottom text-caption font-medium uppercase tracking-[0.04em] text-muted-foreground",
+                  "border-b border-border px-3.5 py-2 align-bottom text-caption font-medium text-muted-foreground",
                   hi(ci) && "font-medium text-foreground",
                 )}
               >
@@ -593,7 +598,7 @@ function LiveTable({
                       numeric[ci] && "tabular-nums",
                       lead(ci) && "pr-2 font-medium text-foreground",
                       table.rowHeader && !lead(ci) && "leading-relaxed text-foreground",
-                      hi(ci) && "bg-[hsl(var(--live)/0.06)] font-medium text-foreground",
+                      hi(ci) && "bg-foreground/[0.03] font-medium text-foreground",
                     )}
                   >
                     {typeof v === "number"
