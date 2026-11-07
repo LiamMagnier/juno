@@ -477,7 +477,7 @@ export function LiveCompare({
 
 function Rating({ value }: { value: number }) {
   return (
-    <span className="inline-flex items-center gap-1 text-caption tabular-nums text-muted-foreground" aria-label={`Rated ${value} out of 5`}>
+    <span className="inline-flex shrink-0 items-center gap-1 text-caption tabular-nums text-muted-foreground" aria-label={`Rated ${value} out of 5`}>
       <span className="inline-flex" aria-hidden>
         {[0, 1, 2, 3, 4].map((i) => (
           <Star key={i} weight={value >= i + 0.75 ? "fill" : undefined} className={cn("size-3", value >= i + 0.75 ? "text-[hsl(var(--warning))]" : "text-ink-tertiary")} />
@@ -496,10 +496,10 @@ export function LiveCards({ cards, onPrompt }: { cards: Of<"cards">; onPrompt?: 
         {cards.items.map((it, i) => {
           const Tag = it.prompt && onPrompt ? "button" : "div";
           return (
-            <li key={i} style={staggerDelay(i, "base")} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]">
+            <li key={i} style={staggerDelay(i, "base")} className="flex min-w-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]">
               <Tag
                 {...(Tag === "button" ? { type: "button" as const, onClick: () => onPrompt?.(it.prompt!) } : {})}
-                className={cn("live-tile group/tile", Tag === "button" && "live-tile-action")}
+                className={cn("live-tile group/tile h-full", Tag === "button" && "live-tile-action")}
               >
                 <span aria-hidden className="live-tile-mark">
                   {it.title.slice(0, 1).toUpperCase()}
@@ -510,9 +510,9 @@ export function LiveCards({ cards, onPrompt }: { cards: Of<"cards">; onPrompt?: 
                     {it.meta ? <span className="shrink-0 text-ui font-medium tabular-nums text-foreground">{it.meta}</span> : null}
                   </span>
                   {it.subtitle || it.rating !== undefined ? (
-                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-caption text-muted-foreground">
+                    <span className="flex min-w-0 items-center gap-x-2 text-caption text-muted-foreground">
                       {it.rating !== undefined ? <Rating value={it.rating} /> : null}
-                      {it.subtitle ? <span className="truncate">{it.subtitle}</span> : null}
+                      {it.subtitle ? <span className="min-w-0 truncate" title={it.subtitle}>{it.subtitle}</span> : null}
                     </span>
                   ) : null}
                   {it.detail ? <span className="line-clamp-2 text-caption leading-relaxed text-muted-foreground">{it.detail}</span> : null}
