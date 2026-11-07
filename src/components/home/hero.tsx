@@ -45,13 +45,13 @@ export function Hero() {
   // Function transforms on purpose: framer hands plain opacity ranges to a
   // compositor scroll timeline measured against the whole document.
   const copyOpacity = useTransform(p, (v) => 1 - clamp01(v / 0.22));
-  const copyY = useTransform(p, [0, 0.3], [0, -96]);
+  const copyY = useTransform(p, [0, 0.3], [0, -48]);
   // The orbits widen as the reader scrolls (the set keeps growing), redrawn
   // at each zoom so the dots stay crisp rather than being scaled as a bitmap.
   const orbitZoom = useTransform(p, [0, 0.75], [1, 2.3]);
   const orbitOpacity = useTransform(p, (v) => (v < 0.2 ? 1 - v / 2 : 0.9 - 0.55 * clamp01((v - 0.2) / 0.55)));
-  const stageY = useTransform(p, [0, 0.5], ["72vh", "12vh"]);
-  const stageScale = useTransform(p, [0, 0.5], [0.9, 1]);
+  const stageY = useTransform(p, [0, 0.5], ["66vh", "12vh"]);
+  const stageScale = useTransform(p, [0, 0.5], [0.94, 1]);
 
   useMotionValueEvent(p, "change", (v) => {
     if (pinned && v > 0.38) setPlay(true);

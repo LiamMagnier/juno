@@ -24,17 +24,17 @@
 }
 
 .pj-name {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
-  font-size: 22px;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 18px;
   line-height: 1.18;
   letter-spacing: -0.014em;
   font-optical-sizing: auto;
 }
 .pj-name-sm {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
-  font-size: 18px;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 15px;
   line-height: 1.2;
   letter-spacing: -0.01em;
 }
@@ -124,14 +124,14 @@
      held back any longer than the fifth. An entrance may describe the
      arrival; it must not delay it. */
   .pj-grid > li > .pj-tile {
-    animation: pj-arrive var(--dur-slow) var(--ease-out-expo) backwards;
-    animation-delay: calc(min(var(--i, 0), var(--stagger-max)) * var(--stagger-tile));
+    animation: pj-arrive var(--dur-base) var(--ease-out-expo) backwards;
+    animation-delay: calc(min(var(--i, 0), 3) * var(--stagger-tile) / 2);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .pj-actions, .pj-pinned { transition: none; }
 }
-@keyframes pj-arrive { from { opacity: 0; transform: translateY(10px); } }
+@keyframes pj-arrive { from { opacity: 0; transform: translateY(4px); } }
 
 /* A folder inside a project: one compact card, not a second cover plate. The
    card is 12 with a 6px frame, so the glyph's well takes 6 (12 - 6). */
@@ -166,7 +166,7 @@
 
 /* The Folders section's empty state arrives on the grid's own beat. */
 @media (prefers-reduced-motion: no-preference) {
-  .pj-empty { animation: pj-arrive var(--dur-slow) var(--ease-out-expo) backwards; }
+  .pj-empty { animation: pj-arrive var(--dur-base) var(--ease-out-expo) backwards; }
 }
 
 /* The instructions sheet: a writing field inside a 6px frame. No ring on

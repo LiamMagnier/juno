@@ -5,8 +5,9 @@ import Link from "next/link";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
 import { Button } from "@/components/ui/button";
+import { SearchField } from "@/components/ui/search-field";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { LayoutGrid, List, Loader2, Search, Trash2, Upload, X } from "@/components/ui/icons";
+import { LayoutGrid, List, Search, Trash2, Upload } from "@/components/ui/icons";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileVersionsDialog, RenameFileDialog } from "./library-dialogs";
@@ -357,29 +358,13 @@ export function LibraryHome() {
                 <Link href="/library?view=files">Manage files</Link>
               </Button>
             ) : null}
-            <label className="relative flex min-w-0 flex-1 items-center @[40rem]/page:w-64 @[40rem]/page:flex-none">
-              {searching ? (
-                <Loader2 className="pointer-events-none absolute left-3 size-4 text-muted-foreground motion-safe:animate-spin" aria-hidden="true" />
-              ) : (
-                <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" aria-hidden="true" />
-              )}
-              <input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setQuery("");
-                }}
-                placeholder="Search the library"
-                aria-label="Search the library"
-                className="h-9 w-full min-w-0 rounded-field border border-foreground/10 bg-transparent pl-9 pr-9 text-ui text-foreground outline-none transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground hover:border-foreground/[0.16] focus-visible:border-foreground/25 focus-visible:bg-background focus-visible:ring-4 focus-visible:ring-foreground/[0.05] kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:ring-0 kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] coarse:h-11 dark:border-white/10 dark:hover:border-white/[0.16] dark:focus-visible:border-white/25 [&::-webkit-search-cancel-button]:hidden"
-              />
-              {query ? (
-                <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="absolute right-1.5 grid size-6 place-items-center rounded-control text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.06] hover:text-foreground active:scale-90">
-                  <X className="size-3.5" aria-hidden="true" />
-                </button>
-              ) : null}
-            </label>
+            <SearchField
+              value={query}
+              onValueChange={setQuery}
+              label="Search the library"
+              busy={searching}
+              className="flex-1 @[40rem]/page:w-64 @[40rem]/page:flex-none"
+            />
             <SegmentedControl
               value={view}
               onChange={changeView}
