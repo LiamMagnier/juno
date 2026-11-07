@@ -8,7 +8,7 @@ const base = new URL(process.argv[2] || 'http://127.0.0.1:3000');
 assert(['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname), 'Use a local development server.');
 const output = path.resolve(process.argv[3] || 'test-results/website-review');
 const pages = ['projects', 'project', 'library', 'artifacts', 'connections', 'agents', 'automations', 'skills', 'instructions', 'memory', 'compare', 'code', 'settings', 'notifications', 'search'];
-const browser = await chromium.launch({ executablePath: process.env.ORBIT_CHROMIUM || undefined, headless: true });
+const browser = await chromium.launch({ executablePath: process.env.ORBIT_CHROMIUM || undefined, headless: true, args: ['--disable-features=BackForwardCache'] });
 const failures = [], captures = [], checks = [];
 const capture = async (page, file) => {
   await page.screenshot({ path: path.join(output, file), animations: 'disabled', style: 'nextjs-portal { visibility: hidden; }' });
@@ -18,11 +18,17 @@ try {
   for (const mode of ['desktop-light', 'desktop-dark', 'mobile-light', 'mobile-dark']) {
     await mkdir(path.join(output, mode), { recursive: true });
     const context = await browser.newContext({ viewport: mode.startsWith('mobile') ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, isMobile: mode.startsWith('mobile'), hasTouch: mode.startsWith('mobile'), colorScheme: mode.endsWith('dark') ? 'dark' : 'light', reducedMotion: 'reduce' });
-    const page = await context.newPage();
+    let page = await context.newPage();
     page.setDefaultTimeout(25_000);
     let route = '';
     page.on('pageerror', error => failures.push(`${mode}/${route}: ${error.message}`));
     for (route of pages) {
+      if (route !== pages[0]) {
+        await page.close();
+        page = await context.newPage();
+        page.setDefaultTimeout(25_000);
+        page.on('pageerror', error => failures.push(`${mode}/${route}: ${error.message}`));
+      }
       await page.goto(new URL(route === 'project' ? '/dev/pages/project/p-atlas' : `/dev/pages?page=${route}`, base).href, { waitUntil: 'domcontentloaded', timeout: 120_000 });
       await page.locator('#juno-main').waitFor({ state: 'attached' });
       await page.evaluate(() => document.fonts.ready);
@@ -30,6 +36,14 @@ try {
       else await page.waitForTimeout(450);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
       if (overflow) failures.push(`${mode}/${route}: horizontal document overflow`);
+      if (mode.startsWith('mobile') && route === 'projects') {
+        for (const tile of await page.locator('.pj-tile').all()) {
+          const actions = await tile.locator('.pj-actions').boundingBox();
+          const excerpt = await tile.locator('p.mt-1').boundingBox();
+          if (actions && excerpt) assert(excerpt.y >= actions.y + actions.height - 1, 'Project actions cover the description');
+        }
+        checks.push(`${mode}: project actions clear the description`);
+      }
       await capture(page, `${mode}/${route}.png`);
       console.log(`${mode}/${route}`);
     }
@@ -47,23 +61,25 @@ try {
         checks.push(`${routeName}: clear and Escape retain search focus`);
       }
       await page.goto(new URL('/dev/pages?page=projects', base).href);
-      await page.getByRole('button', { name: 'New project', exact: true }).click();
+      await page.locator('#juno-main').getByRole('button', { name: 'New project', exact: true }).click();
       const dialog = page.getByRole('dialog');
       await expect(dialog).toBeVisible();
       await capture(page, 'desktop-light/new-project-dialog.png');
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
-      await expect(page.getByRole('button', { name: 'New project', exact: true })).toBeFocused();
+      await expect(page.locator('#juno-main').getByRole('button', { name: 'New project', exact: true })).toBeFocused();
       checks.push('Project dialog: Escape dismisses and restores trigger focus');
     }
     await context.close();
   }
   // Empty, loading and failure states are real components fed deterministic data.
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
-  const page = await context.newPage();
+  let page = await context.newPage();
   await mkdir(path.join(output, 'states'), { recursive: true });
   for (const state of ['empty', 'loading', 'error']) {
     for (const route of ['projects', 'library', 'connections', 'automations', 'skills']) {
+      await page.close();
+      page = await context.newPage();
       await page.goto(new URL(`/dev/pages?page=${route}&state=${state}`, base).href, { waitUntil: 'domcontentloaded', timeout: 120_000 });
       await page.locator('#juno-main').waitFor({ state: 'attached' });
       await page.waitForTimeout(550);
