@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { AgentSwarmCoordinator } from "../src/lib/agent/swarm.js";
 import { CollaborativeSession } from "../src/lib/collaboration/crdt.js";
 
@@ -21,6 +22,18 @@ test("AgentSwarmCoordinator plans and executes parallel subtasks concurrently", 
   assert.equal(plan.completedCount, 3);
   assert.equal(plan.totalCount, 3);
   assert.equal(plan.tasks[0].status, "completed");
+});
+
+test("completed swarm tasks do not keep the process alive for their timeout", () => {
+  const child = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
+    import { AgentSwarmCoordinator } from './src/lib/agent/swarm.ts';
+    const swarm = new AgentSwarmCoordinator('exit-test', 'test', 1, 60000);
+    swarm.addTask('coder', 'finish');
+    const result = await swarm.executeSwarm(async () => ({ success: true, output: 'done' }));
+    if (result.status !== 'completed') process.exitCode = 1;
+  `], { cwd: process.cwd(), timeout: 10_000, encoding: "utf8" });
+  assert.equal(child.error, undefined, child.error?.message);
+  assert.equal(child.status, 0, child.stderr);
 });
 
 test("CollaborativeSession applies inserts and deletes with state synchronization", () => {
