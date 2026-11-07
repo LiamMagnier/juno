@@ -147,7 +147,7 @@ async function dailyTokens(userId: string, timeZone: string) {
   }
 }
 
-function describeModel(id: string): { label: string; provider: Provider | null } {
+export function describeModel(id: string): { label: string; provider: Provider | null } {
   const info = resolveModel(id);
   if (info) return { label: info.name, provider: info.provider };
   const [prefix, rest] = id.includes(":") ? [id.slice(0, id.indexOf(":")), id.slice(id.indexOf(":") + 1)] : ["", id];

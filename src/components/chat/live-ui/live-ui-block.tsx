@@ -1,17 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, RotateCcw, ArrowUpRight, SlidersHorizontal } from "@/components/ui/icons";
+import { Check, Copy, RotateCcw, Undo2, ArrowUpRight, Eye, EyeOff, Maximize2 } from "@/components/ui/icons";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LiveScope, interpolate, valueToString, type LiveValue } from "@/lib/live-ui/expr";
 import { LIVE_NULL_TEXT, platformFormatter, type LiveFormatter } from "@/lib/live-ui/format";
-import { parseLiveUI, settleLiveSpec, type LiveComponent, type LiveInput, type LiveSpec } from "@/lib/live-ui/spec";
+import { liveInputs, parseLiveUI, settleLiveSpec, type LiveComponent, type LiveInput, type LiveSpec } from "@/lib/live-ui/spec";
+import { publishLiveView } from "@/lib/live-ui/view-state";
 import { LiveInputControl, formatInputValue } from "@/components/chat/live-ui/live-ui-controls";
 import { LiveChart } from "@/components/chat/live-ui/live-ui-chart";
 import { LiveChecklist, LiveExplorer, LiveStops } from "@/components/chat/live-ui/live-ui-parts";
 import { LiveCallout, LiveExercise, LiveQuiz, LiveSteps, LiveTimeline } from "@/components/chat/live-ui/live-ui-learning";
 import { LiveCards, LiveChoices, LiveCompare, LiveFlashcards, LiveRecipe, LiveTabs } from "@/components/chat/live-ui/live-ui-intelligent";
 import { useLiveUIHost } from "@/components/chat/live-ui/host";
+import { LiveReportContext } from "@/components/chat/live-ui/report";
+import { LiveSchedule, LiveTimer } from "@/components/chat/live-ui/live-ui-doing";
 import { useLiveState, type LiveState } from "@/components/chat/live-ui/use-live-state";
 import { useTweenedNumber } from "@/components/chat/live-ui/use-tweened-number";
 import { cn } from "@/lib/utils";
@@ -23,13 +27,13 @@ import { cn } from "@/lib/utils";
  * is stable across stream deltas, so the reader can drag a slider while the
  * rest of the view is still arriving and keep what they set.
  *
- * Chrome (2026-10 premium pass): a contained card, the way ChatGPT's
- * interactive answers sit in a reply — a soft raised surface with a 20 px
- * radius, an "Interactive" eyebrow so the reader knows it can be touched,
- * and the live accent (`--presence`, scoped as `--live` in live-ui.css) on
- * the parts that respond: the slider's range, the stepper's value, the first
- * chart series. Results count to their new value (useTweenedNumber) so a
- * change reads as movement, not a swap.
+ * Chrome (2026-11 rework): a flat card (radius 16, 20 px inset, hairline
+ * edge, no shadow) with nothing inside it rounder than 10, no "Interactive"
+ * badge, and one ink: every part that responds (slider fill, ticks, the
+ * recommended option, chart marks) is the foreground at steps of strength,
+ * not a brand blue. Reset and Expand are quiet icon buttons on the title's
+ * line. Results count to their new value (useTweenedNumber) so a change
+ * reads as movement, not a swap.
  */
 
 const INPUT_TYPES = new Set(["slider", "number", "stepper", "select", "toggle", "date", "input"]);
@@ -68,48 +72,261 @@ export function LiveUIBlock({ source, streaming = false }: { source: string; str
     return <LiveUIFallback source={source} error={parsed.error} />;
   }
 
+  return (
+    <LiveView
+      view={view}
+      scope={scope}
+      state={state}
+      formatter={formatter}
+      live={streaming || view.streaming}
+      messageId={host.messageId}
+      onPrompt={host.onPrompt}
+    />
+  );
+}
+
+/**
+ * Reset is one tap and clears everything the reader set, so it offers Undo in
+ * its place for a few seconds. Focus moves to it, so a keyboard reader who
+ * pressed Reset by mistake is one Enter away from getting their values back.
+ */
+function UndoReset({ onUndo }: { onUndo: () => void }) {
+  const ref = React.useRef<HTMLButtonElement>(null);
+  const [gone, setGone] = React.useState(false);
+  React.useEffect(() => {
+    ref.current?.focus({ preventScroll: true });
+    const t = window.setTimeout(() => setGone(true), 6000);
+    return () => window.clearTimeout(t);
+  }, []);
+  if (gone) return null;
+  return (
+    <button ref={ref} type="button" onClick={onUndo} className="live-undo motion-safe:animate-fade-in">
+      <Undo2 className="size-3.5" aria-hidden />
+      Undo
+    </button>
+  );
+}
+
+/**
+ * The card around a parsed view. Split from `LiveUIBlock` so the hooks below
+ * (reports, the shared snapshot, the expanded dialog) run only once there is
+ * a view to describe.
+ */
+function LiveView({
+  view,
+  scope,
+  state,
+  formatter,
+  live,
+  messageId,
+  onPrompt,
+}: {
+  view: LiveSpec;
+  scope: LiveScope;
+  state: LiveState;
+  formatter: LiveFormatter;
+  live: boolean;
+  messageId?: string;
+  onPrompt?: (text: string) => void;
+}) {
+  const [expanded, setExpanded] = React.useState(false);
+  // The reader can keep a view to themselves: nothing is published while off.
+  const [keepPrivate, setKeepPrivate] = React.useState(false);
+  const [reports, setReports] = React.useState<Record<string, string>>({});
+  const report = React.useCallback((key: string, line: string | null) => {
+    setReports((r) => {
+      if (line === null) {
+        if (!(key in r)) return r;
+        const next = { ...r };
+        delete next[key];
+        return next;
+      }
+      return r[key] === line ? r : { ...r, [key]: line };
+    });
+  }, []);
+
+  // What the reader did here, as lines the next message carries
+  // (src/lib/live-ui/view-state.ts). Nothing while streaming or untouched.
+  const lines = React.useMemo(
+    () => (live ? [] : describeLiveView(view, state, scope, formatter, reports)),
+    [live, view, state, scope, formatter, reports],
+  );
+  const viewId = React.useId();
+  const linesKey = lines.join("\n");
+  React.useEffect(() => {
+    if (!messageId) return;
+    publishLiveView(`${messageId}:${viewId}`, linesKey && !keepPrivate ? { messageId, title: view.title, lines: linesKey.split("\n") } : null);
+  }, [messageId, viewId, view.title, linesKey, keepPrivate]);
+  React.useEffect(() => () => publishLiveView(`${messageId}:${viewId}`, null), [messageId, viewId]);
+  const shared = !!messageId && !!onPrompt && lines.length > 0;
+
   const empty = view.ui.length === 0;
-  const live = streaming || view.streaming;
+  const body = (
+    <div className="flex min-w-0 flex-col gap-6">
+      {empty && live ? <PendingRows /> : null}
+      <Components list={view.ui} scope={scope} spec={view} state={state} formatter={formatter} onPrompt={onPrompt} />
+    </div>
+  );
 
   return (
-    <section
-      className={cn(
-        "juno-visual live-card @container relative my-6 p-5 text-foreground @[28rem]:p-6",
-        "motion-safe:animate-rise-in",
-      )}
-      aria-label={view.title ?? "Interactive view"}
-      aria-busy={live || undefined}
-      data-live-ui=""
-    >
-      <header className="mb-5 flex min-h-8 items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <span className="live-eyebrow" data-live={live ? "" : undefined}>
-            <SlidersHorizontal className="size-3" aria-hidden />
-            {live ? "Building" : "Interactive"}
-          </span>
+    <LiveReportContext.Provider value={report}>
+      <section
+        className={cn(
+          "juno-visual live-card @container relative my-6 p-5 text-foreground",
+          "motion-safe:animate-rise-in",
+        )}
+        aria-label={view.title ?? "Interactive view"}
+        aria-busy={live || undefined}
+        data-live-ui=""
+        data-live-building={live ? "" : undefined}
+      >
+        {/* No badge: the controls say the view can be touched. The actions sit
+            on the title's line, quiet until wanted. */}
+        <header className="mb-4 flex min-h-7 items-center justify-between gap-3">
           {view.title ? (
-            <h4 className="min-w-0 font-sans text-[1.0625rem] font-semibold leading-snug tracking-[-0.015em]">{view.title}</h4>
+            <h4 className="min-w-0 font-sans text-[0.9375rem] font-semibold leading-snug tracking-[-0.01em]">{view.title}</h4>
           ) : live ? (
-            <Skeleton className="h-5 w-48" />
-          ) : null}
-        </div>
-        {state.dirty ? (
-          <button
-            type="button"
-            onClick={state.reset}
-            className="live-chip shrink-0 motion-safe:animate-fade-in"
-          >
-            <RotateCcw className="size-3.5" aria-hidden />
-            Reset
-          </button>
+            <Skeleton className="h-4 w-44" />
+          ) : (
+            <span />
+          )}
+          <div className="-my-1 -mr-1.5 flex shrink-0 items-center gap-0.5">
+            {state.dirty ? (
+              <button type="button" onClick={state.reset} className="live-icon-btn motion-safe:animate-fade-in" aria-label="Reset to the reply's values" title="Reset">
+                <RotateCcw className="size-3.5" aria-hidden />
+              </button>
+            ) : state.canUndo ? (
+              <UndoReset onUndo={state.undoReset} />
+            ) : null}
+            {!live && !empty ? (
+              <button type="button" className="live-icon-btn" onClick={() => setExpanded(true)} aria-label="Expand view" title="Expand">
+                <Maximize2 className="size-3.5" aria-hidden />
+              </button>
+            ) : null}
+          </div>
+        </header>
+        {expanded ? null : body}
+        {expanded ? (
+          <p className="py-4 text-ui text-muted-foreground">Open in the expanded view.</p>
         ) : null}
-      </header>
-      <div className="flex min-w-0 flex-col gap-6">
-        {empty && live ? <PendingRows /> : null}
-        <Components list={view.ui} scope={scope} spec={view} state={state} formatter={formatter} onPrompt={host.onPrompt} />
-      </div>
-    </section>
+        {shared ? (
+          <div className="live-shared" role="status">
+            {keepPrivate ? <EyeOff className="size-3.5" aria-hidden /> : <Eye className="size-3.5" aria-hidden />}
+            <span className="min-w-0 flex-1">
+              {keepPrivate ? "Kept to this view" : "Shared with your next message"}
+            </span>
+            <button
+              type="button"
+              className="shrink-0 underline-offset-4 hover:text-foreground hover:underline focus-visible:underline"
+              onClick={() => setKeepPrivate((v) => !v)}
+            >
+              {keepPrivate ? "Share them" : "Don't share"}
+            </button>
+            {keepPrivate ? null : (
+              <button
+                type="button"
+                className="shrink-0 font-medium text-foreground underline-offset-4 hover:underline focus-visible:underline"
+                onClick={() => window.dispatchEvent(new CustomEvent("juno:composer-focus"))}
+              >
+                Ask about it
+              </button>
+            )}
+          </div>
+        ) : null}
+      </section>
+      <Dialog open={expanded} onOpenChange={setExpanded}>
+        <DialogContent bare className="w-[min(64rem,calc(100vw-2rem))] max-w-none max-h-[calc(100dvh-2rem)] overflow-y-auto p-0">
+          <div data-live-ui="" className="@container flex min-w-0 flex-col gap-5 p-6 sm:p-8">
+            <div className="flex min-w-0 flex-col pr-10">
+              <DialogTitle className="min-w-0 font-sans text-[1.25rem] font-semibold leading-snug tracking-[-0.02em]">
+                {view.title ?? "Interactive view"}
+              </DialogTitle>
+            </div>
+            {body}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </LiveReportContext.Provider>
   );
+}
+
+/** The value an input shows, for the lines the next message carries. */
+function describeInputValue(input: LiveInput, v: LiveValue, formatter: LiveFormatter, currency: string): string {
+  if (input.type === "select") {
+    const o = input.options.find((opt) => opt.value === v);
+    return o ? o.label : valueToString(v);
+  }
+  if (input.type === "toggle") return v ? "on" : "off";
+  if (typeof v === "number") {
+    const format = "format" in input ? input.format : undefined;
+    const unit = "unit" in input ? input.unit : undefined;
+    return formatInputValue(v, format, unit, formatter, currency, "input");
+  }
+  return v === null ? "empty" : valueToString(v);
+}
+
+/** Every component in the tree, depth-first, through layouts, steps and tabs. */
+function walkLive(ui: readonly LiveComponent[], visit: (c: LiveComponent) => void): void {
+  for (const c of ui) {
+    visit(c);
+    if (c.type === "row" || c.type === "grid" || c.type === "section") walkLive(c.children, visit);
+    else if (c.type === "steps") for (const s of c.steps) walkLive(s.ui, visit);
+    else if (c.type === "tabs") for (const t of c.tabs) walkLive(t.children, visit);
+  }
+}
+
+/**
+ * The reader's state of one view as plain lines: each input they moved (with
+ * the value the reply set), the results those inputs now produce, what they
+ * ticked, and whatever the parts with their own state reported (a quiz
+ * score, the servings). Empty while the view is as the reply left it.
+ */
+export function describeLiveView(
+  view: LiveSpec,
+  state: Pick<LiveState, "values" | "checks">,
+  scope: LiveScope,
+  formatter: LiveFormatter,
+  reports: Record<string, string>,
+): string[] {
+  const lines: string[] = [];
+  let moved = false;
+  for (const input of liveInputs(view.ui)) {
+    const v = state.values[input.id];
+    if (v === undefined || v === input.value) continue;
+    moved = true;
+    lines.push(
+      `${input.label}: ${describeInputValue(input, v, formatter, view.currency)} (the reply set ${describeInputValue(input, input.value, formatter, view.currency)})`,
+    );
+  }
+  const results: string[] = [];
+  const ticks: string[] = [];
+  walkLive(view.ui, (c) => {
+    if (moved && c.type === "metric" && results.length < 8) {
+      const { value } = scope.evaluate(c.value);
+      if (typeof value === "number") {
+        results.push(`${interpolate(c.label, scope) || "Result"} now shows ${formatInputValue(value, c.format, c.unit, formatter, view.currency, "metric")}`);
+      }
+    } else if (moved && c.type === "chart" && c.parts && results.length < 8) {
+      const shown = c.parts
+        .map((p) => {
+          const { value } = scope.evaluate(p.value);
+          return typeof value === "number" ? `${p.label} ${formatInputValue(value, c.format, undefined, formatter, view.currency, "metric")}` : null;
+        })
+        .filter(Boolean);
+      if (shown.length) results.push(`${c.title ?? "The split"} now shows ${shown.join(", ")}`);
+    } else if (c.type === "checklist" || c.type === "schedule") {
+      const on = state.checks[c.id] ?? [];
+      if (on.length === 0) return;
+      const labels =
+        c.type === "checklist"
+          ? c.items.map((i) => i.label)
+          : c.days.flatMap((d) => d.items.map((i) => `${d.label} ${i.label}`));
+      const done = on.filter((i) => i < labels.length);
+      const named = done.slice(0, 8).map((i) => labels[i]).join("; ");
+      ticks.push(`${c.title ?? (c.type === "schedule" ? "Schedule" : "Checklist")}: ${done.length} of ${labels.length} ticked off (${named}${done.length > 8 ? "; …" : ""})`);
+    }
+  });
+  return [...lines, ...results, ...ticks, ...Object.values(reports)];
 }
 
 function PendingRows() {
@@ -140,7 +357,11 @@ function Components({ list, ...props }: RenderProps & { list: readonly LiveCompo
   return (
     <>
       {list.map((c) => (
-        <LiveNode key={c.key} component={c} {...props} />
+        // Keyed by type too, so a skeleton that becomes its component is a
+        // new node and the arrival motion plays for it (live-ui.css).
+        <div key={`${c.key}:${c.type}`} className="live-node">
+          <LiveNode component={c} {...props} />
+        </div>
       ))}
     </>
   );
@@ -174,7 +395,7 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
       );
     case "section":
       return (
-        <div className="flex min-w-0 flex-col gap-4 border-t border-border/50 pt-5 first:border-t-0 first:pt-0">
+        <div className="flex min-w-0 flex-col gap-4 border-t border-border/50 pt-5 [.live-node:first-child>&]:border-t-0 [.live-node:first-child>&]:pt-0">
           {c.title ? <p className="text-ui font-medium text-foreground">{interpolate(c.title, scope)}</p> : null}
           <Components list={c.children} {...props} />
         </div>
@@ -251,6 +472,10 @@ const LiveNode = React.memo(function LiveNode({ component: c, ...props }: Render
       return <LiveTabs tabs={c} render={(list) => <Components list={list} {...props} />} />;
     case "flashcards":
       return <LiveFlashcards deck={c} />;
+    case "timer":
+      return <LiveTimer timer={c} />;
+    case "schedule":
+      return <LiveSchedule schedule={c} checked={state.checks[c.id] ?? []} onToggle={(i) => state.toggleCheck(c.id, i)} />;
     default:
       if (INPUT_TYPES.has(c.type)) {
         const input = c as LiveInput;
@@ -296,7 +521,7 @@ function Metric({
       <span
         className={cn(
           "min-w-0 break-words font-semibold tabular-nums leading-[1.1] tracking-[-0.025em] text-foreground",
-          metric.emphasis ? "text-[2.125rem] @[28rem]:text-[2.5rem]" : "text-[1.5rem]",
+          metric.emphasis ? "text-[2rem] @[28rem]:text-[2.25rem]" : "text-[1.375rem]",
         )}
       >
         {text}
@@ -373,7 +598,7 @@ function LiveTable({
                 scope="col"
                 style={{ textAlign: numeric[ci] ? "right" : "left" }}
                 className={cn(
-                  "border-b border-border/70 px-3.5 py-2.5 align-bottom text-caption font-medium uppercase tracking-[0.04em] text-muted-foreground",
+                  "border-b border-border px-3.5 py-2 align-bottom text-caption font-medium text-muted-foreground",
                   hi(ci) && "font-medium text-foreground",
                 )}
               >
@@ -397,7 +622,7 @@ function LiveTable({
                       numeric[ci] && "tabular-nums",
                       lead(ci) && "pr-2 font-medium text-foreground",
                       table.rowHeader && !lead(ci) && "leading-relaxed text-foreground",
-                      hi(ci) && "bg-[hsl(var(--live)/0.06)] font-medium text-foreground",
+                      hi(ci) && "bg-foreground/[0.03] font-medium text-foreground",
                     )}
                   >
                     {typeof v === "number"

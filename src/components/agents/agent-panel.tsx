@@ -44,8 +44,7 @@ import {
 import { ModelPicker } from "@/components/agents/agent-profile-fields";
 import { useOptionalApp } from "@/components/app/app-provider";
 import { CLOUD_WORKER_DOWN_MESSAGE, macChoiceSaves, preferredHostGone, runsOnHostLabel } from "@/components/agents/thread-agent-state";
-import { WORK_POLL_MS, WORK_SYNC_EVENT, fetchWorkHosts } from "@/components/work/work-transport";
-import type { ClientWorkHost } from "@/lib/work/serializers";
+import { useWorkHosts } from "./use-work-hosts";
 import { Input } from "@/components/ui/input";
 import { MAX_MEMBER_BUDGET_MICRO_USD } from "@/lib/agents/budget";
 import { describeBudgetLine, type BudgetLine } from "@/lib/budgets";
@@ -710,60 +709,10 @@ const RUNS_ON_MESSAGE = {
   noMac: `No Mac is set up yet. Open the ${PRODUCT_NAME} Mac app and turn on Allow ${PRODUCT_NAME} Work on this Mac.`,
   anyMac: "Any of your Macs",
   checking: "Checking your Macs…",
-  loadFailed: "Couldn’t check your Macs.",
   retry: "Try again",
   goneMac: "The Mac it used is no longer connected, so its tasks go to any of your Macs. Pick one to keep them on it.",
   pickMac: "Pick the Mac it should use.",
 } as const;
-
-type WorkHostsState =
-  | { kind: "loading" }
-  | { kind: "ok"; hosts: ClientWorkHost[] }
-  | { kind: "failed"; message: string };
-
-/**
- * The account's Macs for "Runs on", kept fresh while the profile is open: the
- * shared Work poll, the Work sync event and a re-read when the tab comes back,
- * as Settings, Devices does, so a Mac waking up shows as online without a
- * reload. A dropped poll after a good read keeps the list rather than blanking
- * it; a failure before one is said, with a retry.
- */
-function useRunsOnHosts(active: boolean): { state: WorkHostsState; retry: () => void } {
-  const [state, setState] = React.useState<WorkHostsState>({ kind: "loading" });
-  const load = React.useCallback(async () => {
-    const res = await fetchWorkHosts();
-    if (res.kind === "ok") {
-      setState({ kind: "ok", hosts: res.value.filter((host) => host.revokedAt === null) });
-      return;
-    }
-    const message = res.kind === "failed" ? res.message : res.explanation;
-    setState((prev) => (prev.kind === "ok" ? prev : { kind: "failed", message: message || RUNS_ON_MESSAGE.loadFailed }));
-  }, []);
-
-  React.useEffect(() => {
-    if (!active) return;
-    let live = true;
-    const tick = () => {
-      if (live && !document.hidden) void load();
-    };
-    void load();
-    const interval = window.setInterval(tick, WORK_POLL_MS);
-    window.addEventListener(WORK_SYNC_EVENT, tick);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      live = false;
-      window.clearInterval(interval);
-      window.removeEventListener(WORK_SYNC_EVENT, tick);
-      document.removeEventListener("visibilitychange", tick);
-    };
-  }, [active, load]);
-
-  const retry = React.useCallback(() => {
-    setState({ kind: "loading" });
-    void load();
-  }, [load]);
-  return { state, retry };
-}
 
 /**
  * Where its tasks, routines and goal steps run: the cloud, or the person's Mac
@@ -788,7 +737,7 @@ function RunsOnSection({
   // sends the target and the Mac together.
   const [choosingMac, setChoosingMac] = React.useState(false);
   const showMacs = target === "mac" || choosingMac;
-  const { state: hostsState, retry } = useRunsOnHosts(showMacs);
+  const { state: hostsState, retry } = useWorkHosts(showMacs);
   const preferredHostId = agent.preferredHostId ?? null;
 
   const chooseMac = (id: string | null) => {

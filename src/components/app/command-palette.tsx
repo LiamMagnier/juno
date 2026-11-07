@@ -276,7 +276,16 @@ function PaletteShell({
         // literal, off the duration ladder. The 0.97 start is written behind
         // `motion-safe:` so reduced motion's own scale token still wins; the
         // travel already rides `--motion-shift`, so that leaves a plain fade.
-        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[640px] origin-top [translate:none] translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-panel border-foreground/10 bg-popover motion-safe:[--motion-scale-from:0.97] [--pop-shift:-6px] data-[state=open]:[animation:pop-in_var(--dur-base)_var(--ease-out-expo)_both] data-[state=closed]:animate-pop-out dark:border-white/10"
+        bare
+        // `bare` is load-bearing: without it DialogContent wraps the palette in
+        // its padded body, and the field, the hairline and every row sat 24px
+        // inside the shell (the "floating inset list" look). The palette lays
+        // out its own shell edge to edge.
+        //
+        // Motion: opened from the keyboard dozens of times a day, so it barely
+        // moves. A 150ms fade from 0.985 on a strong ease-out, anchored at the
+        // top edge it hangs from; it leaves on opacity alone in 100ms.
+        className="palette-shell left-0 right-0 top-[12svh] mx-auto flex w-[calc(100%-1.5rem)] max-w-[672px] origin-top flex-col [translate:none] translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-panel border border-foreground/[0.09] bg-popover dark:border-white/[0.09]"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           (e.currentTarget as HTMLElement).querySelector("input")?.focus();
@@ -291,14 +300,14 @@ function PaletteShell({
             when it is the only field on a 640px overlay. It was `body` (15px), the same rung
             as the results under it, so the field read as the first row of the
             list rather than as the control that drives it. */}
-        <div className="flex h-14 items-center gap-3 border-b border-foreground/[0.07] px-4 coarse:h-16 dark:border-white/[0.07]">
-          <AppIcons.search className="size-5 shrink-0 text-muted-foreground" />
+        <div className="relative flex h-[3.25rem] shrink-0 items-center gap-3 px-4 coarse:h-14">
+          <AppIcons.search className="size-[1.125rem] shrink-0 text-muted-foreground" />
           <input
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={placeholder}
-            className="h-full w-full bg-transparent text-body-lg tracking-[-0.011em] outline-none placeholder:text-muted-foreground"
+            className="h-full w-full bg-transparent text-[1rem] tracking-[-0.011em] outline-none placeholder:text-muted-foreground"
             // `ariaLabel`, not the placeholder. The placeholder is one word
             // now ("Search"), and a one-word accessible name on the only input
             // of an overlay is thinner than what a screen reader had before —
@@ -331,6 +340,8 @@ function PaletteShell({
               <TooltipContent>Clear</TooltipContent>
             </Tooltip>
           )}
+          {/* Edge-to-edge hairline: the field is the shell's lid, not a row. */}
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-foreground/[0.07] dark:bg-white/[0.07]" />
         </div>
 
         {filters}
@@ -370,7 +381,7 @@ function PaletteShell({
            * so results landing under a query never resize the overlay at all,
            * and a short resting list does not sit in a void.
            */
-          className="relative min-h-[13rem] max-h-[min(56svh,calc(100dvh-10rem))] overflow-y-auto overscroll-contain scroll-fade-y p-2"
+          className="relative min-h-[13rem] max-h-[min(58svh,calc(100dvh-10rem))] overflow-y-auto overscroll-contain scroll-fade-y p-1.5"
         >
           {/*
            * THE HIGHLIGHT (history: it cross-faded per row; it slides again now, see below).
@@ -424,15 +435,14 @@ function PaletteShell({
                         // over "Chats" and "Projects" is what made a list of
                         // the reader's own things read as a console.
                         // Arrives with the row it heads, on that row's beat.
-                        style={staggerDelay(Math.min(i, 8), "tight")}
                         className={cn(
-                          "px-2 pb-1.5 text-caption font-medium text-muted-foreground motion-safe:animate-fade-in [animation-fill-mode:backwards]",
+                          "px-2.5 pb-1 text-caption font-medium text-muted-foreground",
                           // 24px before a later group, matching the break the
                           // sidebar leaves above a section heading. It was 16,
                           // which is the same gap the rows inside a group use
                           // between themselves — so a new group started with no
                           // more ceremony than the next line of the old one.
-                          i === 0 ? "pt-1.5" : "pt-5"
+                          i === 0 ? "pt-2" : "pt-4"
                         )}
                       >
                         {c.group}
@@ -459,29 +469,24 @@ function PaletteShell({
                       }}
                       onClick={() => c.run()}
                       aria-selected={isActive}
-                      // Dealt, not dumped: rows that arrive together — on open,
-                      // and when a search lands — fade in on the `tight`
-                      // stagger, the first eight in sequence and the rest with
-                      // the eighth. A row that survives a keystroke keeps its
-                      // key and does not replay. Opacity only, so nothing moves
-                      // under a pointer already on its way to a row.
-                      style={staggerDelay(Math.min(i, 8), "tight")}
+                      // No entrance per row: a list opened dozens of times a day
+                      // is there the moment it opens.
                       className={cn(
-                        // ONE GRID WITH THE SIDEBAR. `px-2` inside the list's
-                        // `p-2` puts the glyph on 16 and `gap-2.5` carries the
-                        // text to 46 — the same two numbers every destination
+                        // ONE GRID WITH THE FIELD. `px-2.5` inside the list's
+                        // `p-1.5` puts the glyph on 16, under the field's lens,
+                        // and `gap-3` carries the text to 48, under the caret — the same two numbers every destination
                         // row in the panel behind this overlay is built on.
                         // `text-body` (15px) for the same reason: a result is
                         // the reader's own chat or file, and it was set two
                         // rungs under the field that found it.
-                        "menu-item group group/menu-item relative flex w-full gap-2.5 rounded-control px-2 text-left text-body transition-colors duration-fast ease-out-soft motion-safe:animate-fade-in [animation-fill-mode:backwards]",
+                        "menu-item group group/menu-item relative flex w-full gap-3 rounded-field px-2.5 text-left text-[0.9375rem] tracking-[-0.006em] transition-colors duration-fast ease-out-soft",
                         // A fixed 36px when the row is one line — a hair above
                         // the sidebar's 32, because this list is driven by the
                         // arrow keys and its rows are targets as well as text.
                         // A snippet makes it two lines, so it grows instead,
                         // and hangs its glyph and meta off the TITLE rather
                         // than off the centre of the pair.
-                        c.snippet ? "items-start py-2 coarse:py-2.5" : "h-9 items-center coarse:h-11",
+                        c.snippet ? "items-start py-2.5 coarse:py-3" : "h-10 items-center coarse:h-11",
                         // Every row at full ink. Inactive rows were drawn at
                         // 75%, so the reader's own chat titles read greyed out
                         // until the cursor reached them; the fill below is what
@@ -509,9 +514,9 @@ function PaletteShell({
                         <motion.span
                           layoutId={highlightId}
                           aria-hidden="true"
-                          transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 40, mass: 0.7 }}
-                          style={{ borderRadius: 8 }}
-                          className="absolute inset-0 bg-foreground/[0.06] shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.05)] dark:bg-white/[0.07] dark:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.05)]"
+                          transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 700, damping: 50, mass: 0.6 }}
+                          style={{ borderRadius: 10 }}
+                          className="absolute inset-0 bg-foreground/[0.055] dark:bg-white/[0.075]"
                         />
                       )}
                       <span

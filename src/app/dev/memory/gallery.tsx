@@ -312,6 +312,15 @@ function useFixtureMemory(initial: {
       );
       return true;
     },
+    confirmMemory: async (entry) => {
+      await wait(200);
+      setMemories((prev) =>
+        (prev ?? []).map((m) =>
+          m.id === entry.id ? { ...m, lastVerifiedAt: new Date().toISOString(), confidence: Math.max(m.confidence, 0.9) } : m
+        )
+      );
+      return true;
+    },
     deleteMemory: async (entry) => {
       await wait(300);
       setMemories((prev) => (prev ?? []).filter((m) => m.id !== entry.id));

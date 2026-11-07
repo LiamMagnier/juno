@@ -257,4 +257,80 @@ export const INTELLIGENT_SAMPLES: LiveUISample[] = [
       }),
     ].join("\n"),
   },
+  {
+    id: "budget-donut",
+    label: "Donut · a budget whose slices move with the sliders",
+    prompt: "I take home €2,400 a month. How should I split it?",
+    reply: [
+      "A 50/30/20 split is a good start: needs first, then wants, then savings. Drag rent and savings to see where the rest goes.",
+      "",
+      fence({
+        title: "Your monthly budget",
+        currency: "EUR",
+        data: { income: 2400 },
+        let: { other: "max(0, income - rent - savings - food)" },
+        ui: [
+          {
+            type: "row",
+            children: [
+              { type: "slider", id: "rent", label: "Rent", min: 400, max: 1600, step: 25, value: 900, format: "currency" },
+              { type: "slider", id: "savings", label: "Savings", min: 0, max: 1000, step: 25, value: 475, format: "currency" },
+              { type: "slider", id: "food", label: "Food", min: 150, max: 800, step: 25, value: 350, format: "currency" },
+            ],
+          },
+          {
+            type: "chart",
+            kind: "donut",
+            format: "currency",
+            parts: [
+              { label: "Rent", value: "rent" },
+              { label: "Food", value: "food" },
+              { label: "Savings", value: "savings" },
+              { label: "Everything else", value: "other" },
+            ],
+          },
+        ],
+      }),
+    ].join("\n"),
+  },
+  {
+    id: "timer",
+    label: "Timer · intervals that count down, round after round",
+    prompt: "Give me a quick Tabata for my lunch break.",
+    reply: [
+      "Twenty seconds flat out, ten seconds rest, eight times: four minutes. Warm up for a minute first.",
+      "",
+      fence({
+        title: "Lunch-break Tabata",
+        ui: [{ type: "timer", intervals: [{ label: "Work", seconds: 20 }, { label: "Rest", seconds: 10 }], rounds: 8 }],
+      }),
+    ].join("\n"),
+  },
+  {
+    id: "schedule",
+    label: "Schedule · a training week you tick off",
+    prompt: "Plan my first week of running, I'm starting from zero.",
+    reply: [
+      "Three short sessions with a rest day between each, so your legs recover. Walk-run is the point: you should be able to talk the whole time.",
+      "",
+      fence({
+        title: "Week 1: walk-run",
+        ui: [
+          {
+            type: "schedule",
+            id: "week1",
+            days: [
+              { label: "Mon", items: [{ label: "Walk-run 20 min", time: "07:00", detail: "1 min run, 2 min walk, ×7", tag: "Run" }] },
+              { label: "Tue", items: [] },
+              { label: "Wed", items: [{ label: "Walk-run 20 min", time: "07:00", detail: "1 min run, 2 min walk, ×7", tag: "Run" }, { label: "Stretch 10 min", tag: "Mobility" }] },
+              { label: "Thu", items: [] },
+              { label: "Fri", items: [{ label: "Walk-run 24 min", time: "07:00", detail: "90 s run, 2 min walk, ×7", tag: "Run" }] },
+              { label: "Sat", items: [{ label: "Easy walk 40 min", tag: "Walk" }] },
+              { label: "Sun", items: [] },
+            ],
+          },
+        ],
+      }),
+    ].join("\n"),
+  },
 ];

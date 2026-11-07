@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/session";
 import { refundMessage } from "@/lib/usage";
 import { DurableFirstSubmissionStartError } from "@/lib/chat-responses";
 import { appendVolatileTail, buildTurnContextTail } from "@/lib/chat/turn-context-tail";
+import { liveViewsSection } from "@/lib/live-ui/view-state";
 import { REQUEST_ID_HEADER } from "@/lib/request-id";
 import { DRAIN_RETRY_AFTER_SECONDS, DRAINING_RESPONSE, isDraining } from "@/lib/shutdown";
 import { resolveTurnContext } from "@/lib/chat/turn/admission";
@@ -276,6 +277,7 @@ async function handleChat(req: Request) {
       hasMemorySummary: !!memory.memoryProfile.summary,
       retrieved: context.retrievedContext,
       references: contextBlock,
+      liveViews: input.regenerate ? "" : liveViewsSection(input.liveViews),
     });
     const turnHistoryForModel = appendVolatileTail(context.modelHistory, turnTail);
     const generationId = durableGenerationId ?? input.generationId ?? crypto.randomUUID();

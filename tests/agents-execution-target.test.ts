@@ -289,12 +289,15 @@ test("the Runs on Mac list says when it is loading or failed, and keeps itself f
   assert.match(section, /hostsState\.kind === "loading"/);
   assert.match(section, /hostsState\.kind === "failed"/);
   assert.match(section, /onClick=\{retry\}/);
-  // Refetched on the shared poll, the Work sync event and tab return.
-  assert.match(section, /window\.setInterval\(tick, WORK_POLL_MS\)/);
-  assert.match(section, /window\.addEventListener\(WORK_SYNC_EVENT, tick\)/);
-  assert.match(section, /document\.addEventListener\("visibilitychange", tick\)/);
+  // Refetched on the shared poll, the Work sync event and tab return, by the
+  // hook the profile shares with Orbit's Computers panel.
+  assert.match(section, /useWorkHosts\(showMacs\)/);
+  const hook = read("src/components/agents/use-work-hosts.ts");
+  assert.match(hook, /window\.setInterval\(tick, WORK_POLL_MS\)/);
+  assert.match(hook, /window\.addEventListener\(WORK_SYNC_EVENT, tick\)/);
+  assert.match(hook, /document\.addEventListener\("visibilitychange", tick\)/);
   // A dropped poll after a good read keeps the list.
-  assert.match(section, /prev\.kind === "ok" \? prev :/);
+  assert.match(hook, /prev\.kind === "ok" \? prev :/);
   assert.match(section, /preferredHostGone\(preferredHostId, hostsState\.hosts\)/);
   assert.match(section, /runsOnHostLabel\(host\)/);
   // A move refused for want of a named Mac opens the list; a pick sends both.

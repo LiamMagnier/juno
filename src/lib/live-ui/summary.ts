@@ -104,8 +104,61 @@ function walk(list: readonly LiveComponent[], out: string[]): void {
         if (c.title) out.push(c.title);
         for (const card of c.cards) out.push(`${card.front}: ${card.back}`);
         break;
+      case "timer": {
+        if (c.title) out.push(c.title);
+        const mmss = (n: number) => (n >= 60 ? `${Math.floor(n / 60)} min${n % 60 ? ` ${n % 60} s` : ""}` : `${n} s`);
+        out.push(`${c.intervals.map((iv) => `${iv.label} ${mmss(iv.seconds)}`).join(", ")}${c.rounds > 1 ? ` × ${c.rounds} rounds` : ""}`);
+        break;
+      }
+      case "schedule":
+        if (c.title) out.push(c.title);
+        for (const d of c.days) {
+          out.push(d.items.length ? `${d.label}:` : `${d.label}: rest`);
+          for (const it of d.items) out.push(`   ☐ ${it.time ? `${it.time} ` : ""}${it.label}${it.detail ? `: ${it.detail}` : ""}`);
+        }
+        break;
       default:
         break;
     }
   }
+}
+
+/**
+ * A reply with each ```live-ui fence replaced by its readable lines, for
+ * Copy (message-item.tsx). ChatGPT copies an interactive answer as text; this
+ * used to paste the view's JSON. The title becomes a bold line, the summary
+ * follows as a list; a view with nothing readable (a calculator) leaves its
+ * title only. Every other fence, and everything inside one, is untouched.
+ */
+export function readableLiveUIText(markdown: string, parse: (source: string) => LiveSpec | null): string {
+  const lines = markdown.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const open = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)\s*$/.exec(lines[i]);
+    if (!open) {
+      out.push(lines[i]);
+      continue;
+    }
+    const fence = open[1];
+    const lang = open[2].trim().toLowerCase();
+    let end = i + 1;
+    while (end < lines.length && !new RegExp(`^ {0,3}${fence[0] === "`" ? "`" : "~"}{${fence.length},}\\s*$`).test(lines[end])) end++;
+    const body = lines.slice(i + 1, end);
+    if (!["live-ui", "live", "juno-live"].includes(lang)) {
+      out.push(...lines.slice(i, Math.min(end + 1, lines.length)));
+      i = end;
+      continue;
+    }
+    const spec = parse(body.join("\n"));
+    if (spec) {
+      if (spec.title) out.push(`**${spec.title}**`);
+      const summary = liveUISummaryLines(spec);
+      if (summary.length) {
+        if (spec.title) out.push("");
+        out.push(...summary.map((l) => (/^\s/.test(l) ? `  ${l.trim()}` : `- ${l}`)));
+      }
+    }
+    i = end;
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n");
 }

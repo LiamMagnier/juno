@@ -113,6 +113,8 @@ const ATLAS = agent({
     conversationId: "conv-atlas",
   },
   computer: null,
+  executionTarget: "mac",
+  preferredHostId: "host-studio",
 });
 const LEDGER = agent({
   id: "agent-ledger",
@@ -124,6 +126,8 @@ const LEDGER = agent({
   stateSentence: "Next: Weekly spend review, Mon at 09:00",
   nextRoutine: { scheduleId: "r-ledger", name: "Weekly spend review", nextRunAt: nextRun() },
   computer: null,
+  executionTarget: "mac",
+  preferredHostId: null,
 });
 const ROVE = agent({
   id: "agent-rove",
@@ -268,6 +272,42 @@ function approval(): ClientActionApproval {
   };
 }
 
+/** The account's Macs for Orbit's Computers panel: one working, one asleep. `&macs=0` shows none. */
+function host(overrides: Record<string, unknown>) {
+  return {
+    id: "host-studio",
+    deviceId: "dev-studio",
+    displayName: "Mac Studio",
+    platform: "macos",
+    appVersion: "1.13.0",
+    protocolVersion: 3,
+    enabled: true,
+    allowsFileWork: true,
+    allowsBrowser: true,
+    allowsComputerUse: true,
+    allowsShell: false,
+    allowsBackground: true,
+    capabilities: [],
+    capabilitiesVersion: 1,
+    allowedApps: [],
+    blockedApps: [],
+    allowedDomains: [],
+    approvalPolicy: "balanced",
+    state: "online",
+    lastSeenAt: NOW,
+    activeRunCount: 1,
+    queuedRunCount: 0,
+    revokedAt: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+const HOSTS = [
+  host({}),
+  host({ id: "host-air", deviceId: "dev-air", displayName: "Liam’s MacBook Air", state: "offline", activeRunCount: 0, allowsComputerUse: false }),
+];
+
 function useFetchShim() {
   React.useLayoutEffect(() => {
     const original = window.fetch;
@@ -281,6 +321,7 @@ function useFetchShim() {
       if (detail) return json(DETAILS[detail[1]] ?? DETAILS["agent-mira"]);
       if (path.endsWith("/reflect")) return json({ outcome: { kind: "skipped", reason: "not_due" } });
       if (path.startsWith("/api/work/sessions")) return json({ sessions: [] });
+      if (path === "/api/work/hosts") return json({ hosts: new URLSearchParams(window.location.search).get("macs") === "0" ? [] : HOSTS });
       if (path.startsWith("/api/agents/")) return json({ ok: true });
       return original(input, init);
     };

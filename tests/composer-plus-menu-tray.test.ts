@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 /*
- * Project, Apps and Skills are the + menu's last group on every surface, and
- * the rows say what they bring in two or three words (the contract,
+ * Project, Apps and Skills are the + menu's last group in a chat, and the
+ * rows say what they bring in two or three words (the contract,
  * shell-contract.test.ts, holds the labels). On the home the tray under the
- * composer carries the same three as a shortcut (owner, 7 Nov 2026).
+ * composer carries the three instead, and the + menu leaves them out (owner,
+ * 7 Nov 2026: "remove apps, folder ... from the + menu since it's already
+ * under the composer").
  */
 
 const COMPOSER = readFileSync(new URL("../src/components/chat/composer.tsx", import.meta.url), "utf8");
@@ -23,8 +25,8 @@ test("the tray is back on the home only: landing frame, a new chat, not incognit
     COMPOSER,
     /const showTray = frame === "landing" && !conversationId && !privateMode && !voiceActive && !steerMode;/,
   );
-  // The + menu stays complete: the tray is a shortcut, not the only door.
-  assert.doesNotMatch(COMPOSER, /trayHasProject|trayHasAppsAndSkills/);
+  // Where the tray shows, the + menu drops the group it would repeat; in a chat it keeps it.
+  assert.match(plusSections(), /\/\/ Where this chat sits and what it can reach\.[\s\S]*?!showTray \? \[\n/);
   // In a thread the generation row keeps its own shelf.
   assert.match(COMPOSER, /\{!showTray && mediaParams\.caps && !voiceActive && !steerMode && \(/);
 });

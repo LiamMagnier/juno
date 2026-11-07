@@ -202,3 +202,70 @@
 @media (forced-colors: active) {
   .pf-cell { forced-color-adjust: none; border: 1px solid CanvasText; }
 }
+
+/* ── The profile as a card and a bento (profile-view.tsx) ─────────────────
+   One surface recipe for every block on the page: a faint ink fill, a
+   hairline, 20px corners on the hero and 16 on the tiles and panels, so the
+   page reads as a set of objects rather than a column of sections. */
+.pf {
+  --pf-surface: hsl(var(--foreground) / 0.025);
+  --pf-edge: hsl(var(--foreground) / 0.07);
+}
+.dark .pf {
+  --pf-surface: hsl(var(--foreground) / 0.035);
+  --pf-edge: hsl(var(--foreground) / 0.08);
+}
+.pf-hero,
+.pf-tile,
+.pf-panel {
+  background: var(--pf-surface);
+  box-shadow: inset 0 0 0 1px var(--pf-edge);
+}
+.pf-hero .pf-name { font-size: clamp(30px, 3.4vw, 40px); }
+.pf-avatar { display: inline-flex; }
+
+.pf-tiles {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.pf-tiles > :first-child { grid-column: 1 / -1; }
+@container pfpage (min-width: 44rem) {
+  .pf-tiles { grid-template-columns: 1.6fr repeat(4, minmax(0, 1fr)); }
+  .pf-tiles > :first-child { grid-column: auto; }
+}
+.pf-tile {
+  border-radius: 16px;
+  padding: 16px 18px 18px;
+  min-height: 108px;
+  transition: box-shadow 160ms var(--pf-ease), transform 160ms var(--pf-ease);
+}
+.pf-tile .pf-figure { font-size: 30px; text-align: left; }
+.pf-tiles > :first-child .pf-figure { font-size: 40px; }
+.pf-tile .pf-figure-sm { font-size: 22px; }
+@media (hover: hover) and (pointer: fine) {
+  .pf-tile:hover { box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.14); }
+}
+
+.pf-panel {
+  border-radius: 16px;
+  padding: 20px 20px 18px;
+}
+@container pfpage (min-width: 44rem) {
+  .pf-panel { padding: 24px 24px 20px; }
+}
+.pf-panel .pf-h2 { font-size: 20px; }
+
+.pf-streak-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--pf-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pf-ink) 22%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pf-streak-dot { animation: pf-pulse 2.4s ease-in-out infinite; }
+}
+@keyframes pf-pulse {
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--pf-ink) 0%, transparent); }
+}
