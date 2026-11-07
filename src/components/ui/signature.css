@@ -621,3 +621,327 @@ section[data-sidebar-section]:not(:first-child) {
     height: 44px;
   }
 }
+
+/* ── 11. Thinking effort and speed (reasoning-slider.tsx, EffortPanel) ───────
+   The fill is the tint, pale at the low rungs and full at Max (--effort-t,
+   set per rung), lighter toward its start. At Max a soft light
+   travels along the fill and the knob carries a faint tinted halo; with Fast
+   or Ultra fast on, short speed lines run past the bolt (twice as often for
+   Ultra). Seen only in the open model sheet, never on the row. Every loop
+   stops under reduced motion and leaves the colour. */
+.effort-fill {
+  --effort-a: calc(0.5 + 0.5 * var(--effort-t, 1));
+  background: linear-gradient(90deg, hsl(var(--tint) / calc(var(--effort-a) * 0.45)) 0%, hsl(var(--tint) / var(--effort-a)) 100%);
+  overflow: hidden;
+  transition: transform var(--dur-base) var(--ease-out-soft), opacity var(--dur-base) var(--ease-out-soft), background 200ms var(--ease-out-soft);
+}
+.effort-fill[data-max]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(100deg, transparent 0%, transparent 35%, rgb(255 255 255 / 0.42) 50%, transparent 65%, transparent 100%);
+  background-size: 250% 100%;
+  background-repeat: no-repeat;
+  mix-blend-mode: soft-light;
+  animation: effort-heat 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.effort-knob[data-max] {
+  animation: effort-halo 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes effort-heat {
+  from { background-position: 130% 0; }
+  to { background-position: -30% 0; }
+}
+@keyframes effort-halo {
+  0%, 100% { box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), 0 2px 8px rgb(0 0 0 / 0.12), 0 0 0 0 hsl(var(--tint) / 0); }
+  50% { box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), 0 2px 8px rgb(0 0 0 / 0.12), 0 0 0 5px hsl(var(--tint) / 0.18); }
+}
+
+.speed-on {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.speed-on::before,
+.speed-on::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  height: 1.5px;
+  width: 9px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0;
+  animation: speed-line 1.4s cubic-bezier(0.23, 1, 0.32, 1) infinite;
+}
+.speed-on::before { top: 11px; }
+.speed-on::after { top: 19px; animation-delay: 0.18s; }
+.speed-on[data-tier="ultra"]::before,
+.speed-on[data-tier="ultra"]::after {
+  animation-duration: 0.7s;
+}
+.speed-on svg {
+  animation: speed-bolt 1.4s cubic-bezier(0.23, 1, 0.32, 1) infinite;
+}
+.speed-on[data-tier="ultra"] svg {
+  animation-duration: 0.7s;
+}
+@keyframes speed-line {
+  0% { transform: translateX(26px); opacity: 0; }
+  20% { opacity: 0.55; }
+  60%, 100% { transform: translateX(-10px); opacity: 0; }
+}
+@keyframes speed-bolt {
+  0%, 100% { translate: 0 0; }
+  12% { translate: 1px 0; }
+  30% { translate: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .effort-fill[data-max]::after,
+  .effort-knob[data-max],
+  .speed-on::before,
+  .speed-on::after,
+  .speed-on svg {
+    animation: none;
+  }
+  .speed-on::before,
+  .speed-on::after {
+    display: none;
+  }
+}
+
+/* ── 12. The home tray, as a capsule (composer-tray.tsx, --dock) ─────────────
+   No longer a shelf tucked under the composer: a free row 12px below it, the
+   composer's own width less its 10px inset so the capsule's left edge lines
+   up with the + glyph's column. Project, Apps and Skills share one soft
+   capsule; the open or hovered one rises as a white segment (the system
+   segmented-control gesture). The Mac app is a plain link at the end, with an
+   outbound arrow because it leaves the page. */
+.composer-tray.composer-tray--dock {
+  z-index: auto;
+  margin: 12px 10px 0;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+.composer-tray--dock .composer-tray__row {
+  gap: 8px;
+  min-height: 34px;
+}
+.composer-tray__capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 3px;
+  border-radius: 999px;
+  background: linear-gradient(hsl(var(--foreground) / 0.04), hsl(var(--foreground) / 0.04)), hsl(var(--background));
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.045);
+}
+.dark .composer-tray__capsule {
+  background: linear-gradient(hsl(0 0% 100% / 0.05), hsl(0 0% 100% / 0.05)), hsl(var(--background));
+  box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 0.06);
+}
+.composer-tray--dock .composer-tray__row .composer-tray__item {
+  height: 28px;
+  gap: 6px;
+  padding: 0 10px 0 9px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 450;
+  letter-spacing: -0.003em;
+  color: hsl(var(--foreground) / 0.66);
+  transition:
+    background-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.composer-tray--dock .composer-tray__item > svg {
+  width: 15px;
+  height: 15px;
+  color: currentColor;
+  opacity: 0.85;
+}
+.composer-tray--dock .composer-tray__chevron.composer-tray__chevron {
+  width: 12px;
+  height: 12px;
+  margin-left: -1px;
+  opacity: 0.5;
+}
+@media (hover: hover) and (pointer: fine) {
+  .composer-tray__capsule .composer-tray__item:hover {
+    background: hsl(var(--background));
+    box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.06), 0 1px 2px hsl(var(--foreground) / 0.06);
+    color: hsl(var(--foreground));
+  }
+}
+.composer-tray__capsule .composer-tray__item[data-state="open"] {
+  background: hsl(var(--background));
+  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.08), 0 1px 3px hsl(var(--foreground) / 0.08);
+  color: hsl(var(--foreground));
+}
+.dark .composer-tray__capsule .composer-tray__item:is(:hover, [data-state="open"]) {
+  background: hsl(0 0% 100% / 0.1);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06);
+}
+/* The Mac app link wears the same shell as the capsule on its left, so the
+   row reads as two matching pills: 34px tall, the same tint and hairline.
+   Hover lifts it to the raised white segment the capsule items use. */
+.composer-tray--dock .composer-tray__row .composer-tray__item--end {
+  height: 34px;
+  padding: 0 12px 0 11px;
+  background: linear-gradient(hsl(var(--foreground) / 0.04), hsl(var(--foreground) / 0.04)), hsl(var(--background));
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.045);
+  color: hsl(var(--foreground) / 0.66);
+}
+.dark .composer-tray--dock .composer-tray__row .composer-tray__item--end {
+  background: linear-gradient(hsl(0 0% 100% / 0.05), hsl(0 0% 100% / 0.05)), hsl(var(--background));
+  box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 0.06);
+}
+@media (hover: hover) and (pointer: fine) {
+  .composer-tray--dock .composer-tray__row .composer-tray__item--end:hover {
+    background: hsl(var(--background));
+    box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.07), 0 1px 3px hsl(var(--foreground) / 0.07);
+    color: hsl(var(--foreground));
+  }
+  .dark .composer-tray--dock .composer-tray__row .composer-tray__item--end:hover {
+    background: hsl(0 0% 100% / 0.1);
+    box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 0.08);
+  }
+}
+.composer-tray--dock .composer-tray__row .composer-tray__item:active {
+  transform: scale(0.97);
+}
+.composer-tray__out {
+  margin-left: -2px;
+  opacity: 0.6;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), opacity 160ms ease;
+}
+.composer-tray__item--end:hover .composer-tray__out {
+  opacity: 0.9;
+  transform: translate(1px, -1px);
+}
+.composer-tray--dock .composer-tray__mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1.5px hsl(var(--background)), 0 0 0 2.5px hsl(var(--foreground) / 0.06);
+}
+@media (pointer: coarse) {
+  .composer-tray--dock .composer-tray__row .composer-tray__item {
+    height: 40px;
+  }
+  .composer-tray--dock .composer-tray__row .composer-tray__item--end {
+    height: 46px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-tray__item--end:hover .composer-tray__out,
+  .composer-tray--dock .composer-tray__row .composer-tray__item:active {
+    transform: none;
+  }
+}
+
+/* ── 13. The Code composer on Chat's geometry (code/v2/composer.tsx) ─────────
+   Owner, 7 Nov 2026: rework Code's composer so the two modes read as one
+   product. Same 28px corner, hairline and resting shadow as Chat's surface;
+   the text on a 16/20 inset; the controls row 10px in from the edge, its
+   controls round 32px pills; an 8px gap, then a 36px disc concentric with
+   the corner (28 − 10 = 18). */
+.cv2-composer.cv2-composer {
+  border-radius: 28px;
+  padding: 16px 10px 10px 20px;
+  border-color: hsl(30 8% 14% / 0.1);
+  box-shadow:
+    0 1px 1px hsl(30 10% 10% / 0.03),
+    0 2px 6px -2px hsl(30 10% 10% / 0.05),
+    0 10px 24px -14px hsl(30 10% 10% / 0.1);
+  transition:
+    border-color 160ms var(--ease-out-soft),
+    box-shadow 200ms var(--alv-ease-out);
+}
+.cv2-composer.cv2-composer:focus-within {
+  border-color: hsl(30 8% 14% / 0.17);
+  box-shadow:
+    0 1px 1px hsl(30 10% 10% / 0.04),
+    0 3px 8px -3px hsl(30 10% 10% / 0.07),
+    0 14px 32px -16px hsl(30 10% 10% / 0.14);
+}
+.dark .cv2-composer.cv2-composer {
+  border-color: hsl(40 10% 96% / 0.1);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.05),
+    0 1px 2px hsl(0 0% 0% / 0.35),
+    0 12px 28px -14px hsl(0 0% 0% / 0.6);
+}
+.cv2-composer.needs.needs {
+  border-color: hsl(var(--signal));
+}
+.cv2-composer .cv2-draft {
+  font-size: 16px;
+  line-height: 24px;
+  padding-right: 10px;
+}
+.cv2-composer .cv2-cfoot {
+  gap: 2px;
+  margin-top: 10px;
+  margin-left: -10px;
+}
+.cv2-composer .cv2-ctl {
+  height: 32px;
+  padding: 0 8px 0 9px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  color: hsl(var(--foreground) / 0.62);
+  transition:
+    background-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.cv2-composer .cv2-ctl:active {
+  transform: scale(0.97);
+}
+.cv2-composer .cv2-ctl.icon {
+  width: 32px;
+  padding: 0;
+}
+.cv2-composer .cv2-ctl:hover,
+.cv2-composer .cv2-ctl[aria-expanded="true"] {
+  background: hsl(var(--foreground) / 0.055);
+  color: hsl(var(--foreground));
+}
+.cv2-composer .cv2-ctl .v {
+  font-weight: 450;
+}
+.cv2-composer .cv2-send {
+  width: 36px;
+  height: 36px;
+  margin-left: 6px;
+}
+.cv2-composer .cv2-send:not([data-mode="voice"]):not(:disabled) {
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.16),
+    0 1px 2px hsl(30 10% 10% / 0.18),
+    0 4px 10px -4px hsl(30 10% 10% / 0.3);
+}
+.cv2-composer .cv2-send[data-mode="voice"] {
+  background: hsl(var(--foreground) / 0.06);
+  color: hsl(var(--foreground) / 0.8);
+}
+.cv2-composer .cv2-send:active {
+  transform: scale(0.95);
+}
+@media (pointer: coarse) {
+  .cv2-composer .cv2-ctl { height: 40px; }
+  .cv2-composer .cv2-ctl.icon { width: 40px; }
+  .cv2-composer .cv2-send { width: 40px; height: 40px; }
+}
+@media (max-width: 640px) {
+  .cv2-composer.cv2-composer { padding: 14px 8px 8px 16px; }
+  .cv2-composer .cv2-cfoot { margin-left: -8px; }
+}

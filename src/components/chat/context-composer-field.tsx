@@ -26,6 +26,7 @@ import {
   selectNode,
   setEditorSelection,
   tokenElements,
+  isDamagedToken,
   tokenOf,
   tokenSpan,
 } from "./context-editor-dom";
@@ -259,6 +260,13 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
   const publish = React.useCallback(() => {
     const root = rootRef.current;
     if (!root) return;
+    // A token is atomic. WebKit's delete can empty a contenteditable=false
+    // span instead of removing it, which left a bare logo in the field that no
+    // Backspace or Remove could clear (owner, 7 Nov 2026). A token that lost
+    // its words goes whole.
+    for (const node of tokenElements(root)) {
+      if (isDamagedToken(node)) node.remove();
+    }
     let result = readEditor(root);
     // An emptied contenteditable keeps a stray <br> (read as "\n"); clear it so
     // `data-empty`, and with it the placeholder, returns (context-editor-empty.ts).
@@ -589,7 +597,10 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
         const span = tokenSpan(root, node);
         root.focus({ preventScroll: true });
         selectNode(node);
-        if (!editCommand(document, "delete")) node.remove();
+        // The command keeps the edit undoable; if the browser emptied the
+        // token rather than taking it (WebKit), take it here.
+        editCommand(document, "delete");
+        if (node.isConnected) node.remove();
         // Two spaces meeting where the token was become one.
         const text = readEditor(root).text;
         if (span.start > 0 && text.slice(span.start - 1, span.start + 1) === "  ") {

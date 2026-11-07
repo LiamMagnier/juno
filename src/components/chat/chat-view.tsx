@@ -26,7 +26,7 @@ import { Composer } from "@/components/chat/composer";
 import { createComposerDraftSession } from "@/lib/chat/composer-draft-session";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
-import { HomeStarters } from "@/components/chat/home-starters";
+import { HomeArrivalFocus } from "@/components/chat/home-starters";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -3094,15 +3094,14 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     {composer}
                   </div>
                   {/* The third track balances the first, so the composer sits
-                      at the panel's centre. What the suggestions offered (a
-                      project, an app) is the composer's tray now; this track
-                      holds the starter chips (G34, home-starters.tsx). */}
+                      at the panel's centre. It stays empty: the starter chips
+                      (Code, Write, Plan, Learn) are gone from the home (owner,
+                      7 Nov 2026); the composer's tray carries Project, Apps
+                      and Skills. The arrival focus the chips carried (New
+                      chat puts the caret in the composer) stays. */}
                   <div className="chat-home__suggest">
                     {!agent ? (
-                      <HomeStarters
-                        composerRef={emptyComposerRef}
-                        // A voice call owns the composer: a starter would seed
-                        // text, or swap in an image model, under a live call.
+                      <HomeArrivalFocus
                         hidden={Boolean(privateMode || chat.pendingClarification || voiceOpen || handoff === "leaving")}
                       />
                     ) : null}

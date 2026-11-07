@@ -142,7 +142,10 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
           <div className={cn("flex min-w-0 shrink-0 items-center gap-0.5", dim)}>
             {leading}
           </div>
-          <div className="ml-auto flex min-w-0 items-center gap-0.5">
+          {/* 8px between the last control and the disc (owner, 7 Nov 2026:
+              at 2px Dictate crowded Send): the mic's glyph then sits as far
+              from the disc as the model chip's chevron sits from the mic. */}
+          <div className="ml-auto flex min-w-0 items-center gap-2 coarse:gap-1">
             {/* No `overflow-x-auto` here. It used to scroll with no scrollbar
                 and no fade, so on a narrow window the chips simply left the
                 screen with nothing saying they existed. The row now shrinks
@@ -693,8 +696,8 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
           // (globals.css), which follows the round corner. The ring and
           // card-coloured ring offset it used to add painted a halo on top of
           // it (ICONS_AND_MOTION.md §2.2, rule 3).
-          // A full circle (2026-10 pass): with the shell at 26px, a 36px disc
-          // seated 10px in is concentric (26 − 10 = 16 ≈ its 18 radius), so
+          // A full circle: with the shell at 28px, a 36px disc
+          // seated 10px in is concentric (28 − 10 = 18, its own radius), so
           // the send disc reads as one round object, as in ChatGPT and Claude.
           "composer-primary-action pressable relative grid size-9 shrink-0 place-items-center rounded-full",
           face === "voice"

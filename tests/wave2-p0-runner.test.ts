@@ -75,7 +75,7 @@ function runRunner(fixture: Fixture, env: Record<string, string>, args: string[]
   });
 }
 
-/** True once `pid` is gone (a killed process can take a moment to be reaped). */
+/** A zombie has stopped even when a container's PID 1 has not reaped it yet. */
 async function waitDead(pid: number, timeoutMs = 3_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -84,6 +84,10 @@ async function waitDead(pid: number, timeoutMs = 3_000): Promise<boolean> {
     } catch {
       return true;
     }
+    // kill(pid, 0) also succeeds for zombies. `ps` is available on the same
+    // BSD and Linux hosts supported by the runner; only Z is considered dead.
+    const state = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" });
+    if (state.status === 0 && state.stdout.trim().startsWith("Z")) return true;
     if (Date.now() > deadline) return false;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }

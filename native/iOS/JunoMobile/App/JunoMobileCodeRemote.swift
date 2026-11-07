@@ -269,12 +269,15 @@ struct JunoMobileCodeRemoteThreadView: View {
   /// closes — the relay rotates connections — poll and reconnect with a short
   /// pause so a finished session does not spin.
   private func follow() async {
+    guard model.openSessionID == session.sessionID else { return }
     await model.pollEvents(deviceID: session.deviceID, sessionID: session.sessionID)
-    while !Task.isCancelled {
-      await model.watchEvents(deviceID: session.deviceID, sessionID: session.sessionID)
+    while !Task.isCancelled, model.openSessionID == session.sessionID {
+      let rotated = await model.watchEvents(deviceID: session.deviceID, sessionID: session.sessionID)
       guard !Task.isCancelled else { return }
-      try? await Task.sleep(for: .seconds(model.thread.isRunning ? 2 : 8))
-      guard !Task.isCancelled else { return }
+      // A normal relay rotation needs a quick resume; failures retain a longer
+      // delay so an unavailable relay is not hammered.
+      try? await Task.sleep(for: rotated ? .milliseconds(250) : .seconds(model.thread.isRunning ? 2 : 8))
+      guard !Task.isCancelled, model.openSessionID == session.sessionID else { return }
       await model.pollEvents(deviceID: session.deviceID, sessionID: session.sessionID)
     }
   }
@@ -566,7 +569,12 @@ struct JunoMobileCodeRemoteThreadView: View {
     sendHaptic.fire()
     followUp = ""
     composerFocused = false
-    Task { await model.send(deviceID: session.deviceID, sessionID: session.sessionID, text: text) }
+    Task {
+      let sent = await model.send(deviceID: session.deviceID, sessionID: session.sessionID, text: text)
+      guard !sent, model.openSessionID == session.sessionID else { return }
+      // Preserve both the failed message and anything typed while it was in flight.
+      followUp = followUp.isEmpty ? text : text + "\n" + followUp
+    }
   }
 }
 

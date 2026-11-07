@@ -10,7 +10,8 @@
  *              cost is the routed model's price for the mock's token counts.
  *   live     — a real provider call through `streamChat` (src/lib/llm.ts),
  *              only when the routed model's provider key exists and
- *              EVAL_LIVE=1. Latency, tokens and cost are measured.
+ *              EVAL_LIVE=1. Latency is measured; cost is an estimate based on
+ *              reported tokens and excludes charges outside those token counts.
  *   not_run  — the category needs infrastructure a single model call does not
  *              exercise (database persistence, a browser, a VM, the research
  *              engine). Recorded with the reason and the harness that does
@@ -55,7 +56,7 @@ export interface EvalOutput {
 export interface GradeResult {
   success: boolean;
   notes: string;
-  /** 0..1 for tasks that should cite; null when citations do not apply. */
+  /** Source URL/title shape only; does not assess factual support. */
   citationQuality: number | null;
 }
 

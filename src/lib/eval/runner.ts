@@ -26,7 +26,7 @@ export interface EvalRecord {
   latencyMs: number | null;
   latencySource: "measured" | "router_estimate" | null;
   costMicroUsd: number | null;
-  costSource: "measured_usage" | "priced_mock_tokens" | null;
+  costSource: "estimated_from_reported_tokens" | "priced_mock_tokens" | null;
   toolCount: number | null;
   model: string | null;
   provider: string | null;
@@ -34,12 +34,14 @@ export interface EvalRecord {
   taskClass: string | null;
   errors: string[];
   citationQuality: number | null;
+  /** This checks source metadata only, not whether a source supports the answer. */
+  citationMetric: "source_metadata_shape" | null;
   notes: string;
 }
 
 export interface LiveCallResult extends EvalOutput {
-  inputTokens: number;
-  outputTokens: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
   latencyMs: number;
 }
 
@@ -79,6 +81,7 @@ function empty(task: EvalTaskSpec, mode: EvalRecord["mode"], notes: string): Eva
     taskClass: null,
     errors: [],
     citationQuality: null,
+    citationMetric: null,
     notes,
   };
 }
@@ -147,6 +150,7 @@ export async function runEvalSuite(options: RunEvalOptions): Promise<EvalRecord[
         costSource: "priced_mock_tokens",
         toolCount: task.mock.toolCalls ?? 0,
         citationQuality: graded.citationQuality,
+        citationMetric: graded.citationQuality == null ? null : "source_metadata_shape",
         notes: `mock response · ${graded.notes}`,
       });
       continue;
@@ -165,16 +169,20 @@ export async function runEvalSuite(options: RunEvalOptions): Promise<EvalRecord[
         probeTools: !!task.needsProbeTools,
       });
       const graded = task.grade(out);
+      const hasUsage = out.inputTokens != null && out.outputTokens != null
+        && Number.isFinite(out.inputTokens) && Number.isFinite(out.outputTokens)
+        && out.inputTokens >= 0 && out.outputTokens >= 0;
       push({
         ...base,
         success: graded.success,
         latencyMs: out.latencyMs,
         latencySource: "measured",
-        costMicroUsd: Math.round(estimateCostUsd(decision.model, { input: out.inputTokens, output: out.outputTokens }) * 1_000_000),
-        costSource: "measured_usage",
+        costMicroUsd: hasUsage ? Math.round(estimateCostUsd(decision.model, { input: out.inputTokens!, output: out.outputTokens! }) * 1_000_000) : null,
+        costSource: hasUsage ? "estimated_from_reported_tokens" : null,
         toolCount: out.toolCalls ?? 0,
         citationQuality: graded.citationQuality,
-        notes: `live · ${graded.notes}`,
+        citationMetric: graded.citationQuality == null ? null : "source_metadata_shape",
+        notes: `live · ${graded.notes}${hasUsage ? "" : " · usage unavailable"}`,
       });
     } catch (err) {
       push({
@@ -360,6 +368,7 @@ export function summarize(records: readonly EvalRecord[]) {
     passed,
     notRun: records.length - ran.length,
     costMicroUsd: cost,
+    costUnavailable: ran.filter((r) => r.costMicroUsd == null).length,
     modes: [...new Set(records.map((r) => r.mode))],
   };
 }
