@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutGroup, motion } from "framer-motion";
@@ -39,7 +38,6 @@ export function AdminBar({ reviewCount = 0, reportCount = 0 }: { reviewCount?: n
   const pathname = usePathname() ?? "/admin";
   const current = sectionFor(pathname);
   const reduce = useReducedMotion() ?? false;
-  const id = React.useId();
 
   return (
     <div className="admin-bar shrink-0">
@@ -49,7 +47,7 @@ export function AdminBar({ reviewCount = 0, reportCount = 0 }: { reviewCount?: n
           Admin
         </span>
         <nav aria-label="Admin sections" className="no-scrollbar -mx-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto px-1 py-1">
-          <LayoutGroup id={id}>
+          <LayoutGroup id="admin-bar">
             {TABS.map((tab) => {
               const selected = tab.id === current;
               const count = tab.id === "moderation" ? reviewCount : tab.id === "links" ? reportCount : 0;

@@ -595,6 +595,7 @@ const SAME_CHUNK = (first: string) =>
 
 const ITEMS_REVIEWED: Record<string, string> = {
   "src/app/(app)/layout.tsx#AppShell": SAME_CHUNK("<AppProvider>"),
+  "src/app/(app)/admin/layout.tsx#AdminBar": `${NO_HTML_IDS} (its links carry no generated ids; the sliding pill is matched by a fixed layoutId)`,
   "src/app/(app)/layout.tsx#SettingsModalLazy": `${NO_HTML_IDS} (it renders null until opened)`,
   "src/app/(auth)/forgot-password/page.tsx#ForgotPasswordForm": `${NO_HTML_IDS} (fixed ids; and a wrapper would drop its space-y-6 gap)`,
   "src/app/(auth)/reset-password/page.tsx#ResetPasswordForm": `${NO_HTML_IDS} (fixed ids; and a wrapper would drop its space-y-6 gap)`,

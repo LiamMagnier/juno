@@ -37,7 +37,10 @@ test("the complete Admin page tree has one fail-closed server layout", () => {
   assert.match(layout, /await requireOwnerPageAccess\(\)/);
   assert.match(layout, /if \(mfaRequired\) return <AdminMfaRequired \/>;/);
   assert.match(landing, /await requireOwnerPage\(\)/);
-  assert.match(landing, /redirect\("\/admin\/users"\)/);
+  // The landing is the Overview: its cross-account numbers load only after
+  // its own owner guard, and the layout's queue counts only after the gate.
+  assert.ok(landing.indexOf("await requireOwnerPage()") < landing.indexOf("await adminOverview()"));
+  assert.ok(layout.indexOf("if (mfaRequired) return") < layout.indexOf("await adminQueueCounts()"));
 });
 
 test("every Admin API route checks the canonical owner policy", () => {
