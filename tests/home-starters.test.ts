@@ -109,6 +109,8 @@ test("the home draws no starters, over a field that stays calm, typing included"
   const view = read("src/components/chat/chat-view.tsx");
   // Owner, 7 Nov 2026: no starter chips under the home composer.
   assert.doesNotMatch(view, /<HomeStarters/);
+  // The arrival focus the chips carried outlives them: New chat still puts the caret in the composer.
+  assert.match(view, /<HomeArrivalFocus\s+hidden=\{Boolean\(privateMode \|\| chat\.pendingClarification \|\| voiceOpen \|\| handoff === "leaving"\)\}/);
   // The home's dot field is gone (Graphite §1); nothing draws behind the composer.
   assert.doesNotMatch(view, /<HomeField/);
   const field = read("src/components/chat/empty-state.tsx");
