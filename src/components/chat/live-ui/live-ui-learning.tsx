@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Check, Eye, Info, Play, Plus, RotateCcw, Star, T
 import type { LiveCalloutTone, LiveComponent } from "@/lib/live-ui/spec";
 import { CodeRunOutput, useCodeRun } from "@/components/chat/code-run";
 import { cn } from "@/lib/utils";
+import { useLiveReport } from "@/components/chat/live-ui/report";
 
 /*
  * The Live UI components that teach rather than calculate: a guided
@@ -296,6 +297,16 @@ export function LiveQuiz({ quiz, interp }: { quiz: Quiz; interp: Interp }) {
   const answered = chosen !== null && chosen !== undefined;
   const right = answered && chosen === q.answer;
   const score = answers.filter((a, i) => a === quiz.questions[i].answer).length;
+  const attempted = answers.filter((a) => a !== null && a !== undefined).length;
+  const missed = quiz.questions
+    .map((qq, i) => (answers[i] !== null && answers[i] !== undefined && answers[i] !== qq.answer ? `"${qq.question.slice(0, 80)}"` : null))
+    .filter((m): m is string => m !== null);
+  useLiveReport(
+    `quiz:${quiz.key}`,
+    attempted === 0
+      ? null
+      : `${quiz.title ?? "Quiz"}: ${done ? "finished" : `${attempted} of ${total} answered`}, ${score} right${missed.length ? `; missed ${missed.slice(0, 4).join(", ")}` : ""}`,
+  );
 
   const reset = () => {
     setAnswers(quiz.questions.map(() => null));

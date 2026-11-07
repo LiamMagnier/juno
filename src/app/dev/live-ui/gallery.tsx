@@ -4,9 +4,11 @@ import * as React from "react";
 import { Markdown } from "@/components/chat/markdown";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { splitMessageContent } from "@/lib/message-content";
+import { collectLiveViews, liveViewsSection } from "@/lib/live-ui/view-state";
 import { INTELLIGENT_SAMPLES, LEGACY_REPLY, LIVE_UI_SAMPLES, MERMAID_REPLY, PRACTICE_REPLY, type LiveUISample } from "./samples";
 
 function Reply({ sample }: { sample: LiveUISample }) {
+  const [carried, setCarried] = React.useState<string | null>(null);
   return (
     <section className="flex flex-col gap-4" id={sample.id} data-sample={sample.id}>
       <h2 className="font-mono text-caption font-semibold text-muted-foreground">{sample.label}</h2>
@@ -14,6 +16,19 @@ function Reply({ sample }: { sample: LiveUISample }) {
       <LiveUIHostProvider value={{ messageId: `dev-${sample.id}` }}>
         <Markdown content={sample.reply} />
       </LiveUIHostProvider>
+      <button
+        type="button"
+        data-carried-button=""
+        className="w-fit font-mono text-caption text-muted-foreground underline-offset-4 hover:underline"
+        onClick={() => setCarried(liveViewsSection(collectLiveViews([`dev-${sample.id}`])) || "(nothing: the views are as the reply left them)")}
+      >
+        What would the next message carry?
+      </button>
+      {carried ? (
+        <pre data-carried="" className="whitespace-pre-wrap rounded-card bg-muted/40 p-3 font-mono text-caption text-muted-foreground">
+          {carried}
+        </pre>
+      ) : null}
     </section>
   );
 }

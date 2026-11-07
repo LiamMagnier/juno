@@ -45,6 +45,8 @@ export interface TurnContextTailInput {
   retrieved: string;
   /** The referenced-context block (`TurnContext.turnBlock`), already rendered. */
   references: string;
+  /** The interactive views the user adjusted (`liveViewsSection`), already rendered. */
+  liveViews?: string;
 }
 
 export const TURN_CONTEXT_HEADING = "# Context for this message";
@@ -64,6 +66,8 @@ export function buildTurnContextTail(input: TurnContextTailInput): string {
   }
   const retrieved = input.retrieved.trim();
   if (retrieved) sections.push(retrieved);
+  const liveViews = input.liveViews?.trim();
+  if (liveViews) sections.push(liveViews);
 
   const references = input.references.trim();
   if (sections.length === 0) return references;

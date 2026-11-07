@@ -27,6 +27,13 @@ export function chartData(chart: ChartSpec, scope: LiveScope): ChartData {
     const v = scope.evaluate(src).value;
     return typeof v === "number" ? v : null;
   };
+  if (chart.parts) {
+    return {
+      xs: chart.parts.map((p) => p.label),
+      series: [{ label: chart.series[0]?.label ?? "", ys: chart.parts.map((p) => num(p.value)) }],
+      numericX: false,
+    };
+  }
   if (chart.x) {
     const from = num(chart.x.from);
     const to = num(chart.x.to);
@@ -93,17 +100,18 @@ const SERIES_DASH = [undefined, undefined, "4 3", "1.5 3"];
  * the chart's voice: at rest it states the last point (where the plan ends),
  * under the pointer or the arrow keys it states the point under the rule.
  */
-export function LiveChart({
-  chart,
-  scope,
-  formatter,
-  currency,
-}: {
+interface ChartProps {
   chart: ChartSpec;
   scope: LiveScope;
   formatter: LiveFormatter;
   currency: string;
-}) {
+}
+
+export function LiveChart(props: ChartProps) {
+  return props.chart.kind === "donut" ? <LiveDonut {...props} /> : <LiveCartesianChart {...props} />;
+}
+
+function LiveCartesianChart({ chart, scope, formatter, currency }: ChartProps) {
   const data = React.useMemo(() => chartData(chart, scope), [chart, scope]);
   const ref = React.useRef<HTMLDivElement>(null);
   const [width, setWidth] = React.useState(560);
@@ -320,6 +328,142 @@ export function LiveChart({
           </g>
         ) : null}
       </svg>
+    </figure>
+  );
+}
+
+/*
+ * Donut: the share of a whole (a budget, a portfolio, a day). One hue, the
+ * live accent, stepped down in strength slice by slice, so the chart stays
+ * in the transcript's palette; a hairline gap of card colour between slices
+ * tells neighbours apart without a second hue. Each slice is one circle
+ * stroke (dasharray = its length, dashoffset = where it starts), so when a
+ * slider moves a value the slices glide to their new sizes on a CSS
+ * transition instead of being redrawn. The centre states the slice under the
+ * pointer (or the keyboard), the total at rest; the legend beside it is the
+ * same data as text, and hovering either highlights both.
+ */
+const DONUT_ALPHA = [1, 0.74, 0.54, 0.38, 0.26, 0.18];
+const DONUT_MAX = 8;
+
+function LiveDonut({ chart, scope, formatter, currency }: ChartProps) {
+  const data = React.useMemo(() => chartData(chart, scope), [chart, scope]);
+  const [active, setActive] = React.useState<number | null>(null);
+  const [drawn, setDrawn] = React.useState(false);
+  React.useEffect(() => {
+    const id = window.requestAnimationFrame(() => setDrawn(true));
+    return () => window.cancelAnimationFrame(id);
+  }, []);
+  const format = chart.format ?? "number";
+  const fmt = (v: number) => formatter.number(v, format, { currency, digits: format === "currency" && Number.isInteger(v) ? 0 : undefined });
+
+  const raw = data.xs.map((x, i) => ({ label: typeof x === "number" ? formatter.number(x, chart.xFormat ?? "number", { currency }) : x, value: data.series[0]?.ys[i] ?? null }));
+  // Each part keeps its colour by its place in the list, even when a part
+  // before it drops to zero and leaves the ring.
+  const positive = raw
+    .map((r, tone) => ({ ...r, tone }))
+    .filter((r): r is { label: string; value: number; tone: number } => typeof r.value === "number" && r.value > 0);
+  // In the author's order, so a slice never jumps places mid-drag; past
+  // eight the rest fold into "Other", since a ninth sliver is not readable.
+  const slices =
+    positive.length > DONUT_MAX
+      ? [...positive.slice(0, DONUT_MAX - 1), { label: "Other", value: positive.slice(DONUT_MAX - 1).reduce((a, b) => a + b.value, 0), tone: DONUT_MAX - 1 }]
+      : positive;
+  const total = slices.reduce((a, b) => a + b.value, 0);
+
+  if (data.error || slices.length === 0 || total <= 0) {
+    return (
+      <figure className="flex flex-col gap-2">
+        {chart.title ? <figcaption className="text-ui font-medium">{chart.title}</figcaption> : null}
+        <p className="text-ui text-muted-foreground">{data.error ?? "Nothing to draw yet."}</p>
+      </figure>
+    );
+  }
+
+  const size = 168;
+  const stroke = 22;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const gap = slices.length > 1 ? 2.5 : 0;
+  let start = 0;
+  const arcs = slices.map((sl, i) => {
+    const len = (sl.value / total) * c;
+    const arc = { ...sl, i, len: Math.max(0.001, len - gap), offset: -start, share: sl.value / total };
+    start += len;
+    return arc;
+  });
+  const focus = active !== null ? arcs[active] : null;
+  const color = (i: number) => (i < DONUT_ALPHA.length ? `hsl(var(--live, var(--primary)) / ${DONUT_ALPHA[i]})` : `hsl(var(--foreground) / ${Math.max(0.1, 0.3 - (i - DONUT_ALPHA.length) * 0.06)})`);
+  const pct = (v: number) => formatter.number(v, "percent", { digits: v < 0.1 ? 1 : 0 });
+
+  return (
+    <figure className="flex min-w-0 flex-col gap-3">
+      {chart.title ? <figcaption className="text-ui font-medium text-foreground">{chart.title}</figcaption> : null}
+      <div className="flex min-w-0 flex-col items-center gap-5 @[28rem]:flex-row @[28rem]:items-center @[28rem]:gap-7">
+        <div className="relative shrink-0" style={{ width: size, height: size }}>
+          <svg
+            width={size}
+            height={size}
+            viewBox={`0 0 ${size} ${size}`}
+            role="img"
+            tabIndex={0}
+            className="-rotate-90 outline-none"
+            aria-label={`${chart.title ?? "Share"}: ${arcs.map((a) => `${a.label} ${pct(a.share)}`).join(", ")}. Use the arrow keys to read each part.`}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                e.preventDefault();
+                const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
+                setActive((a) => (a === null ? (d > 0 ? 0 : arcs.length - 1) : (a + d + arcs.length) % arcs.length));
+              }
+            }}
+            onBlur={() => setActive(null)}
+            onPointerLeave={() => setActive(null)}
+          >
+            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="hsl(var(--foreground) / 0.05)" strokeWidth={stroke} />
+            {arcs.map((a) => (
+              <circle
+                key={a.label}
+                cx={size / 2}
+                cy={size / 2}
+                r={r}
+                fill="none"
+                stroke={color(a.tone)}
+                strokeWidth={active === a.i ? stroke + 6 : stroke}
+                strokeDasharray={`${drawn ? a.len : 0} ${c}`}
+                strokeDashoffset={a.offset}
+                onPointerEnter={() => setActive(a.i)}
+                className="live-donut-slice"
+                style={{ opacity: active === null || active === a.i ? 1 : 0.45 }}
+              />
+            ))}
+          </svg>
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-6 text-center" aria-live="polite">
+            <span className="max-w-full truncate text-caption text-muted-foreground">{focus ? focus.label : "Total"}</span>
+            <span key={focus ? focus.i : "total"} className="live-donut-figure max-w-full truncate text-[1.25rem] font-semibold tabular-nums tracking-[-0.02em] text-foreground">
+              {fmt(focus ? focus.value : total)}
+            </span>
+            {focus ? <span className="text-caption tabular-nums text-muted-foreground">{pct(focus.share)}</span> : null}
+          </div>
+        </div>
+        <ul className="flex w-full min-w-0 flex-col gap-0.5">
+          {arcs.map((a) => (
+            <li
+              key={a.label}
+              onPointerEnter={() => setActive(a.i)}
+              onPointerLeave={() => setActive(null)}
+              className={cn(
+                "flex min-w-0 items-center gap-2.5 rounded-field px-2.5 py-1.5 text-ui transition-colors duration-fast",
+                active === a.i && "bg-foreground/[0.04]",
+              )}
+            >
+              <span className="size-2.5 shrink-0 rounded-full" style={{ background: color(a.tone) }} aria-hidden />
+              <span className="min-w-0 flex-1 truncate text-foreground">{a.label}</span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">{pct(a.share)}</span>
+              <span className="w-[6.5rem] shrink-0 text-right font-medium tabular-nums text-foreground">{fmt(a.value)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </figure>
   );
 }

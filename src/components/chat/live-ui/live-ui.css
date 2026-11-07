@@ -609,3 +609,169 @@ div:has(> .live-slider:active) > div > .live-value {
    is obvious without growing (source-chip.tsx). */
 .prose-juno a.cite-pill { color: hsl(var(--muted-foreground)); }
 .prose-juno a.cite-pill:hover { color: hsl(var(--background)); }
+
+/* ————————————————————————— 2026-11: beyond ChatGPT ————————————————————————— */
+
+/* Arrival. While a view streams, each part rises into place the moment it
+   closes (an 8 px lift and fade), staggered by the order the
+   parts arrive, so the view assembles instead of popping in whole. Only
+   while building: a reload or a scroll back never replays it. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-live-building] .live-node {
+    animation: live-arrive var(--dur-slow) var(--ease-out-soft) both;
+  }
+}
+@keyframes live-arrive {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.live-node { min-width: 0; }
+
+/* While building, the card's hairline carries a slow sheen of the accent
+   round its edge: the view is being made, not loading. */
+@property --live-sweep {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.live-card[data-live-building]::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(from var(--live-sweep), transparent 0deg, hsl(var(--live) / 0.55) 40deg, transparent 110deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+  animation: live-sweep var(--loop-galaxy) linear infinite;
+}
+@keyframes live-sweep { to { --live-sweep: 360deg; } }
+@media (prefers-reduced-motion: reduce) {
+  .live-card[data-live-building]::before { animation: none; background: hsl(var(--live) / 0.25); }
+}
+
+/* Header actions: quiet icon buttons that appear at full strength on hover. */
+.live-icon-btn {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: hsl(var(--muted-foreground));
+  transition: background-color var(--dur-fast) var(--ease-out-soft), color var(--dur-fast) var(--ease-out-soft), scale var(--dur-press, 70ms) var(--ease-out-soft);
+}
+.live-icon-btn:hover { color: hsl(var(--foreground)); background: hsl(var(--foreground) / 0.06); }
+.live-icon-btn:active { scale: 0.92; }
+@media (pointer: coarse) {
+  .live-icon-btn { width: 2.75rem; height: 2.75rem; }
+}
+
+/* "Shared with your next message": a footer that slides in under the view
+   once the reader has changed something, so it is never a surprise that the
+   model knows. */
+.live-shared {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid hsl(var(--border) / 0.6);
+  font-size: 0.8125rem;
+  color: hsl(var(--muted-foreground));
+}
+.live-shared-dot {
+  position: relative;
+  width: 0.375rem;
+  height: 0.375rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: hsl(var(--live));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .live-shared { animation: live-arrive var(--dur-base) var(--ease-out-soft) both; }
+  .live-shared-dot::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    border: 1.5px solid hsl(var(--live) / 0.5);
+    animation: live-ping var(--loop-breathe) var(--ease-out-soft) infinite;
+  }
+}
+@keyframes live-ping {
+  0% { transform: scale(0.6); opacity: 1; }
+  70%, 100% { transform: scale(1.9); opacity: 0; }
+}
+
+/* Donut slices glide to their new share when an input moves them. */
+.live-donut-slice {
+  transition:
+    stroke-dasharray var(--dur-emphasis) var(--ease-out-soft),
+    stroke-dashoffset var(--dur-emphasis) var(--ease-out-soft),
+    stroke-width var(--dur-fast) var(--ease-out-soft),
+    opacity var(--dur-fast) var(--ease-out-soft);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .live-donut-figure { animation: live-roll var(--dur-base) var(--ease-spring); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-donut-slice { transition: opacity var(--dur-fast); }
+}
+
+/* Interval timer: the ring empties smoothly between 100 ms ticks; each
+   interval change sends one soft ring outward from the dial. */
+.live-timer-ring { transition: stroke-dashoffset var(--dur-slow) var(--ease-out-soft); }
+.live-timer-ring-running { transition: stroke-dashoffset var(--dur-fast) linear; }
+.live-timer-main {
+  display: inline-flex;
+  width: 3.5rem;
+  height: 3.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: hsl(var(--background));
+  background: hsl(var(--foreground));
+  box-shadow: 0 1px 2px hsl(var(--shadow-ink, 220 10% 10%) / 0.12), 0 6px 16px -8px hsl(var(--shadow-ink, 220 10% 10%) / 0.4);
+  transition: background-color var(--dur-fast), scale var(--dur-press, 70ms) var(--ease-out-soft);
+}
+.live-timer-main:hover { background: hsl(var(--foreground) / 0.86); }
+.live-timer-main:active { scale: 0.94; }
+.live-timer-pulse { box-shadow: 0 0 0 0 hsl(var(--live) / 0.45); }
+@media (prefers-reduced-motion: no-preference) {
+  .live-timer-pulse { animation: live-timer-pulse var(--dur-emphasis) var(--ease-out-soft) both; }
+  .live-timer-label { animation: live-roll var(--dur-base) var(--ease-spring); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-timer-ring-running { transition: none; }
+}
+@keyframes live-timer-pulse {
+  from { box-shadow: 0 0 0 0 hsl(var(--live) / 0.45); }
+  to { box-shadow: 0 0 0 22px hsl(var(--live) / 0); }
+}
+
+/* Schedule: a strip of day tabs, each with its own progress ring. */
+.live-days { scrollbar-width: none; }
+.live-days::-webkit-scrollbar { display: none; }
+.live-day {
+  display: inline-flex;
+  min-width: 3.5rem;
+  flex: 1 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.625rem 0.5625rem;
+  border-radius: 14px;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--foreground) / 0.035);
+  transition: background-color var(--dur-fast) var(--ease-out-soft), color var(--dur-fast) var(--ease-out-soft), box-shadow var(--dur-fast), scale var(--dur-press, 70ms) var(--ease-out-soft);
+}
+.live-day:hover { color: hsl(var(--foreground)); background: hsl(var(--foreground) / 0.06); }
+.live-day:active { scale: 0.96; }
+.live-day[data-active] {
+  color: hsl(var(--foreground));
+  background: hsl(var(--card));
+  box-shadow: 0 0 0 1px hsl(var(--live) / 0.45), 0 2px 8px -4px hsl(var(--live) / 0.35);
+}

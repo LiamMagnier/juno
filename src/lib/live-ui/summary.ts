@@ -104,6 +104,19 @@ function walk(list: readonly LiveComponent[], out: string[]): void {
         if (c.title) out.push(c.title);
         for (const card of c.cards) out.push(`${card.front}: ${card.back}`);
         break;
+      case "timer": {
+        if (c.title) out.push(c.title);
+        const mmss = (n: number) => (n >= 60 ? `${Math.floor(n / 60)} min${n % 60 ? ` ${n % 60} s` : ""}` : `${n} s`);
+        out.push(`${c.intervals.map((iv) => `${iv.label} ${mmss(iv.seconds)}`).join(", ")}${c.rounds > 1 ? ` × ${c.rounds} rounds` : ""}`);
+        break;
+      }
+      case "schedule":
+        if (c.title) out.push(c.title);
+        for (const d of c.days) {
+          out.push(d.items.length ? `${d.label}:` : `${d.label}: rest`);
+          for (const it of d.items) out.push(`   ☐ ${it.time ? `${it.time} ` : ""}${it.label}${it.detail ? `: ${it.detail}` : ""}`);
+        }
+        break;
       default:
         break;
     }

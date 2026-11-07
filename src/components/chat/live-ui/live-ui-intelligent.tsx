@@ -20,6 +20,7 @@ import {
 import type { LiveComponent, LiveIngredient } from "@/lib/live-ui/spec";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
+import { useLiveReport } from "@/components/chat/live-ui/report";
 
 /**
  * The intelligent-UI set (docs/design/LIVE_UI.md §2.4): views for what people
@@ -108,6 +109,18 @@ export function LiveRecipe({ recipe }: { recipe: Of<"recipe"> }) {
   const [timers, setTimers] = React.useState<Record<number, Timer>>({});
   const [copied, setCopied] = React.useState(false);
   const scale = servings / recipe.servings;
+  useLiveReport(
+    `recipe:${recipe.key}`,
+    servings === recipe.servings && have.size === 0 && done.size === 0
+      ? null
+      : [
+          servings !== recipe.servings ? `${recipe.title ?? "Recipe"}: scaled to ${servings} ${recipe.yieldLabel} (the reply wrote ${recipe.servings})` : `${recipe.title ?? "Recipe"}: ${servings} ${recipe.yieldLabel}`,
+          have.size ? `has ${have.size} of ${recipe.ingredients.length} ingredients` : null,
+          done.size ? `done ${done.size} of ${recipe.steps.length} steps` : null,
+        ]
+          .filter(Boolean)
+          .join(", "),
+  );
   const total = recipe.steps.reduce((sum, s) => sum + (s.minutes ?? 0), 0);
 
   const anyRunning = Object.values(timers).some((t) => t.running);
@@ -583,6 +596,7 @@ export function LiveFlashcards({ deck }: { deck: Of<"flashcards"> }) {
   const [known, setKnown] = React.useState<ReadonlySet<number>>(() => new Set());
   const n = deck.cards.length;
   const card = deck.cards[index];
+  useLiveReport(`deck:${deck.key}`, known.size === 0 ? null : `${deck.title ?? "Flashcards"}: knows ${known.size} of ${n} cards`);
   const go = (next: number) => {
     setFlipped(false);
     setIndex((next + n) % n);
