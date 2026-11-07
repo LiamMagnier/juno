@@ -81,6 +81,10 @@
       "status": "native",
       "note": "Typed context tokens (docs/rework/PRODUCT_REFOUNDATION.md §5; src/lib/chat/context-tokens.ts): the files, projects, apps, agents, skills, chats and artifacts named in the message, with UTF-16 ranges into it. The web accepts it beside the legacy `connectors`; the Mac and iPhone composers look tokens up through /api/mentions and send them on the append-then-regenerate turn (GenerationRequestWire.context)."
     },
+    "request.liveViews": {
+      "status": "planned",
+      "note": "What the reader set in the interactive views of recent replies (src/lib/live-ui/view-state.ts), for the per-turn context tail. The native Live UI renderers do not report view state yet."
+    },
     "request.context[].kind": "native",
     "request.context[].id": "native",
     "request.context[].label": "native",
