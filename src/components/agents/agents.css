@@ -44,3 +44,67 @@
   from { opacity: 0; transform: translateY(calc(6px * var(--motion-shift, 1))); }
   to { opacity: 1; transform: none; }
 }
+
+/* ---------- Orbit stage (agents-home.tsx, V4) ----------
+   The crew stands on a quiet orbital field: three concentric ellipses in the
+   faintest ink and a light wash of the presence colour from the top. One
+   point sits on the outer ring. It travels only while an agent is at work
+   (`data-active` on the stage), one slow lap in 28 s, linear because it is
+   constant motion; with nobody working, or with reduced motion, it rests. */
+.orbit-stage {
+  background-image:
+    radial-gradient(120% 70% at 50% -10%, hsl(var(--presence) / 0.07), transparent 60%),
+    radial-gradient(80% 60% at 50% 110%, hsl(var(--foreground) / 0.025), transparent 70%);
+}
+.orbit-field ellipse {
+  fill: none;
+  stroke: hsl(var(--foreground) / 0.07);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.orbit-field ellipse:nth-of-type(2) { stroke: hsl(var(--foreground) / 0.055); stroke-dasharray: 2 6; }
+.orbit-field ellipse:nth-of-type(3) { stroke: hsl(var(--foreground) / 0.045); }
+.orbit-field__comet {
+  fill: hsl(var(--foreground) / 0.18);
+  offset-path: path("M 30 300 A 470 210 0 1 1 970 300 A 470 210 0 1 1 30 300");
+  offset-distance: 12%;
+  offset-rotate: 0deg;
+  transition: fill var(--dur-base, 200ms) ease;
+}
+.orbit-stage[data-active] .orbit-field__comet { fill: hsl(var(--presence)); }
+@media (prefers-reduced-motion: no-preference) {
+  .orbit-stage[data-active] .orbit-field__comet {
+    animation: orbit-lap 28s linear infinite;
+  }
+}
+@keyframes orbit-lap {
+  from { offset-distance: 12%; }
+  to { offset-distance: 112%; }
+}
+
+/* The lede's counts: each dot wears its state's colour on the faces. */
+.orbit-pulse [data-tone="working"] .orbit-pulse__dot { background: hsl(var(--presence)); }
+.orbit-pulse [data-tone="needs"] .orbit-pulse__dot { background: hsl(var(--status-needs-you)); }
+.orbit-pulse [data-tone="ready"] .orbit-pulse__dot { background: hsl(var(--foreground) / 0.35); }
+.orbit-pulse [data-tone="paused"] .orbit-pulse__dot { background: transparent; box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.35); }
+@media (prefers-reduced-motion: no-preference) {
+  .orbit-pulse [data-tone="working"] .orbit-pulse__dot { animation: orbit-breathe 2.4s var(--ease-breathe) infinite; }
+}
+@keyframes orbit-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--presence) / 0.35); }
+  50% { box-shadow: 0 0 0 3px hsl(var(--presence) / 0); }
+}
+
+/* A computer's presence, from its own heartbeat. */
+.orbit-machine__dot { background: hsl(var(--foreground) / 0.25); }
+.orbit-machine__dot[data-presence="online"] { background: hsl(var(--success)); }
+.orbit-machine__dot[data-presence="busy"] { background: hsl(var(--presence)); }
+.orbit-machine__dot[data-presence="stale"] { background: hsl(var(--attention)); }
+.orbit-machine__dot[data-presence="off"] { background: transparent; box-shadow: inset 0 0 0 1.5px hsl(var(--foreground) / 0.3); }
+@media (prefers-reduced-motion: no-preference) {
+  .orbit-machine__dot[data-presence="busy"] { animation: orbit-breathe 2.4s var(--ease-breathe) infinite; }
+}
+.orbit-machine { transition: background-color var(--dur-fast, 120ms) ease; }
+@media (hover: hover) and (pointer: fine) {
+  .orbit-machine:hover { background: hsl(var(--foreground) / 0.025); }
+}
