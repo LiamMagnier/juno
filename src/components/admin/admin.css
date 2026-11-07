@@ -294,3 +294,9 @@
   color: hsl(var(--muted-foreground));
   background: hsl(var(--foreground) / 0.06);
 }
+/* Two tiles to a row on a phone leave no room for a sparkline beside the figure. */
+@container page (max-width: 30rem) {
+  .adm-spark {
+    display: none;
+  }
+}
