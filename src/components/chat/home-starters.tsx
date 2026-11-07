@@ -88,28 +88,12 @@ function draftOf(root: HTMLElement | null): string {
   return (field instanceof HTMLTextAreaElement ? field.value : field.textContent ?? "").trim();
 }
 
-export function HomeStarters({
-  composerRef,
-  hidden = false,
-  onShownChange,
-}: {
-  /** The home composer's wrapper: typing in it hides the starters. */
-  composerRef: React.RefObject<HTMLElement | null>;
-  /** Incognito, a clarification card or the send handoff: the row steps back. */
-  hidden?: boolean;
-  /** Whether the row is on screen, so the field behind it can calm down. */
-  onShownChange?: (shown: boolean) => void;
-}) {
-  const router = useRouter();
-  const { conversations, models, quota, features } = useApp();
-  const [open, setOpen] = React.useState<StarterId | null>(null);
-  const [typed, setTyped] = React.useState(false);
-  const [picks, setPicks] = React.useState<Partial<Record<StarterId, number>>>({});
-  const listId = React.useId();
-  const chipRefs = React.useRef(new Map<StarterId, HTMLButtonElement>());
-  const listRef = React.useRef<HTMLUListElement>(null);
-  const rowRef = React.useRef<HTMLDivElement>(null);
-
+/**
+ * ARRIVAL focus for the home, apart from the starter chips so it outlives
+ * them: the home dropped its chips (owner, 7 Nov 2026) but a New chat still
+ * puts the caret in the composer.
+ */
+export function useHomeArrivalFocus(hidden: boolean) {
   // ARRIVAL. A new chat on a desktop puts the caret in the composer, so typing
   // works at once and a keyboard user is not sent through the whole sidebar to
   // reach it. Only when focus is nowhere (a fresh load) or still on the control
@@ -151,6 +135,37 @@ export function HomeStarters({
     // Arrival only: a later change (incognito off, a card answered) follows the person's own move.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+}
+
+/** The arrival focus on its own, for a home that shows no starter chips. */
+export function HomeArrivalFocus({ hidden = false }: { hidden?: boolean }) {
+  useHomeArrivalFocus(hidden);
+  return null;
+}
+
+export function HomeStarters({
+  composerRef,
+  hidden = false,
+  onShownChange,
+}: {
+  /** The home composer's wrapper: typing in it hides the starters. */
+  composerRef: React.RefObject<HTMLElement | null>;
+  /** Incognito, a clarification card or the send handoff: the row steps back. */
+  hidden?: boolean;
+  /** Whether the row is on screen, so the field behind it can calm down. */
+  onShownChange?: (shown: boolean) => void;
+}) {
+  const router = useRouter();
+  const { conversations, models, quota, features } = useApp();
+  const [open, setOpen] = React.useState<StarterId | null>(null);
+  const [typed, setTyped] = React.useState(false);
+  const [picks, setPicks] = React.useState<Partial<Record<StarterId, number>>>({});
+  const listId = React.useId();
+  const chipRefs = React.useRef(new Map<StarterId, HTMLButtonElement>());
+  const listRef = React.useRef<HTMLUListElement>(null);
+  const rowRef = React.useRef<HTMLDivElement>(null);
+
+  useHomeArrivalFocus(hidden);
 
   // Device picks live in this browser; read after mount so the server render matches.
   React.useEffect(() => {

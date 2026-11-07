@@ -62,3 +62,12 @@ test("a token whose data does not parse reads as its plain words", () => {
   assert.equal(read.text, "see GitHub");
   assert.deepEqual(read.tokens, []);
 });
+
+test("a token that lost its label is damaged and goes whole (WebKit empties a contenteditable=false span)", async () => {
+  const { isDamagedToken } = await import("@/components/chat/context-editor-dom");
+  const node = (children: EditorNodeLike[]) =>
+    ({ ...element("SPAN", children, { contextToken: JSON.stringify(GITHUB) }), lastChild: children.at(-1) ?? null }) as unknown as HTMLElement;
+  assert.equal(isDamagedToken(node([element("SPAN", []), text("GitHub")])), false);
+  assert.equal(isDamagedToken(node([element("SPAN", [])])), true, "only the logo is left");
+  assert.equal(isDamagedToken(node([element("SPAN", []), text("Git")])), true, "part of the label is gone");
+});
