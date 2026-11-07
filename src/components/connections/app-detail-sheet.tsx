@@ -172,7 +172,7 @@ export function AppDetailSheet({
             <header className="flex items-center gap-3.5 px-6 pb-4 pt-5">
               <span className="grid size-10 shrink-0 place-items-center">{target.mark}</span>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-serif text-title font-normal text-foreground">{target.label}</p>
+                <p className="truncate text-title font-semibold tracking-tight text-foreground">{target.label}</p>
                 <p className="truncate text-caption text-muted-foreground">
                   {connectedSince ? `Connected since ${connectedSince}` : isServer ? "Your MCP server" : "Connected"}
                 </p>

@@ -2,14 +2,14 @@
 
 import * as React from "react";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
-import { ChevronRight, KeyRound, Plug, Plus, Search } from "@/components/ui/icons";
+import { ChevronRight, KeyRound, Plug, Plus } from "@/components/ui/icons";
 import { AppDetailSheet } from "@/components/connections/app-detail-sheet";
 import { motion } from "framer-motion";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
+import { SearchField } from "@/components/ui/search-field";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
@@ -691,17 +691,7 @@ export function ConnectorDirectory({
       {/* ChatGPT's Plugins header: one large rounded search, the Add button
           beside it, and no chip row; a category is opened from its section. */}
       <div className="flex items-center gap-2">
-        <label className="relative block min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <Input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search apps"
-            aria-label="Search apps"
-            className="h-9 rounded-field border-foreground/[0.1] pl-10 text-ui hover:border-foreground/20 focus-visible:border-foreground/35 coarse:h-11"
-          />
-        </label>
+        <SearchField value={query} onValueChange={setQuery} label="Search apps" className="flex-1" />
         {headerAction}
       </div>
 

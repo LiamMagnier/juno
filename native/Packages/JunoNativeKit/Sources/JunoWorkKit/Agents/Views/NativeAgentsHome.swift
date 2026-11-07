@@ -11,9 +11,8 @@ import SwiftUI
 /// face belongs to, which hops once and opens its thread, where it sets itself
 /// up in conversation.
 ///
-/// With agents, the same composer sits above a grid of live cards: the face
-/// says what each one is doing before the words do. No second navigation
-/// column, no filters, no counts, no chips under the composer.
+/// With agents, task-aware search and state filters lead a grid of live cards.
+/// The new-agent draft and six starting points follow the existing crew.
 struct NativeAgentsHome: View {
     let model: NativeAgentsModel
     /// The person's name, for the empty page's question. Only the first word
@@ -73,8 +72,8 @@ private struct NativeAgentsFirst: View {
     let personName: String?
     let openAgent: (NativeAgent) -> Void
 
-    @Environment(\.junoTextScale) private var textScale
     @State private var viewport = CGSize(width: 640, height: 600)
+    @State private var suggestion: NativeAgentJobSuggestion?
 
     private var firstName: String? {
         personName?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -84,8 +83,11 @@ private struct NativeAgentsFirst: View {
     var body: some View {
         let size = JunoType.displaySize(forColumnWidth: min(viewport.width, 1_024))
         ScrollView {
-            NativeAgentJobComposer(model: model, team: [], style: .hero, autoFocus: true, openAgent: openAgent) {
-                heading(size: size)
+            VStack(spacing: JunoSpace.expanse) {
+                NativeAgentJobComposer(model: model, team: [], style: .hero, autoFocus: true, suggestion: suggestion, openAgent: openAgent) {
+                    heading(size: size)
+                }
+                NativeOrbitCapabilities { suggestion = NativeAgentJobSuggestion(prompt: $0) }
             }
             .frame(maxWidth: 672)
             .padding(.horizontal, JunoSpace.regular)
@@ -102,9 +104,9 @@ private struct NativeAgentsFirst: View {
     private func heading(size: CGFloat) -> some View {
         Group {
             if let firstName {
-                Text("Who should take care of it, \(Text(firstName).font(JunoType.displayItalic(size: size).font(scale: textScale)))?")
+                Text("A little more space, \(firstName).\nA lot more possible.")
             } else {
-                Text("Who should take care of it?")
+                Text("A little more space.\nA lot more possible.")
             }
         }
         .junoType(.display(size: size))
@@ -121,6 +123,11 @@ private struct NativeAgentsTeam: View {
     let model: NativeAgentsModel
     let focusComposer: Bool
     let openAgent: (NativeAgent) -> Void
+    @State private var query = ""
+    @State private var filter: NativeAgentRosterFilter = .all
+    @State private var suggestion: NativeAgentJobSuggestion?
+
+    private var visible: [NativeAgent] { filter.apply(to: model.orderedAgents, query: query) }
 
     var body: some View {
         #if os(macOS)
@@ -141,18 +148,84 @@ private struct NativeAgentsTeam: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
+            rosterControls
+            if visible.isEmpty {
+                VStack(spacing: JunoSpace.snug) {
+                    JunoIconView(.search, size: 24)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                    Text("No agents match this view.")
+                        .junoType(.body)
+                    Button("Show all agents") { query = ""; filter = .all }
+                        .buttonStyle(.junoGlass)
+                        .contentShape(.rect)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, JunoSpace.expanse)
+            } else {
+                NativeAgentsGrid(model: model, agents: visible, openAgent: openAgent)
+            }
             NativeAgentJobComposer(
                 model: model,
                 team: model.agents,
                 style: .compact,
                 autoFocus: focusComposer,
+                suggestion: suggestion,
                 openAgent: openAgent
             ) {
                 EmptyView()
             }
-            NativeAgentsGrid(model: model, openAgent: openAgent)
+            NativeOrbitCapabilities { suggestion = NativeAgentJobSuggestion(prompt: $0) }
                 .padding(.top, JunoSpace.expanse)
         }
+    }
+
+    private var rosterControls: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            HStack(spacing: JunoSpace.snug) {
+                JunoIconView(.search, size: 16)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                TextField("Find an agent or task…", text: $query)
+                    .textFieldStyle(.plain)
+                    .junoType(.body)
+                    .accessibilityLabel("Search agents")
+                    .accessibilityIdentifier("juno.agents.search")
+                if !query.isEmpty {
+                    Button { query = "" } label: { JunoIconView(.close, size: 14) }
+                        .buttonStyle(.borderless)
+                        .frame(minWidth: NativeAgentMetrics.target, minHeight: NativeAgentMetrics.target)
+                        .contentShape(.rect)
+                        .accessibilityLabel("Clear agent search")
+                }
+            }
+            .padding(JunoSpace.cozy)
+            .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.control))
+            ScrollView(.horizontal) {
+                HStack(spacing: JunoSpace.tight) {
+                    ForEach(NativeAgentRosterFilter.allCases) { choice in
+                        Button {
+                            filter = choice
+                        } label: {
+                            HStack(spacing: JunoSpace.tight) {
+                                Text(choice.title)
+                                Text(model.agents.filter { choice.matches($0) }.count, format: .number)
+                                    .foregroundStyle(filter == choice ? Color.junoCanvas.opacity(0.7) : Color.junoSecondaryInk)
+                            }
+                            .junoType(.ui)
+                            .padding(.horizontal, JunoSpace.cozy)
+                            .frame(minHeight: NativeAgentMetrics.target)
+                            .foregroundStyle(filter == choice ? Color.junoCanvas : Color.junoForeground)
+                            .background(filter == choice ? Color.junoForeground : Color.clear, in: RoundedRectangle(cornerRadius: JunoRadius.control))
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(filter == choice ? .isSelected : [])
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            .accessibilityLabel("Filter agents")
+        }
+        .padding(.bottom, JunoSpace.regular)
     }
 }
 
@@ -193,6 +266,7 @@ private struct NativeAgentsTeamHeader: View {
 /// `@[40rem]/page:grid-cols-2 @[66rem]/page:grid-cols-3`.
 private struct NativeAgentsGrid: View {
     let model: NativeAgentsModel
+    let agents: [NativeAgent]
     let openAgent: (NativeAgent) -> Void
 
     #if os(macOS)
@@ -213,7 +287,7 @@ private struct NativeAgentsGrid: View {
 
     var body: some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: JunoSpace.cozy) {
-            ForEach(model.orderedAgents) { agent in
+            ForEach(agents) { agent in
                 NativeAgentCard(
                     agent: agent,
                     open: { openAgent(agent) },
@@ -222,7 +296,7 @@ private struct NativeAgentsGrid: View {
                 )
             }
         }
-        .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: model.orderedAgents.map(\.id))
+        .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: agents.map(\.id))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .padding(.bottom, JunoSpace.expanse)
         .accessibilityElement(children: .contain)
@@ -388,9 +462,9 @@ private struct NativeAgentCardStyle: ButtonStyle {
                             }
                         }
                         .shadow(
-                            color: tone.opacity(hovered && !reduceMotion ? 0.3 : 0),
-                            radius: 15,
-                            y: 10
+                            color: Color.black.opacity(hovered && !reduceMotion ? 0.08 : 0),
+                            radius: 10,
+                            y: 4
                         )
                 }
                 .overlay {
@@ -426,6 +500,7 @@ struct NativeAgentJobComposer<Heading: View>: View {
     let team: [NativeAgent]
     let style: Style
     var autoFocus = false
+    var suggestion: NativeAgentJobSuggestion?
     let openAgent: (NativeAgent) -> Void
     @ViewBuilder let heading: () -> Heading
 
@@ -494,6 +569,11 @@ struct NativeAgentJobComposer<Heading: View>: View {
         .onAppear {
             if autoFocus { focused = true }
         }
+        .onChange(of: suggestion) { _, next in
+            guard let next, !busy else { return }
+            value = next.prompt
+            focused = true
+        }
     }
 
     private var field: some View {
@@ -520,11 +600,6 @@ struct NativeAgentJobComposer<Heading: View>: View {
             .onKeyPress(.return, phases: .down) { press in
                 if press.modifiers.contains(.shift) || press.modifiers.contains(.option) { return .ignored }
                 submit()
-                return .handled
-            }
-            .onKeyPress(.tab, phases: .down) { _ in
-                guard value.isEmpty else { return .ignored }
-                value = NativeAgentStarter.examples[example]
                 return .handled
             }
             #endif
@@ -614,7 +689,7 @@ struct NativeAgentJobComposer<Heading: View>: View {
             // The face hops before the thread opens; nothing to wait for
             // under Reduce Motion.
             if !reduceMotion {
-                try? await Task.sleep(for: .milliseconds(820))
+                try? await Task.sleep(for: .milliseconds(220))
             }
             openAgent(agent)
             value = ""

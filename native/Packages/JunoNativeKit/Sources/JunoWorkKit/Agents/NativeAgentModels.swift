@@ -576,6 +576,21 @@ public struct NativeAgentCloudComputer: Equatable, Sendable {
     }
 }
 
+/// The server's account-specific access verdict, including why setup is unavailable.
+public struct NativeAgentComputerAccess: Equatable, Sendable {
+    public var ok: Bool
+    public var reason: String?
+    public var message: String?
+    public var upgradePlan: String?
+
+    public init(ok: Bool, reason: String? = nil, message: String? = nil, upgradePlan: String? = nil) {
+        self.ok = ok
+        self.reason = reason
+        self.message = message
+        self.upgradePlan = upgradePlan
+    }
+}
+
 /// Everything the agent's page draws. `ClientAgentDetail`.
 ///
 /// Mutable, unlike the rows inside it, because the store edits a page in place
@@ -590,6 +605,7 @@ public struct NativeAgentDetail: Equatable, Sendable {
     public var tasks: [NativeAgentTask]
     public var computer: NativeAgentCloudComputer?
     public var computerConfigured: Bool
+    public var computerAccess: NativeAgentComputerAccess?
 
     public init(
         agent: NativeAgent,
@@ -599,7 +615,8 @@ public struct NativeAgentDetail: Equatable, Sendable {
         routines: [NativeAgentRoutine],
         tasks: [NativeAgentTask],
         computer: NativeAgentCloudComputer? = nil,
-        computerConfigured: Bool = false
+        computerConfigured: Bool = false,
+        computerAccess: NativeAgentComputerAccess? = nil
     ) {
         self.agent = agent
         self.goals = goals
@@ -609,6 +626,7 @@ public struct NativeAgentDetail: Equatable, Sendable {
         self.tasks = tasks
         self.computer = computer
         self.computerConfigured = computerConfigured
+        self.computerAccess = computerAccess
     }
 }
 

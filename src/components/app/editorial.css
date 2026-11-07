@@ -1,8 +1,7 @@
 /*
- * The editorial page kit: the language Memory set (src/components/memory/
- * memory.css), shared by every page built on PageHero and EditorialSection.
- * Newsreader for the few things meant to be read as a page, mono annotations
- * for figures, presence blue only for the one live object on a page.
+ * The workspace type hierarchy. UI titles use the same sans as controls;
+ * Newsreader stays in the public brand and reading surfaces. Metadata is
+ * quieter, with tabular numerals for stable counts.
  */
 .ed {
   --ed-line: hsl(var(--foreground) / 0.12);
@@ -15,47 +14,47 @@
 }
 
 .ed-display {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
   font-size: clamp(40px, 4.6vw, 60px);
   line-height: 1.02;
   letter-spacing: -0.032em;
   font-optical-sizing: auto;
 }
 .ed-h2 {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
-  font-size: 28px;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 24px;
   line-height: 1.15;
   letter-spacing: -0.018em;
 }
 .ed-h3 {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
-  font-size: 22px;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 20px;
   line-height: 1.2;
   letter-spacing: -0.012em;
 }
 .ed-lead {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
   font-size: 21px;
   line-height: 1.45;
   letter-spacing: -0.006em;
   text-wrap: pretty;
 }
 .ed-figure {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
   font-size: 30px;
   line-height: 1;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums lining-nums;
 }
-.ed-figure-sm { font-size: 22px; letter-spacing: -0.012em; }
+.ed-figure-sm { font-size: 20px; letter-spacing: -0.012em; }
 .ed-annot {
   font-family: var(--font-mono), "JetBrains Mono", monospace;
-  font-size: 11px;
+  font-size: 0.75rem;
   line-height: 16px;
   letter-spacing: 0.02em;
   color: hsl(var(--muted-foreground));
@@ -67,13 +66,13 @@
 @media (prefers-reduced-motion: no-preference) {
   .ed-rise {
     opacity: 0;
-    transform: translateY(14px);
-    animation: ed-rise var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
-    animation-delay: calc(min(var(--i, 0), var(--stagger-max) - 1) * var(--stagger-tile));
+    transform: translateY(6px);
+    animation: ed-rise var(--dur-base) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+    animation-delay: calc(min(var(--i, 0), 3) * var(--stagger-tile) / 2);
   }
-  .ed-reveal { opacity: 0; transform: translateY(18px); transition: opacity var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)); }
+  .ed-reveal { opacity: 0; transform: translateY(6px); transition: opacity var(--dur-base) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--dur-base) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)); }
   .ed-reveal[data-on] { opacity: 1; transform: none; }
-  .ed-stagger > * { opacity: 0; transform: translateY(8px); animation: ed-rise var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
+  .ed-stagger > * { opacity: 0; transform: translateY(4px); animation: ed-rise var(--dur-base) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
   .ed-stagger > :nth-child(2) { animation-delay: var(--stagger-tile); }
   .ed-stagger > :nth-child(3) { animation-delay: calc(var(--stagger-tile) * 2); }
   /* At most four items stagger (spec D17); the rest paint with the fourth. */
@@ -107,14 +106,14 @@
    head rather than a toolbar label. */
 .shell-annot {
   font-family: var(--font-mono), "JetBrains Mono", monospace;
-  font-size: 11px;
+  font-size: 0.75rem;
   line-height: 16px;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
 }
 .shell-title {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
   font-size: 17px;
   line-height: 24px;
   letter-spacing: -0.012em;
@@ -128,8 +127,8 @@
    animated transform, so its own hover and press transforms still work. */
 @media (prefers-reduced-motion: no-preference) {
   .ed-arrive > :nth-child(-n + 12) {
-    animation: ed-arrive var(--dur-emphasis) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) backwards;
-    animation-delay: calc(min(var(--ed-n, 0), var(--stagger-max) - 1) * var(--stagger-tile) + var(--dur-exit));
+    animation: ed-arrive var(--dur-base) var(--ed-ease, cubic-bezier(0.16, 1, 0.3, 1)) backwards;
+    animation-delay: calc(min(var(--ed-n, 0), 3) * var(--stagger-tile) / 2);
   }
   .ed-arrive > :nth-child(2) { --ed-n: 1; }
   .ed-arrive > :nth-child(3) { --ed-n: 2; }
@@ -146,7 +145,7 @@
 @keyframes ed-arrive {
   from {
     opacity: 0;
-    transform: translateY(14px);
+    transform: translateY(6px);
   }
 }
 
@@ -161,14 +160,14 @@
 }
 .dark .empty-well { background: hsl(var(--foreground) / 0.03); }
 
-/* A list of named things (Artifacts, Routines, Skills): a serif name, the
-   interface sans under it, mono annotations in columns, rows on hairlines.
+/* A list of named things (Artifacts, Routines, Skills): a compact sans title,
+   quiet supporting text, annotations in columns, rows on hairlines.
    The hairline steps aside under a hovered row and the one after it, so the
    row's own fill is the only edge there. */
 .ed-name {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
-  font-size: 18px;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 15px;
   line-height: 1.25;
   letter-spacing: -0.01em;
 }
@@ -195,9 +194,15 @@
 
 /* A Customize section's title (customize-section.tsx): the tile-name rung. */
 .customize-title {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
-  font-size: 22px;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 20px;
   line-height: 1.2;
   letter-spacing: -0.014em;
 }
+
+/* App headings have one optical alignment, independent of their content. */
+.app-page-title { font-family: var(--font-sans), system-ui, sans-serif; letter-spacing: -0.04em; }
+/* Leads and running titles are prose, so they keep a normal weight. */
+.ed-lead, .shell-title { font-weight: 400; }
+.customize-title { font-size: 17px; line-height: 1.4; font-weight: 600; }

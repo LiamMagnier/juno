@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Plus, Search } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchField } from "@/components/ui/search-field";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   Select,
@@ -16,7 +16,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { removeStarredProject } from "@/lib/starred-projects";
-import { cn } from "@/lib/utils";
 import { cachedJson, peekJson } from "@/lib/client-cache";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
@@ -328,21 +327,14 @@ export default function ProjectsPage() {
 
       {!loading && !empty && !error && (
         <div className="flex flex-wrap items-center gap-2 [animation-fill-mode:backwards] motion-safe:animate-rise-in">
-          <div className="relative w-full @[40rem]/page:w-auto @[40rem]/page:min-w-64 @[40rem]/page:flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search projects and folders"
-              aria-label="Search projects"
-              className={cn("pl-9", searching && "pr-16")}
-            />
-            {searching && (
-              <span aria-live="polite" className="pj-annot pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 motion-safe:animate-fade-in">
-                {shown.length} of {all.length}
-              </span>
-            )}
-          </div>
+          <SearchField
+            value={query}
+            onValueChange={setQuery}
+            label="Search projects"
+            placeholder="Search projects and folders"
+            className="w-full @[40rem]/page:w-auto @[40rem]/page:min-w-64 @[40rem]/page:flex-1"
+          />
+          {searching && <span className="sr-only" role="status">{shown.length} of {all.length} projects</span>}
           <div className="flex w-full items-center gap-2 @[40rem]/page:w-auto">
             <SegmentedControl
               value={filter}

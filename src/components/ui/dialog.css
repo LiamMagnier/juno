@@ -54,8 +54,15 @@
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: var(--dialog-pad);
 }
+
+/* A long description uses the same readable measure as the form below it. */
+.ui-dialog-header { min-width: 0; }
+.ui-dialog-header h2 { text-wrap: balance; letter-spacing: -0.025em; }
+.ui-dialog-header p { text-wrap: pretty; }
+.ui-dialog-footer { gap: 0.5rem; }
 
 /* Sticky offsets are measured inside the scroller's padding (every engine
    deflates the sticky rectangle by it), so a row pinned flush with the

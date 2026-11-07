@@ -47,23 +47,16 @@
    laid out rather than a page swapping in. Opacity and transform only. */
 @media (prefers-reduced-motion: no-preference) {
   .settings-rail-in .settings-rail-rows > * {
-    animation: sw-rail-in 320ms cubic-bezier(0.23, 1, 0.32, 1) both;
-    animation-delay: 160ms;
+    animation: sw-rail-in var(--dur-base) var(--ease-out-expo) backwards;
+    animation-delay: calc(min(var(--rail-index, 0), 3) * var(--stagger-tile) / 2);
   }
-  .settings-rail-in .settings-rail-rows > :nth-child(1) { animation-delay: 42ms; }
-  .settings-rail-in .settings-rail-rows > :nth-child(2) { animation-delay: 54ms; }
-  .settings-rail-in .settings-rail-rows > :nth-child(3) { animation-delay: 66ms; }
-  .settings-rail-in .settings-rail-rows > :nth-child(4) { animation-delay: 78ms; }
-  .settings-rail-in .settings-rail-rows > :nth-child(5) { animation-delay: 90ms; }
-  .settings-rail-in .settings-rail-rows > :nth-child(6) { animation-delay: 102ms; }
-  .settings-rail-in .settings-rail-rows > :nth-child(7) { animation-delay: 114ms; }
-  .settings-rail-in .settings-rail-rows > :nth-child(8) { animation-delay: 126ms; }
-  .settings-rail-in .settings-rail-rows > :nth-child(9) { animation-delay: 138ms; }
-  .settings-rail-in .settings-rail-rows > :nth-child(10) { animation-delay: 150ms; }
+  .settings-rail-in .settings-rail-rows > :nth-child(2) { --rail-index: 1; }
+  .settings-rail-in .settings-rail-rows > :nth-child(3) { --rail-index: 2; }
+  .settings-rail-in .settings-rail-rows > :nth-child(n + 4) { --rail-index: 3; }
 }
 @keyframes sw-rail-in {
   from {
     opacity: 0;
-    transform: translateX(-6px);
+    transform: translateX(-3px);
   }
 }

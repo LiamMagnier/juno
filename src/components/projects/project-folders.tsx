@@ -807,9 +807,11 @@ export function ProjectTile({
         </div>
       )}
 
-      <div className={cn("flex flex-1 flex-col px-3 pb-3", p.coverUrl ? "pt-3.5" : "pr-16 pt-3")}>
-        {pathLabel && <p className="pj-annot mb-1 break-words pr-6">{pathLabel}</p>}
-        {nameLink}
+      <div className={cn("flex flex-1 flex-col px-3 pb-3", p.coverUrl ? "pt-3.5" : "pt-3")}>
+        <div className={cn(!p.coverUrl && hasActions && "min-h-7 pr-16 coarse:min-h-10 coarse:pr-24")}>
+          {pathLabel && <p className="pj-annot mb-1 break-words">{pathLabel}</p>}
+          {nameLink}
+        </div>
         <p className="mt-1 truncate text-ui text-muted-foreground">
           {excerpt || "No instructions yet"}
         </p>

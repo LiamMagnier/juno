@@ -19,7 +19,7 @@
 
 /* Type */
 .mem-display {
-  font-family: var(--font-serif), Newsreader, serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   font-weight: 400;
   font-size: clamp(40px, 4.6vw, 60px);
   line-height: 1.02;
@@ -27,21 +27,21 @@
   font-optical-sizing: auto;
 }
 .mem-h2 {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
-  font-size: 28px;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 24px;
   line-height: 1.15;
   letter-spacing: -0.018em;
 }
 .mem-h3 {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
-  font-size: 22px;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 20px;
   line-height: 1.2;
   letter-spacing: -0.012em;
 }
 .mem-lead {
-  font-family: var(--font-serif), Newsreader, serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   font-weight: 400;
   font-size: 21px;
   line-height: 1.45;
@@ -49,16 +49,16 @@
   text-wrap: pretty;
 }
 .mem-figure {
-  font-family: var(--font-serif), Newsreader, serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   font-weight: 400;
   font-size: 30px;
   line-height: 1;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums lining-nums;
 }
-.mem-figure-sm { font-size: 22px; letter-spacing: -0.012em; }
+.mem-figure-sm { font-size: 20px; letter-spacing: -0.012em; }
 .mem-annot {
-  font-size: 11px;
+  font-size: 0.75rem;
   line-height: 16px;
   letter-spacing: 0.02em;
   color: hsl(var(--muted-foreground));

@@ -123,7 +123,7 @@ public struct NativeAgentProfileView: View {
                 Button("Give It One") { computer("enable") }
                     .contentShape(.rect)
             case .computerOff:
-                Button("Turn Off", role: .destructive) { computer("disable") }
+                Button("Delete Computer", role: .destructive) { computer("disable") }
                     .contentShape(.rect)
             }
             Button("Cancel", role: .cancel) { confirm = nil }
@@ -133,7 +133,7 @@ public struct NativeAgentProfileView: View {
             case .retire:
                 Text("Its routines stop and it leaves your agents. This conversation stays in your history.")
             case .computerOn:
-                Text("It gets a private desktop on your server. What it signs in to and the files it keeps stay there between tasks, until you reset or turn it off.")
+                Text("It gets a private Linux desktop on your server. What it signs in to and the files it keeps stay there between tasks, until you reset or delete it.")
             case .computerOff:
                 Text("The computer is deleted, with everything it signed in to and every file on it.")
             }
@@ -165,7 +165,7 @@ public struct NativeAgentProfileView: View {
         switch confirm {
         case .retire: "Retire \(name)?"
         case .computerOn: "Give \(name) a computer?"
-        case .computerOff: "Turn off \(name)’s computer?"
+        case .computerOff: "Delete \(name)’s computer?"
         case nil: ""
         }
     }
@@ -407,10 +407,21 @@ public struct NativeAgentProfileView: View {
     private func uses(_ agent: NativeAgent, _ detail: NativeAgentDetail) -> some View {
         let computer = detail.computerConfigured ? detail.computer : nil
         let hasComputer = computer.map { $0.enabled && $0.status != "disabled" } ?? false
-        let canGetComputer = detail.computerConfigured && !hasComputer
-        if !agent.connectorIDs.isEmpty || hasComputer || canGetComputer {
+        let computerOpen = detail.computerAccess?.ok ?? detail.computerConfigured
+        let canGetComputer = computerOpen && !hasComputer && agent.executionTarget != .mac
+        if !agent.connectorIDs.isEmpty || hasComputer || canGetComputer || detail.computerAccess != nil {
             NativeAgentProfileSection(title: "What it can use") {
                 VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                    if let access = detail.computerAccess, !access.ok {
+                        Label {
+                            Text(access.message ?? "Computers aren’t available right now.")
+                                .junoType(.ui)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            JunoIconView(.monitor, size: 16)
+                        }
+                        .foregroundStyle(Color.junoSecondaryInk)
+                    }
                     if hasComputer, let computer {
                         HStack(alignment: .center, spacing: JunoSpace.cozy) {
                             JunoIconView(.monitor, size: 16)
@@ -424,7 +435,7 @@ public struct NativeAgentProfileView: View {
                                     .foregroundStyle(Color.junoSecondaryInk)
                             }
                             Spacer(minLength: JunoSpace.snug)
-                            if let openComputer {
+                            if computerOpen, let openComputer {
                                 Button("Open", action: openComputer)
                                     .buttonStyle(.junoGlass)
                                     .buttonBorderShape(.capsule)
@@ -432,7 +443,7 @@ public struct NativeAgentProfileView: View {
                                     .tint(nil)
                                     .contentShape(.capsule)
                             }
-                            Button("Turn off") { confirm = .computerOff }
+                            Button("Delete computer") { confirm = .computerOff }
                                 .buttonStyle(.borderless)
                                 .controlSize(.small)
                                 .foregroundStyle(Color.junoSecondaryInk)
@@ -735,8 +746,9 @@ public struct NativeAgentProfileView: View {
     private func computer(_ action: String) {
         confirm = nil
         act("computer") {
-            await model.computerAction(agentID: agentID, action: action)
+            guard await model.computerAction(agentID: agentID, action: action) else { return }
             await model.loadDetail(id: agentID)
+            if action == "enable" { openComputer?() }
         }
     }
 

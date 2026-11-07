@@ -21,19 +21,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronLeft, FileText, Folder, Hand, Maximize2, MoreHorizontal, Upload, X } from "@/components/ui/icons";
+import { ChevronLeft, FileText, Folder, Hand, Maximize2, Monitor, MoreHorizontal, Upload, X } from "@/components/ui/icons";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ComputerTerminal } from "@/components/agents/computer-terminal";
 import { TEACH_UI_COPY, TeachRecordingLine, TeachReviewCard, useComputerTeach } from "@/components/agents/computer-teach";
 import { useConversationWork } from "@/components/chat/use-conversation-work";
 import { AgentFace } from "@/components/agents/agent-face";
 import { AgentPresence } from "@/components/agents/agent-presence";
-import { useAgentDetail } from "@/components/agents/use-agents";
+import { useComputerSession } from "@/components/agents/use-computer-session";
 import {
   COMPUTER_INBOX_FOLDER,
   COMPUTER_WORK_FOLDER,
   announceAgentsChanged,
-  computerAction,
   computerFileDownloadUrl,
   computerHeartbeat,
   fetchComputerFiles,
@@ -112,7 +111,9 @@ export function AgentComputerOverlay({
   initialMode?: "watch" | "control";
   onClose: () => void;
 }) {
-  const { detail, refresh } = useAgentDetail(agent.id, null);
+  const session = useComputerSession(agent.id, open);
+  const computerAccessOk = session.access?.ok;
+  const computerSessionAction = session.action;
   const work = useConversationWork(open ? agent.conversationId : null);
   // Teach by demonstration: shown only when the server says it is on.
   const teach = useComputerTeach(agent.id, open);
@@ -124,7 +125,6 @@ export function AgentComputerOverlay({
   const [busy, setBusy] = React.useState<string | null>(null);
   const [confirmReset, setConfirmReset] = React.useState(false);
   const [confirmClose, setConfirmClose] = React.useState(false);
-  const [live, setLive] = React.useState<ClientAgentComputerLive | null>(null);
   // Control is real once the control stream is up, not when it was asked for.
   const [controlConnected, setControlConnected] = React.useState(false);
   // "Open in a new window" moved control to a browser window this overlay opened.
@@ -171,11 +171,8 @@ export function AgentComputerOverlay({
     void loadFolder();
   };
 
-  React.useEffect(() => {
-    if (detail?.computer) setLive(detail.computer as ClientAgentComputerLive);
-  }, [detail?.computer]);
-  const computer: ClientAgentComputerLive | null = live ?? (detail?.computer as ClientAgentComputerLive | undefined) ?? null;
-  const status = computer?.status ?? "asleep";
+  const computer = session.computer;
+  const status = session.loading ? "checking" : computer?.status ?? "disabled";
   const takeoverState = readComputerTakeover(computer);
   // The question this takeover is for, pinned when control is taken, so Hand
   // back answers that one and never whichever question happens to be first.
@@ -204,9 +201,9 @@ export function AgentComputerOverlay({
 
   // A resting computer opens instantly; waking it is the point of opening the view.
   React.useEffect(() => {
-    if (!open || status !== "resting") return;
-    void computerAction(agent.id, "wake").then(() => refresh());
-  }, [open, status, agent.id, refresh]);
+    if (!open || status !== "resting" || computerAccessOk === false) return;
+    void computerSessionAction("wake");
+  }, [open, status, computerAccessOk, computerSessionAction]);
 
   const announce = (text: string) => {
     // Cleared first so the same words twice in a row are announced twice.
@@ -214,16 +211,16 @@ export function AgentComputerOverlay({
     window.setTimeout(() => setAnnouncement(text), 30);
   };
 
-  const run = async (action: "wake" | "reset") => {
+  const run = async (action: "wake" | "reset" | "sleep") => {
+    if (busy) return;
     setBusy(action);
-    const res = await computerAction(agent.id, action);
-    setBusy(null);
-    if (res.kind === "failed") {
-      toast.error(res.message);
-      return;
+    if (action === "wake" && status === "disabled") {
+      const enabled = await session.action("enable");
+      if (!enabled || enabled.kind !== "ok") { setBusy(null); return; }
     }
-    announceAgentsChanged();
-    refresh();
+    const res = await session.action(action);
+    setBusy(null);
+    if (res?.kind === "failed") toast.error(res.message);
   };
 
   const takeControl = (opts?: { record?: boolean }) => {
@@ -268,7 +265,7 @@ export function AgentComputerOverlay({
     setControlInWindow(false);
     setMode("watch");
     if (outcome.kind === "ok") {
-      if (outcome.value) setLive(outcome.value);
+      if (outcome.value) session.setComputer(outcome.value);
       setNotice(null);
       // Only the question that asked for the computer, and nothing when it has
       // gone: anything else is still the person's to answer in the composer.
@@ -350,11 +347,17 @@ export function AgentComputerOverlay({
 
   const usingNow = computer?.usingNow?.summary ?? null;
   const heldElsewhere = !inControl ? holderSentence(takeoverState) : null;
-  const caption = inControl
-    ? null
-    : status === "awake" && heldElsewhere
-      ? heldElsewhere
-      : computerStateSentence({ status, agentName: agent.name, restMinutes: computer?.restMinutes, usingNow, opened: true });
+  const caption = session.loading
+    ? "Checking the computer…"
+    : session.access?.ok === false
+      ? session.access.message
+      : inControl
+        ? null
+        : status === "disabled"
+          ? "Create a private computer to get started."
+          : status === "awake" && heldElsewhere
+            ? heldElsewhere
+            : computerStateSentence({ status, agentName: agent.name, restMinutes: computer?.restMinutes, usingNow, opened: true });
   const waking = status === "starting" || status === "resting";
   const posterUrl = computer?.hasPoster ? `/api/agents/${encodeURIComponent(agent.id)}/computer/poster` : null;
   // The newest task's shell output, read-only, beside the screen (S5.1).
@@ -378,11 +381,13 @@ export function AgentComputerOverlay({
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
-      <div className="flex shrink-0 items-center gap-3 px-5 py-4">
+      <div className="orbit-computer-header flex shrink-0 items-center gap-3 px-5 py-4">
         <AgentPresence avatar={agent.avatar} state={agent.state} size={28} haloScale={1.8} />
         <div className="min-w-0 flex-1">
           <DialogTitle className="truncate text-ui font-medium text-foreground">{agent.name}’s computer</DialogTitle>
+          <p className="mt-0.5 text-caption text-muted-foreground">Private Linux workspace</p>
         </div>
+        <Button type="button" variant="outline" size="sm" aria-label="Files on computer" disabled={status !== "awake" && status !== "resting"} onClick={openFiles}><Folder className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Files</span></Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" size="icon-sm" variant="ghost" aria-label="Computer options" className="text-muted-foreground coarse:size-11">
@@ -392,6 +397,7 @@ export function AgentComputerOverlay({
           <DropdownMenuContent align="end">
             {status === "awake" ? <DropdownMenuItem onSelect={openInWindow}>Open in a new window</DropdownMenuItem> : null}
             <DropdownMenuItem onSelect={openFiles}>Files</DropdownMenuItem>
+            {status === "awake" && !inControl ? <DropdownMenuItem disabled={busy !== null} onSelect={() => void run("sleep")}>Put computer to sleep</DropdownMenuItem> : null}
             <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setConfirmReset(true)}>
               Reset computer
             </DropdownMenuItem>
@@ -399,6 +405,7 @@ export function AgentComputerOverlay({
         </DropdownMenu>
         <DialogCloseButton size="md" className="static" />
       </div>
+      {session.error ? <div role="alert" className="mx-5 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-field border border-destructive/20 bg-destructive/5 px-4 py-3 text-ui"><span>{session.error}</span><Button type="button" size="sm" variant="outline" onClick={() => void session.refresh()}>Check again</Button></div> : null}
 
       <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-5">
         <div
@@ -464,7 +471,7 @@ export function AgentComputerOverlay({
                     }
                   }}
                   onComputer={(next) => {
-                    if (next) setLive(next);
+                    if (next) session.setComputer(next);
                   }}
                   onControlLost={(message) => {
                     if (handingBack.current) return;
@@ -568,11 +575,12 @@ export function AgentComputerOverlay({
                     </Button>
                   </>
                 )
-              ) : status === "error" || status === "asleep" ? (
-                <Button type="button" variant="outline" className="rounded-full px-5 coarse:min-h-11" loading={busy === "wake"} onClick={() => void run("wake")}>
-                  {status === "error" ? "Try again" : "Wake"}
+              ) : !session.loading && session.access?.ok !== false && (status === "error" || status === "asleep" || status === "disabled") ? (
+                <Button type="button" className="rounded-full px-5 coarse:min-h-11" loading={busy === "wake"} onClick={() => void run("wake")}>
+                  <Monitor className="size-4" aria-hidden="true" />{status === "error" ? "Try again" : "Start computer"}
                 </Button>
               ) : null}
+              {session.access?.reason === "plan" && session.access.upgradePlan ? <Button asChild variant="outline"><a href="/upgrade">See plans</a></Button> : null}
             </div>
           </div>
           {!inControl ? <TeachReviewCard teach={teach} className="mt-3 max-w-xl" /> : null}
@@ -773,8 +781,10 @@ function Poster({
       {/* A still: the header above already carries the live face, and only
           one copy moves. Resting, never "sleeping": a computer that is
           asleep is not a paused agent, and the dormant grey would say so. */}
-      <div className="absolute inset-0 grid place-items-center">
-        <AgentFace avatar={agent.avatar} state={status === "error" ? "blocked" : agent.status === "paused" ? "sleeping" : "idle"} size={64} still />
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-5">
+        <div className="orbit-computer-mark"><AgentFace avatar={agent.avatar} state={status === "error" ? "blocked" : agent.status === "paused" ? "sleeping" : "idle"} size={64} still /></div>
+        <div className="px-5 text-center"><p className="text-body font-medium">{status === "starting" || status === "resting" ? "Preparing your workspace" : status === "error" ? "Let’s reconnect" : "Room to do real work"}</p><p className="mt-1 text-ui text-muted-foreground">{status === "starting" || status === "resting" ? "The desktop will appear as soon as it’s ready." : "A browser, terminal, and files. All in one place."}</p></div>
+        {status === "starting" || status === "resting" ? <div className="orbit-startup-track" role="status" aria-label="Starting Linux computer"><span /></div> : null}
       </div>
     </div>
   );

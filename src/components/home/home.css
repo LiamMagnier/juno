@@ -1,6 +1,6 @@
 /* Alevr homepage sections. Tokens, type and the construction live in alv-base.css. */
 /* ───────────────────────── Hero ───────────────────────── */
-.alv-hero { position: relative; height: 240vh; }
+.alv-hero { position: relative; height: 200vh; }
 .alv-hero-pin { position: sticky; top: 0; height: 100dvh; overflow: hidden; }
 .alv-hero-copy { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; padding-top: clamp(112px, 17vh, 168px); text-align: center; z-index: 2; pointer-events: none; }
 .alv-hero-copy > * { pointer-events: auto; }
@@ -22,8 +22,8 @@
   mask-composite: intersect; }
 .dark .alv-hero-construction { --dots-strength: .82; }
 .alv-hero-stage { position: absolute; left: 0; right: 0; top: 0; z-index: 3; display: flex; justify-content: center; padding: 0 var(--alv-gutter); }
-.alv-hero-stage { transform: translateY(72vh); }
-.alv-hero-stage > div { width: 100%; max-width: 1180px; transform-origin: 50% 0; transform: scale(.9); }
+.alv-hero-stage { transform: translateY(66vh); }
+.alv-hero-stage > div { width: 100%; max-width: 1180px; transform-origin: 50% 0; transform: scale(.94); }
 .alv-hero-veil { position: absolute; inset: auto 0 0 0; height: 30vh; background: linear-gradient(to bottom, transparent, hsl(var(--background))); z-index: 1; pointer-events: none; }
 
 /* ───────────────────── Product window replica ───────────────────── */

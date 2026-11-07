@@ -152,7 +152,7 @@ export function AppPageHeader({
       {/* The page's action sits on its TITLE's line (design V3, revision 2),
           not beside the lede's last line, where it floated below the title. */}
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <h1 className="ed-rise min-w-0 text-balance font-serif text-page-title font-normal" style={{ ["--i" as string]: 0 }}>{heading}</h1>
+        <h1 className="app-page-title ed-rise min-w-0 text-balance text-page-title font-semibold" style={{ ["--i" as string]: 0 }}>{heading}</h1>
         {/* max-w-full: on a phone the actions wrap to their own line, and a
             row wider than that line (Admin's four tabs) scrolls inside its own track. */}
         {actions && <div className="ed-rise flex max-w-full shrink-0 items-center gap-1.5 @[40rem]/page:mt-1.5" style={{ ["--i" as string]: 2 }}>{actions}</div>}

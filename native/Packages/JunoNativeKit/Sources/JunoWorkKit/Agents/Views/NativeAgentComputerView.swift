@@ -35,6 +35,10 @@ struct NativeAgentComputerView: View {
     @State private var activeHandoff: HandoffSession?
     /// True only once the viewer reported that its control stream is up.
     @State private var controlling = false
+    @State private var checking = true
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var access: NativeAgentComputerAccess? { model.details[agent.id]?.computerAccess }
 
     struct HandoffSession: Identifiable, Equatable {
         let id = UUID()
@@ -44,12 +48,32 @@ struct NativeAgentComputerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            NativeAgentHeading(title: "Its computer")
+            NativeAgentHeading(title: "Private Linux workspace")
 
-            if let computer, computer.enabled {
+            if checking, computer == nil {
+                ProgressView("Checking the computer…")
+                    .junoType(.ui)
+            } else if let access, !access.ok {
+                Text(access.message ?? "Computers aren’t available right now.")
+                    .junoType(.body)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let computer, computer.enabled {
                 enabledContent(computer)
             } else {
                 disabledContent
+            }
+            if let error = model.computerErrors[agent.id] {
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    Text(error)
+                        .junoType(.ui)
+                        .foregroundStyle(Color.junoDestructiveInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Check again") { Task { await model.refreshComputer(agentID: agent.id) } }
+                        .buttonStyle(.junoGlass)
+                        .contentShape(.rect)
+                }
+                .accessibilityElement(children: .contain)
             }
         }
         .task(id: "\(agent.id)-\(computer?.hasPoster == true)-\(computer?.lastActiveAt?.timeIntervalSince1970 ?? 0)") {
@@ -61,10 +85,16 @@ struct NativeAgentComputerView: View {
                 posterImage = Self.decodeImage(data)
             }
         }
-        .task(id: "\(agent.id)-\(computer?.status ?? "")") {
-            // Who holds control, and the rest time, come with a computer read.
-            guard computer?.enabled == true else { return }
-            await model.refreshComputer(agentID: agent.id)
+        .task(id: agent.id) {
+            while !Task.isCancelled {
+                if scenePhase == .active, !isWorking {
+                    await model.refreshComputer(agentID: agent.id)
+                    checking = false
+                }
+                let status = model.details[agent.id]?.computer?.status
+                let delay = status == "starting" || status == "stopping" ? 1.5 : 5.0
+                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            }
         }
         #if os(iOS)
         .fullScreenCover(item: $activeHandoff) { session in
@@ -113,9 +143,9 @@ struct NativeAgentComputerView: View {
                     HStack(spacing: JunoSpace.snug) {
                         Button {
                             confirmingEnable = false
-                            performAction("enable")
+                            performAction("enable", thenWake: true)
                         } label: {
-                            Text("Give it a computer")
+                            Text("Create & start")
                                 .frame(minHeight: NativeAgentMetrics.target)
                                 .contentShape(.rect)
                         }
@@ -173,7 +203,7 @@ struct NativeAgentComputerView: View {
             Button {
                 performAction("wake")
             } label: {
-                Text(computer.status == "error" ? "Try again" : "Wake")
+                Text(computer.status == "error" ? "Try again" : "Start computer")
                     .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
             }
@@ -292,11 +322,13 @@ struct NativeAgentComputerView: View {
         )
     }
 
-    private func performAction(_ action: String) {
+    private func performAction(_ action: String, thenWake: Bool = false) {
         Task {
+            guard !isWorking else { return }
             isWorking = true
-            _ = await model.computerAction(agentID: agent.id, action: action)
-            isWorking = false
+            defer { isWorking = false }
+            guard await model.computerAction(agentID: agent.id, action: action) else { return }
+            if thenWake { await model.computerAction(agentID: agent.id, action: "wake") }
         }
     }
 
@@ -309,9 +341,14 @@ struct NativeAgentComputerView: View {
 
     private func openViewer(mode: String) {
         Task {
+            guard !isWorking else { return }
             isWorking = true
+            defer { isWorking = false }
             if computer?.status == "asleep" || computer?.status == "resting" {
-                _ = await model.computerAction(agentID: agent.id, action: "wake")
+                guard await model.computerAction(agentID: agent.id, action: "wake") else {
+                    if mode == "control" { model.dropComputerTakeoverPin(agentID: agent.id) }
+                    return
+                }
             }
             if let rawURL = await model.computerHandoffURL(agentID: agent.id, mode: mode),
                 let url = URL(string: rawURL)
@@ -321,7 +358,6 @@ struct NativeAgentComputerView: View {
                 // No link, no takeover: nothing to answer later.
                 model.dropComputerTakeoverPin(agentID: agent.id)
             }
-            isWorking = false
         }
     }
 

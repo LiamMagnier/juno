@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
  * when the content arrives. Pass a radius to match anything larger.
  */
 function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("skeleton rounded-control", className)} {...props} />;
+  return <div aria-hidden="true" className={cn("skeleton rounded-control", className)} {...props} />;
 }
 
 export { Skeleton };

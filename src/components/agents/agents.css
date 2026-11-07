@@ -1,13 +1,77 @@
-/* Agents: the thread bar. The rest of an earlier studio
-   layout was removed once nothing referenced it. Juno theme tokens remain
-   authoritative. */
-.agent-thread-bar {
-  position: relative;
-  /* Opaque, like every product header (spec D15): no backdrop-filter. */
-  background: hsl(var(--background));
-  box-shadow: inset 0 -1px 0 hsl(var(--border) / 0.6);
+/* Orbit's workspace uses the same materials, type and motion in every theme. */
+.agent-thread-bar { position: relative; background: hsl(var(--background)); box-shadow: inset 0 -1px 0 hsl(var(--border) / .6); }
+.orbit-workspace { color: hsl(var(--foreground)); }
+.orbit-workspace .app-page-content { padding-top: clamp(28px, 4vw, 52px); padding-bottom: 48px; }
+.orbit-masthead { display: flex; align-items: center; gap: 9px; color: hsl(var(--muted-foreground)); font-size: 12px; font-weight: 500; letter-spacing: .025em; }
+.orbit-masthead > svg { color: hsl(var(--primary)); }
+.orbit-heading { margin-top: 18px; padding-bottom: 28px; }
+.orbit-heading h1 { font-size: clamp(38px, 4.5vw, 52px); line-height: 1.05; }
+.orbit-heading p { margin-top: 10px; }
+.orbit-overline { font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .1em; color: hsl(var(--muted-foreground)); }
+.orbit-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+.orbit-section-heading h2 { font-size: 16px; font-weight: 600; letter-spacing: -.025em; }
+.orbit-section-heading p { margin-top: 4px; font-size: 13px; line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.orbit-attention-card { box-shadow: 0 1px 2px hsl(var(--shadow-ink) / .025); }
+.orbit-search { display: flex; align-items: center; gap: 8px; width: 250px; min-height: 38px; padding: 0 11px; border: 1px solid hsl(var(--border)); border-radius: 10px; background: hsl(var(--card)); color: hsl(var(--muted-foreground)); transition: border-color var(--dur-fast) var(--ease-out-soft); }
+.orbit-search:focus-within { border-color: hsl(var(--primary) / .6); }
+.orbit-search input { width: 100%; min-width: 0; background: transparent; outline: none; color: hsl(var(--foreground)); font-size: 12px; }
+.orbit-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.orbit-search button { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 30px; border-radius: 6px; }
+.orbit-filters { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 18px; }
+.orbit-filters > button { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 11px; border-radius: 8px; color: hsl(var(--muted-foreground)); font-size: 12px; font-weight: 500; transition: background var(--dur-fast), color var(--dur-fast); }
+.orbit-filters > button:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
+.orbit-filters > button[aria-pressed=true] { background: hsl(var(--foreground)); color: hsl(var(--background)); }
+.orbit-filters > button > span { font-family: var(--font-mono), monospace; font-size: 10px; opacity: .65; }
+.orbit-crew { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.orbit-crew__agent { display: flex; flex-direction: column; overflow: hidden; border: 1px solid hsl(var(--border) / .75); border-radius: 16px; background: hsl(var(--card)); box-shadow: 0 1px 2px hsl(var(--shadow-ink) / .025); transition: border-color var(--dur-base) var(--ease-out-soft), box-shadow var(--dur-base) var(--ease-out-soft); }
+.orbit-crew__agent:hover, .orbit-crew__agent:focus-within { border-color: hsl(var(--foreground) / .2); box-shadow: 0 4px 16px -10px hsl(var(--shadow-ink) / .2); }
+.orbit-agent-card { display: flex; flex: 1; min-height: 250px; flex-direction: column; align-items: flex-start; padding: 20px 22px 18px; border-radius: 15px; }
+.orbit-agent-card__stage { position: relative; display: flex; align-items: center; width: 100%; height: 78px; }
+.orbit-crew__face { display: block; zoom: .68; transform-origin: center; transition: transform var(--dur-base) var(--ease-out-expo); }
+.orbit-agent-card:hover .orbit-crew__face { transform: translateY(calc(-3px * var(--motion-shift, 1))); }
+.orbit-agent-card__open { position: absolute; right: 0; top: 34px; color: hsl(var(--muted-foreground)); opacity: 0; transition: opacity var(--dur-base); }
+.orbit-agent-card:hover .orbit-agent-card__open, .orbit-agent-card:focus-visible .orbit-agent-card__open { opacity: 1; }
+.orbit-crew__when { margin-top: auto; padding-top: 12px; }
+.orbit-agent-computer { display: flex; align-items: center; gap: 7px; padding: 11px 20px; border-top: 1px solid hsl(var(--border) / .6); color: hsl(var(--muted-foreground)); font-size: 12px; transition: color 160ms, background 160ms; }
+.orbit-agent-computer:hover { color: hsl(var(--foreground)); background: hsl(var(--accent) / .6); }
+.orbit-no-results { display: flex; min-height: 220px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 1px dashed hsl(var(--border)); border-radius: 16px; font-size: 14px; }
+.orbit-create-form { box-shadow: 0 2px 4px -2px hsl(var(--shadow-ink) / .05); }
+.orbit-capabilities { margin-top: 36px; padding-top: 30px; border-top: 1px solid hsl(var(--border) / .7); }
+.orbit-capabilities__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.orbit-capability { display: flex; align-items: flex-start; gap: 12px; padding: 17px 14px; text-align: left; border: 1px solid transparent; border-radius: 12px; transition: background var(--dur-base), border-color var(--dur-base); }
+.orbit-capability:hover, .orbit-capability:focus-visible { background: hsl(var(--card)); border-color: hsl(var(--border)); }
+.orbit-capability__icon { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border: 1px solid hsl(var(--border) / .8); border-radius: 10px; background: hsl(var(--card)); color: hsl(var(--muted-foreground)); transition: color var(--dur-base), border-color var(--dur-base); }
+.orbit-capability:hover .orbit-capability__icon { color: hsl(var(--primary)); border-color: hsl(var(--primary) / .25); }
+.orbit-capability__arrow { flex-shrink: 0; margin-top: 2px; color: hsl(var(--muted-foreground)); opacity: 0; transition: opacity var(--dur-base), transform var(--dur-base); }
+.orbit-capability:hover .orbit-capability__arrow, .orbit-capability:focus-visible .orbit-capability__arrow { opacity: 1; }
+.orbit-first .orbit-capabilities { border-top: 0; margin-top: 0; padding-top: 0; }
+.orbit-first .orbit-section-heading { justify-content: center; text-align: center; }
+.orbit-first .orbit-overline { display: none; }
+@container page (max-width: 47rem) { .orbit-crew, .orbit-capabilities__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container page (max-width: 31rem) {
+  .orbit-section-heading { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .orbit-search { width: 100%; min-height: 44px; }
+  .orbit-search input { font-size: 16px; }
+  .orbit-crew { gap: 10px; }
+  .orbit-agent-card { min-height: 230px; padding: 16px 14px; }
+  .orbit-agent-card__stage { height: 68px; }
+  .orbit-crew__face { zoom: .58; }
+  .orbit-agent-computer { padding: 12px; font-size: 11px; }
+  .orbit-capabilities__grid { grid-template-columns: 1fr; gap: 2px; }
+  .orbit-capability { padding: 13px 8px; }
+  .orbit-capability__arrow { opacity: 1; }
+  .orbit-filters > button { padding: 8px; min-height: 44px; }
 }
-
+@media (pointer: coarse) { .orbit-agent-computer { min-height: 44px; } .orbit-search button { min-width: 32px; min-height: 40px; } }
+@media (prefers-reduced-motion: no-preference) { .orbit-crew__agent { animation: orbit-crew-in 360ms var(--ease-out-expo) backwards; animation-delay: calc(min(var(--i, 0), 4) * var(--stagger-tile)); } }
+@keyframes orbit-crew-in { from { opacity: 0; transform: translateY(calc(8px * var(--motion-shift, 1))); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .orbit-workspace *, .orbit-crew *, .orbit-capabilities * { animation: none !important; transition: none !important; } }
+.orbit-computer-header { border-bottom: 1px solid hsl(var(--border) / .6); margin-bottom: 16px; }
+.orbit-computer-mark { display: grid; place-items: center; width: 104px; height: 104px; border: 1px solid hsl(var(--border)); border-radius: 28px; background: hsl(var(--card) / .6); box-shadow: inset 0 1px 0 hsl(var(--foreground) / .03); }
+.orbit-startup-track { overflow: hidden; width: 144px; height: 3px; border-radius: 3px; background: hsl(var(--foreground) / .08); }
+.orbit-startup-track > span { display: block; width: 45%; height: 100%; border-radius: inherit; background: hsl(var(--primary)); animation: orbit-starting calc(var(--loop-beat) * 1.5) var(--ease-out-soft) infinite alternate; }
+@keyframes orbit-starting { from { transform: translateX(-30%); } to { transform: translateX(160%); } }
+@media (prefers-reduced-motion: reduce) { .orbit-startup-track > span { animation: none; margin-inline: auto; } }
 
 /* ---------- Orbit (agents-home.tsx, orbit-stage.tsx, orbit-computers.tsx), V5 ----------
    One material for every Orbit object: a hairline card on the page. Motion
