@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Check, ChevronDown, Cloud, Laptop, Plus } from "@/components/ui/icons";
+import { Check, ChevronDown, ChevronRight, Cloud, Laptop, Plus } from "@/components/ui/icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -121,20 +121,24 @@ function FaceStack({ agents }: { agents: readonly ClientAgent[] }) {
   );
 }
 
-/** The machine's mark: its glyph on a quiet tile, with its presence as a dot on the corner. */
+/** The machine's glyph, with its presence as a dot on the corner, in the 28px seat a face takes in the Needs you rows. */
 function MachineMark({ kind, presence }: { kind: "cloud" | "mac"; presence: Presence }) {
   const Icon = kind === "cloud" ? Cloud : Laptop;
   return (
-    <span className="relative grid size-10 shrink-0 place-items-center rounded-field bg-foreground/[0.045] text-foreground">
+    <span className="relative grid size-7 shrink-0 place-items-center text-foreground">
       <Icon className="size-5" aria-hidden="true" />
-      <span
-        className="orbit-machine__dot absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-card"
-        data-presence={presence}
-        aria-hidden="true"
-      />
+      <span className="orbit-machine__dot absolute bottom-0.5 right-0 size-2 rounded-full ring-2 ring-card" data-presence={presence} aria-hidden="true" />
     </span>
   );
 }
+
+const PRESENCE_INK: Record<Presence, string> = {
+  busy: "text-presence-ink",
+  online: "text-success-ink",
+  stale: "text-attention",
+  offline: "text-muted-foreground",
+  off: "text-muted-foreground",
+};
 
 function MoveHere({
   label,
@@ -150,7 +154,7 @@ function MoveHere({
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={`Move an agent to ${label}`}
-        className="pressable grid size-8 shrink-0 place-items-center rounded-control text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground data-[state=open]:bg-foreground/[0.05] data-[state=open]:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+        className="orbit-row__action grid size-7 shrink-0 place-items-center rounded-control text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground data-[state=open]:bg-foreground/[0.06] data-[state=open]:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
       >
         <Plus className="size-4" aria-hidden="true" />
       </DropdownMenuTrigger>
@@ -170,26 +174,31 @@ function MoveHere({
 function MachineRow({
   kind,
   name,
-  line,
+  status,
+  detail,
   presence,
   agents,
   move,
 }: {
   kind: "cloud" | "mac";
   name: string;
-  line: string;
+  status: string;
+  detail: string | null;
   presence: Presence;
   agents: readonly ClientAgent[];
   move: React.ReactNode;
 }) {
   return (
-    <li className="orbit-machine flex items-center gap-3 rounded-control px-2 py-2.5" data-presence={presence}>
+    <li className="orbit-row flex items-center gap-3 rounded-inner px-3 py-2.5" data-presence={presence}>
       <MachineMark kind={kind} presence={presence} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-body font-medium leading-6 text-foreground" translate={kind === "mac" ? "no" : undefined}>
+        <span className="block truncate text-ui font-medium leading-5 text-foreground" translate={kind === "mac" ? "no" : undefined}>
           {name}
         </span>
-        <span className="block truncate text-caption leading-4 text-muted-foreground">{line}</span>
+        <span className="block truncate text-caption leading-4 text-muted-foreground">
+          <span className={PRESENCE_INK[presence]}>{status}</span>
+          {detail ? ` · ${detail}` : null}
+        </span>
       </span>
       <FaceStack agents={agents} />
       {move}
@@ -211,7 +220,6 @@ export function OrbitComputers({
   const macs = hosts.kind === "ok" ? hosts.hosts : [];
   const cloudAgents = agents.filter((agent) => agent.executionTarget !== "mac");
   const awake = cloudAgents.filter((agent) => agent.computer?.enabled && agent.computer.status === "running").length;
-  const cloudLine = awake > 0 ? `Always on · ${awake} awake` : "Always on";
 
   const move = async (agent: ClientAgent, to: RunsOn, label: string) => {
     const outcome = await updateAgent(agent.id, runsOnInput(to));
@@ -225,25 +233,26 @@ export function OrbitComputers({
   };
 
   return (
-    <section aria-labelledby="orbit-computers" className="rounded-panel border border-foreground/[0.08] bg-card p-2">
-      <div className="flex items-baseline justify-between gap-3 px-2 pb-1 pt-1.5">
+    <section aria-labelledby="orbit-computers">
+      <div className="mb-2.5 flex min-h-6 items-center gap-2 px-0.5">
         <h2 id="orbit-computers" className="text-ui font-medium text-foreground">
           Computers
         </h2>
         {macs.length > 0 ? (
           <Link
             href="/settings?section=devices"
-            className="rounded-sm text-caption text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+            className="ml-auto rounded-sm text-caption text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
           >
             Manage
           </Link>
         ) : null}
       </div>
-      <ul className="flex flex-col">
+      <ul className="nest-card nest-p-1 flex flex-col border border-foreground/[0.08] bg-card">
         <MachineRow
           kind="cloud"
           name={CLOUD_LABEL}
-          line={cloudLine}
+          status="Always on"
+          detail={awake > 0 ? `${awake} awake` : null}
           presence="online"
           agents={cloudAgents}
           move={
@@ -256,13 +265,15 @@ export function OrbitComputers({
         />
         {macs.map((host) => {
           const here: RunsOn = { target: "mac", hostId: host.id };
+          const presence = presenceOf(host);
           return (
             <MachineRow
               key={host.id}
               kind="mac"
               name={host.displayName}
-              line={hostLine(host)}
-              presence={presenceOf(host)}
+              status={presence === "busy" && host.activeRunCount > 0 ? `${host.activeRunCount} running` : PRESENCE_WORDS[presence]}
+              detail={presence === "off" ? null : host.allowsComputerUse ? "screen control" : "files and browser"}
+              presence={presence}
               agents={agentsOnHost(agents, host, macs)}
               move={
                 <MoveHere
@@ -274,52 +285,53 @@ export function OrbitComputers({
             />
           );
         })}
+        {hosts.kind === "loading" ? (
+          <li className="px-3 py-2.5 text-caption text-muted-foreground" role="status" aria-live="polite">
+            Checking your Macs…
+          </li>
+        ) : hosts.kind === "failed" ? (
+          <li className="flex flex-wrap items-baseline gap-x-2 px-3 py-2.5 text-caption text-muted-foreground" role="status">
+            <span>{hosts.message}</span>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="rounded-sm font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              Try again
+            </button>
+          </li>
+        ) : macs.length === 0 ? (
+          <ConnectMac />
+        ) : null}
       </ul>
-      {hosts.kind === "loading" ? (
-        <p className="px-2 pb-2 pt-1 text-caption text-muted-foreground" role="status" aria-live="polite">
-          Checking your Macs…
-        </p>
-      ) : hosts.kind === "failed" ? (
-        <p className="flex flex-wrap items-baseline gap-x-2 px-2 pb-2 pt-1 text-caption text-muted-foreground" role="status">
-          <span>{hosts.message}</span>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="rounded-sm font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            Try again
-          </button>
-        </p>
-      ) : macs.length === 0 ? (
-        <ConnectMac />
-      ) : null}
     </section>
   );
 }
 
 /**
- * No Mac yet: what connecting one gives, and the two steps it takes. The
- * pairing itself happens in the Mac app (sign in, turn on Work), so the way
- * in is the download; the page picks the Mac up on its next poll.
+ * No Mac yet: a row in the same list, saying what connecting one gives. The
+ * pairing happens in the Mac app (sign in, turn on Work), so the way in is
+ * the download; the list picks the Mac up on its next poll.
  */
 function ConnectMac() {
   return (
-    <div className="orbit-connect relative mt-1 overflow-hidden rounded-control border border-dashed border-foreground/[0.12] px-3.5 py-3.5">
-      <p className="text-body font-medium leading-6 text-foreground">Bring your Mac into Orbit</p>
-      <p className="mt-0.5 text-pretty text-caption leading-4 text-muted-foreground">
-        {`Agents work in your real apps, files and browser, and ask before anything risky. Install ${PRODUCT_NAME} for Mac, sign in, and turn on Work.`}
-      </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Link
-          href="/download"
-          className="pressable inline-flex h-8 items-center gap-1.5 rounded-control bg-foreground px-3 text-ui font-medium text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          <Laptop className="size-4" aria-hidden="true" />
-          Get the Mac app
-        </Link>
-        <span className="text-caption text-muted-foreground">It shows up here on its own.</span>
-      </div>
-    </div>
+    <li>
+      <Link
+        href="/download"
+        className="orbit-row group/connect flex items-center gap-3 rounded-inner px-3 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      >
+        <span className="grid size-7 shrink-0 place-items-center text-muted-foreground">
+          <Laptop className="size-5" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-ui font-medium leading-5 text-foreground">Connect your Mac</span>
+          <span className="block text-pretty text-caption leading-4 text-muted-foreground">
+            {`Agents work in your real apps and files, and ask first. Install ${PRODUCT_NAME} for Mac and turn on Work.`}
+          </span>
+        </span>
+        <ChevronRight className="orbit-row__go size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </Link>
+    </li>
   );
 }
 

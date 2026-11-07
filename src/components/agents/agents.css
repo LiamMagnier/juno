@@ -9,90 +9,83 @@
 }
 
 
-/* ---------- Orbit crew (orbit-stage.tsx) ----------
-   One tile per agent and nothing drawn round the faces: no card, core, ring
-   or glow. An agent's last activity is said only on hover or focus (its
-   line is kept, so the tile never jumps); without hover it is left out. */
-.orbit-crew { --crew-face: var(--crew-desk-face, 120px); }
-.orbit-crew__when { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft); }
-.orbit-crew__agent:hover .orbit-crew__when,
-.orbit-crew__agent:focus-within .orbit-crew__when { opacity: 1; }
-@media (hover: none) {
-  .orbit-crew__when { display: none; }
+/* ---------- Orbit (agents-home.tsx, orbit-stage.tsx, orbit-computers.tsx), V5 ----------
+   One material for every Orbit object: a hairline card on the page. Motion
+   is feedback and state only. A card answers a press (0.985, 120ms out); a
+   row's chevron leans 2px toward where it goes; a working agent's card
+   carries one moving line along its foot. Hover is gated to fine pointers,
+   and reduced motion keeps colour and drops travel. */
+
+/* Card: hover deepens the hairline, press gives under the finger. */
+.orbit-card {
+  transition:
+    border-color var(--dur-fast, 120ms) var(--ease-out-soft, ease-out),
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-/* On a phone the crew is two columns of 72 px faces, so the first screen
-   holds what needs you and the whole crew. `zoom` scales the layout box with
-   the drawing (the face keeps its size class). */
-@container page (max-width: 39.99rem) {
-  .orbit-crew__face { zoom: var(--crew-phone-zoom, 0.6); }
-  .orbit-crew { --crew-face: var(--crew-phone-face, 72px); }
+.orbit-card:active { transform: scale(0.985); }
+@media (hover: hover) and (pointer: fine) {
+  .orbit-card:hover { border-color: hsl(var(--foreground) / 0.16); }
 }
-/* On touch the tile's menu stays shown (nothing hovers), so it moves off the
-   face's shoulder to the end of the name's line: the tile's top padding, the
-   face, the name's margin, centred on its 24 px line. */
-@media (pointer: coarse) {
-  .orbit-crew .orbit-crew__more { top: calc(2rem + var(--crew-face, 120px) - 4px); }
+
+/* The card's menu: shown on hover or focus with a fine pointer, always on touch. */
+.orbit-card__more { opacity: 0; transition: opacity var(--dur-fast, 120ms) ease, background-color var(--dur-fast, 120ms) ease; }
+.group\/card:hover .orbit-card__more,
+.group\/card:focus-within .orbit-card__more,
+.orbit-card__more[data-state="open"] { opacity: 1; }
+@media (hover: none) { .orbit-card__more { opacity: 1; } }
+
+/* At work: a 2px line along the card's foot, a short segment sweeping
+   left to right. Constant motion, so linear; one pass per --loop-breathe. Under reduced
+   motion the segment rests as a full, quieter line. */
+.orbit-card__work {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  overflow: hidden;
+  background: hsl(var(--presence) / 0.12);
 }
-/* Arrival: each agent rises into place in turn, once. Opacity and travel only. */
+.orbit-card__work::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 36%;
+  background: linear-gradient(90deg, transparent, hsl(var(--presence)), transparent);
+  transform: translateX(-100%);
+}
 @media (prefers-reduced-motion: no-preference) {
-  .orbit-crew__agent {
-    animation: orbit-crew-in var(--dur-slow, 320ms) cubic-bezier(0.16, 1, 0.3, 1) both;
-    animation-delay: calc(min(var(--i, 0), var(--stagger-max)) * var(--stagger-tile));
+  .orbit-card__work::after { animation: orbit-work var(--loop-breathe) linear infinite; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orbit-card__work::after { width: 100%; transform: none; opacity: 0.5; }
+}
+@keyframes orbit-work {
+  to { transform: translateX(280%); }
+}
+
+/* Arrival: each card rises 6px into place in turn, once. */
+@media (prefers-reduced-motion: no-preference) {
+  .orbit-card-in {
+    animation: orbit-card-in var(--dur-base) cubic-bezier(0.23, 1, 0.32, 1) both;
+    animation-delay: calc(min(var(--i, 0), 6) * var(--stagger-tile));
   }
 }
-@keyframes orbit-crew-in {
+@keyframes orbit-card-in {
   from { opacity: 0; transform: translateY(calc(6px * var(--motion-shift, 1))); }
   to { opacity: 1; transform: none; }
 }
 
-/* ---------- Orbit stage (agents-home.tsx, V4) ----------
-   The crew stands on a quiet orbital field: three concentric ellipses in the
-   faintest ink and a light wash of the presence colour from the top. One
-   point sits on the outer ring. It travels only while an agent is at work
-   (`data-active` on the stage), one slow lap in 28 s, linear because it is
-   constant motion; with nobody working, or with reduced motion, it rests. */
-.orbit-stage {
-  background-image:
-    radial-gradient(120% 70% at 50% -10%, hsl(var(--presence) / 0.07), transparent 60%),
-    radial-gradient(80% 60% at 50% 110%, hsl(var(--foreground) / 0.025), transparent 70%);
-}
-.orbit-field ellipse {
-  fill: none;
-  stroke: hsl(var(--foreground) / 0.07);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-.orbit-field ellipse:nth-of-type(2) { stroke: hsl(var(--foreground) / 0.055); stroke-dasharray: 2 6; }
-.orbit-field ellipse:nth-of-type(3) { stroke: hsl(var(--foreground) / 0.045); }
-.orbit-field__comet {
-  fill: hsl(var(--foreground) / 0.18);
-  offset-path: path("M 30 300 A 470 210 0 1 1 970 300 A 470 210 0 1 1 30 300");
-  offset-distance: 12%;
-  offset-rotate: 0deg;
-  transition: fill var(--dur-base, 200ms) ease;
-}
-.orbit-stage[data-active] .orbit-field__comet { fill: hsl(var(--presence)); }
-@media (prefers-reduced-motion: no-preference) {
-  .orbit-stage[data-active] .orbit-field__comet {
-    animation: orbit-lap 28s linear infinite;
-  }
-}
-@keyframes orbit-lap {
-  from { offset-distance: 12%; }
-  to { offset-distance: 112%; }
-}
-
-/* The lede's counts: each dot wears its state's colour on the faces. */
-.orbit-pulse [data-tone="working"] .orbit-pulse__dot { background: hsl(var(--presence)); }
-.orbit-pulse [data-tone="needs"] .orbit-pulse__dot { background: hsl(var(--status-needs-you)); }
-.orbit-pulse [data-tone="ready"] .orbit-pulse__dot { background: hsl(var(--foreground) / 0.35); }
-.orbit-pulse [data-tone="paused"] .orbit-pulse__dot { background: transparent; box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.35); }
-@media (prefers-reduced-motion: no-preference) {
-  .orbit-pulse [data-tone="working"] .orbit-pulse__dot { animation: orbit-breathe 2.4s var(--ease-breathe) infinite; }
-}
-@keyframes orbit-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--presence) / 0.35); }
-  50% { box-shadow: 0 0 0 3px hsl(var(--presence) / 0); }
+/* Rows inside a list card (Needs you, Computers): a wash on hover, the
+   chevron leans toward its destination, the row action shows. */
+.orbit-row { transition: background-color var(--dur-fast, 120ms) ease; }
+.orbit-row__go { transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), color var(--dur-fast, 120ms) ease; }
+.orbit-row__action { transition: opacity var(--dur-fast, 120ms) ease, background-color var(--dur-fast, 120ms) ease; }
+@media (hover: hover) and (pointer: fine) {
+  .orbit-row:hover { background: hsl(var(--foreground) / 0.035); }
+  .orbit-row:hover .orbit-row__go { transform: translateX(calc(2px * var(--motion-shift, 1))); color: hsl(var(--foreground)); }
+  .orbit-row__action { opacity: 0; }
+  .orbit-row:hover .orbit-row__action,
+  .orbit-row:focus-within .orbit-row__action,
+  .orbit-row__action[data-state="open"] { opacity: 1; }
 }
 
 /* A computer's presence, from its own heartbeat. */
@@ -100,11 +93,4 @@
 .orbit-machine__dot[data-presence="online"] { background: hsl(var(--success)); }
 .orbit-machine__dot[data-presence="busy"] { background: hsl(var(--presence)); }
 .orbit-machine__dot[data-presence="stale"] { background: hsl(var(--attention)); }
-.orbit-machine__dot[data-presence="off"] { background: transparent; box-shadow: inset 0 0 0 1.5px hsl(var(--foreground) / 0.3); }
-@media (prefers-reduced-motion: no-preference) {
-  .orbit-machine__dot[data-presence="busy"] { animation: orbit-breathe 2.4s var(--ease-breathe) infinite; }
-}
-.orbit-machine { transition: background-color var(--dur-fast, 120ms) ease; }
-@media (hover: hover) and (pointer: fine) {
-  .orbit-machine:hover { background: hsl(var(--foreground) / 0.025); }
-}
+.orbit-machine__dot[data-presence="off"] { background: hsl(var(--card)); box-shadow: inset 0 0 0 1.5px hsl(var(--foreground) / 0.3); }
