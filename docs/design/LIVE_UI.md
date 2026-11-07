@@ -239,8 +239,8 @@ Never on a regenerate. `LIVE_UI_DO_SECTION` tells the model to answer for
 those values and start any new view from them.
 
 The reader is told: once a view has something to share, a footer slides in
-("Alevr sees what you set here when you send your next message", with "Ask
-about it", which focuses the composer). The dev gallery shows exactly what
+("Shared with your next message", with "Don't share" and "Ask about it",
+which focuses the composer). The dev gallery shows exactly what
 the next message would carry under each sample.
 
 ## 7. Prompt contract
