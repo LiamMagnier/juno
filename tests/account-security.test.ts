@@ -218,8 +218,13 @@ test("the owner guard fails closed until two-step is enrolled", () => {
 
   const layout = source("src/app/(app)/admin/layout.tsx");
   assert.match(layout, /if \(mfaRequired\) return <AdminMfaRequired \/>;/);
-  // The prompt replaces children — it is not drawn above a working panel.
-  assert.ok(layout.indexOf("AdminMfaRequired") < layout.indexOf("return children"));
+  // The prompt replaces children — it is not drawn above a working panel:
+  // the gate returns before the one place the layout renders them (inside
+  // the Admin bar's shell).
+  const gate = layout.indexOf("if (mfaRequired) return <AdminMfaRequired />;");
+  const rendered = layout.indexOf("{children}");
+  assert.ok(gate > -1 && rendered > -1 && gate < rendered);
+  assert.equal(layout.split("{children}").length - 1, 1, "children are rendered in exactly one place");
 });
 
 // ----------------------------------------------------------------------------

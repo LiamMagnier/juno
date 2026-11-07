@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, History } from "@/components/ui/icons";
+import { ChevronDown, History, ListChecks } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -39,11 +39,14 @@ interface SummaryPanelProps {
   consolidating: boolean;
   onRebuild: () => void;
   onOpenActivity: () => void;
+  /** Facts memory is unsure of or has not heard in months (memory-review.ts). */
+  reviewCount?: number;
+  onOpenReview?: () => void;
   /** The prompt dock, when the scope has one (the account does; a project does not). */
   children?: React.ReactNode;
 }
 
-export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpenActivity, children }: SummaryPanelProps) {
+export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpenActivity, reviewCount = 0, onOpenReview, children }: SummaryPanelProps) {
   const sections = React.useMemo(
     () => (summary ? parseSummarySections(summary.content, project ? "About this project" : "About you") : []),
     [summary, project]
@@ -109,6 +112,20 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
               </TooltipTrigger>
               <TooltipContent>Your edits and a recap of what changed</TooltipContent>
             </Tooltip>
+            {reviewCount > 0 && onOpenReview ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" onClick={onOpenReview} className="gap-2 px-2.5 text-muted-foreground">
+                    <ListChecks className="size-3.5" aria-hidden="true" />
+                    <span>Review</span>
+                    <span className="grid h-[1.125rem] min-w-[1.125rem] place-items-center rounded-full bg-primary px-1 text-[0.6875rem] font-semibold tabular-nums leading-none text-primary-foreground">
+                      {reviewCount > 99 ? "99+" : reviewCount}
+                    </span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{`Check what ${PRODUCT_NAME} is unsure of, or hasn’t heard in months`}</TooltipContent>
+              </Tooltip>
+            ) : null}
           </div>
         </div>
 

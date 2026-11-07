@@ -66,3 +66,47 @@
     --chip-fade-end: 0px;
   }
 }
+
+/*
+ * ── THE SHELL'S ENTRANCE ────────────────────────────────────────────────────
+ *
+ * The palette opens from ⌘K dozens of times a day, so it barely moves: a fade
+ * from 0.985 over 150ms on a strong ease-out, hung from its top edge, and an
+ * exit on opacity alone in 100ms. Reduced motion keeps the fade.
+ */
+.palette-shell[data-state="open"] {
+  animation: palette-in 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.palette-shell[data-state="closed"] {
+  animation: palette-out 100ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+.palette-shell {
+  box-shadow:
+    0 0 0 0.5px hsl(var(--foreground) / 0.04),
+    0 1px 2px hsl(var(--foreground) / 0.06),
+    0 12px 32px -8px hsl(var(--foreground) / 0.18),
+    0 32px 64px -24px hsl(var(--foreground) / 0.16);
+}
+.dark .palette-shell {
+  box-shadow:
+    0 1px 0 0 rgb(255 255 255 / 0.04) inset,
+    0 16px 48px -8px rgb(0 0 0 / 0.6);
+}
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+@keyframes palette-out {
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  @keyframes palette-in {
+    from {
+      opacity: 0;
+    }
+  }
+}

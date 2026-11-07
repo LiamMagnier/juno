@@ -1,4 +1,3 @@
-import { AdminNav } from "@/components/admin/admin-nav";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import type { LatencyPercentiles, TurnLatencySummary, TurnTrace } from "@/lib/chat/turn/trace";
 import type { ModelPerformanceSnapshot } from "@/lib/observability";
@@ -99,10 +98,8 @@ export function TurnsAdmin({
     <AppPage measure="wide" contentClassName="flex flex-col gap-8">
       <AppPageHeader
         className="mb-0"
-        eyebrow="Owner"
         heading="Turns"
         lede="Recent chat turns on this server process, as their redacted traces. No message text is recorded."
-        actions={<AdminNav current="turns" />}
       />
 
       {latency && (

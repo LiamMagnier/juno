@@ -167,11 +167,15 @@ test("the settings loading page draws the rail's groups, names and all", () => {
   const label = rail.match(/const groupLabelClass = "([^"]+)"/)?.[1];
   assert.ok(label && loading.includes(`className="${label}"`), label);
   assert.equal(SETTINGS_GROUPS.flatMap((g) => g.ids).length, ALL_SETTINGS_SECTIONS.length);
-  // The page's column has no gap of its own (2px a part set each row 5.6px
-  // low), the title is ed-h3's 26.4px line, and stacked the rail is the 44px
-  // section menu, not a 36px search with a margin under it.
-  assert.match(loading, /<div className="flex shrink-0 flex-col border-b border-border\/60 bg-sidebar/);
-  assert.match(loading, /h-\[26\.4px\] w-24 rounded-xs/);
+  // The window's column has no gap of its own (2px a part set each row 5.6px
+  // low) and draws the page's own rail column; the title row is the page's
+  // 36px "Settings" row; stacked the rail is the 44px section menu, not a
+  // 36px search with a margin under it.
+  const page = read("src/app/(app)/settings/page.tsx");
+  assert.match(loading, /<div className="settings-rail-col flex shrink-0 flex-col px-3 pb-3 pt-3 md:h-full md:w-\[15\.5rem\]/);
+  assert.match(page, /settings-rail-col relative flex shrink-0 flex-col px-3 pb-3 pt-3 md:h-full md:w-\[15\.5rem\]/);
+  assert.match(loading, /<div className="mb-3 flex h-9 items-center pl-2\.5 md:mb-4">/);
+  assert.match(page, /<div className="mb-3 flex h-9 items-center justify-between pl-2\.5 md:mb-4">/);
   assert.match(loading, /<Skeleton className="h-11 w-full rounded-control md:mb-4 md:h-9" \/>/);
 });
 
