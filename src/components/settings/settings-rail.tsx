@@ -291,7 +291,7 @@ export function SettingsRail({
     cn(rowClass, selected ? "bg-transparent hover:bg-transparent" : id === firstMatchId && "bg-accent");
 
   const column = (
-    <div className="flex flex-col gap-0.5">
+    <div className="settings-rail-rows flex flex-col gap-0.5">
       {groups.map((group) => (
         <React.Fragment key={group.label}>
           <p className={groupLabelClass} aria-hidden="true">

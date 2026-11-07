@@ -35,6 +35,8 @@ import { staggerDelay } from "@/lib/motion";
 import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 import { agentIsWorking, filterRoster, type RosterFilter } from "@/lib/agents/roster-view";
 import { OrbitCapabilities } from "./orbit-capabilities";
+import { useWorkHosts, type WorkHostsState } from "./use-work-hosts";
+import { OrbitComputers, RunsOnChip, runsOnInput, type RunsOn } from "./orbit-computers";
 
 /*
  * Orbit, the agents home (docs/rework/brand/ORBIT_SYSTEM.md; design V3 crew
@@ -99,6 +101,13 @@ export function AgentsHome({
   const knownPlan = plan ?? appPlan ?? null;
   const hiring = knownPlan ? agentHiringGate(knownPlan) : null;
   const canHire = hiring?.allowed !== false;
+  const { state: hosts, retry: retryHosts } = useWorkHosts(true);
+  const machineOf = (agent: ClientAgent): { kind: "cloud" | "mac"; name: string } => {
+    if (agent.executionTarget !== "mac") return { kind: "cloud", name: "Cloud computer" };
+    const macs = hosts.kind === "ok" ? hosts.hosts : [];
+    const named = macs.find((host) => host.id === agent.preferredHostId);
+    return { kind: "mac", name: named?.displayName ?? "Any of your Macs" };
+  };
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<RosterFilter>("all");
   const [starter, setStarter] = React.useState<{ text: string } | null>(null);
@@ -176,12 +185,15 @@ export function AgentsHome({
           {filters.map(({ value, label, count }) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}<span>{count}</span></button>)}
         </div>
         <p className="sr-only" role="status">{visible.length} {visible.length === 1 ? "agent" : "agents"} shown</p>
-        {visible.length ? <OrbitCrew agents={visible} asked={asked} hrefOf={agentHref} onChanged={refresh} /> : <div className="orbit-no-results"><Search className="size-5 text-muted-foreground" aria-hidden="true" /><p>No agents match this view.</p><Button type="button" variant="link" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</Button></div>}
+        {visible.length ? <OrbitCrew agents={visible} asked={asked} hrefOf={agentHref} machineOf={machineOf} onChanged={refresh} /> : <div className="orbit-no-results"><Search className="size-5 text-muted-foreground" aria-hidden="true" /><p>No agents match this view.</p><Button type="button" variant="link" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</Button></div>}
       </section>
 
-      <section ref={composerSection} aria-label={`New ${AGENT_NOUN.singular}`} className={cn("orbit-new-agent mt-7", RISE)} style={stagger(Math.min(ordered.length, 6) + 3)}>
-        {canHire || !hiring ? <DescribeAgent team={ordered} autoFocus={focusComposer} starter={starter} /> : <AgentsUpgrade gate={hiring} kept />}
+      <div className="mt-7 grid items-start gap-7 @[60rem]/page:grid-cols-[minmax(0,1fr)_20rem]">
+      <section ref={composerSection} aria-label={`New ${AGENT_NOUN.singular}`} className={cn("orbit-new-agent", RISE)} style={stagger(Math.min(ordered.length, 6) + 3)}>
+        {canHire || !hiring ? <DescribeAgent team={ordered} autoFocus={focusComposer} starter={starter} hosts={hosts} /> : <AgentsUpgrade gate={hiring} kept />}
       </section>
+      <OrbitComputers agents={ordered} hosts={hosts} onRetry={retryHosts} onChanged={refresh} />
+      </div>
       {canHire ? <OrbitCapabilities onChoose={chooseStarter} /> : null}
     </AppPage>
   );
@@ -316,7 +328,7 @@ function hashSalt(key: string): number {
 }
 
 /** Creates the agent from what was written and opens its thread, where it sets itself up in conversation. */
-function useCreateAgent(team: readonly ClientAgent[]) {
+function useCreateAgent(team: readonly ClientAgent[], runsOn: RunsOn = { target: "cloud" }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -337,7 +349,7 @@ function useCreateAgent(team: readonly ClientAgent[]) {
     setError(null);
     if (!request.current || request.current.text !== text) request.current = { key: crypto.randomUUID(), text };
     try {
-      const outcome = await hireAgent(newAgentInput({ text, name, avatar: face, creationKey: request.current.key }));
+      const outcome = await hireAgent(newAgentInput({ text, name, avatar: face, creationKey: request.current.key, ...runsOnInput(runsOn) }));
       if (outcome.kind !== "ok") {
         setError(outcome.message);
         setBusy(false);
@@ -373,66 +385,87 @@ function useAutosize(value: string, max: number) {
  * object (surface, one hairline, no shadow), one notch smaller. The note says
  * what it will never do without asking.
  */
-function DescribeAgent({ team, autoFocus, starter }: { team: readonly ClientAgent[]; autoFocus: boolean; starter: { text: string } | null }) {
+function DescribeAgent({
+  team,
+  autoFocus,
+  hosts,
+  fieldRef,
+  starter,
+}: {
+  team: readonly ClientAgent[];
+  autoFocus: boolean;
+  hosts: WorkHostsState;
+  starter: { text: string } | null;
+  fieldRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
+}) {
   const [value, setValue] = React.useState("");
-  const { busy, error, name, create } = useCreateAgent(team);
-  const field = useAutosize(value, 200);
-  const id = React.useId();
+  const [runsOn, setRunsOn] = React.useState<RunsOn>({ target: "cloud" });
+  const { busy, error, name, create } = useCreateAgent(team, runsOn);
+  const autosized = useAutosize(value, 200);
+  const field = React.useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      autosized.current = el;
+      if (fieldRef) fieldRef.current = el;
+    },
+    [autosized, fieldRef],
+  );
   React.useEffect(() => {
     if (!starter) return;
     setValue(starter.text);
-    field.current?.focus({ preventScroll: true });
-  }, [starter, field]);
+    autosized.current?.focus({ preventScroll: true });
+  }, [starter, autosized]);
   return (
     <form
+      className="orbit-create-form"
+      aria-labelledby="orbit-new-agent"
       onSubmit={(event) => {
         event.preventDefault();
         void create(value);
       }}
-      className="orbit-create-form rounded-panel border border-foreground/[0.1] bg-card p-3 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/[0.2] kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]"
     >
-      <div className="px-2.5 pt-2.5">
-        <label htmlFor={id} className="block text-ui font-medium text-foreground">
-          {`What should a new ${AGENT_NOUN.singular} take care of?`}
-        </label>
-        <textarea
-          id={id}
-          ref={field}
-          value={value}
-          rows={1}
-          autoFocus={autoFocus}
-          disabled={busy}
-          maxLength={6000}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            // Return on an on-screen keyboard breaks the line; the button sends (G35).
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && !touchReturnBreaksLine(event)) {
-              event.preventDefault();
-              void create(value);
-            }
-          }}
-          placeholder={EXAMPLES[0]}
-          className="mt-1 block min-h-6 w-full resize-none bg-transparent text-body leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-70"
-        />
-      </div>
-      <div className="mt-3 flex flex-col items-stretch gap-2.5 @[40rem]/page:flex-row @[40rem]/page:items-center @[40rem]/page:justify-between">
-        <p className="px-2.5 text-caption leading-4 text-muted-foreground" aria-live="polite">
-          {error ? (
-            <span role="alert" className="text-destructive-ink">
-              {error}
-            </span>
-          ) : busy ? (
-            `${name} is setting up…`
-          ) : value.trim() ? (
-            `${name} will take this on. It asks before sending, paying or deleting anything.`
-          ) : (
-            "It asks before sending, paying or deleting anything. You choose how it looks next."
-          )}
-        </p>
-        <Button type="submit" disabled={busy || !value.trim()} loading={busy} className="shrink-0 px-3.5 disabled:opacity-40">
-          {FEATURE_NAMES.createAgent.label}
-        </Button>
-      </div>
+      <h2 id="orbit-new-agent" className="mb-3 text-ui font-medium">What should a new agent take care of?</h2>
+      {/* The chat composer itself, so starting an agent feels like starting
+          a chat: same surface, radius, field and send disc. The machine it
+          will work on sits where the chat keeps its context chips. */}
+      <ComposerShell
+        field={
+          <textarea
+            ref={field}
+            value={value}
+            rows={1}
+            autoFocus={autoFocus}
+            disabled={busy}
+            maxLength={6000}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={(event) => {
+              // Return on an on-screen keyboard breaks the line; the button sends (G35).
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && !touchReturnBreaksLine(event)) {
+                event.preventDefault();
+                void create(value);
+              }
+            }}
+            placeholder={EXAMPLES[0]}
+            aria-label={`What should a new ${AGENT_NOUN.singular} take care of?`}
+            className={composerFieldClass}
+          />
+        }
+        leading={<RunsOnChip value={runsOn} onChange={setRunsOn} hosts={hosts} disabled={busy} />}
+        action={<ComposerPrimaryAction face={busy ? "busy" : "send"} type="submit" disabled={busy || !value.trim()} aria-label={FEATURE_NAMES.createAgent.label} />}
+        dimmed={busy}
+      />
+      <p className="mt-2 px-1 text-caption leading-4 text-muted-foreground" aria-live="polite">
+        {error ? (
+          <span role="alert" className="text-destructive-ink">
+            {error}
+          </span>
+        ) : busy ? (
+          `${name} is setting up…`
+        ) : value.trim() ? (
+          `${name} will take this on. It asks before sending, paying or deleting anything.`
+        ) : (
+          "It asks before sending, paying or deleting anything."
+        )}
+      </p>
     </form>
   );
 }
@@ -441,7 +474,9 @@ function DescribeAgent({ team, autoFocus, starter }: { team: readonly ClientAgen
 function HeroComposer({ team, heading, starter }: { team: readonly ClientAgent[]; heading: React.ReactNode; starter: { text: string } | null }) {
   const [value, setValue] = React.useState("");
   const [focused, setFocused] = React.useState(false);
-  const { busy, error, arrived, face, name, create } = useCreateAgent(team);
+  const [runsOn, setRunsOn] = React.useState<RunsOn>({ target: "cloud" });
+  const { state: hosts } = useWorkHosts(true);
+  const { busy, error, arrived, face, name, create } = useCreateAgent(team, runsOn);
   const field = useAutosize(value, 220);
   React.useEffect(() => {
     if (!starter) return;
@@ -487,11 +522,7 @@ function HeroComposer({ team, heading, starter }: { team: readonly ClientAgent[]
               className={composerFieldClass}
             />
           }
-          leading={
-            <span className="pl-1.5 text-caption text-muted-foreground">
-              {busy ? `${name} is setting up…` : value.trim() ? `${name} will take this on` : null}
-            </span>
-          }
+          leading={<RunsOnChip value={runsOn} onChange={setRunsOn} hosts={hosts} disabled={busy} />}
           action={<ComposerPrimaryAction face={busy ? "busy" : "send"} type="submit" disabled={busy || !value.trim()} aria-label={FEATURE_NAMES.createAgent.label} />}
           dimmed={busy}
         />

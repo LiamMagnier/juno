@@ -506,8 +506,9 @@ function EffortPanel({
                     // On (Fast or Ultra fast): the same filled ink circle as
                     // the Pro capsule, glyph inverted; the bolt count tells
                     // the two apart. Off stays a quiet unfilled glyph.
-                    speedTier !== "off" && "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+                    speedTier !== "off" && "speed-on bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
                   )}
+                  data-tier={speedTier}
                 >
                   <SpeedGlyph tier={speedTier} />
                 </button>
@@ -596,14 +597,23 @@ function EffortPanel({
               // Light used to be near-black (foreground/85): at Max a solid
               // black slab, the heaviest object in the composer, where dark
               // mode drew the same control in a calm grey.
-              "absolute inset-0 rounded-full bg-foreground/[0.22] transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-opacity dark:bg-white/25",
+              // The tint, deepening with the rung (owner, 7 Nov 2026: the grey
+              // fill read as disabled).
+              "effort-fill absolute inset-0 rounded-full transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-opacity",
               index === 0 && "opacity-0",
             )}
+            data-max={count > 1 && index === count - 1 ? "" : undefined}
             // The fill is a pill that holds the knob with the track's own 4px
             // inset on every side (36px track, 28px knob): it ends 4px past the
             // knob, so at the last rung it meets the track's end with no sliver
             // of the empty track showing, and the radii stay concentric.
-            style={{ transform: `translateX(calc(-100% + ${head} + ${PANEL_THUMB / 2 + 4}px))` }}
+            style={{
+              transform: `translateX(calc(-100% + ${head} + ${PANEL_THUMB / 2 + 4}px))`,
+              // The fill slides, so its own right end is what shows: the
+              // colour is set per rung instead, pale at the first and full
+              // at Max.
+              ["--effort-t" as string]: count > 1 ? (index / (count - 1)).toFixed(3) : "1",
+            }}
           />
         </div>
         {options.map((option, i) => (
@@ -612,7 +622,7 @@ function EffortPanel({
             aria-hidden
             className={cn(
               "pointer-events-none absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast ease-out-soft",
-              i < index ? "bg-background/55" : i === index ? "bg-transparent" : "bg-foreground/25"
+              i < index ? "bg-white/70" : i === index ? "bg-transparent" : "bg-foreground/25"
             )}
             style={{ left: panelStop(i, count) }}
           />
@@ -622,7 +632,10 @@ function EffortPanel({
             className="absolute inset-0 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
             style={{ transform: `translateX(${head})` }}
           >
-            <div className="absolute left-0 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.18),0_2px_8px_rgb(0_0_0/0.12)]" />
+            <div
+              className="effort-knob absolute left-0 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.18),0_2px_8px_rgb(0_0_0/0.12)]"
+              data-max={count > 1 && index === count - 1 ? "" : undefined}
+            />
           </div>
         </div>
         <input

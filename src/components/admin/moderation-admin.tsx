@@ -12,7 +12,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Textarea } from "@/components/ui/textarea";
-import { AdminNav } from "@/components/admin/admin-nav";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -95,7 +94,7 @@ function severityIcon(severity: string): IconComponent {
 }
 
 const CHIP = "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-caption font-semibold";
-const TH_CLASS = "px-4 py-2.5 font-mono text-caption font-medium text-muted-foreground";
+const TH_CLASS = "px-4 py-2.5 text-caption font-medium text-muted-foreground";
 
 export function ModerationAdmin() {
   const [filter, setFilter] = React.useState<Filter>("all");
@@ -225,13 +224,11 @@ export function ModerationAdmin() {
     <AppPage measure="wide" contentClassName="flex flex-col gap-6">
         <AppPageHeader
           className="mb-0"
-          eyebrow="Owner"
           heading="Moderation"
           lede="Content flags, strikes, and bans across the platform."
-          actions={<AdminNav current="moderation" />}
         />
 
-        <Card className="overflow-hidden p-0">
+        <Card className="adm-table overflow-hidden p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3">
             {/* The shared control, one import away, instead of a third local
                 restatement of it — the inline copy repeated the inverted ladder
@@ -248,7 +245,7 @@ export function ModerationAdmin() {
               options={FILTERS.map((f) => ({ value: f.id, label: f.label }))}
             />
             {data && (
-              <p className="font-mono text-caption tabular-nums text-muted-foreground">
+              <p className="text-caption tabular-nums text-muted-foreground">
                 {total} {total === 1 ? "flag" : "flags"}
               </p>
             )}
@@ -468,7 +465,7 @@ export function ModerationAdmin() {
           )}
 
           <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
-            <p className="font-mono text-caption tabular-nums text-muted-foreground">
+            <p className="text-caption tabular-nums text-muted-foreground">
               Page {page} of {pageCount}
             </p>
             <div className="flex gap-2">

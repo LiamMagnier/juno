@@ -20,7 +20,7 @@ export function OrbitCapabilities({ onChoose }: { onChoose: (prompt: string) => 
           <h2 id="orbit-capabilities-title">What will you put in motion?</h2>
           <p>Start with a focus. Make it your own.</p>
         </div>
-        <span className="orbit-overline hidden sm:block">EXPLORE ORBIT</span>
+        <span className="orbit-overline hidden sm:block">Explore Orbit</span>
       </div>
       <div className="orbit-capabilities__grid">
         {CAPABILITIES.map(({ icon: Icon, name, description, prompt }) => (

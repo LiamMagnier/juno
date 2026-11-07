@@ -4,6 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SETTINGS_GROUPS } from "@/components/settings/settings-sections";
 // The pane header's skeleton takes its line box from the serif `ed-h2`.
 import "@/components/app/editorial.css";
+import "@/components/settings/settings-window.css";
 
 /**
  * The full-window settings page, waiting: the same left column (Back to app,
@@ -11,14 +12,15 @@ import "@/components/app/editorial.css";
  */
 export default function SettingsLoading() {
   return (
-    <div role="status" aria-label="Loading settings" className="fixed inset-0 z-modal flex flex-col bg-background md:flex-row">
+    <div role="status" aria-label="Loading settings" className="settings-layer fixed inset-0 z-modal md:flex md:items-center md:justify-center">
+      <div aria-hidden="true" className="settings-scrim absolute inset-0 hidden md:block" />
+      <div className="settings-window relative flex h-full w-full flex-col overflow-hidden bg-background md:h-[min(52rem,calc(100dvh-3rem))] md:w-[min(68rem,calc(100vw-3rem))] md:flex-row md:rounded-panel">
       {/* No gap of its own, as the page's column has none: its 2px between
           each part set every row 5.6px low. */}
-      <div className="flex shrink-0 flex-col border-b border-border/60 bg-sidebar px-3 pb-3 pt-3 md:h-full md:w-64 md:border-b-0 md:border-r md:pt-4">
-        <Skeleton className="mb-3 h-9 w-32 rounded-control md:mb-1" />
-        {/* The column's serif title (ed-h3, 22px on a 1.2 line: 26.4px). */}
-        <div className="hidden px-2.5 pb-4 pt-5 md:block">
-          <Skeleton className="h-[26.4px] w-24 rounded-xs" />
+      <div className="settings-rail-col flex shrink-0 flex-col px-3 pb-3 pt-3 md:h-full md:w-[15.5rem] md:pt-4">
+        {/* The window's "Settings" title. */}
+        <div className="mb-3 flex h-9 items-center pl-2.5 md:mb-4">
+          <Skeleton className="h-5 w-20 rounded-xs" />
         </div>
         {/* Stacked (under md) the rail is one row, the open section's 44px
             menu; as a column, the 36px search over the groups. */}
@@ -40,7 +42,7 @@ export default function SettingsLoading() {
         </div>
       </div>
       <div className="min-w-0 flex-1">
-        <div className="mx-auto w-full max-w-[44rem] px-5 pb-24 pt-8 sm:px-10 md:pt-16">
+        <div className="mx-auto w-full max-w-[42rem] px-5 pb-24 pt-6 sm:px-10 md:pt-12">
           <SettingsPaneHeaderSkeleton />
           <div className={SETTINGS_CARD_CLASS}>
             {[...Array(4)].map((_, i) => (
@@ -48,6 +50,7 @@ export default function SettingsLoading() {
             ))}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

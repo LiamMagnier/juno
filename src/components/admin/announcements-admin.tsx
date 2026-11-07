@@ -14,7 +14,6 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { AdminNav } from "@/components/admin/admin-nav";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
@@ -388,7 +387,7 @@ function MediaDropzone({
                 its own gives no sense of how much is left, and the same upload
                 already draws one in import-history. */}
             <p className="max-w-full truncate text-caption text-foreground">{fileName}</p>
-            <p className="font-mono text-caption tabular-nums text-muted-foreground" aria-live="polite">
+            <p className="text-caption tabular-nums text-muted-foreground" aria-live="polite">
               {progress >= 95 ? "Storing…" : `Uploading… ${progress}%`}
             </p>
             <div className="h-1 w-40 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
@@ -530,12 +529,10 @@ export function AnnouncementsAdmin() {
     <AppPage measure="wide" contentClassName="flex flex-col gap-6">
         <AppPageHeader
           className="mb-0"
-          eyebrow="Owner"
           heading="Announcements"
           lede="Publish model-release popups and product messages."
           actions={
             <>
-              <AdminNav current="announcements" />
               <Button variant="outline" size="sm" onClick={reset}>
                 <Plus className="size-4" />
                 New draft
@@ -545,7 +542,7 @@ export function AnnouncementsAdmin() {
         />
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-          <Card className="p-4">
+          <Card className="adm-table p-4">
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -702,7 +699,7 @@ export function AnnouncementsAdmin() {
           </Card>
 
           <div className="flex flex-col gap-4">
-            <Card className="overflow-hidden p-0">
+            <Card className="adm-table overflow-hidden p-0">
               <div className="border-b border-border/70 px-4 py-3">
                 <div className="flex items-center gap-2 text-ui font-semibold">
                   <Eye className="size-4 text-muted-foreground" />
@@ -734,7 +731,7 @@ export function AnnouncementsAdmin() {
               </div>
             </Card>
 
-            <Card className="p-4">
+            <Card className="adm-table p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-ui font-semibold">Current popups</h2>
                 {/* The spinner is the point of a Refresh button: disabled alone

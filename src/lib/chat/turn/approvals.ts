@@ -143,6 +143,26 @@ export async function resolveApprovals({
         })
       : null;
 
+  // An agent's thread without start_task cannot reach its computer. Say which
+  // condition closed the gate, so "my agent says it has no computer" has an
+  // answer in the server log instead of a guess.
+  if (turnAgentId && !taskToolOn && !input.privateMode && !input.voiceMode) {
+    const closed = Object.entries({ ...taskGate, skillPermits: narrowRuntimeToolsForSkill([START_TASK_TOOL_ID], appliedSkill).length > 0 })
+      .filter(([key, value]) =>
+        key === "researchActive" || key === "artifactEdit" || key === "lockdown" || key === "regenerate"
+          ? value === true
+          : key === "conversationKind"
+            ? value !== "chat"
+            : key === "userMessageId"
+              ? !value
+              : key === "privateMode" || key === "voiceMode" || key === "plan"
+                ? false
+                : value !== true,
+      )
+      .map(([key]) => key);
+    console.info("[chat] agent turn without start_task", { conversationId: conversation.id, agentId: turnAgentId, closed });
+  }
+
   /*
    * The folder on the person's Mac (src/lib/chat/local-folder.ts): whether
    * this turn carries the folder tools, and the folder it names. A skill that

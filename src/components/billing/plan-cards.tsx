@@ -140,7 +140,7 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
           wraps under some figures and not others breaks the row. The yearly
           charge, when there is one, sits under the unit. */}
       <p className="mt-4 text-display tabular-nums">{price}</p>
-      <p className="mt-1 font-mono text-caption tabular-nums text-muted-foreground">
+      <p className="mt-1 text-caption tabular-nums text-muted-foreground">
         {suffix}
         {/* Always present (a no-break space when empty) so a Free card on
             yearly billing lines up with the paid ones beside it. */}

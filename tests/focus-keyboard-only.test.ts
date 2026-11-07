@@ -76,7 +76,8 @@ test("no fixed text field draws a ring or a primary halo on every focus", () => 
     "src/components/chat/message-item.tsx",
     "src/components/research/scope-card.tsx",
     "src/components/app/code-work-list.tsx",
-    "src/components/agents/agents-home.tsx",
+    // agents-home.tsx left this list in Orbit V5: its new-agent field is the chat
+    // composer (ComposerShell), whose one ring is `.composer-surface[data-kbd-focus]`.
     "src/components/agents/computer-viewer.tsx",
     "src/components/code/code-input-request.tsx",
     "src/components/canvas/code-surface.tsx",

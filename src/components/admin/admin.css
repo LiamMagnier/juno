@@ -1,0 +1,171 @@
+/*
+ * Admin: the persistent bar (admin-nav.tsx) and the Overview (admin-overview.tsx).
+ *
+ * One surface for every panel: a 1px hairline at 16px corners, no fill, no
+ * shadow, no decoration standing in for structure.
+ */
+
+/* ── The bar ─────────────────────────────────────────────────────────────── */
+.admin-tab-pill {
+  background: hsl(var(--foreground) / 0.06);
+}
+.dark .admin-tab-pill {
+  background: hsl(var(--foreground) / 0.09);
+}
+.admin-tab {
+  transition-property: color, transform;
+  transition-duration: var(--dur-fast), var(--dur-press);
+}
+.admin-tab:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-tab:active {
+    transform: none;
+  }
+}
+
+/* ── Overview ────────────────────────────────────────────────────────────────
+   Flat panels on one hairline, no fill and no shadow. Figures are the
+   interface face, tabular. Nothing arrives on a stagger. */
+.adm {
+  --adm-edge: hsl(var(--foreground) / 0.09);
+  --adm-rule: hsl(var(--foreground) / 0.06);
+}
+.adm-panel {
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--adm-edge);
+  padding: 18px 20px;
+}
+.adm-figure {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.022em;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground));
+}
+
+/* Four figures in one strip, divided by hairlines (two by two on a phone). */
+.adm-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--adm-edge);
+  overflow: hidden;
+}
+@container page (min-width: 52rem) {
+  .adm-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.adm-stat {
+  display: block;
+  min-width: 0;
+  padding: 16px 20px 15px;
+  box-shadow: -1px 0 0 0 var(--adm-rule), 0 -1px 0 0 var(--adm-rule);
+  outline: none;
+}
+.adm-stat-link {
+  transition: background-color 160ms var(--ease-out-soft);
+}
+.adm-stat-link:focus-visible {
+  box-shadow: inset 0 0 0 2px hsl(var(--ring) / 0.55);
+}
+.adm-go {
+  transition: transform 160ms var(--ease-out-soft);
+}
+@media (hover: hover) and (pointer: fine) {
+  .adm-stat-link:hover {
+    background: hsl(var(--foreground) / 0.03);
+  }
+  .adm-stat-link:hover .adm-go {
+    transform: translateX(2px);
+    color: hsl(var(--foreground));
+  }
+  .adm-link:hover {
+    color: hsl(var(--foreground));
+  }
+}
+.adm-link {
+  transition: color 160ms var(--ease-out-soft);
+}
+
+.adm-split {
+  display: grid;
+  gap: 16px;
+}
+@container page (min-width: 52rem) {
+  .adm-split {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  }
+}
+
+/* Spend: one ink at low contrast; the bar under the pointer takes full ink.
+   No transition, so the highlight tracks the pointer exactly. */
+.adm-bars {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(0, 1fr));
+  gap: 3px;
+  height: 132px;
+  align-items: end;
+  box-shadow: 0 1px 0 0 var(--adm-rule);
+}
+.adm-bar-slot {
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.adm-bar {
+  display: block;
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: hsl(var(--foreground) / 0.2);
+}
+.adm-bar-slot[data-active] .adm-bar {
+  background: hsl(var(--foreground));
+}
+
+/* Rows on hairlines, the first without one. */
+.adm-list > li:not(:first-child) {
+  box-shadow: 0 -1px 0 0 var(--adm-rule);
+}
+@container page (min-width: 44rem) {
+  .adm-list.grid > li:nth-child(2) {
+    box-shadow: none;
+  }
+}
+
+
+/* ── The section pages' tables and panels ────────────────────────────────────
+   Every Admin card wears the Overview's surface: one hairline, no fill,
+   rows on hairlines a step quieter. */
+.admin-shell .adm-table {
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.09);
+}
+.admin-shell .adm-table :is(thead tr, tbody tr) {
+  border-color: hsl(var(--foreground) / 0.06);
+}
+.admin-shell .adm-table > div:first-child {
+  border-color: hsl(var(--foreground) / 0.06);
+}
+.admin-shell .adm-search {
+  border-color: transparent;
+  background: hsl(var(--foreground) / 0.045);
+  border-radius: 999px;
+}
+.admin-shell .adm-search:focus-visible {
+  background: hsl(var(--background));
+  border-color: hsl(var(--border));
+}
+.admin-shell .adm-plan-select {
+  border-color: transparent;
+  background: hsl(var(--foreground) / 0.045);
+  border-radius: 999px;
+}
+.admin-shell .adm-plan-select:hover {
+  background: hsl(var(--foreground) / 0.07);
+}

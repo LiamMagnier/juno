@@ -20,6 +20,7 @@ import {
 import type { LiveComponent, LiveIngredient } from "@/lib/live-ui/spec";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
+import { useLiveReport } from "@/components/chat/live-ui/report";
 
 /**
  * The intelligent-UI set (docs/design/LIVE_UI.md §2.4): views for what people
@@ -108,6 +109,18 @@ export function LiveRecipe({ recipe }: { recipe: Of<"recipe"> }) {
   const [timers, setTimers] = React.useState<Record<number, Timer>>({});
   const [copied, setCopied] = React.useState(false);
   const scale = servings / recipe.servings;
+  useLiveReport(
+    `recipe:${recipe.key}`,
+    servings === recipe.servings && have.size === 0 && done.size === 0
+      ? null
+      : [
+          servings !== recipe.servings ? `${recipe.title ?? "Recipe"}: scaled to ${servings} ${recipe.yieldLabel} (the reply wrote ${recipe.servings})` : `${recipe.title ?? "Recipe"}: ${servings} ${recipe.yieldLabel}`,
+          have.size ? `has ${have.size} of ${recipe.ingredients.length} ingredients` : null,
+          done.size ? `done ${done.size} of ${recipe.steps.length} steps` : null,
+        ]
+          .filter(Boolean)
+          .join(", "),
+  );
   const total = recipe.steps.reduce((sum, s) => sum + (s.minutes ?? 0), 0);
 
   const anyRunning = Object.values(timers).some((t) => t.running);
@@ -427,7 +440,7 @@ export function LiveCompare({
                 </ul>
               ) : null}
               {o.facts.length ? (
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-t border-border/60 pt-3 text-ui">
+                <dl className="mt-auto grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-t border-border/60 pt-3 text-ui">
                   {o.facts.map((f, k) => (
                     <React.Fragment key={k}>
                       <dt className="text-muted-foreground">{f.label}</dt>
@@ -446,7 +459,8 @@ export function LiveCompare({
                     onPrompt?.(o.prompt!);
                     onLock?.([i]);
                   }}
-                  className={cn("mt-auto w-full justify-center", best ? "live-primary" : "live-chip live-chip-lg")}
+                  /* The facts sit on the bottom with the button, so their rows line up across plans. */
+                  className={cn("w-full justify-center", !o.facts.length && "mt-auto", best ? "live-primary" : "live-chip live-chip-lg")}
                 >
                   {chosen === i ? <Check className="size-3.5" aria-hidden /> : null}
                   {chosen === i ? "Chosen" : `Go with ${o.name}`}
@@ -464,7 +478,7 @@ export function LiveCompare({
 
 function Rating({ value }: { value: number }) {
   return (
-    <span className="inline-flex items-center gap-1 text-caption tabular-nums text-muted-foreground" aria-label={`Rated ${value} out of 5`}>
+    <span className="inline-flex shrink-0 items-center gap-1 text-caption tabular-nums text-muted-foreground" aria-label={`Rated ${value} out of 5`}>
       <span className="inline-flex" aria-hidden>
         {[0, 1, 2, 3, 4].map((i) => (
           <Star key={i} weight={value >= i + 0.75 ? "fill" : undefined} className={cn("size-3", value >= i + 0.75 ? "text-[hsl(var(--warning))]" : "text-ink-tertiary")} />
@@ -483,10 +497,10 @@ export function LiveCards({ cards, onPrompt }: { cards: Of<"cards">; onPrompt?: 
         {cards.items.map((it, i) => {
           const Tag = it.prompt && onPrompt ? "button" : "div";
           return (
-            <li key={i} style={staggerDelay(i, "base")} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]">
+            <li key={i} style={staggerDelay(i, "base")} className="flex min-w-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]">
               <Tag
                 {...(Tag === "button" ? { type: "button" as const, onClick: () => onPrompt?.(it.prompt!) } : {})}
-                className={cn("live-tile group/tile", Tag === "button" && "live-tile-action")}
+                className={cn("live-tile group/tile h-full", Tag === "button" && "live-tile-action")}
               >
                 <span aria-hidden className="live-tile-mark">
                   {it.title.slice(0, 1).toUpperCase()}
@@ -497,9 +511,9 @@ export function LiveCards({ cards, onPrompt }: { cards: Of<"cards">; onPrompt?: 
                     {it.meta ? <span className="shrink-0 text-ui font-medium tabular-nums text-foreground">{it.meta}</span> : null}
                   </span>
                   {it.subtitle || it.rating !== undefined ? (
-                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-caption text-muted-foreground">
+                    <span className="flex min-w-0 items-center gap-x-2 text-caption text-muted-foreground">
                       {it.rating !== undefined ? <Rating value={it.rating} /> : null}
-                      {it.subtitle ? <span className="truncate">{it.subtitle}</span> : null}
+                      {it.subtitle ? <span className="min-w-0 truncate" title={it.subtitle}>{it.subtitle}</span> : null}
                     </span>
                   ) : null}
                   {it.detail ? <span className="line-clamp-2 text-caption leading-relaxed text-muted-foreground">{it.detail}</span> : null}
@@ -583,6 +597,7 @@ export function LiveFlashcards({ deck }: { deck: Of<"flashcards"> }) {
   const [known, setKnown] = React.useState<ReadonlySet<number>>(() => new Set());
   const n = deck.cards.length;
   const card = deck.cards[index];
+  useLiveReport(`deck:${deck.key}`, known.size === 0 ? null : `${deck.title ?? "Flashcards"}: knows ${known.size} of ${n} cards`);
   const go = (next: number) => {
     setFlipped(false);
     setIndex((next + n) % n);

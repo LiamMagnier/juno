@@ -3,11 +3,13 @@
 import * as React from "react";
 import { RollingNumber } from "@/components/ui/micro";
 import { PRODUCT_NAME } from "@/lib/brand/names";
-import { MemoryConstellation, type ConstellationTopic } from "@/components/memory/memory-constellation";
+import type { ConstellationTopic } from "@/components/memory/memory-constellation";
 import { relativeTime } from "@/components/memory/memory-time";
 
 /**
- * The top of Memory: what this page is, three figures, and the constellation.
+ * The top of Memory: what this page is and three figures. (The dot-matrix
+ * constellation beside them was retired on 7 Nov 2026 as decoration; the
+ * topics are listed in full below.)
  * The figures are the three questions a reader arrives with: how much does it
  * know, about how many things, and is it still learning.
  */
@@ -16,11 +18,7 @@ export function MemoryHero({
   count,
   topics,
   lastLearned,
-  liveTopicId,
-  activeId,
-  onSelect,
   scopes,
-  previews,
 }: {
   previews?: Record<string, string[]>;
   actions: React.ReactNode;
@@ -37,13 +35,13 @@ export function MemoryHero({
   const hasData = topics.length > 0;
   return (
     <section aria-labelledby="memory-title" className="relative">
-      <div className="grid items-center gap-x-10 gap-y-8 @[56rem]/memory:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+      <div className="relative">
         <div className="min-w-0">
           <div className="flex items-start justify-between gap-4">
             <h1 id="memory-title" className="mem-display mem-rise text-foreground" style={{ ["--i" as string]: 0 }}>
               Memory
             </h1>
-            <div className="mem-rise pt-2 @[56rem]/memory:hidden" style={{ ["--i" as string]: 1 }}>
+            <div className="mem-rise pt-2" style={{ ["--i" as string]: 1 }}>
               {actions}
             </div>
           </div>
@@ -75,14 +73,6 @@ export function MemoryHero({
           )}
         </div>
 
-        <div className="relative hidden min-w-0 @[56rem]/memory:block">
-          <div className="absolute right-0 top-0 z-[1]">{actions}</div>
-          {hasData && (
-            <div className="px-2 pt-10">
-              <MemoryConstellation topics={topics} liveTopicId={liveTopicId} activeId={activeId} onSelect={onSelect} previews={previews} />
-            </div>
-          )}
-        </div>
       </div>
     </section>
   );

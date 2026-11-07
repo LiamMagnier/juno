@@ -271,7 +271,7 @@ export function SegmentedControl<T extends string>({
                 unselected count at 2.9:1 in the light theme; the mono face and
                 the smaller rung already set it apart from the label. */}
             {!labelHidden && opt.count !== undefined && (
-              <span className="relative z-10 font-mono text-micro">
+              <span className="relative z-10 text-micro">
                 <RollingNumber value={opt.count} />
               </span>
             )}
@@ -281,7 +281,7 @@ export function SegmentedControl<T extends string>({
             {!!opt.badge && !selected && (
               <span
                 aria-hidden="true"
-                className="relative z-10 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 font-mono text-micro tabular-nums leading-none text-primary-foreground"
+                className="relative z-10 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-micro tabular-nums leading-none text-primary-foreground"
               >
                 {/* Over 99 stops being a number and becomes a word, so it
                     cuts rather than rolls — there is nothing to roll to. */}

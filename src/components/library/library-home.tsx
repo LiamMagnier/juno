@@ -307,7 +307,7 @@ export function LibraryHome() {
                   {/* A glyph and its count on a phone (G54), so both actions
                       share the title's line; the name stays for a screen reader. */}
                   <span className="sr-only @[40rem]/page:not-sr-only">Recently deleted</span>
-                  {deletedCount ? <span className="-mr-0.5 font-mono text-label leading-none tabular-nums text-muted-foreground">{deletedCount}</span> : null}
+                  {deletedCount ? <span className="-mr-0.5 text-label leading-none tabular-nums text-muted-foreground">{deletedCount}</span> : null}
                 </Link>
               </Button>
               <Button size="sm" onClick={() => fileInput.current?.click()} className="ml-0.5 h-9 gap-2 px-3.5 active:scale-[0.97] coarse:h-11">

@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 /*
- * ONE DOOR (owner, 6 Nov 2026: "rework the composer from zero"). The tray
- * under the home composer is gone: Project, Apps and Skills are the + menu's
- * last group on every surface, and the rows say what they bring in two or
- * three words. The contract (shell-contract.test.ts) holds the labels.
+ * Project, Apps and Skills are the + menu's last group in a chat, and the
+ * rows say what they bring in two or three words (the contract,
+ * shell-contract.test.ts, holds the labels). On the home the tray under the
+ * composer carries the three instead, and the + menu leaves them out (owner,
+ * 7 Nov 2026: "remove apps, folder ... from the + menu since it's already
+ * under the composer").
  */
 
 const COMPOSER = readFileSync(new URL("../src/components/chat/composer.tsx", import.meta.url), "utf8");
@@ -17,11 +19,33 @@ function plusSections(): string {
   return COMPOSER.slice(start, COMPOSER.indexOf("];\n\n", start));
 }
 
-test("the composer draws no tray of its own any more", () => {
-  assert.doesNotMatch(COMPOSER, /<ComposerTray\b/);
-  assert.doesNotMatch(COMPOSER, /showTray|trayHasProject|trayHasAppsAndSkills/);
-  // The generation row (image, video, music models) keeps its shelf.
-  assert.match(COMPOSER, /\{mediaParams\.caps && !voiceActive && !steerMode && \(/);
+test("the tray is back on the home only: landing frame, a new chat, not incognito, not in a call, not steering", () => {
+  // Owner, 7 Nov 2026: bring back Project, Apps, Skills and the Mac app under the composer.
+  assert.match(
+    COMPOSER,
+    /const showTray = frame === "landing" && !conversationId && !privateMode && !voiceActive && !steerMode;/,
+  );
+  // Where the tray shows, the + menu drops the group it would repeat; in a chat it keeps it.
+  assert.match(plusSections(), /\/\/ Where this chat sits and what it can reach\.[\s\S]*?!showTray \? \[\n/);
+  // In a thread the generation row keeps its own shelf.
+  assert.match(COMPOSER, /\{!showTray && mediaParams\.caps && !voiceActive && !steerMode && \(/);
+});
+
+test("the tray offers the same three panels the + menu does, in one capsule", () => {
+  const tray = COMPOSER.slice(COMPOSER.indexOf("<ComposerTray"), COMPOSER.indexOf("/>", COMPOSER.indexOf("<ComposerTray")));
+  assert.match(tray, /projectPanel=\{projectPanel\}/);
+  assert.match(tray, /appsPanel=\{showConnectors \? connectorsPanel : null\}/);
+  assert.match(tray, /skillsPanel=\{skillRow \? skillsPanel : null\}/);
+  const traySource = readFileSync(new URL("../src/components/chat/composer-tray.tsx", import.meta.url), "utf8");
+  const dock = traySource.slice(traySource.indexOf('<div className="composer-tray composer-tray--dock"'));
+  const capsule = dock.slice(dock.indexOf('className="composer-tray__capsule"'), dock.indexOf("macApp.visible"));
+  for (const panel of ["project", "apps", "skills"]) assert.match(capsule, new RegExp(`panel="${panel}"`));
+});
+
+test("Project and Apps open on a search box", () => {
+  assert.match(COMPOSER, /<MenuSearch value=\{projectQuery\} onChange=\{setProjectQuery\} placeholder="Search projects"/);
+  assert.match(COMPOSER, /<MenuSearch value=\{connectorQuery\} onChange=\{setConnectorQuery\} placeholder="Search apps"/);
+  assert.doesNotMatch(COMPOSER, /connectors\.length > 5 \? \(\s*<MenuSearch/, "the apps search is not gated on a length any more");
 });
 
 test("Project, Apps and Skills close the + menu, in that order", () => {

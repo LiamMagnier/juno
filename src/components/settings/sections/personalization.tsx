@@ -181,7 +181,7 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
             <label htmlFor="custom-instructions" className="text-label text-muted-foreground">
               Custom instructions
             </label>
-            <span className="font-mono text-caption tabular-nums text-muted-foreground">
+            <span className="text-caption tabular-nums text-muted-foreground">
               {words === 1 ? "1 word" : `${words} words`}
             </span>
           </div>

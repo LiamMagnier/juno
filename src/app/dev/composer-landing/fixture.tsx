@@ -7,7 +7,6 @@ import { AppProvider } from "@/components/app/app-provider";
 import { DictationStageContext, dictationStageFromParam, type DictationStage } from "@/components/chat/composer-dictation-stage";
 import { Composer } from "@/components/chat/composer";
 import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
-import { HomeStarters } from "@/components/chat/home-starters";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { loadMentionFixtures } from "./mention-fixtures";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
@@ -243,10 +242,8 @@ const CLARIFY: NonNullable<React.ComponentProps<typeof Composer>["pendingClarifi
 
 /** The home as chat-view lays it out (`.chat-home`), filling the panel. */
 function HomeView(common: React.ComponentProps<typeof Composer>) {
-  // The shipped home's starters (home-starters.tsx), wired as chat-view wires
-  // them, so the gallery shows the home people get, chips and all.
-  const composerRef = React.useRef<HTMLDivElement>(null);
-  const [startersShown, setStartersShown] = React.useState(false);
+  // As chat-view lays it out: no starter chips under the composer (owner,
+  // 7 Nov 2026), the tray carries Project, Apps and Skills.
   return (
     <section data-fixture="landing" className="flex min-h-dvh flex-col">
       <div className="chat-home page-gutter relative isolate">
@@ -255,13 +252,11 @@ function HomeView(common: React.ComponentProps<typeof Composer>) {
             <EmptyGreeting />
           </div>
         </div>
-        <div ref={composerRef} className="chat-home__composer relative isolate w-full">
-          <HomeField calm={startersShown} />
+        <div className="chat-home__composer relative isolate w-full">
+          <HomeField calm={false} />
           <Composer {...common} frame="landing" />
         </div>
-        <div className="chat-home__suggest">
-          <HomeStarters composerRef={composerRef} onShownChange={setStartersShown} />
-        </div>
+        <div className="chat-home__suggest" />
       </div>
     </section>
   );

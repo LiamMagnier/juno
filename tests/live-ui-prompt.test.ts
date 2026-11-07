@@ -146,6 +146,7 @@ test("the web learns the views people act on; native builds that cannot draw the
   for (const t of ["recipe", "compare", "cards", "choices", "flashcards", "tabs"]) assert.ok(LIVE_UI_DO_SECTION.includes(`${t} (`) || LIVE_UI_DO_SECTION.includes(`"type":"${t}"`), t);
   assert.ok(!buildSystemPromptSections({ ...base, liveUi: true }).stable.includes("views people act on"));
   assert.ok(!buildSystemPromptSections({ ...base, liveUi: true, liveUiDo: true, voiceMode: true }).stable.includes("views people act on"));
-  assert.ok(LIVE_UI_DO_SECTION.length < 2600, `section is ${LIVE_UI_DO_SECTION.length} chars`);
+  // 2026-11: +timer, schedule, donut and the adjusted-views rule.
+  assert.ok(LIVE_UI_DO_SECTION.length < 3000, `section is ${LIVE_UI_DO_SECTION.length} chars`);
   assertValidViews(LIVE_UI_DO_SECTION, 2);
 });

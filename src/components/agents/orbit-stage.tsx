@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { intentPrefetch } from "@/lib/intent-prefetch";
-import { ArrowUpRight, Monitor, MoreHorizontal, Pause, Pin, Play } from "@/components/ui/icons";
+import { ArrowUpRight, Cloud, Laptop, Monitor, MoreHorizontal, Pause, Pin, Play } from "@/components/ui/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
@@ -39,12 +39,14 @@ export function OrbitCrew({
   agents,
   asked,
   hrefOf,
+  machineOf = () => ({ kind: "cloud", name: "Cloud computer" }),
   onChanged,
 }: {
   agents: readonly ClientAgent[];
   /** Agents with a Needs you card above: the card says their state. */
   asked: ReadonlySet<string>;
   hrefOf: (agent: ClientAgent) => string;
+  machineOf?: (agent: ClientAgent) => { kind: "cloud" | "mac"; name: string };
   onChanged: () => void;
 }) {
   return (
@@ -54,14 +56,14 @@ export function OrbitCrew({
     >
       {agents.map((agent, index) => (
         <li key={agent.id} className="orbit-crew__agent group/tile relative min-w-0" style={{ "--i": index } as React.CSSProperties}>
-          <CrewTile agent={agent} size={CREW_FACE} asked={asked.has(agent.id)} href={hrefOf(agent)} onChanged={onChanged} />
+          <CrewTile agent={agent} size={CREW_FACE} asked={asked.has(agent.id)} href={hrefOf(agent)} machine={machineOf(agent)} onChanged={onChanged} />
         </li>
       ))}
     </ul>
   );
 }
 
-function CrewTile({ agent, size, asked, href, onChanged }: { agent: ClientAgent; size: number; asked: boolean; href: string; onChanged: () => void }) {
+function CrewTile({ agent, size, asked, href, machine, onChanged }: { agent: ClientAgent; size: number; asked: boolean; href: string; machine: { kind: "cloud" | "mac"; name: string }; onChanged: () => void }) {
   const router = useRouter();
   const paused = agent.status === "paused";
   const [saving, setSaving] = React.useState(false);
@@ -71,6 +73,7 @@ function CrewTile({ agent, size, asked, href, onChanged }: { agent: ClientAgent;
   // "Working on" quietly, then the task itself in full ink.
   const lead = task && words.endsWith(task) ? words.slice(0, words.length - task.length).trimEnd() : null;
   const last = agent.task && !asked ? formatAgo(agent.task.lastActivityAt) : null;
+  const MachineIcon = machine.kind === "mac" ? Laptop : Cloud;
   const act = async (patch: Parameters<typeof updateAgent>[1]) => {
     if (saving) return;
     setSaving(true);
@@ -122,12 +125,7 @@ function CrewTile({ agent, size, asked, href, onChanged }: { agent: ClientAgent;
             )}
           </span>
         )}
-        {last ? (
-          <span className="orbit-crew__when mt-2 text-caption tabular-nums text-muted-foreground">
-            <span className="sr-only">, </span>
-            {last}
-          </span>
-        ) : null}
+        <span className="orbit-crew__when flex w-full items-center gap-2 text-caption text-muted-foreground"><MachineIcon className="size-3.5 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{machine.name}</span>{last ? <span className="tabular-nums">{last}</span> : null}</span>
       </Link>
       {agent.computer && agent.computer.status !== "disabled" ? <Link href={`${href}?agent=computer`} className="orbit-agent-computer"><Monitor className="size-3.5" aria-hidden="true" />{agent.computer.status === "awake" ? "View computer" : "Open computer"}<ArrowUpRight className="ml-auto size-3" aria-hidden="true" /></Link> : null}
       <DropdownMenu>

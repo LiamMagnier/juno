@@ -4,9 +4,8 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { AppPage } from "@/components/app/app-page";
-import { PageBackdrop } from "@/components/app/page-backdrop";
 import { ProviderLogo } from "@/components/brand/provider-logo";
-import { DotIdenticon } from "@/components/signature/dot-matrix";
+import { Monogram } from "@/components/ui/monogram";
 import { Button } from "@/components/ui/button";
 import { LoadError } from "@/components/ui/load-error";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -76,21 +75,30 @@ export function ProfileView({
   return (
     <AppPage measure="wide" className="pf">
       <div className="@container/pfpage pb-24">
-        <header className="relative isolate pb-10 pt-12 @[40rem]/pfpage:pt-16">
-          <PageBackdrop />
-          <div className="absolute right-0 top-4 flex items-center gap-1.5">
-            <Button asChild variant="outline" size="sm">
-              <Link href={editHref}>Edit</Link>
+        {/* Who this is: the face, the name in the document serif, the handle.
+            On the page itself, not boxed in a card. */}
+        <header className="pf-hero mt-6 pb-8 motion-safe:animate-rise-in @[40rem]/pfpage:mt-10">
+          <div className="flex flex-col gap-5 @[34rem]/pfpage:flex-row @[34rem]/pfpage:items-center">
+            <div className="pf-avatar shrink-0">
+              <Avatar identity={identity} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 translate="no" className="pf-name max-w-full text-balance text-foreground">
+                {identity.name || identity.handle}
+              </h1>
+              <p translate="no" className="mt-1.5 flex flex-wrap items-center gap-x-2 text-body text-muted-foreground">
+                <span>@{identity.handle}</span>
+                {activity && activity.streak.current > 0 ? (
+                  <>
+                    <span aria-hidden="true" className="text-muted-foreground">·</span>
+                    <span>{activity.streak.current}-day streak</span>
+                  </>
+                ) : null}
+              </p>
+            </div>
+            <Button asChild variant="outline" size="sm" className="self-start @[34rem]/pfpage:self-center">
+              <Link href={editHref}>Edit profile</Link>
             </Button>
-          </div>
-          <div className="flex flex-col items-center text-center motion-safe:animate-rise-in">
-            <Avatar identity={identity} />
-            <h1 translate="no" className="pf-name mt-5 max-w-full text-balance text-foreground">
-              {identity.name || identity.handle}
-            </h1>
-            <p translate="no" className="mt-2 text-body text-muted-foreground">
-              @{identity.handle}
-            </p>
           </div>
         </header>
 
@@ -114,13 +122,13 @@ function Avatar({ identity }: { identity: ProfileIdentity }) {
       src={identity.image}
       unoptimized={requiresViewerCredentials(identity.image)}
       alt=""
-      width={88}
-      height={88}
+      width={76}
+      height={76}
       priority
-      className="size-[88px] shrink-0 rounded-full object-cover ring-1 ring-foreground/10"
+      className="size-[76px] shrink-0 rounded-full object-cover ring-1 ring-foreground/10"
     />
   ) : (
-    <DotIdenticon seed={identity.id} className="size-[88px] shrink-0" />
+    <Monogram name={identity.name || identity.handle} className="size-[76px]" />
   );
 }
 
@@ -146,15 +154,15 @@ function StatStrip({ activity }: { activity: ProfileActivity | null }) {
     : ["Lifetime tokens", "Peak day", "Longest task", "Longest streak", "Current streak"].map((label) => ({ label, value: null }));
 
   return (
-    <dl className="pf-strip">
+    <dl className="pf-tiles mt-4">
       {stats.map((s, i) => (
         <div
           key={s.label}
           title={s.title}
-          className="flex min-w-0 flex-col-reverse items-center gap-2 px-4 py-5 text-center motion-safe:animate-rise-in"
-          style={{ ...staggerDelay(i, "base"), animationFillMode: "both" }}
+          className="pf-tile flex min-w-0 flex-col gap-2"
+          style={{ ...staggerDelay(i + 1, "base"), animationFillMode: "both" }}
         >
-          <dt className="text-caption text-muted-foreground">{s.label}</dt>
+          <dt className="text-ui text-muted-foreground">{s.label}</dt>
           <dd className={cn("pf-figure truncate text-foreground", s.small && "pf-figure-sm")}>
             {s.value ?? <Skeleton className="inline-block h-7 w-16 align-middle" />}
           </dd>
@@ -184,7 +192,7 @@ function ActivitySection({ activity, animate }: { activity: ProfileActivity | nu
   const empty = activity !== null && activity.lifetimeTokens === 0;
 
   return (
-    <section aria-labelledby="pf-activity" className="mt-14">
+    <section aria-labelledby="pf-activity" className="pf-panel mt-4">
       <SectionHead
         id="pf-activity"
         title="Token activity"
@@ -239,7 +247,7 @@ function ModelsSection({ activity, animate }: { activity: ProfileActivity | null
   const models = activity?.models ?? [];
   const top = models[0]?.share ?? 1;
   return (
-    <section aria-labelledby="pf-models" className="mt-16">
+    <section aria-labelledby="pf-models" className="pf-panel mt-4">
       <SectionHead
         id="pf-models"
         title="Models"

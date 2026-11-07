@@ -24,6 +24,7 @@ import { replaceBranchTail } from "@/lib/chat/branch-model";
 import type { ResearchEffort } from "@/lib/research/domain";
 import type { ArtifactEditRequest } from "@/lib/artifact-edit";
 import { rangesForStoredText, type ContextToken } from "@/lib/chat/context-tokens";
+import { collectLiveViews } from "@/lib/live-ui/view-state";
 import { sketchGuideForGeneration } from "@/lib/sketch/sketch-core";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { FeedbackDetail } from "@/lib/feedback-reasons";
@@ -1703,6 +1704,15 @@ export function useChat(opts: UseChatOptions) {
           context:
             !input.artifactEdit && input.context?.length ? rangesForStoredText(input.text, input.context) : undefined,
           preflightClarification: input.preflightClarification,
+          // What the reader set in the views of the last few replies (a
+          // slider moved, a quiz scored), so "and with four people?" is read
+          // against the view on screen (src/lib/live-ui/view-state.ts).
+          liveViews: collectLiveViews(
+            messages
+              .filter((m) => m.role === "ASSISTANT")
+              .slice(-3)
+              .map((m) => m.id)
+          ),
           // This client draws a task the model starts (the `work` frame and the
           // panel under the reply), so the route may offer `start_task`. Never
           // in private mode: that path writes no rows for a task to hang from.

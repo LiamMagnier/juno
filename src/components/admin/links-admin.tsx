@@ -23,7 +23,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Textarea } from "@/components/ui/textarea";
-import { AdminNav } from "@/components/admin/admin-nav";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import type { AdminShareReport, AdminShareRow } from "@/lib/share-moderation";
 import { SHARE_REPORT_REASONS, type ShareStatus } from "@/lib/share-policy";
@@ -105,7 +104,7 @@ function kindLabel(kind: AdminShareRow["kind"]): string {
 /* A fact as words, not a tinted pill (owner directive, 2026-09-26): colour
    only where the standing needs an admin (taken down, owner banned). */
 const CHIP = "inline-flex items-center gap-1 whitespace-nowrap font-mono text-caption font-medium";
-const TH_CLASS = "px-4 py-2.5 font-mono text-caption font-medium text-muted-foreground";
+const TH_CLASS = "px-4 py-2.5 text-caption font-medium text-muted-foreground";
 const ROW_CLASS =
   "border-b border-border/60 align-top transition-colors duration-fast ease-out-soft last:border-b-0 hover:bg-accent motion-safe:animate-fade-in [animation-fill-mode:backwards]";
 
@@ -414,14 +413,12 @@ export function LinksAdmin() {
     <AppPage measure="wide" contentClassName="flex flex-col gap-6">
       <AppPageHeader
         className="mb-0"
-        eyebrow="Owner"
         heading="Links"
-        lede="Public share links, and what visitors report about them."
-        actions={<AdminNav current="links" reportCount={openCount} />}
+        lede={openCount > 0 ? `${openCount} open ${openCount === 1 ? "report" : "reports"} to review.` : "Public share links, and what visitors report about them."}
       />
 
       {/* ——— Look up a link ——— */}
-      <Card className="overflow-hidden p-0">
+      <Card className="adm-table overflow-hidden p-0">
         <div className="flex flex-col gap-3 border-b border-border/70 px-4 py-3 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <h2 className="text-ui font-semibold">Look up a link</h2>
@@ -573,13 +570,13 @@ export function LinksAdmin() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-micro tabular-nums">{s.views}</td>
+                      <td className="px-4 py-3 text-right text-micro tabular-nums">{s.views}</td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-micro text-muted-foreground">
                         {formatDate(s.createdAt)}
                       </td>
                       <td
                         className={cn(
-                          "px-4 py-3 text-right font-mono text-micro tabular-nums",
+                          "px-4 py-3 text-right text-micro tabular-nums",
                           s.openReports > 0 ? "text-warning" : "text-muted-foreground"
                         )}
                       >
@@ -627,7 +624,7 @@ export function LinksAdmin() {
       </Card>
 
       {/* ——— Reports ——— */}
-      <Card className="overflow-hidden p-0">
+      <Card className="adm-table overflow-hidden p-0">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-ui font-semibold">Reports</h2>
@@ -643,7 +640,7 @@ export function LinksAdmin() {
             />
           </div>
           {reportsCurrent && (
-            <p className="font-mono text-caption tabular-nums text-muted-foreground">
+            <p className="text-caption tabular-nums text-muted-foreground">
               {total} {total === 1 ? "report" : "reports"}
             </p>
           )}
@@ -862,7 +859,7 @@ export function LinksAdmin() {
         )}
 
         <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
-          <p className="font-mono text-caption tabular-nums text-muted-foreground">
+          <p className="text-caption tabular-nums text-muted-foreground">
             Page {page} of {pageCount}
           </p>
           <div className="flex gap-2">

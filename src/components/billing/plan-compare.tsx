@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { Plan } from "@prisma/client";
 import { PLANS } from "@/lib/plans";
+import { Check } from "@/components/ui/icons";
 import { planCapabilities } from "@/lib/billing/plan-capabilities";
 import { cn } from "@/lib/utils";
 
@@ -25,17 +26,7 @@ const ROWS: { id: string; label: string }[] = [
   { id: "memory", label: "Memory and artifacts" },
 ];
 
-const USAGE_DOTS = 12;
-
-function usageDots(plan: Plan, plans: readonly Plan[]): number {
-  const all = plans.map((p) => PLANS[p].usageVsPro ?? 1);
-  const lo = Math.log(Math.min(...all));
-  const hi = Math.log(Math.max(...all));
-  const v = Math.log(PLANS[plan].usageVsPro ?? 1);
-  return Math.max(1, Math.round(1 + ((v - lo) / (hi - lo || 1)) * (USAGE_DOTS - 1)));
-}
-
-function Cell({ plan, row, plans }: { plan: Plan; row: string; plans: readonly Plan[] }) {
+function Cell({ plan, row }: { plan: Plan; row: string; plans?: readonly Plan[] }) {
   const caps = planCapabilities(plan);
   const has = caps.find((c) => c.id === row);
   if (row === "models") {
@@ -43,28 +34,24 @@ function Cell({ plan, row, plans }: { plan: Plan; row: string; plans: readonly P
     return <span className="text-caption text-foreground">{word}</span>;
   }
   if (row === "usage") {
-    const on = usageDots(plan, plans);
     const m = PLANS[plan].usageVsPro;
-    return (
-      <span className="flex flex-col items-center gap-1.5">
-        <span className="plans-usage" aria-hidden>
-          {Array.from({ length: USAGE_DOTS }, (_, i) => (
-            <i key={i} data-on={i < on || undefined} />
-          ))}
-        </span>
-        <span className="font-mono text-micro text-muted-foreground">{plan === "FREE" ? "allowance" : m === 1 ? "Pro" : `${m}× Pro`}</span>
-      </span>
-    );
+    return <span className="text-caption tabular-nums text-foreground">{plan === "FREE" ? "Base" : m === 1 ? "Pro" : `${m}× Pro`}</span>;
   }
   if (row === "priority") {
     return has ? (
       <span className="text-caption text-foreground">{has.level === 2 ? "Highest" : "Higher"}</span>
     ) : (
-      <span role="img" className="plans-dot" data-off aria-label="Standard" />
+      <span className="text-caption text-muted-foreground">Standard</span>
     );
   }
-  if (row === "uploads") return <span className="font-mono text-caption tabular-nums text-foreground">{PLANS[plan].maxUploadMb} MB</span>;
-  return has ? <span role="img" className="plans-dot" aria-label="Included" /> : <span role="img" className="plans-dot" data-off aria-label="Not included" />;
+  if (row === "uploads") return <span className="text-caption tabular-nums text-foreground">{PLANS[plan].maxUploadMb} MB</span>;
+  return has ? (
+    <Check aria-label="Included" className="mx-auto size-4 text-foreground" />
+  ) : (
+    <span aria-label="Not included" className="text-caption text-muted-foreground">
+      –
+    </span>
+  );
 }
 
 export function PlanCompare({
@@ -98,8 +85,8 @@ export function PlanCompare({
                 <span className={cn("font-serif text-heading font-normal leading-none", plan === selected ? "text-foreground" : "text-muted-foreground")}>
                   {PLANS[plan].name}
                 </span>
-                <span className="font-mono text-micro tabular-nums text-muted-foreground">{priceOf(plan)}</span>
-                {plan === current && <span className="font-mono text-micro text-muted-foreground">your plan</span>}
+                <span className="text-micro tabular-nums text-muted-foreground">{priceOf(plan)}</span>
+                {plan === current && <span className="text-micro text-muted-foreground">your plan</span>}
               </button>
             </span>
           ))}

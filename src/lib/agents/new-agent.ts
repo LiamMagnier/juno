@@ -70,12 +70,19 @@ export function newAgentInput({
   name,
   avatar,
   creationKey,
+  executionTarget,
+  preferredHostId,
 }: {
   text: string;
   name: string;
   avatar: AgentAvatar;
   creationKey: string;
+  /** Where it will work, picked on Orbit's composer; the cloud when unsaid. */
+  executionTarget?: CreateAgentInput["executionTarget"];
+  /** The Mac it works on (a WorkHost id), or null for any of them. */
+  preferredHostId?: string | null;
 }): CreateAgentInput & { creationKey: string; starterMessage: string } {
   const custom = AGENT_TEMPLATES.find((t) => t.id === "custom") ?? AGENT_TEMPLATES[0];
-  return { ...agentStarterInput(custom), name, avatar, creationKey, starterMessage: text };
+  const machine = executionTarget === "mac" ? { executionTarget, preferredHostId: preferredHostId ?? null } : {};
+  return { ...agentStarterInput(custom), ...machine, name, avatar, creationKey, starterMessage: text };
 }

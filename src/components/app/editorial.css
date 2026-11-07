@@ -100,32 +100,6 @@
 @keyframes ed-pop { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
 @keyframes ed-breathe { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 0.15; transform: scale(1.6); } }
 
-/* The page backdrop (page-backdrop.tsx): the homepage construction behind a
-   product page's header as a quiet dot matrix, gone before the toolbar under
-   it. The origin sits right of the title column; the number line runs up
-   through the band on the isometric diagonal and the orbits open around it.
-   No trajectory and no ticks: those belong to the homepage's live frame. */
-.page-backdrop.alv { background: transparent; }
-.page-backdrop {
-  -webkit-mask-image: linear-gradient(to bottom, #000 28%, transparent 82%), linear-gradient(to right, transparent 4%, #000 38%);
-  -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(to bottom, #000 28%, transparent 82%), linear-gradient(to right, transparent 4%, #000 38%);
-  mask-composite: intersect;
-  opacity: 0.8;
-  --dots-strength: 0.6;
-}
-.dark .page-backdrop { --dots-strength: 0.7; }
-.page-backdrop__drawing {
-  position: absolute;
-  inset: 0;
-  --construction-x: 0.72;
-  --construction-y: 0.56;
-  --construction-span: 1080px;
-}
-@container page (max-width: 40rem) {
-  .page-backdrop__drawing { --construction-x: 0.62; --construction-span: 820px; }
-}
-
 /* ───────────────────── The app shell, in the homepage's voice ─────────────────────
    Section heads in the sidebar are annotations, like the homepage's ℵ ticks:
    mono, small, tracked. A conversation's title in the header band is set in

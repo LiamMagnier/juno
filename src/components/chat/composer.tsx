@@ -144,7 +144,8 @@ import type { SendOptions, SendResult } from "@/hooks/use-chat";
 import { readSkillInvocation, useChatSkills, YOURS_SOURCE_LABEL } from "@/components/chat/use-chat-skills";
 import { ComposerSkillsPanel } from "@/components/skills/composer-skills-panel";
 import { ComposerMediaParams, useMediaParams } from "@/components/chat/composer-media-params";
-import { MenuEmpty, MenuLabel, MenuSearch, MenuSkeleton } from "@/components/chat/composer-menu";
+import { ComposerTray } from "@/components/chat/composer-tray";
+import { MenuEmpty, MenuSearch, MenuSkeleton } from "@/components/chat/composer-menu";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
 import {
   MAX_CHAT_CONNECTORS,
@@ -907,6 +908,7 @@ function ComposerImpl({
    */
   const [connectorsFailed, setConnectorsFailed] = React.useState(false);
   const [connectorQuery, setConnectorQuery] = React.useState("");
+  const [projectQuery, setProjectQuery] = React.useState("");
   const enabledConnectorIdsRef = React.useRef(connectorsEnabled);
   enabledConnectorIdsRef.current = connectorsEnabled;
   const textareaRef = React.useRef<ContextFieldElement>(null);
@@ -2425,12 +2427,13 @@ function ComposerImpl({
   const selectedProject = selectedProjectId
     ? (projects.find((p) => p.id === selectedProjectId) ?? null)
     : null;
-  /*
-   * No tray under the composer any more (owner, 6 Nov 2026: "rework the
-   * composer from zero"). Project, Apps and Skills live in the + menu's last
-   * group everywhere, and what is in force shows as a removable chip above
-   * the field. `composer-tray.tsx` keeps only the generation row.
+  /**
+   * The home's tray (composer-tray.tsx): a brand-new chat on the landing
+   * frame only. Back by owner request (7 Nov 2026), redesigned as one quiet
+   * capsule. The + menu keeps its Project, Apps and Skills rows too: the tray
+   * is a shortcut on the home, the + menu the door everywhere.
    */
+  const showTray = frame === "landing" && !conversationId && !privateMode && !voiceActive && !steerMode;
   const canAttach = features.storage && !privateMode;
   // One reason, three rows: whichever of the two gates is shut is the one the
   // row should name. Never a row that silently vanishes.
@@ -2607,9 +2610,16 @@ function ComposerImpl({
    * cannot be used right now stays visible with the reason on it rather than
    * vanishing, so "why is web search missing" never has to be asked.
    */
+  // Owner, 7 Nov 2026: a search box at the head of the Project and Apps
+  // panels, always (not only past a length), so finding one is the same
+  // gesture every time.
+  const projectSearch = projectQuery.trim().toLocaleLowerCase();
+  const visibleProjects = projectSearch
+    ? projects.filter((project) => project.name.toLocaleLowerCase().includes(projectSearch))
+    : projects;
   const projectPanel = () => (
     <>
-      <MenuLabel>Projects</MenuLabel>
+      <MenuSearch value={projectQuery} onChange={setProjectQuery} placeholder="Search projects" label="Search projects" />
       {loadingProjects && projects.length === 0 ? (
         <MenuSkeleton rows={2} />
       ) : projects.length === 0 ? (
@@ -2618,9 +2628,11 @@ function ComposerImpl({
           title="No projects yet"
           hint="A project keeps chats, files and instructions together."
         />
+      ) : visibleProjects.length === 0 ? (
+        <MenuEmpty icon={Search} title={`No projects match “${projectQuery.trim()}”`} />
       ) : (
         <ScrollFade className="min-h-0 flex-1" viewportClassName="max-h-64">
-          {projects.map((project) => (
+          {visibleProjects.map((project) => (
             <PlusMenuRow
               key={project.id}
               selected={selectedProjectId === project.id}
@@ -2650,11 +2662,7 @@ function ComposerImpl({
 
   const connectorsPanel = () => (
     <>
-      {connectors.length > 5 ? (
-        <MenuSearch value={connectorQuery} onChange={setConnectorQuery} placeholder="Search apps" label="Search apps" />
-      ) : (
-        <MenuLabel>Apps in this chat</MenuLabel>
-      )}
+      <MenuSearch value={connectorQuery} onChange={setConnectorQuery} placeholder="Search apps" label="Search apps" />
       <div className="max-h-56 overflow-y-auto overscroll-contain">
         {connectorsLoading && connectors.length === 0 ? (
           <MenuSkeleton rows={3} />
@@ -2934,8 +2942,10 @@ function ComposerImpl({
             },
           },
         ],
-        // Where this chat sits and what it can reach.
-        [
+        // Where this chat sits and what it can reach. On the home the tray
+        // under the composer carries Project, Apps and Skills, so the + menu
+        // leaves them out there (owner, 7 Nov 2026); in a chat it keeps them.
+        !showTray ? [
           ...(!privateMode
             ? [
                 {
@@ -2964,7 +2974,7 @@ function ComposerImpl({
               ]
             : []),
           ...(skillRow ? [skillRow] : []),
-        ],
+        ] : [],
       ];
 
   /*
@@ -3061,7 +3071,7 @@ function ComposerImpl({
 
       {/* Existing chats get the persistent scope bar at the top of the chat
           instead; the chip only announces where a brand-new chat will land. */}
-      {selectedProject && !privateMode && !conversationId && (
+      {selectedProject && !privateMode && !conversationId && !showTray && (
         <div className="mb-2 flex">
           {/* Muted glyph on the caption rung (14px, gap-1.5): the folder is a
               label on the chip, not a state, so it does not take the accent. */}
@@ -3675,8 +3685,26 @@ function ComposerImpl({
             {sketch.dialog}
         </div>
       </DictationSwap>
-      {/* The generation row (image, video and music models) keeps its shelf. */}
-      {mediaParams.caps && !voiceActive && !steerMode && (
+      {showTray && (
+        <ComposerTray
+          projectName={selectedProject?.name ?? null}
+          connectors={attachedConnectors}
+          onOpenProjects={loadProjects}
+          onOpenApps={() => void refreshConnectors()}
+          onOpenSkills={() => setSkillsWanted(true)}
+          projectPanel={projectPanel}
+          appsPanel={showConnectors ? connectorsPanel : null}
+          skillsPanel={skillRow ? skillsPanel : null}
+          disabled={plusLocked}
+          params={
+            mediaParams.caps ? (
+              <ComposerMediaParams modelId={model} state={mediaParams} disabled={plusLocked} side="top" />
+            ) : null
+          }
+        />
+      )}
+      {/* In a thread the generation row gets the shelf to itself. */}
+      {!showTray && mediaParams.caps && !voiceActive && !steerMode && (
         <div className="composer-tray composer-tray--params">
           <ComposerMediaParams modelId={model} state={mediaParams} disabled={plusLocked} side="top" />
         </div>

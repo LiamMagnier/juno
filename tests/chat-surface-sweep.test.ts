@@ -143,9 +143,10 @@ test("a short laptop window keeps the empty home inside the panel", () => {
   assert.match(read("src/components/chat/home-starters.css"), /@media \(max-height: 700px\) and \(min-width: 761px\) \{\s*\.home-starters__prompts \{\s*top: calc\(100% \+ 8px\);/);
 });
 
-test("the composer-landing gallery draws the shipped home: real starters, incognito without a drawing", () => {
+test("the composer-landing gallery draws the shipped home: no starter chips, incognito without a drawing", () => {
   const fixture = read("src/app/dev/composer-landing/fixture.tsx");
-  assert.match(fixture, /<HomeStarters composerRef=\{composerRef\} onShownChange=\{setStartersShown\} \/>/);
+  assert.doesNotMatch(fixture, /<HomeStarters/, "the home dropped its starter chips (owner, 7 Nov 2026)");
+  assert.match(fixture, /<div className="chat-home__suggest" \/>/);
   assert.match(fixture, /get\("field"\) === "1"/);
 });
 

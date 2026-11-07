@@ -27,6 +27,7 @@ import { contextRangeIssues, contextTokensSchema } from "@/lib/chat/context-toke
 import { REASONING_TIERS } from "@/lib/model-metrics";
 import { RESEARCH_EFFORTS } from "@/lib/research/domain";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
+import { liveViewsSchema } from "@/lib/live-ui/view-state";
 
 const clarificationAnswerValueSchema = z.union([
   z.string().max(1000),
@@ -246,6 +247,13 @@ export const chatBodySchema = z
      * the tokens the replaced answer was given.
      */
     context: contextTokensSchema.optional(),
+    /**
+     * The interactive views the reader adjusted in the last few replies, as
+     * plain lines (src/lib/live-ui/view-state.ts). Rides the per-turn context
+     * tail only, never the saved message. Lenient: a malformed list is
+     * dropped, never a refused send, because it is a convenience.
+     */
+    liveViews: liveViewsSchema.optional().catch(undefined),
     /**
      * A skill to apply to this message, by slug.
      *

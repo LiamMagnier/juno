@@ -85,6 +85,8 @@ export interface MemoryState {
    * true when the server agreed.
    */
   forgetMemory: (memory: Memory, opts?: { silent?: boolean }) => Promise<boolean>;
+  /** The person says this fact still holds (Review). Resolves true when saved. */
+  confirmMemory: (memory: Memory) => Promise<boolean>;
   deleteMemory: (memory: Memory, opts?: { silent?: boolean }) => Promise<boolean>;
   /** File a fact under one project, or (null) back under the whole account. */
   moveMemory: (memory: Memory, project: { id: string; name: string } | null) => Promise<boolean>;
@@ -517,6 +519,40 @@ export function useMemory(): MemoryState {
     [mark, reload]
   );
 
+  const confirmMemory = React.useCallback(
+    async (memory: Memory): Promise<boolean> => {
+      mark(setBusyIds, memory.id, true);
+      try {
+        const res = await fetch(`/api/memory/${memory.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm: true }),
+        });
+        if (!res.ok) {
+          const { message } = await readRefusal(res);
+          throw new Error(message);
+        }
+        const body = (await res.json().catch(() => ({}))) as { lastVerifiedAt?: string; confidence?: number };
+        // Patched in place: confirming changes two fields and nothing a
+        // reload would show differently, and a review confirms many in a row.
+        setMemories((prev) =>
+          (prev ?? []).map((m) =>
+            m.id === memory.id
+              ? { ...m, lastVerifiedAt: body.lastVerifiedAt ?? new Date().toISOString(), confidence: body.confidence ?? Math.max(m.confidence, 0.9) }
+              : m
+          )
+        );
+        return true;
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : GENERIC_FAILURE);
+        return false;
+      } finally {
+        mark(setBusyIds, memory.id, false);
+      }
+    },
+    [mark]
+  );
+
   const deleteMemory = React.useCallback(
     async (memory: Memory, opts?: { silent?: boolean }): Promise<boolean> => {
       mark(setBusyIds, memory.id, true);
@@ -643,6 +679,7 @@ export function useMemory(): MemoryState {
     addMemory,
     editMemory,
     forgetMemory,
+    confirmMemory,
     deleteMemory,
     moveMemory,
     resetMemory,

@@ -148,16 +148,19 @@ test("the settings loading page takes its pane header from setting-row.tsx", () 
   );
 });
 
-test("the settings loading page mirrors the full-window page: left column, then the pane", () => {
-  // Settings is a full window (the owner's ChatGPT reference): a left column
-  // with Back to app, search and the sections, and the pane beside it. The
-  // skeleton draws the same frame so nothing moves when the page lands.
+test("the settings loading page mirrors the settings window: left column, then the pane", () => {
+  // Settings is a window over the app: a scrim, then one window holding a
+  // left column (title and close, search, the sections) and the pane beside
+  // it. The skeleton draws the same frame so nothing moves when it lands.
   const loading = fs.readFileSync(SETTINGS_LOADING, "utf8");
   const page = fs.readFileSync(path.join(process.cwd(), "src/app/(app)/settings/page.tsx"), "utf8");
-  assert.ok(/Back to app/.test(page), "the real page has a Back to app control");
+  assert.ok(/aria-label="Close settings"/.test(page), "the real window has a close control");
   assert.ok(/fixed inset-0 z-modal/.test(page) && /fixed inset-0 z-modal/.test(loading), "both cover the window");
-  assert.ok(/md:w-64/.test(page) && /md:w-64/.test(loading), "both draw the 16rem left column");
-  assert.ok(/max-w-\[44rem\]/.test(page) && /max-w-\[44rem\]/.test(loading), "both centre the pane at 44rem");
+  assert.ok(/settings-scrim/.test(page) && /settings-scrim/.test(loading), "both dim the app behind");
+  const frame = "md:h-[min(52rem,calc(100dvh-3rem))] md:w-[min(68rem,calc(100vw-3rem))]";
+  assert.ok(page.includes(frame) && loading.includes(frame), "both draw the same window");
+  assert.ok(/md:w-\[15\.5rem\]/.test(page) && /md:w-\[15\.5rem\]/.test(loading), "both draw the 15.5rem left column");
+  assert.ok(/max-w-\[42rem\]/.test(page) && /max-w-\[42rem\]/.test(loading), "both centre the pane at 42rem");
 });
 
 test("the settings loading page stands rows in the group's card in for rows in the group's card", () => {

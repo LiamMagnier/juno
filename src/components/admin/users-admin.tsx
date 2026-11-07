@@ -20,9 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { AdminNav } from "@/components/admin/admin-nav";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import { DotIdenticon } from "@/components/signature/dot-matrix";
+import { Monogram } from "@/components/ui/monogram";
 import { PLANS } from "@/lib/plans";
 import { staggerDelay } from "@/lib/motion";
 
@@ -67,7 +66,7 @@ function formatDate(iso: string): string {
 // `text-caption` is exactly the 11px this used to spell out by hand, and it is
 // the rung the rest of the product's mono metadata sits on — the arbitrary value
 // meant admin was the only surface whose table headers could drift off the scale.
-const TH_CLASS = "px-4 py-2.5 font-mono text-caption font-medium text-muted-foreground";
+const TH_CLASS = "px-4 py-2.5 text-caption font-medium text-muted-foreground";
 
 export function UsersAdmin({ selfId }: { selfId: string }) {
   const [query, setQuery] = React.useState("");
@@ -244,17 +243,15 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
             only app pages with no back affordance at all. */}
         <AppPageHeader
           className="mb-0"
-          eyebrow="Owner"
           heading="Users"
           lede={
             data
               ? `${data.totals.users} ${data.totals.users === 1 ? "account" : "accounts"} · ${data.totals.activeThisMonth} active this month`
               : "Accounts, plans, and monthly usage."
           }
-          actions={<AdminNav current="users" reviewCount={data?.totals.flaggedCount ?? 0} />}
         />
 
-        <Card className="overflow-hidden p-0">
+        <Card className="adm-table overflow-hidden p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3">
             <div className="relative w-full max-w-xs">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -263,11 +260,11 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search name or email"
                 aria-label="Search users"
-                className="pl-9"
+                className="adm-search pl-9"
               />
             </div>
             {data && (
-              <p className="font-mono text-caption tabular-nums text-muted-foreground">
+              <p className="text-caption tabular-nums text-muted-foreground">
                 {total} {total === 1 ? "match" : "matches"}
               </p>
             )}
@@ -360,9 +357,9 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                                 silhouettes depending on whether a photo existed. */}
                             {u.image ? (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img src={u.image} alt="" className="size-8 shrink-0 rounded-field object-cover" />
+                              <img src={u.image} alt="" className="size-8 shrink-0 rounded-full object-cover" />
                             ) : (
-                              <DotIdenticon seed={u.id} className="size-8 shrink-0 overflow-hidden rounded-field" />
+                              <Monogram name={u.name || u.email} className="size-8" />
                             )}
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
@@ -376,7 +373,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                               </div>
                               <p className="truncate text-caption text-muted-foreground">{u.email}</p>
                               {u.strikes > 0 && !u.bannedAt && (
-                                <p className="mt-0.5 flex items-center gap-1 font-mono text-caption tabular-nums text-warning">
+                                <p className="mt-0.5 flex items-center gap-1 text-caption tabular-nums text-warning">
                                   <StatusIcons.warning className="size-3 shrink-0" aria-hidden="true" />
                                   {u.strikes}/{STRIKE_LIMIT} strikes
                                 </p>
@@ -384,7 +381,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                             </div>
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 font-mono text-micro text-muted-foreground">
+                        <td className="whitespace-nowrap px-4 py-2.5 text-ui text-muted-foreground">
                           {formatDate(u.createdAt)}
                         </td>
                         <td className="px-4 py-2.5">
@@ -393,7 +390,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                             onValueChange={(value) => changePlan(u, value as Plan)}
                             disabled={isSelf}
                           >
-                            <SelectTrigger className="h-8 w-32 text-caption" aria-label={`Plan for ${u.email}`}>
+                            <SelectTrigger className="adm-plan-select h-8 w-28 text-ui" aria-label={`Plan for ${u.email}`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -410,11 +407,11 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                             </p>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-right font-mono text-micro tabular-nums">{u.messagesThisMonth}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-micro tabular-nums">
+                        <td className="px-4 py-2.5 text-right text-micro tabular-nums">{u.messagesThisMonth}</td>
+                        <td className="px-4 py-2.5 text-right text-micro tabular-nums">
                           {formatSpend(u.monthSpendMicroUsd)}
                           {u.monthSpendAppMicroUsd > 0 && (
-                            <p className="mt-0.5 font-mono text-caption tabular-nums text-muted-foreground">
+                            <p className="mt-0.5 text-caption tabular-nums text-muted-foreground">
                               web {formatSpend(u.monthSpendWebMicroUsd)} · app {formatSpend(u.monthSpendAppMicroUsd)}
                             </p>
                           )}
@@ -479,7 +476,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
           )}
 
           <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
-            <p className="font-mono text-caption tabular-nums text-muted-foreground">
+            <p className="text-caption tabular-nums text-muted-foreground">
               Page {page} of {pageCount}
             </p>
             <div className="flex gap-2">

@@ -56,6 +56,8 @@ export interface AgentPromptContext {
   recentWork?: readonly AgentPromptRecentWork[];
   /** Whether this agent is currently paused. */
   paused?: boolean;
+  /** Where its tasks run (`Agent.executionTarget`): the cloud computer, or the person's Mac. */
+  executionTarget?: string | null;
 }
 
 export type AgentPromptInput = AgentPromptContext;
@@ -213,8 +215,17 @@ export function buildAgentPromptBlock(ctx: AgentPromptContext, userName?: string
 
   const how: string[] = ["## How you work"];
   if (ctx.taskHandoff && !ctx.paused) {
+    const computer =
+      ctx.executionTarget === "mac"
+        ? `on ${person}'s Mac, with its browser and apps`
+        : "on a clean cloud computer with a browser";
     how.push(
-      `- Real work — many steps, research across sources, working in connected apps, producing a document — goes to a background task with start_task, as the Tasks section says. The task runs as you, on a clean cloud computer with a browser, under your autonomy setting ("${autonomy}"), and reports back here.`
+      `- Real work — many steps, research across sources, working in connected apps, producing a document — goes to a background task with start_task, as the Tasks section says. The task runs as you, ${computer}, under your autonomy setting ("${autonomy}"), and reports back here.`,
+      `- You have a computer. When ${person} asks you to open or use a computer, use a browser, go on the web, or research something that needs current sources, start a task with start_task; that is how you use it. Never say you cannot use a computer or a browser.`
+    );
+  } else if (!ctx.paused) {
+    how.push(
+      "- Background tasks are not available in this reply, so you cannot use a computer or a browser right now. If asked to, say that in one sentence and do what you can here, without inventing a reason."
     );
   }
   how.push(

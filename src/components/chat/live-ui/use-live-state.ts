@@ -35,6 +35,10 @@ export interface LiveState {
   pick: (key: string, indices: number[]) => void;
   /** Back to the author's values. A pick stays: its message was already sent. */
   reset: () => void;
+  /** Put back what the last reset cleared. Does nothing once the reader has moved on. */
+  undoReset: () => void;
+  /** A reset just happened and nothing has changed since, so it can be undone. */
+  canUndo: boolean;
   /** Anything differs from the author's defaults. */
   dirty: boolean;
 }
@@ -164,10 +168,29 @@ export function useLiveState(spec: LiveSpec | null, source: string, messageId: s
     setPicks((p) => (p[cardKey] ? p : { ...p, [cardKey]: indices }));
   }, []);
 
+  // What the last reset cleared, until the reader touches the view again.
+  const [cleared, setCleared] = React.useState<{ touched: Record<string, LiveValue>; checks: Record<string, number[]> } | null>(null);
+
   const reset = React.useCallback(() => {
+    setCleared({ touched, checks });
     setTouched({});
     setChecks({});
-  }, []);
+  }, [touched, checks]);
 
-  return { values, checks, picks, setValue, toggleCheck, pick, reset, dirty };
+  const undoReset = React.useCallback(() => {
+    if (!cleared) return;
+    setTouched(cleared.touched);
+    setChecks(cleared.checks);
+    setCleared(null);
+  }, [cleared]);
+
+  // Any change after the reset makes it final.
+  const settle = React.useRef({ touched, checks });
+  React.useEffect(() => {
+    const was = settle.current;
+    settle.current = { touched, checks };
+    if (cleared && (was.touched !== touched || was.checks !== checks) && (Object.keys(touched).length || Object.keys(checks).length)) setCleared(null);
+  }, [touched, checks, cleared]);
+
+  return { values, checks, picks, setValue, toggleCheck, pick, reset, undoReset, canUndo: cleared !== null, dirty };
 }

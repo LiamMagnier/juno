@@ -59,6 +59,9 @@ function refreshSummariesLater(userId: string, scopes: (string | null)[]) {
   after(() => refreshSummaries(userId, scopes).then(() => undefined, () => undefined));
 }
 
+/** What a fact the person has confirmed is believed at: a stated fact's weight. */
+const CONFIRMED_CONFIDENCE = 0.9;
+
 const schema = z
   .object({
     content: z.string().trim().min(1).max(500).optional(),
@@ -80,9 +83,19 @@ const schema = z
      * mistake (false). On its own: it is a signal about ranking, not an edit.
      */
     notRelevant: z.boolean().optional(),
+    /**
+     * The person looked at this fact (the memory page's Review) and said it
+     * is still true. Counts as hearing it again: it is re-dated as verified
+     * and its confidence rises to a stated fact's, which takes it out of
+     * review and back to full weight in context.
+     */
+    confirm: z.literal(true).optional(),
   })
   .refine((body) => body.notRelevant === undefined || Object.keys(body).length === 1, {
     message: "Not relevant is sent on its own",
+  })
+  .refine((body) => body.confirm === undefined || Object.keys(body).length === 1, {
+    message: "Confirm is sent on its own",
   })
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change" });
 
@@ -109,6 +122,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const notRelevantAt = body.notRelevant ? new Date() : null;
     await prisma.memoryEntry.updateMany({ where: { id, userId: user.id }, data: { notRelevantAt } });
     return NextResponse.json({ ok: true, notRelevantAt: notRelevantAt?.toISOString() ?? null });
+  }
+
+  if (body.confirm) {
+    if (existing.kind !== "FACT" || existing.status !== "active") {
+      return NextResponse.json({ error: "Only a memory in use can be confirmed." }, { status: 409 });
+    }
+    const lastVerifiedAt = new Date();
+    const confidence = Math.max(existing.confidence, CONFIRMED_CONFIDENCE);
+    // Confirming also lifts a "Not relevant" mark: the person just said the
+    // fact holds, which is the one signal that mark waits for.
+    await prisma.memoryEntry.updateMany({
+      where: { id, userId: user.id },
+      data: { lastVerifiedAt, confidence, notRelevantAt: null },
+    });
+    return NextResponse.json({ ok: true, lastVerifiedAt: lastVerifiedAt.toISOString(), confidence });
   }
 
   if (body.forget) {
