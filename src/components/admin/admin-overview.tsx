@@ -5,18 +5,17 @@ import Link from "next/link";
 import Image from "next/image";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { ProviderLogo } from "@/components/brand/provider-logo";
-import { DotIdenticon } from "@/components/signature/dot-matrix";
-import { ArrowRight, ArrowUpRight, ExternalLink as LinkIcon, ShieldAlert } from "@/components/ui/icons";
+import { ArrowRight } from "@/components/ui/icons";
+import { Monogram } from "@/components/ui/monogram";
 import { requiresViewerCredentials } from "@/lib/image-source";
-import { useReducedMotion } from "@/lib/motion-preference";
-import { cn } from "@/lib/utils";
 import type { AdminOverview } from "@/lib/admin-overview";
 
 /* ── Formatting ──────────────────────────────────────────────────────────── */
 
-const usd = (micro: number, digits = 2) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(micro / 1e6);
+const usd = (micro: number) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(micro / 1e6);
 const compact = (n: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+const count = (n: number) => n.toLocaleString("en-US");
 const dayLabel = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
 function ago(isoDate: string, now: number): string {
@@ -31,184 +30,105 @@ function ago(isoDate: string, now: number): string {
   return `${Math.round(d / 30)}mo`;
 }
 
-/** Percent change, or null when there is nothing to compare against. */
-function delta(now: number, before: number): number | null {
+/** "12% more than last week", or null when there is nothing to compare. */
+function versus(now: number, before: number, period: string): string | null {
   if (before <= 0) return null;
-  return (now - before) / before;
-}
-
-/* ── Count-up ────────────────────────────────────────────────────────────── */
-
-/**
- * A figure that counts up once, on first paint (650ms, strong ease-out). The
- * Overview is opened a few times a day at most, so a short arrival is earned;
- * reduced motion shows the final number at once.
- */
-function useCountUp(target: number, reduce: boolean): number {
-  const [value, setValue] = React.useState(reduce ? target : 0);
-  React.useEffect(() => {
-    if (reduce) {
-      setValue(target);
-      return;
-    }
-    let raf = 0;
-    const start = performance.now();
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / 650);
-      const eased = 1 - Math.pow(1 - p, 4);
-      setValue(target * eased);
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, reduce]);
-  return value;
+  const pct = Math.round(((now - before) / before) * 100);
+  if (pct === 0) return `same as ${period}`;
+  return `${Math.abs(pct)}% ${pct > 0 ? "more" : "less"} than ${period}`;
 }
 
 /* ── Pieces ──────────────────────────────────────────────────────────────── */
 
-function Delta({ value, neutral = false }: { value: number | null; neutral?: boolean }) {
-  if (value === null || !Number.isFinite(value)) return null;
-  const up = value >= 0;
-  // Spend is neither good nor bad news on its own, so it can be told without a colour.
-  return (
-    <span className={cn("adm-delta", neutral ? "adm-delta-neutral" : up ? "adm-delta-good" : "adm-delta-bad")}>
-      <ArrowUpRight aria-hidden="true" className={cn("size-3", !up && "rotate-90")} />
-      {Math.abs(Math.round(value * 100))}%
-    </span>
-  );
-}
-
-function Spark({ values, reduce }: { values: number[]; reduce: boolean }) {
-  const max = Math.max(1, ...values);
-  const w = 120;
-  const h = 32;
-  const step = w / Math.max(1, values.length - 1);
-  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(h - 2 - (v / max) * (h - 4)).toFixed(1)}`);
-  const line = `M${pts.join(" L")}`;
-  return (
-    <svg aria-hidden="true" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={cn("adm-spark", !reduce && "adm-spark-draw")}>
-      <path d={`${line} L${w},${h} L0,${h} Z`} className="adm-spark-area" />
-      <path d={line} pathLength={1} className="adm-spark-line" />
-    </svg>
-  );
-}
-
-function Kpi({
-  label,
-  value,
-  format,
-  foot,
-  spark,
-  href,
-  tone,
-  index,
-  reduce,
-}: {
-  label: string;
-  value: number;
-  format: (n: number) => string;
-  foot?: React.ReactNode;
-  spark?: number[];
-  href?: string;
-  tone?: "alert";
-  index: number;
-  reduce: boolean;
-}) {
-  const shown = useCountUp(value, reduce);
+/**
+ * One figure of the stats strip: a label, the number, and one plain line of
+ * context. No sparkline, no coloured delta chip: the sentence says it.
+ */
+function Stat({ label, value, note, href }: { label: string; value: string; note?: string | null; href?: string }) {
   const body = (
     <>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-ui text-muted-foreground">{label}</span>
-        {href ? <ArrowRight aria-hidden="true" className="adm-kpi-go size-4 text-muted-foreground" /> : null}
-      </div>
-      <div className="mt-3 flex items-end justify-between gap-3">
-        <span className={cn("adm-figure", tone === "alert" && value > 0 && "text-destructive-ink")}>{format(shown)}</span>
-        {spark ? <Spark values={spark} reduce={reduce} /> : null}
-      </div>
-      <div className="mt-2 flex min-h-5 flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">{foot}</div>
+      <span className="flex items-center justify-between gap-2 text-ui text-muted-foreground">
+        {label}
+        {href ? <ArrowRight aria-hidden="true" className="adm-go size-3.5" /> : null}
+      </span>
+      <span className="adm-figure mt-2 block">{value}</span>
+      <span className="mt-1.5 block min-h-[1.125rem] truncate text-caption text-muted-foreground">{note}</span>
     </>
   );
-  const cls = "adm-card adm-kpi adm-rise flex min-w-0 flex-col";
-  const style = { ["--i" as string]: index };
   return href ? (
-    <Link href={href} className={cn(cls, "adm-kpi-link")} style={style}>
+    <Link href={href} className="adm-stat adm-stat-link">
       {body}
     </Link>
   ) : (
-    <div className={cls} style={style}>
-      {body}
-    </div>
+    <div className="adm-stat">{body}</div>
   );
 }
 
-function SpendChart({ days, reduce }: { days: AdminOverview["days"]; reduce: boolean }) {
+function SpendChart({ days }: { days: AdminOverview["days"] }) {
   const [hover, setHover] = React.useState<number | null>(null);
   const max = Math.max(1, ...days.map((d) => d.spendMicroUsd));
   const total = days.reduce((s, d) => s + d.spendMicroUsd, 0);
   const shown = hover === null ? null : days[hover];
   return (
-    <section aria-labelledby="adm-spend" className="adm-card adm-rise flex min-w-0 flex-col" style={{ ["--i" as string]: 4 }}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 id="adm-spend" className="text-ui text-muted-foreground">
-            Spend, last 30 days
-          </h2>
-          {/* The figure swaps to the hovered day: the chart has no axis
-              labels to read, so its one number answers the pointer. */}
-          <p className="adm-figure mt-2 tabular-nums">{shown ? usd(shown.spendMicroUsd) : usd(total)}</p>
-          <p className="mt-1 text-caption text-muted-foreground">{shown ? dayLabel(shown.date) : `${dayLabel(days[0].date)} – ${dayLabel(days[days.length - 1].date)}`}</p>
-        </div>
-      </div>
+    <section aria-labelledby="adm-spend" className="adm-panel flex min-w-0 flex-col">
+      <header className="flex items-baseline justify-between gap-4">
+        <h2 id="adm-spend" className="text-ui font-medium text-foreground">
+          Spend
+        </h2>
+        {/* The one number answers the pointer: the total, or the hovered day. */}
+        <p className="text-ui tabular-nums text-muted-foreground">
+          {shown ? (
+            <>
+              {dayLabel(shown.date)} <span className="ml-1.5 text-foreground">{usd(shown.spendMicroUsd)}</span>
+            </>
+          ) : (
+            <>
+              30 days <span className="ml-1.5 text-foreground">{usd(total)}</span>
+            </>
+          )}
+        </p>
+      </header>
       <div
-        className={cn("adm-bars mt-6", !reduce && "adm-bars-grow")}
+        className="adm-bars mt-6"
         onPointerLeave={() => setHover(null)}
         role="img"
         aria-label={`Daily spend over the last 30 days, ${usd(total)} in total.`}
       >
         {days.map((d, i) => (
-          <div
-            key={d.date}
-            className="adm-bar-slot"
-            data-active={hover === i ? "" : undefined}
-            data-dim={hover !== null && hover !== i ? "" : undefined}
-            onPointerEnter={() => setHover(i)}
-          >
-            <span
-              className="adm-bar"
-              data-zero={d.spendMicroUsd === 0 ? "" : undefined}
-              style={{ height: `${Math.max(2, (d.spendMicroUsd / max) * 100)}%`, ["--c" as string]: i }}
-            />
+          <div key={d.date} className="adm-bar-slot" data-active={hover === i ? "" : undefined} onPointerEnter={() => setHover(i)}>
+            <span className="adm-bar" style={{ height: d.spendMicroUsd === 0 ? "1px" : `${Math.max(3, (d.spendMicroUsd / max) * 100)}%` }} />
           </div>
         ))}
+      </div>
+      <div className="mt-2 flex justify-between text-caption tabular-nums text-muted-foreground" aria-hidden="true">
+        <span>{dayLabel(days[0].date)}</span>
+        <span>Today</span>
       </div>
     </section>
   );
 }
 
 function TopModels({ models }: { models: AdminOverview["topModels"] }) {
-  const top = models[0]?.spendMicroUsd || 1;
+  const total = models.reduce((s, m) => s + m.spendMicroUsd, 0) || 1;
   return (
-    <section aria-labelledby="adm-models" className="adm-card adm-rise flex min-w-0 flex-col" style={{ ["--i" as string]: 5 }}>
-      <h2 id="adm-models" className="text-ui text-muted-foreground">
-        Top models this month
+    <section aria-labelledby="adm-models" className="adm-panel flex min-w-0 flex-col">
+      <h2 id="adm-models" className="text-ui font-medium text-foreground">
+        Models this month
       </h2>
       {models.length === 0 ? (
-        <p className="mt-6 text-ui text-muted-foreground">No spend yet this month.</p>
+        <p className="mt-4 text-ui text-muted-foreground">No spend yet this month.</p>
       ) : (
-        <ol className="mt-4 flex flex-col gap-3.5">
-          {models.map((m, i) => (
-            <li key={m.model} className="min-w-0" title={`${compact(m.tokens)} tokens`}>
-              <div className="flex items-center gap-2.5">
-                <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
-                  {m.provider ? <ProviderLogo provider={m.provider} className="size-4" /> : null}
-                </span>
-                <span translate="no" className="min-w-0 flex-1 truncate text-ui text-foreground">
-                  {m.label}
-                </span>
-                <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">{usd(m.spendMicroUsd)}</span>
-              </div>
-              <span className="adm-share mt-1.5" style={{ width: `${Math.max(2, (m.spendMicroUsd / top) * 100)}%`, ["--i" as string]: i }} />
+        <ol className="adm-list mt-3">
+          {models.map((m) => (
+            <li key={m.model} className="flex min-w-0 items-center gap-3 py-2.5">
+              <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
+                {m.provider ? <ProviderLogo provider={m.provider} className="size-4" /> : null}
+              </span>
+              <span translate="no" className="min-w-0 flex-1 truncate text-ui text-foreground">
+                {m.label}
+              </span>
+              <span className="shrink-0 text-caption tabular-nums text-muted-foreground">{Math.round((m.spendMicroUsd / total) * 100)}%</span>
+              <span className="w-14 shrink-0 text-right text-ui tabular-nums text-foreground">{usd(m.spendMicroUsd)}</span>
             </li>
           ))}
         </ol>
@@ -220,37 +140,36 @@ function TopModels({ models }: { models: AdminOverview["topModels"] }) {
 function RecentUsers({ users }: { users: AdminOverview["recentUsers"] }) {
   const [now] = React.useState(() => Date.now());
   return (
-    <section aria-labelledby="adm-recent" className="adm-card adm-rise min-w-0" style={{ ["--i" as string]: 6 }}>
-      <div className="flex items-center justify-between gap-4">
-        <h2 id="adm-recent" className="text-ui text-muted-foreground">
+    <section aria-labelledby="adm-recent" className="adm-panel min-w-0">
+      <header className="flex items-baseline justify-between gap-4">
+        <h2 id="adm-recent" className="text-ui font-medium text-foreground">
           Newest accounts
         </h2>
-        <Link href="/admin/users" className="adm-link inline-flex items-center gap-1 text-ui text-muted-foreground">
+        <Link href="/admin/users" className="adm-link text-ui text-muted-foreground">
           All users
-          <ArrowRight aria-hidden="true" className="size-3.5" />
         </Link>
-      </div>
-      <ul className="-mx-2 mt-3 grid gap-0.5 @[44rem]/page:grid-cols-2 @[44rem]/page:gap-x-4">
+      </header>
+      <ul className="adm-list mt-3 @[44rem]/page:grid @[44rem]/page:grid-cols-2 @[44rem]/page:gap-x-8">
         {users.map((u) => (
-          <li key={u.id} className="adm-row flex min-w-0 items-center gap-3 rounded-field px-2 py-2">
+          <li key={u.id} className="flex min-w-0 items-center gap-3 py-2.5">
             {u.image ? (
               <Image
                 src={u.image}
                 unoptimized={requiresViewerCredentials(u.image)}
                 alt=""
-                width={32}
-                height={32}
-                className="size-8 shrink-0 rounded-full object-cover ring-1 ring-foreground/10"
+                width={28}
+                height={28}
+                className="size-7 shrink-0 rounded-full object-cover"
               />
             ) : (
-              <DotIdenticon seed={u.id} className="size-8 shrink-0" />
+              <Monogram name={u.name || u.email} className="size-7" />
             )}
             <span className="min-w-0 flex-1">
               <span className="block truncate text-ui text-foreground">{u.name || u.email.split("@")[0]}</span>
               <span className="block truncate text-caption text-muted-foreground">{u.email}</span>
             </span>
-            {u.plan && u.plan !== "FREE" ? <span className="adm-plan shrink-0">{u.plan.toLowerCase()}</span> : null}
-            <span className="w-8 shrink-0 text-right font-mono text-caption tabular-nums text-muted-foreground">{ago(u.createdAt, now)}</span>
+            {u.plan && u.plan !== "FREE" ? <span className="shrink-0 text-caption capitalize text-muted-foreground">{u.plan.toLowerCase()}</span> : null}
+            <span className="w-8 shrink-0 text-right text-caption tabular-nums text-muted-foreground">{ago(u.createdAt, now)}</span>
           </li>
         ))}
       </ul>
@@ -260,83 +179,49 @@ function RecentUsers({ users }: { users: AdminOverview["recentUsers"] }) {
 
 /* ── The page ────────────────────────────────────────────────────────────── */
 
+/**
+ * The Admin Overview, drawn like a ledger rather than a dashboard template:
+ * one strip of four figures divided by hairlines, then the spend, the models
+ * and the newest accounts on flat hairline panels. One ink, sans figures,
+ * context as plain sentences, and no arrival choreography: an owner opens
+ * this to read numbers, and numbers should simply be there.
+ */
 export function AdminOverviewView({ data }: { data: AdminOverview }) {
-  const reduce = useReducedMotion() ?? false;
   const queue = data.queues.flagsToReview + data.queues.openReports;
-  const spendDelta = delta(data.spend.monthMicroUsd, data.spend.prevMonthToDateMicroUsd);
-  const signupDelta = delta(data.users.newThisWeek, data.users.newPrevWeek);
-  const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const spend = versus(data.spend.monthMicroUsd, data.spend.prevMonthToDateMicroUsd, "last month");
+  const activeShare = data.users.total > 0 ? Math.round((data.users.activeThisMonth / data.users.total) * 100) : null;
+  const queueNote =
+    queue === 0
+      ? "Nothing waiting"
+      : [
+          data.queues.flagsToReview > 0 && `${data.queues.flagsToReview} ${data.queues.flagsToReview === 1 ? "flag" : "flags"}`,
+          data.queues.openReports > 0 && `${data.queues.openReports} ${data.queues.openReports === 1 ? "report" : "reports"}`,
+        ]
+          .filter(Boolean)
+          .join(", ");
 
   return (
     <AppPage measure="wide" contentClassName="adm flex flex-col gap-4 pb-16">
-      <AppPageHeader className="mb-0" heading="Overview" lede={today} />
+      <AppPageHeader className="mb-2" heading="Overview" />
 
-      <div className="adm-kpis">
-        <Kpi
-          index={0}
-          reduce={reduce}
+      <div className="adm-stats">
+        <Stat
           label="Accounts"
-          value={data.users.total}
-          format={(n) => Math.round(n).toLocaleString("en-US")}
-          spark={data.days.map((d) => d.signups)}
-          foot={
-            <>
-              <span>+{data.users.newThisWeek} this week</span>
-              <Delta value={signupDelta} />
-            </>
-          }
+          value={count(data.users.total)}
+          note={data.users.newThisWeek > 0 ? `${data.users.newThisWeek} new this week` : "None new this week"}
         />
-        <Kpi
-          index={1}
-          reduce={reduce}
-          label="Active this month"
-          value={data.users.activeThisMonth}
-          format={(n) => Math.round(n).toLocaleString("en-US")}
-          foot={data.users.total > 0 ? <span>{Math.round((data.users.activeThisMonth / data.users.total) * 100)}% of accounts</span> : null}
-        />
-        <Kpi
-          index={2}
-          reduce={reduce}
-          label="Spend this month"
-          value={data.spend.monthMicroUsd}
-          format={(n) => usd(n)}
-          spark={data.days.map((d) => d.spendMicroUsd)}
-          foot={
-            <>
-              <span>{compact(data.spend.monthTokens)} tokens</span>
-              <Delta value={spendDelta} neutral />
-            </>
-          }
-        />
-        <Kpi
-          index={3}
-          reduce={reduce}
-          label="Needs review"
-          value={queue}
-          tone="alert"
-          format={(n) => Math.round(n).toString()}
-          href={data.queues.flagsToReview > 0 || data.queues.openReports === 0 ? "/admin/moderation" : "/admin/links"}
-          foot={
-            queue === 0 ? (
-              <span>All clear</span>
-            ) : (
-              <>
-                <span className="inline-flex items-center gap-1">
-                  <ShieldAlert aria-hidden="true" className="size-3.5" />
-                  {data.queues.flagsToReview} flags
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <LinkIcon aria-hidden="true" className="size-3.5" />
-                  {data.queues.openReports} reports
-                </span>
-              </>
-            )
-          }
+        <Stat label="Active this month" value={count(data.users.activeThisMonth)} note={activeShare === null ? null : `${activeShare}% of accounts`} />
+        <Stat label="Spend this month" value={usd(data.spend.monthMicroUsd)} note={spend ?? `${compact(data.spend.monthTokens)} tokens`} />
+        <Stat
+          label="To review"
+          value={count(queue)}
+          note={queueNote}
+          href={queue === 0 ? undefined : data.queues.flagsToReview > 0 ? "/admin/moderation" : "/admin/links"}
         />
       </div>
 
       <div className="adm-split">
-        <SpendChart days={data.days} reduce={reduce} />
+        <SpendChart days={data.days} />
         <TopModels models={data.topModels} />
       </div>
 

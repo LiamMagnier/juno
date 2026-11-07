@@ -37,7 +37,6 @@ import {
   validateProjectMove,
   type DeleteChildrenMode,
 } from "@/lib/projects/project-tree";
-import { ProjectCover } from "@/components/projects/project-cover";
 import "@/components/projects/projects.css";
 
 /* ─────────────────────────────── Types ─────────────────────────────── */
@@ -631,7 +630,7 @@ export function ProjectTile({
   pathLabel,
   allProjects,
   compact = false,
-  live = false,
+  live: _live = false,
   index = 0,
   onToggleStar,
   onRename,
@@ -799,16 +798,16 @@ export function ProjectTile({
       className="pj-tile nest-card nest-p-1 group/tile relative flex h-full flex-col"
       style={{ ["--i" as string]: Math.min(index, 11) }}
     >
-      <div className="pj-cover relative aspect-[16/7] w-full overflow-hidden rounded-inner">
-        {p.coverUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
+      {/* Only a cover someone uploaded. The generated dot-matrix vignette
+          was decoration standing in for content (7 Nov 2026). */}
+      {p.coverUrl && (
+        <div className="pj-cover relative aspect-[16/7] w-full overflow-hidden rounded-inner">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={p.coverUrl} alt="" className="pj-cover-art size-full object-cover" draggable={false} />
-        ) : (
-          <ProjectCover id={p.id} folders={folderCount} live={live} index={index} />
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="flex flex-1 flex-col px-3 pb-3 pt-3.5">
+      <div className={cn("flex flex-1 flex-col px-3 pb-3", p.coverUrl ? "pt-3.5" : "pr-16 pt-3")}>
         {pathLabel && <p className="pj-annot mb-1 break-words pr-6">{pathLabel}</p>}
         {nameLink}
         <p className="mt-1 truncate text-ui text-muted-foreground">

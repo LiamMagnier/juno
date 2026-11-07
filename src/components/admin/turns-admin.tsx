@@ -41,7 +41,7 @@ function TurnRow({ trace }: { trace: TurnTrace }) {
           {trace.outcome ?? "unfinished"}
           <span className="text-muted-foreground"> · {trace.finishReason ?? "—"}</span>
         </span>
-        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+        <span className="text-caption tabular-nums text-muted-foreground">
           {new Date(trace.startedAt).toLocaleTimeString("en-GB")} · {ms(trace.latency.totalMs)} total · prep{" "}
           {ms(trace.latency.serverPrepMs)} · first token {ms(trace.latency.ttftMs)}
           {typeof trace.latency.requestTtftMs === "number" ? ` (${ms(trace.latency.requestTtftMs)} from request)` : ""}
@@ -107,7 +107,7 @@ export function TurnsAdmin({
           <h2 id="latency-heading" className="font-mono text-caption uppercase tracking-wide text-muted-foreground">
             Before the first token
           </h2>
-          <p className="font-mono text-caption tabular-nums text-muted-foreground">
+          <p className="text-caption tabular-nums text-muted-foreground">
             {percentileLine("server prep", latency.serverPrepMs)} ·{" "}
             {percentileLine("first token from request", latency.requestTtftMs)} ·{" "}
             {percentileLine("first token from turn start", latency.ttftMs)}
@@ -133,7 +133,7 @@ export function TurnsAdmin({
                 className="flex flex-wrap items-baseline justify-between gap-x-4 border-b border-border/60 py-2"
               >
                 <span className="text-ui">{model.provider}/{model.modelId}</span>
-                <span className="font-mono text-caption tabular-nums text-muted-foreground">
+                <span className="text-caption tabular-nums text-muted-foreground">
                   {model.requests} turns · {Math.round(model.successRate * 100)}% ok · p95 {ms(model.p95LatencyMs)} · p95
                   first token {ms(model.p95TtftMs)}
                 </span>

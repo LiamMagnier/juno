@@ -350,7 +350,7 @@ export function SharePeoplePanel({ target, open }: { target: Target; open: boole
 
       {share && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
-          <p className="font-mono text-caption tabular-nums text-muted-foreground">{SHARE_PEOPLE_COPY.snapshot(share.snapshotAt)}</p>
+          <p className="text-caption tabular-nums text-muted-foreground">{SHARE_PEOPLE_COPY.snapshot(share.snapshotAt)}</p>
           <div className="flex shrink-0 items-center gap-1">
             <Button variant="ghost" size="sm" onClick={() => void copy(share.url)} disabled={stopping}>
               <CopyGlyph copied={copied} />

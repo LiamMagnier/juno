@@ -553,7 +553,7 @@ function ArtifactsHome() {
             >
               <Glyph className="size-4" aria-hidden />
               {preset.label}
-              <span className="ml-auto font-mono text-caption tabular-nums text-muted-foreground">{preset.detail}</span>
+              <span className="ml-auto text-caption tabular-nums text-muted-foreground">{preset.detail}</span>
             </DropdownMenuItem>
           );
         })}
@@ -722,7 +722,7 @@ function ArtifactsHome() {
                   />
                   {preset.label}
                 </span>
-                <span className="font-mono text-caption tabular-nums text-muted-foreground">{preset.detail}</span>
+                <span className="text-caption tabular-nums text-muted-foreground">{preset.detail}</span>
               </button>
             ))}
           </div>

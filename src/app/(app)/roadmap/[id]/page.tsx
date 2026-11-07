@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DotIdenticon } from "@/components/signature/dot-matrix";
+import { Monogram } from "@/components/ui/monogram";
 import { DottedDivider } from "@/components/signature/dotted-divider";
 import { StatusBadge, CategoryChip, VoteButton, timeAgo } from "@/components/roadmap/roadmap-ui";
 import {
@@ -171,14 +171,14 @@ export default function RoadmapDetailPage() {
               <StatusBadge status={r.status} />
               <CategoryChip category={r.category} />
               {r.pinned && (
-                <span className="inline-flex items-center gap-1.5 font-mono text-caption text-primary">
+                <span className="inline-flex items-center gap-1.5 text-caption text-primary">
                   <Pin weight="fill" className="size-3 shrink-0" /> Pinned
                 </span>
               )}
             </div>
             <h1 className="mt-2 font-sans text-title font-medium">{r.title}</h1>
             <p className="mt-1 flex items-center gap-2 text-caption text-muted-foreground">
-              <DotIdenticon seed={r.author.id} className="size-4 shrink-0" />
+              <Monogram name={r.author.name} className="size-4" />
               {r.author.name ?? "Someone"} · {timeAgo(r.createdAt)}
             </p>
           </div>
@@ -195,7 +195,7 @@ export default function RoadmapDetailPage() {
         {/* Owner moderation */}
         {isOwner && (
           <Card variant="flat" className="mt-6 p-4">
-            <p className="mb-3 font-mono text-label text-muted-foreground">Moderate</p>
+            <p className="mb-3 text-label text-muted-foreground">Moderate</p>
             <div className="flex flex-wrap items-center gap-2">
               <Select value={r.status} onValueChange={(v) => moderate({ status: v as FeatureStatus })}>
                 <SelectTrigger className="h-8 w-[180px]" aria-label="Status">
@@ -272,10 +272,10 @@ export default function RoadmapDetailPage() {
                 )}
               >
                 <div className="mb-1.5 flex items-center gap-2 text-caption text-muted-foreground">
-                  <DotIdenticon seed={c.author.id} className="size-4 shrink-0" />
+                  <Monogram name={c.author.name} className="size-4" />
                   <span className="font-medium text-foreground">{c.author.name ?? "Someone"}</span>
                   {c.official && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-caption text-primary">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-caption text-primary">
                       <StatusIcons.verified className="size-3 shrink-0" />{` ${PRODUCT_NAME} team`}
                     </span>
                   )}

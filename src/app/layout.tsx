@@ -7,7 +7,7 @@ import "@/components/ui/signature.css";
 import "@/components/public/public.css";
 import "@/components/ui/juno-icons/icons.css";
 // The homepage construction and the editorial kit, global because product
-// pages draw the construction behind their headers (page-backdrop.tsx) and
+// pages share the editorial kit (the auth and public frames still draw the construction) and
 // tests load those components without a CSS loader.
 import "@/components/home/alv-base.css";
 import "@/components/home/dot-construction.css";

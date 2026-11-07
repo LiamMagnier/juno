@@ -190,7 +190,7 @@ export function SharedArtifactViewer({
 /** The kind and, past the first, the version: "React · v3". */
 function KindLabel({ label, version }: { label: string; version: number }) {
   return (
-    <span className="ml-auto shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
+    <span className="ml-auto shrink-0 text-caption tabular-nums text-muted-foreground">
       {label}
       {version > 1 ? ` · v${version}` : ""}
     </span>

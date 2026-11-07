@@ -74,7 +74,7 @@
   box-shadow: var(--alv-shadow);
   overflow: hidden;
 }
-.plans-you-label { font-size: 11px; line-height: 16px; letter-spacing: 0.02em; color: var(--alv-sub); font-family: var(--font-mono), monospace; }
+.plans-you-label { font-size: 11px; line-height: 16px; letter-spacing: 0.02em; color: var(--alv-sub); }
 
 /* A plan on its orbit: a point on the ring, its name, its price. */
 .plans-node {
@@ -111,7 +111,7 @@
   letter-spacing: -0.01em;
   transition: font-size var(--dur-emphasis) var(--alv-ease);
 }
-.plans-node-meta { font-family: var(--font-mono), monospace; font-size: 11px; line-height: 16px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+.plans-node-meta { font-size: 11px; line-height: 16px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
 .plans-node[aria-checked="true"] { color: var(--alv-ink); opacity: 1; }
 .plans-node[aria-checked="true"] .plans-node-point {
   opacity: 1;
@@ -121,18 +121,16 @@
 }
 .dark .plans-node[aria-checked="true"] .plans-node-point { box-shadow: 0 0 0 5px hsl(var(--presence) / 0.16), 0 0 22px 6px hsl(var(--presence) / 0.45); }
 .plans-node[aria-checked="true"] .plans-node-name { font-size: 27px; }
-.plans-node-you { font-family: var(--font-mono), monospace; font-size: 10.5px; line-height: 14px; letter-spacing: 0.02em; color: var(--alv-sub); }
+.plans-node-you { font-size: 10.5px; line-height: 14px; letter-spacing: 0.02em; color: var(--alv-sub); }
 
-/* ── Dot rules: separators drawn in the engine's own dots ──────────────── */
+/* ── Rules: plain 1px hairlines (the dotted rules read as decoration) ───── */
 .plans-rule {
-  height: 3px;
-  color: hsl(var(--foreground) / 0.22);
-  background: radial-gradient(circle, currentColor 0.9px, transparent 1.25px) 0 50% / 6px 3px repeat-x;
+  height: 1px;
+  background: hsl(var(--foreground) / 0.09);
 }
 .plans-rule-v {
-  width: 3px;
-  color: hsl(var(--foreground) / 0.18);
-  background: radial-gradient(circle, currentColor 0.9px, transparent 1.25px) 50% 0 / 3px 6px repeat-y;
+  width: 1px;
+  background: hsl(var(--foreground) / 0.09);
 }
 
 /* The comparison's dots: included, not included, and how much. */

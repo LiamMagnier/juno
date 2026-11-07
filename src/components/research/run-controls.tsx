@@ -159,7 +159,7 @@ export function PlanOutline({
               <li key={objective.id} className="flex items-start gap-3">
                 <span
                   aria-hidden
-                  className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-caption font-medium tabular-nums text-muted-foreground"
+                  className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-secondary text-caption font-medium tabular-nums text-muted-foreground"
                 >
                   {i + 1}
                 </span>
@@ -183,7 +183,7 @@ export function PlanOutline({
             <ol className="flex flex-col gap-2">
               {scheduleSteps.map((step, i) => (
                 <li key={i} className="flex gap-3 text-ui leading-relaxed text-foreground">
-                  <span className="w-4 shrink-0 font-mono text-caption tabular-nums text-muted-foreground">{i + 1}</span>
+                  <span className="w-4 shrink-0 text-caption tabular-nums text-muted-foreground">{i + 1}</span>
                   <span>{step}</span>
                 </li>
               ))}
@@ -431,7 +431,7 @@ export function PlanReview({
         <li key={i} className="flex items-start gap-3">
           <span
             aria-hidden
-            className="mt-2 w-4 shrink-0 font-mono text-caption tabular-nums text-muted-foreground"
+            className="mt-2 w-4 shrink-0 text-caption tabular-nums text-muted-foreground"
           >
             {i + 1}
           </span>

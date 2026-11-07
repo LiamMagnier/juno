@@ -400,11 +400,10 @@ test("every Needs you ask keeps the kebab's slot on a touch screen, an agent's i
   assert.doesNotMatch(row, /conversation && "coarse:pr-11"/);
 });
 
-test("the account identicon is drawn in the second ink, lighter than the name", () => {
+test("the account avatar without a photo is a monogram in the second ink, lighter than the name", () => {
   const menu = read("src/components/app/user-menu.tsx");
-  assert.match(menu, /<DotIdenticon seed=\{user\.id\} className=\{cn\("shrink-0 text-muted-foreground", className\)\} \/>/);
-  // DotIdenticon's own `text-primary` comes first in its cn(), so tailwind-merge keeps ours.
-  assert.match(read("src/components/signature/dot-matrix.tsx"), /className=\{cn\("text-primary", className\)\}/);
+  assert.match(menu, /<Monogram name=\{user\.name \|\| user\.email\} className=\{className\} \/>/);
+  assert.match(read("src/components/ui/monogram.tsx"), /fill-muted-foreground/);
 });
 
 test("the Projects route skeleton is drawn to the Projects header", () => {

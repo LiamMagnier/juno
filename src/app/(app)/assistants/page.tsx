@@ -150,8 +150,7 @@ export default function AssistantsPage() {
   return (
     <AppPage measure="wide">
       <AppPageHeader
-        eyebrow="Assistants"
-        heading="Specialists you can reuse"
+        heading="Assistants"
         lede={`Focused ${PRODUCT_NAME} personalities with their own instructions, starter prompts and model preference.`}
         actions={
           <Button onClick={() => openStudio(null)}>
@@ -177,7 +176,7 @@ export default function AssistantsPage() {
           />
         </div>
         {!loading && !failed && (
-          <span className="ml-auto font-mono text-caption tabular-nums text-muted-foreground">
+          <span className="ml-auto text-caption tabular-nums text-muted-foreground">
             {filteredAssistants.length} {filteredAssistants.length === 1 ? "assistant" : "assistants"}
           </span>
         )}
@@ -336,7 +335,7 @@ export default function AssistantsPage() {
                 <button
                   type="button"
                   onClick={() => startChat(assistant)}
-                  className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 text-left font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
+                  className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 text-left text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
                 >
                   {/* The arrow's nudge is its own articulation (icons.tsx),
                       played when this footer button is pointed at — not a

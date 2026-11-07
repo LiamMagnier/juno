@@ -335,7 +335,7 @@ function ScopeCardBody({
           <ol className="space-y-1.5">
             {draft.questions.map((question, i) => (
               <li key={question.key} className="flex items-start gap-2">
-                <span aria-hidden className="w-5 shrink-0 pt-2 text-right font-mono text-caption tabular-nums text-muted-foreground">
+                <span aria-hidden className="w-5 shrink-0 pt-2 text-right text-caption tabular-nums text-muted-foreground">
                   {i + 1}
                 </span>
                 <textarea

@@ -165,6 +165,6 @@ test("page headers never cut their lede on a phone, and draw no backdrop there",
   const header = source("src/components/app/app-page-header.tsx");
   // The lede wraps as finished text; a one-line clamp ended it mid-sentence.
   assert.doesNotMatch(header, /line-clamp-1/);
-  // The orbit drawing is wide-only: under 40rem it ran behind the lede.
-  assert.match(header, /hidden @\[40rem\]\/page:contents">\s*<PageBackdrop \/>/);
+  // No orbit drawing behind the header at any width (retired 7 Nov 2026).
+  assert.doesNotMatch(header, /PageBackdrop/);
 });

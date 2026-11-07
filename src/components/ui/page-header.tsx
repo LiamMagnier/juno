@@ -1,5 +1,8 @@
 /**
- * Mono eyebrow → serif display heading → optional one-line lede.
+ * Serif display heading → optional one-line lede.
+ *
+ * `eyebrow` is still accepted but no longer drawn (7 Nov 2026): a mono label
+ * restating the section above every heading was decoration, not structure.
  *
  * This was landing/section.tsx's private markup, and it is the strongest
  * existing bridge across the sign-in wall: /upgrade, /tasks, /memory,
@@ -16,7 +19,6 @@
  * of a bundle of its own.
  */
 export function PageHeader({
-  eyebrow,
   heading,
   lede,
   as: H = "h2",
@@ -30,7 +32,6 @@ export function PageHeader({
 }) {
   return (
     <header className={className}>
-      {eyebrow && <p className="mb-3 font-mono text-label text-muted-foreground">{eyebrow}</p>}
       <H className="max-w-2xl text-balance font-serif text-display font-medium tracking-tight">{heading}</H>
       {lede && <p className="mt-3 max-w-2xl text-pretty text-body-lg text-muted-foreground">{lede}</p>}
     </header>

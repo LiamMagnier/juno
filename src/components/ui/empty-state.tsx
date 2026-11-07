@@ -1,5 +1,4 @@
 import type { IconComponent } from "@/components/ui/icons";
-import { EmptyMark } from "@/components/ui/empty-mark";
 
 import { cn } from "@/lib/utils";
 
@@ -92,14 +91,12 @@ export function EmptyState({
             <Icon motion="none" className={page ? "size-6" : "size-5"} />
           </span>
         )
-      ) : (
-        <EmptyMark size={size} />
-      )}
+      ) : null}
       <Title
         className={cn(
           "text-balance text-foreground",
           page ? "ed-h3" : "font-serif text-heading",
-          (Icon || !isError) && (page ? "mt-4" : "mt-3")
+          isError && Icon && (page ? "mt-4" : "mt-3")
         )}
       >
         {title}

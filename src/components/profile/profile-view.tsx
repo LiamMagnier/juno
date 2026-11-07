@@ -4,9 +4,8 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { AppPage } from "@/components/app/app-page";
-import { PageBackdrop } from "@/components/app/page-backdrop";
 import { ProviderLogo } from "@/components/brand/provider-logo";
-import { DotIdenticon } from "@/components/signature/dot-matrix";
+import { Monogram } from "@/components/ui/monogram";
 import { Button } from "@/components/ui/button";
 import { LoadError } from "@/components/ui/load-error";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -76,13 +75,9 @@ export function ProfileView({
   return (
     <AppPage measure="wide" className="pf">
       <div className="@container/pfpage pb-24">
-        {/* THE CARD. Identity as an object you could hand someone: one
-            rounded surface holding the avatar, the name in the document
-            serif and the handle, with the year's activity as a quiet line
-            along its foot. Edit sits on the card, not floating in the page
-            corner. */}
-        <header className="pf-hero relative isolate mt-6 overflow-hidden rounded-panel px-6 pb-6 pt-7 motion-safe:animate-rise-in @[40rem]/pfpage:mt-10 @[40rem]/pfpage:px-8 @[40rem]/pfpage:pt-8">
-          <PageBackdrop />
+        {/* Who this is: the face, the name in the document serif, the handle.
+            On the page itself, not boxed in a card. */}
+        <header className="pf-hero mt-6 pb-8 motion-safe:animate-rise-in @[40rem]/pfpage:mt-10">
           <div className="flex flex-col gap-5 @[34rem]/pfpage:flex-row @[34rem]/pfpage:items-center">
             <div className="pf-avatar shrink-0">
               <Avatar identity={identity} />
@@ -96,10 +91,7 @@ export function ProfileView({
                 {activity && activity.streak.current > 0 ? (
                   <>
                     <span aria-hidden="true" className="text-muted-foreground">·</span>
-                    <span className="pf-streak inline-flex items-center gap-1.5">
-                      <span aria-hidden="true" className="pf-streak-dot" />
-                      {activity.streak.current}-day streak
-                    </span>
+                    <span>{activity.streak.current}-day streak</span>
                   </>
                 ) : null}
               </p>
@@ -136,7 +128,7 @@ function Avatar({ identity }: { identity: ProfileIdentity }) {
       className="size-[76px] shrink-0 rounded-full object-cover ring-1 ring-foreground/10"
     />
   ) : (
-    <DotIdenticon seed={identity.id} className="size-[76px] shrink-0" />
+    <Monogram name={identity.name || identity.handle} className="size-[76px]" />
   );
 }
 
@@ -167,7 +159,7 @@ function StatStrip({ activity }: { activity: ProfileActivity | null }) {
         <div
           key={s.label}
           title={s.title}
-          className="pf-tile flex min-w-0 flex-col justify-between gap-5 motion-safe:animate-rise-in"
+          className="pf-tile flex min-w-0 flex-col gap-2"
           style={{ ...staggerDelay(i + 1, "base"), animationFillMode: "both" }}
         >
           <dt className="text-ui text-muted-foreground">{s.label}</dt>

@@ -689,7 +689,7 @@ function WorkerLane({ step, live, model }: { step: WorkerStep & { durationMs: nu
         <span
           title={`${TIMELINE_COPY.round} ${step.round} · ${TIMELINE_COPY.researcher} ${index}`}
           className={cn(
-            "flex size-5 items-center justify-center rounded-full font-mono text-micro tabular-nums transition-colors duration-base ease-out-soft",
+            "flex size-5 items-center justify-center rounded-full text-micro tabular-nums transition-colors duration-base ease-out-soft",
             working ? "bg-muted text-foreground" : "bg-muted text-muted-foreground"
           )}
         >
