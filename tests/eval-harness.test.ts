@@ -82,7 +82,7 @@ test("mock mode: labelled records; infrastructure categories are not_run, never 
   }
 });
 
-test("live mode: measured numbers from the injected call; a failing model fails; errors are recorded", async () => {
+test("live mode: measured latency and estimated token cost; a failing model fails", async () => {
   let calls = 0;
   const records = await runEvalSuite({
     mode: "live",
@@ -97,8 +97,22 @@ test("live mode: measured numbers from the injected call; a failing model fails;
   assert.equal(calls, ran.length);
   assert.ok(ran.every((r) => r.success === false));
   assert.ok(ran.filter((r) => r.latencyMs === 321).every((r) => r.latencySource === "measured"));
+  assert.ok(ran.filter((r) => r.latencyMs === 321).every((r) => r.costSource === "estimated_from_reported_tokens"));
+  assert.equal(records.find((r) => r.category === "search")?.citationMetric, "source_metadata_shape");
   assert.match(records.find((r) => r.category === "coding")!.errors[0], /529/);
   assert.equal(records.find((r) => r.category === "long_context")?.mode, "not_run", "expensive task opt-in");
+});
+
+test("missing provider usage is unknown cost, not a free call", async () => {
+  const records = await runEvalSuite({
+    mode: "live",
+    routeContext: { isConfigured: () => true },
+    live: async () => ({ text: "answer", inputTokens: null, outputTokens: null, latencyMs: 1 }),
+  });
+  const ran = records.filter((r) => r.mode === "live");
+  assert.ok(ran.length > 0);
+  assert.ok(ran.every((r) => r.costMicroUsd === null && r.costSource === null));
+  assert.equal(summarize(records).costUnavailable, ran.length);
 });
 
 test("no configured provider: tasks are not_run with the reason, not failures", async () => {

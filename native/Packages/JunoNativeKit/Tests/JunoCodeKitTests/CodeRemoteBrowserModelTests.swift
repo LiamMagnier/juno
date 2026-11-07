@@ -63,6 +63,79 @@ final class CodeRemoteBrowserModelTests: XCTestCase {
         XCTAssertEqual(model.cursor, 0)
     }
 
+    func testLatePollCannotPopulateAnotherSessionOrRestoreSignedOutData() async throws {
+        let transport = DelayedBrowserTransport()
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
+        model.start(for: account)
+        model.openSession("s1")
+        let poll = Task { await model.pollEvents(deviceID: "d1", sessionID: "s1") }
+        await transport.waitUntilRequested()
+        model.openSession("s2")
+        await transport.finish()
+        await poll.value
+        XCTAssertTrue(model.events.isEmpty)
+        XCTAssertEqual(model.cursor, 0)
+        XCTAssertEqual(model.openSessionID, "s2")
+
+        let secondTransport = DelayedBrowserTransport()
+        let secondModel = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: secondTransport))
+        secondModel.start(for: account)
+        let secondPoll = Task { await secondModel.pollEvents(deviceID: "d1", sessionID: "s1") }
+        await secondTransport.waitUntilRequested()
+        secondModel.stop()
+        await secondTransport.finish()
+        await secondPoll.value
+        XCTAssertTrue(secondModel.events.isEmpty)
+        XCTAssertEqual(secondModel.phase, .idle)
+    }
+
+    func testCreatingSessionWhileSignedOutDoesNotReportSuccess() async {
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: BrowserTransport(responses: [])))
+        let id = await model.createSession(deviceID: "d1", workspaceKey: nil, workspaceName: nil, prompt: "Hello")
+        XCTAssertNil(id)
+    }
+
+    func testSigningOutReleasesAnOldCommandWithoutRestoringItsState() async {
+        let transport = DelayedBrowserTransport(body: commandBody)
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
+        model.start(for: account)
+        let command = Task { await model.send(deviceID: "d1", sessionID: "s1", text: "Hello") }
+        await transport.waitUntilRequested()
+        XCTAssertTrue(model.isSendingCommand)
+        model.stop()
+        model.start(for: account)
+        XCTAssertFalse(model.isSendingCommand)
+        await transport.finish()
+        let sent = await command.value
+        XCTAssertFalse(sent)
+        XCTAssertTrue(model.queuedPrompts.isEmpty)
+        XCTAssertEqual(model.phase, .idle)
+    }
+
+    func testFailedFollowUpIsNotLeftInTheQueue() async {
+        let transport = BrowserTransport(responses: [.status(403)])
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
+        model.start(for: account)
+        let sent = await model.send(deviceID: "d1", sessionID: "s1", text: "Try this")
+        XCTAssertFalse(sent)
+        XCTAssertTrue(model.queuedPrompts.isEmpty)
+    }
+
+    func testRepeatedPromptRemainsQueuedUntilItsNewEchoArrives() async {
+        let transport = BrowserTransport(responses: [
+            .ok(#"{"events":[{"seq":1,"kind":"user_message","payload":{"text":"Try again"},"createdAt":"2026-07-22T10:00:00.000Z"}]}"#),
+            .ok(commandBody),
+            .ok(#"{"events":[{"seq":2,"kind":"user_message","payload":{"text":"Try again"},"createdAt":"2026-07-22T10:00:01.000Z"}]}"#),
+        ])
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
+        model.start(for: account)
+        await model.pollEvents(deviceID: "d1", sessionID: "s1")
+        await model.send(deviceID: "d1", sessionID: "s1", text: "Try again")
+        XCTAssertEqual(model.thread.queuedPrompts, ["Try again"])
+        await model.pollEvents(deviceID: "d1", sessionID: "s1")
+        XCTAssertTrue(model.thread.queuedPrompts.isEmpty)
+    }
+
     /// An approval that does not name the exact request it answers could be
     /// replayed against a later one.
     func testAnApprovalNamesTheRequestItAnswers() async throws {
@@ -124,6 +197,25 @@ final class CodeRemoteBrowserModelTests: XCTestCase {
         XCTAssertTrue(model.events.isEmpty)
         XCTAssertEqual(model.cursor, 0)
         XCTAssertEqual(model.phase, .failed)
+    }
+
+    func testDuplicateEventsWithinPageAreAppliedOnceButConflictsAreRejected() async {
+        let event = #"{"seq":1,"kind":"user_message","payload":{"text":"hello"},"createdAt":"2026-07-22T10:00:00.000Z"}"#
+        let duplicate = BrowserTransport(responses: [.ok("{\"events\":[\(event),\(event)]}")])
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: duplicate))
+        model.start(for: account)
+        await model.pollEvents(deviceID: "d1", sessionID: "s1")
+        XCTAssertEqual(model.events.map(\.seq), [1])
+        XCTAssertEqual(model.phase, .ready)
+
+        let conflicting = #"{"seq":1,"kind":"user_message","payload":{"text":"different"},"createdAt":"2026-07-22T10:00:00.000Z"}"#
+        let bad = BrowserTransport(responses: [.ok("{\"events\":[\(event),\(conflicting)]}")])
+        let badModel = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: bad))
+        badModel.start(for: account)
+        await badModel.pollEvents(deviceID: "d1", sessionID: "s1")
+        XCTAssertTrue(badModel.events.isEmpty)
+        XCTAssertEqual(badModel.cursor, 0)
+        XCTAssertEqual(badModel.phase, .failed)
     }
 
     /// A host that rewinds a session restarts its transcript with an event
@@ -285,6 +377,34 @@ final class CodeRemoteBrowserModelTests: XCTestCase {
 
     private var commandBody: String {
         #"{"command":{"id":"c1","sessionID":"s1","kind":"stop","payload":{},"status":"pending"}}"#
+    }
+}
+
+private actor DelayedBrowserTransport: NativeAuthenticatedRequestSending {
+    private var continuation: CheckedContinuation<HTTPResponse, Never>?
+    private var requested: CheckedContinuation<Void, Never>?
+    private var hasRequest = false
+    private let body: String
+
+    init(body: String = #"{"events":[{"seq":1,"kind":"text_delta","payload":{},"createdAt":"2026-07-22T10:00:00.000Z"}]}"#) {
+        self.body = body
+    }
+
+    func send(_ request: NativeBearerRequest, for account: AccountID) async throws -> HTTPResponse {
+        hasRequest = true
+        requested?.resume()
+        requested = nil
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilRequested() async {
+        if hasRequest { return }
+        await withCheckedContinuation { requested = $0 }
+    }
+
+    func finish() {
+        continuation?.resume(returning: HTTPResponse(statusCode: 200, headers: HTTPHeaders(), body: Data(body.utf8)))
+        continuation = nil
     }
 }
 

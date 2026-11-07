@@ -1480,7 +1480,14 @@ struct DesktopCodeWorkspace: View {
     private func followSelectedRemoteSession() async {
         guard let selectedRemote else { return }
         remoteModel.openSession(selectedRemote.sessionID)
-        await remoteModel.watchEvents(deviceID: selectedRemote.deviceID, sessionID: selectedRemote.sessionID)
+        await remoteModel.pollEvents(deviceID: selectedRemote.deviceID, sessionID: selectedRemote.sessionID)
+        while !Task.isCancelled, remoteModel.openSessionID == selectedRemote.sessionID {
+            let rotated = await remoteModel.watchEvents(deviceID: selectedRemote.deviceID, sessionID: selectedRemote.sessionID)
+            guard !Task.isCancelled else { return }
+            try? await Task.sleep(for: rotated ? .milliseconds(250) : .seconds(remoteModel.thread.isRunning ? 2 : 8))
+            guard !Task.isCancelled, remoteModel.openSessionID == selectedRemote.sessionID else { return }
+            await remoteModel.pollEvents(deviceID: selectedRemote.deviceID, sessionID: selectedRemote.sessionID)
+        }
     }
 
     private func selectDefaultRemoteDevice(from devices: [NativeCodeDevice]) {
@@ -2068,7 +2075,11 @@ private struct DesktopCodeRemoteCanvas: View {
         let text = trimmed
         guard canSend, !text.isEmpty else { return }
         message = ""
-        Task { await remote.send(deviceID: deviceID, sessionID: sessionID, text: text) }
+        Task {
+            let sent = await remote.send(deviceID: deviceID, sessionID: sessionID, text: text)
+            guard !sent, remote.openSessionID == sessionID else { return }
+            message = message.isEmpty ? text : text + "\n" + message
+        }
     }
 }
 

@@ -62,14 +62,29 @@ public final class CodeRemoteBrowserModel {
     /// journal yet. A follow-up to a running session is *queued* — the host
     /// reads it when it next checks in — and the thread shows it as such
     /// instead of refusing to accept it.
-    public private(set) var queuedPrompts: [String] = []
+    private struct PendingPrompt {
+        let id: UUID
+        let text: String
+        let afterSequence: Int
+    }
+    private var pendingPrompts: [PendingPrompt] = []
+    public var queuedPrompts: [String] { pendingPrompts.map(\.text) }
     /// Session ids that were awaiting approval the last time the list loaded,
     /// so a caller can tell which approvals are new.
     public private(set) var knownAwaitingSessionIDs: Set<String> = []
 
     /// The open session's journal, folded for display.
     public var thread: CodeRemoteThread {
-        CodeRemoteThread.reduce(events, queuedPrompts: queuedPrompts)
+        let journal = events
+        let prompts = queuedPrompts
+        if let cachedThread, cachedThread.generation == journalGeneration,
+            cachedThread.cursor == cursor, cachedThread.prompts == prompts {
+            return cachedThread.value
+        }
+        var result = CodeRemoteThread.reduce(journal)
+        result.queuedPrompts = prompts
+        cachedThread = (journalGeneration, cursor, prompts, result)
+        return result
     }
 
     public var selectedHost: CodeRemoteHostSummary? {
@@ -89,6 +104,12 @@ public final class CodeRemoteBrowserModel {
 
     private let client: NativeCodeRemoteClient
     private var accountID: AccountID?
+    // Invalidates in-flight journal reads when the visible session changes.
+    private var journalGeneration = 0
+    private var accountGeneration = 0
+    // SwiftUI reads the projection several times per update. Keep those reads
+    // from re-folding the full journal until its cursor or queue changes.
+    @ObservationIgnored private var cachedThread: (generation: Int, cursor: Int, prompts: [String], value: CodeRemoteThread)?
     private let newIdempotencyKey: @Sendable () -> String
 
     public init(
@@ -100,6 +121,8 @@ public final class CodeRemoteBrowserModel {
     }
 
     public func start(for accountID: AccountID) {
+        if let current = self.accountID, current != accountID { stop() }
+        if self.accountID != accountID { accountGeneration &+= 1 }
         self.accountID = accountID
     }
 
@@ -128,6 +151,8 @@ public final class CodeRemoteBrowserModel {
     }
 
     public func stop() {
+        journalGeneration &+= 1
+        accountGeneration &+= 1
         accountID = nil
         hosts = []
         sessions = []
@@ -136,18 +161,22 @@ public final class CodeRemoteBrowserModel {
         cursor = 0
         phase = .idle
         lastErrorDescription = nil
+        isSendingCommand = false
+        revokingHostID = nil
         selectedDeviceID = nil
         openSessionID = nil
-        queuedPrompts = []
+        pendingPrompts = []
         knownAwaitingSessionIDs = []
     }
 
     public func loadSessions(deviceID: String) async {
         guard let accountID else { return }
+        let generation = accountGeneration
         // Only announce a load when there is nothing to show meanwhile.
         if sessionsByDevice[deviceID] == nil { phase = .loading }
         do {
             let loaded = try await client.sessions(deviceID: deviceID, for: accountID)
+            guard generation == accountGeneration, !Task.isCancelled else { return }
             sessionsByDevice[deviceID] = loaded
             if deviceID == selectedDeviceID || selectedDeviceID == nil {
                 sessions = loaded
@@ -156,6 +185,7 @@ public final class CodeRemoteBrowserModel {
             lastErrorDescription = nil
             phase = .ready
         } catch {
+            guard generation == accountGeneration, !Task.isCancelled else { return }
             record(error)
         }
     }
@@ -190,10 +220,12 @@ public final class CodeRemoteBrowserModel {
     /// alongside it.
     public func revokeHost(id deviceID: String) async {
         guard let accountID, revokingHostID == nil else { return }
+        let generation = accountGeneration
         revokingHostID = deviceID
-        defer { revokingHostID = nil }
+        defer { if generation == accountGeneration { revokingHostID = nil } }
         do {
             try await client.revokeDevice(deviceID: deviceID, for: accountID)
+            guard generation == accountGeneration else { return }
             hosts.removeAll { $0.id == deviceID }
             sessionsByDevice.removeValue(forKey: deviceID)
             sessions.removeAll { $0.deviceID == deviceID }
@@ -204,6 +236,7 @@ public final class CodeRemoteBrowserModel {
             if openSessionID != nil, openSession == nil { closeSession() }
             lastErrorDescription = nil
         } catch {
+            guard generation == accountGeneration else { return }
             lastErrorDescription = NativeFailureMessage.presentable(error)
         }
     }
@@ -221,15 +254,18 @@ public final class CodeRemoteBrowserModel {
     /// below the cursor, so a retried request cannot double-apply an event.
     public func pollEvents(deviceID: String, sessionID: String) async {
         guard let accountID else { return }
+        let generation = journalGeneration
         do {
             let page = try await client.events(
                 deviceID: deviceID, sessionID: sessionID,
                 afterSequence: cursor, for: accountID
             )
+            guard generation == journalGeneration, !Task.isCancelled else { return }
             try apply(page)
             lastErrorDescription = nil
             phase = .ready
         } catch {
+            guard generation == journalGeneration, !Task.isCancelled else { return }
             record(error)
         }
     }
@@ -238,8 +274,14 @@ public final class CodeRemoteBrowserModel {
     /// deliberate server-side connection rotation. The enclosing SwiftUI task
     /// is selection-scoped, so moving to another session cancels the stream
     /// before any of its events can be applied to the new transcript.
-    public func watchEvents(deviceID: String, sessionID: String) async {
-        guard let accountID else { return }
+    /// Returns true for a healthy connection that closed normally; a stream
+    /// that closes immediately gets the same backoff as an outage.
+    @discardableResult
+    public func watchEvents(deviceID: String, sessionID: String) async -> Bool {
+        guard let accountID else { return false }
+        let generation = journalGeneration
+        let clock = ContinuousClock()
+        let started = clock.now
         do {
             let stream = try await client.eventStream(
                 deviceID: deviceID, sessionID: sessionID,
@@ -247,50 +289,62 @@ public final class CodeRemoteBrowserModel {
             )
             for try await page in stream {
                 try Task.checkCancellation()
+                guard generation == journalGeneration else { return false }
                 try apply(page)
                 lastErrorDescription = nil
                 phase = .ready
             }
+            return generation == journalGeneration && !Task.isCancelled
+                && clock.now - started >= .seconds(1)
         } catch is CancellationError {
             // Selection changes and sign-out are normal stream terminations.
+            return false
         } catch {
+            guard generation == journalGeneration, !Task.isCancelled else { return false }
             record(error)
+            return false
         }
     }
 
     /// Resets the transcript for a different session. Forgetting this is how a
     /// previous session's events end up under the wrong title.
     public func openSession(_ sessionID: String) {
+        journalGeneration &+= 1
         events = []
         cursor = 0
         lastErrorDescription = nil
         openSessionID = sessionID
-        queuedPrompts = []
+        pendingPrompts = []
     }
 
     public func closeSession() {
+        journalGeneration &+= 1
         openSessionID = nil
         events = []
         cursor = 0
-        queuedPrompts = []
+        pendingPrompts = []
     }
 
     /// Sends a prompt. While the session is running this is a *steer*: the
     /// relay queues it and the host picks it up between turns, so the phone
     /// keeps it in `queuedPrompts` until the journal echoes it back.
+    @discardableResult
     public func send(
         deviceID: String, sessionID: String, text: String
-    ) async {
+    ) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        queuedPrompts.append(trimmed)
-        await command(
+        guard !trimmed.isEmpty, accountID != nil, !isSendingCommand else { return false }
+        let generation = journalGeneration
+        let promptID = UUID()
+        pendingPrompts.append(PendingPrompt(id: promptID, text: trimmed, afterSequence: cursor))
+        let sent = await command(
             deviceID: deviceID, sessionID: sessionID,
             kind: "message", payload: ["text": .string(trimmed), "prompt": .string(trimmed)]
         )
-        if lastErrorDescription != nil, let index = queuedPrompts.lastIndex(of: trimmed) {
-            queuedPrompts.remove(at: index)
+        if !sent, generation == journalGeneration {
+            pendingPrompts.removeAll { $0.id == promptID }
         }
+        return sent
     }
 
     /// Changes the model, effort or permission mode of a session that runs on
@@ -332,8 +386,7 @@ public final class CodeRemoteBrowserModel {
         if let workspaceName { payload["workspaceName"] = .string(workspaceName) }
         if let modelID { payload["modelID"] = .string(modelID) }
         if let permissionMode { payload["permissionMode"] = .string(permissionMode) }
-        await command(deviceID: deviceID, sessionID: sessionID, kind: "create_session", payload: payload)
-        guard lastErrorDescription == nil else { return nil }
+        guard await command(deviceID: deviceID, sessionID: sessionID, kind: "create_session", payload: payload) else { return nil }
         await loadSessions(deviceID: deviceID)
         return sessionID
     }
@@ -356,13 +409,16 @@ public final class CodeRemoteBrowserModel {
         )
     }
 
+    @discardableResult
     private func command(
         deviceID: String, sessionID: String,
         kind: String, payload: [String: JunoJSONValue]
-    ) async {
-        guard let accountID, !isSendingCommand else { return }
+    ) async -> Bool {
+        guard let accountID, !isSendingCommand else { return false }
+        let generation = accountGeneration
+        let sessionGeneration = journalGeneration
         isSendingCommand = true
-        defer { isSendingCommand = false }
+        defer { if generation == accountGeneration { isSendingCommand = false } }
         do {
             _ = try await client.enqueueCommand(
                 deviceID: deviceID, sessionID: sessionID, kind: kind,
@@ -372,14 +428,28 @@ public final class CodeRemoteBrowserModel {
                 idempotencyKey: newIdempotencyKey(),
                 for: accountID
             )
-            lastErrorDescription = nil
+            guard generation == accountGeneration else { return false }
+            if sessionGeneration == journalGeneration { lastErrorDescription = nil }
+            return true
         } catch {
-            record(error)
+            guard generation == accountGeneration else { return false }
+            if sessionGeneration == journalGeneration { record(error) }
+            return false
         }
     }
 
     private func apply(_ page: [CodeRemoteSessionEvent]) throws {
-        let fresh = page.filter { $0.seq > cursor }.sorted { $0.seq < $1.seq }
+        let sorted = page.filter { $0.seq > cursor }.sorted { $0.seq < $1.seq }
+        var fresh: [CodeRemoteSessionEvent] = []
+        for event in sorted {
+            if let previous = fresh.last, previous.seq == event.seq {
+                // Identical replay is harmless; conflicting events for the same
+                // journal position must never be silently accepted.
+                guard previous == event else { throw CodeRemoteError.malformedResponse }
+                continue
+            }
+            fresh.append(event)
+        }
         guard !fresh.isEmpty else { return }
         var expected = cursor + 1
         var journal = events
@@ -402,6 +472,18 @@ public final class CodeRemoteBrowserModel {
         }
         events = journal
         cursor = events.last?.seq ?? cursor
+        // Only a later host echo can acknowledge a prompt. Matching against
+        // the entire history hides a new prompt when the same text was sent
+        // in an earlier turn.
+        for event in fresh {
+            let (kind, payload) = CodeRemoteThread.unwrap(event)
+            guard kind == "user_message" || kind == "user" || kind == "message" else { continue }
+            let text = (CodeRemoteThread.read(payload, ["text", "message", "prompt", "content"]) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let index = pendingPrompts.firstIndex(where: { $0.afterSequence < event.seq && $0.text == text }) {
+                pendingPrompts.remove(at: index)
+            }
+        }
     }
 
     private func record(_ error: any Error) {
