@@ -342,7 +342,7 @@ export default function AutomationPage() {
                       <span className="min-w-0 flex-1 truncate text-ui text-foreground">
                         {row.label}
                       </span>
-                      <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
+                      <span className="shrink-0 text-caption tabular-nums text-muted-foreground">
                         {row.origin} · {workTimeAgo(row.createdAt)}
                       </span>
                     </Link>

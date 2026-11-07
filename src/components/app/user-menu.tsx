@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/components/app/app-provider";
 import { PLANS, planRank } from "@/lib/plans";
-import { DotIdenticon } from "@/components/signature/dot-matrix";
+import { Monogram } from "@/components/ui/monogram";
 import { cn } from "@/lib/utils";
 import type { ClientSpend } from "@/types/app";
 import type { ClientQuota } from "@/types/chat";
@@ -98,18 +98,8 @@ function Separator() {
 /**
  * The signed-in user's one face.
  *
- * Exported because the sidebar footer used to draw its own (mono initials in a
- * bordered disc) beside a menu that drew a DotIdenticon for the same person.
- * One click apart, two identities, and nothing else in the product does that.
- * Photo avatars are circles (matching the Avatar primitive app-wide); the
- * DotIdenticon fallback keeps its signature squircle, which a circular crop
- * would clip.
- *
- * THE IDENTICON IS DRAWN IN THE SECOND INK, NOT THE FIRST. In `text-primary`
- * a seed that sets most of its 25 cells (a dense grid, like a QR code) was the
- * darkest shape in the whole column, heavier than the name beside it. In
- * `text-muted-foreground`, the ink of "Pro plan" under the name, it reads as
- * a face, lighter than the words it belongs to, in both themes.
+ * Exported so the sidebar footer and the menu draw the same face. Without a
+ * photo it is the person's initials on a neutral disc (Monogram).
  */
 export function UserAvatar({ className }: { className?: string }) {
   const { user } = useApp();
@@ -123,7 +113,7 @@ export function UserAvatar({ className }: { className?: string }) {
       className={cn("shrink-0 rounded-full object-cover", className)}
     />
   ) : (
-    <DotIdenticon seed={user.id} className={cn("shrink-0 text-muted-foreground", className)} />
+    <Monogram name={user.name || user.email} className={className} />
   );
 }
 

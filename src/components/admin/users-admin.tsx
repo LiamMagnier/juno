@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import { DotIdenticon } from "@/components/signature/dot-matrix";
+import { Monogram } from "@/components/ui/monogram";
 import { PLANS } from "@/lib/plans";
 import { staggerDelay } from "@/lib/motion";
 
@@ -357,9 +357,9 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                                 silhouettes depending on whether a photo existed. */}
                             {u.image ? (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img src={u.image} alt="" className="size-8 shrink-0 rounded-field object-cover" />
+                              <img src={u.image} alt="" className="size-8 shrink-0 rounded-full object-cover" />
                             ) : (
-                              <DotIdenticon seed={u.id} className="size-8 shrink-0 overflow-hidden rounded-field" />
+                              <Monogram name={u.name || u.email} className="size-8" />
                             )}
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
@@ -373,7 +373,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                               </div>
                               <p className="truncate text-caption text-muted-foreground">{u.email}</p>
                               {u.strikes > 0 && !u.bannedAt && (
-                                <p className="mt-0.5 flex items-center gap-1 font-mono text-caption tabular-nums text-warning">
+                                <p className="mt-0.5 flex items-center gap-1 text-caption tabular-nums text-warning">
                                   <StatusIcons.warning className="size-3 shrink-0" aria-hidden="true" />
                                   {u.strikes}/{STRIKE_LIMIT} strikes
                                 </p>
@@ -407,11 +407,11 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                             </p>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-right font-mono text-micro tabular-nums">{u.messagesThisMonth}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-micro tabular-nums">
+                        <td className="px-4 py-2.5 text-right text-micro tabular-nums">{u.messagesThisMonth}</td>
+                        <td className="px-4 py-2.5 text-right text-micro tabular-nums">
                           {formatSpend(u.monthSpendMicroUsd)}
                           {u.monthSpendAppMicroUsd > 0 && (
-                            <p className="mt-0.5 font-mono text-caption tabular-nums text-muted-foreground">
+                            <p className="mt-0.5 text-caption tabular-nums text-muted-foreground">
                               web {formatSpend(u.monthSpendWebMicroUsd)} · app {formatSpend(u.monthSpendAppMicroUsd)}
                             </p>
                           )}
@@ -476,7 +476,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
           )}
 
           <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
-            <p className="font-mono text-caption tabular-nums text-muted-foreground">
+            <p className="text-caption tabular-nums text-muted-foreground">
               Page {page} of {pageCount}
             </p>
             <div className="flex gap-2">

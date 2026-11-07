@@ -58,7 +58,6 @@
 }
 .mem-figure-sm { font-size: 22px; letter-spacing: -0.012em; }
 .mem-annot {
-  font-family: var(--font-mono), "JetBrains Mono", monospace;
   font-size: 11px;
   line-height: 16px;
   letter-spacing: 0.02em;
@@ -77,7 +76,6 @@
 .mem-center { fill: hsl(var(--foreground)); }
 .mem-label {
   fill: hsl(var(--muted-foreground));
-  font-family: var(--font-mono), "JetBrains Mono", monospace;
   font-size: 13px;
   letter-spacing: 0.02em;
   transition: fill var(--dur-base);

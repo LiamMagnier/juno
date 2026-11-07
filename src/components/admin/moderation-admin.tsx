@@ -245,7 +245,7 @@ export function ModerationAdmin() {
               options={FILTERS.map((f) => ({ value: f.id, label: f.label }))}
             />
             {data && (
-              <p className="font-mono text-caption tabular-nums text-muted-foreground">
+              <p className="text-caption tabular-nums text-muted-foreground">
                 {total} {total === 1 ? "flag" : "flags"}
               </p>
             )}
@@ -465,7 +465,7 @@ export function ModerationAdmin() {
           )}
 
           <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
-            <p className="font-mono text-caption tabular-nums text-muted-foreground">
+            <p className="text-caption tabular-nums text-muted-foreground">
               Page {page} of {pageCount}
             </p>
             <div className="flex gap-2">

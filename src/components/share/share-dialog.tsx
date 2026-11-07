@@ -183,7 +183,7 @@ function ChatLinkPanel({ conversationId, open, transcript }: { conversationId: s
     <div className="space-y-3 motion-safe:animate-fade-in">
       <LinkField url={share.url} label="Share link" />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-mono text-caption tabular-nums text-muted-foreground">
+        <p className="text-caption tabular-nums text-muted-foreground">
           Snapshot · {formatDate(share.snapshotAt)} · {share.views} {share.views === 1 ? "view" : "views"}
         </p>
         <div className="flex shrink-0 items-center gap-1">

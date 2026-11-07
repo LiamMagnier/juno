@@ -172,8 +172,7 @@ export default function RoadmapPage() {
   return (
     <AppPage measure="wide">
         <AppPageHeader
-          eyebrow="Roadmap"
-          heading={<>What we’re <span className="italic text-primary">building</span></>}
+          heading="Roadmap"
           lede="Vote on what matters to you, or request something new. We read every one."
           actions={
             <Button onClick={() => setSubmitOpen(true)}>
@@ -191,7 +190,7 @@ export default function RoadmapPage() {
             // that celebrates a ship read as bare text between two hairlines.
             className="mt-6 rounded-surface border border-success/30 bg-success/10 p-4"
           >
-            <p className="mb-2 flex items-center gap-2 font-mono text-label text-success">
+            <p className="mb-2 flex items-center gap-2 text-label text-success">
               <PartyPopper className="size-3.5 shrink-0" /> Recently shipped
             </p>
             <div className="flex flex-wrap gap-x-5 gap-y-1.5">
@@ -335,8 +334,8 @@ export default function RoadmapPage() {
                   <div key={status} className="flex min-w-0 flex-col">
                     <div className="mb-3 flex items-center gap-2">
                       <span aria-hidden className={cn("size-2 shrink-0 rounded-full", meta.dot)} />
-                      <span className="font-mono text-caption text-muted-foreground">{meta.label}</span>
-                      <span className="font-mono text-caption tabular-nums text-muted-foreground">{items.length}</span>
+                      <span className="text-caption text-muted-foreground">{meta.label}</span>
+                      <span className="text-caption tabular-nums text-muted-foreground">{items.length}</span>
                     </div>
                     <div className="space-y-3">
                       {items.length === 0 ? (

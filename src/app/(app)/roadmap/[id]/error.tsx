@@ -52,7 +52,7 @@ export default function RoadmapRequestError({
       {error.digest && (
         // The digest is the only thing tying this screen to a line in the server
         // log, so it is the one part of the failure worth putting on the page.
-        <p className="mt-4 text-center font-mono text-caption text-muted-foreground">
+        <p className="mt-4 text-center text-caption text-muted-foreground">
           Reference {error.digest}
         </p>
       )}

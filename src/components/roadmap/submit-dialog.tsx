@@ -116,7 +116,7 @@ export function SubmitDialog({
               // Full --secondary is the recessed rung inside a floating layer.
               className="rounded-field border border-border/70 bg-secondary p-3 motion-safe:animate-fade-in"
             >
-              <p className="mb-2 font-mono text-caption text-muted-foreground">
+              <p className="mb-2 text-caption text-muted-foreground">
                 Similar requests you can vote for instead
               </p>
               <ul className="space-y-1">
@@ -127,7 +127,7 @@ export function SubmitDialog({
                       onClick={() => onOpenChange(false)}
                       className="flex items-center gap-2 rounded-control px-2 py-1.5 text-ui transition-colors duration-fast ease-out-soft hover:bg-accent"
                     >
-                      <span className="inline-flex items-center gap-1 font-mono text-micro tabular-nums text-muted-foreground">
+                      <span className="inline-flex items-center gap-1 text-micro tabular-nums text-muted-foreground">
                         <ChevronUp className="size-3 shrink-0" />
                         {s.voteCount}
                       </span>

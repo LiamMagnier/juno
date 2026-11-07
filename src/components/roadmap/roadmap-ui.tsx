@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChevronUp, MessageSquare } from "@/components/ui/icons";
 import { Card } from "@/components/ui/card";
 import { RollingNumber } from "@/components/ui/micro";
-import { DotIdenticon } from "@/components/signature/dot-matrix";
+import { Monogram } from "@/components/ui/monogram";
 import { staggerDelay } from "@/lib/motion";
 import { STATUS_META, CATEGORY_LABEL, type RoadmapRequest } from "@/lib/roadmap";
 import { cn } from "@/lib/utils";
@@ -25,7 +25,7 @@ export function StatusBadge({ status, className }: { status: RoadmapRequest["sta
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-caption",
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-caption",
         m.badge,
         className
       )}
@@ -38,7 +38,7 @@ export function StatusBadge({ status, className }: { status: RoadmapRequest["sta
 
 export function CategoryChip({ category }: { category: RoadmapRequest["category"] }) {
   return (
-    <span className="rounded-full border border-border/70 px-2 py-0.5 font-mono text-caption text-muted-foreground">
+    <span className="rounded-full border border-border/70 px-2 py-0.5 text-caption text-muted-foreground">
       {CATEGORY_LABEL[category]}
     </span>
   );
@@ -84,7 +84,7 @@ export function VoteButton({
       <ChevronUp className={cn("size-4 transition-transform duration-base ease-in-out motion-reduce:transition-none", voted && "-translate-y-0.5")} />
       {/* The count rolls rather than re-mounting: the digit that moves is
           the confirmation that the vote landed. */}
-      <RollingNumber value={count} className="font-mono text-micro font-medium" />
+      <RollingNumber value={count} className="text-micro font-medium" />
     </button>
   );
 }
@@ -127,7 +127,7 @@ export function RequestCard({
         <p className="mt-1 line-clamp-2 text-ui text-muted-foreground">{req.description}</p>
         <div className="mt-3 flex items-center gap-3 text-caption text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
-            <DotIdenticon seed={req.author.id} className="size-4 shrink-0" />
+            <Monogram name={req.author.name} className="size-4" />
             {req.author.name ?? "Someone"}
           </span>
           <span className="inline-flex items-center gap-1.5 tabular-nums">

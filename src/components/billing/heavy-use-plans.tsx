@@ -82,7 +82,7 @@ function HeavyUseRow({ item }: { item: HeavyUsePlanItem }) {
       <div className="sm:text-right">
         <p className="flex items-baseline gap-1.5 sm:justify-end">
           <span className="text-heading tabular-nums">{item.price}</span>
-          <span className="font-mono text-caption text-muted-foreground">{item.priceSuffix}</span>
+          <span className="text-caption text-muted-foreground">{item.priceSuffix}</span>
         </p>
         {item.priceNote && <p className="text-caption tabular-nums text-muted-foreground">{item.priceNote}</p>}
       </div>

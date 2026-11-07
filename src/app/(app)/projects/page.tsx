@@ -21,7 +21,6 @@ import { cachedJson, peekJson } from "@/lib/client-cache";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { ProjectsGridSkeleton } from "@/components/projects/projects-grid-skeleton";
-import { ProjectCover } from "@/components/projects/project-cover";
 import {
   DeleteProjectDialog,
   MoveToDialog,
@@ -380,10 +379,7 @@ export default function ProjectsPage() {
       ) : loading ? (
         <ProjectsGridSkeleton />
       ) : empty ? (
-        <section className="pj mt-2 grid items-center gap-8 @[48rem]/page:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] @[48rem]/page:gap-12 motion-safe:animate-rise-in">
-          <div className="pj-cover relative aspect-[16/9] overflow-hidden rounded-card">
-            <ProjectCover id="alevr-first-project" live aspect={16 / 9} />
-          </div>
+        <section className="pj mt-2 motion-safe:animate-rise-in">
           <div className="max-w-sm">
             <h2 className="pj-name text-foreground">Start your first project</h2>
             <p className="mt-2 text-pretty text-ui leading-relaxed text-muted-foreground">

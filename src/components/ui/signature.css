@@ -119,14 +119,10 @@
   }
 }
 
-/* The primary button: the tint with a lit top edge and a short coloured
-   throw, so it reads as a physical key rather than a flat swatch. */
+/* The primary button: a flat fill with a faint lit top edge. The coloured
+   throw under it (7 Nov 2026) read as a glow, so it is gone. */
 .control-primary {
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.2),
-    inset 0 -1px 0 hsl(0 0% 0% / 0.08),
-    0 1px 2px hsl(var(--primary) / 0.28),
-    0 4px 12px -4px hsl(var(--primary) / 0.4);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.14);
 }
 
 /* ── 2. (Glass on floating layers was removed 6 Nov 2026: menus are solid, see 4.) */

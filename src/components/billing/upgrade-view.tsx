@@ -7,12 +7,10 @@ import type { Plan } from "@prisma/client";
 
 import { AppPage } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
-import { PlanOrbit } from "@/components/billing/plan-orbit";
 import { PlanCompare } from "@/components/billing/plan-compare";
 import { CheckoutSheet, inAppCheckoutAvailable } from "@/components/billing/checkout-sheet";
 import { usePriceLocale } from "@/components/billing/use-price-locale";
 import { Button } from "@/components/ui/button";
-import { MetalCta } from "@/components/effects/metal-cta";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { planPriceParts, vatNote, type BillingInterval as PriceInterval } from "@/lib/price-display";
 import type { AppBootstrap } from "@/types/app";
@@ -81,19 +79,6 @@ const FAQ_DISCLOSURE =
   "[&::details-content]:transition-[block-size,content-visibility] [&::details-content]:[transition-behavior:allow-discrete] " +
   "[&::details-content]:duration-base [&::details-content]:ease-in-out " +
   "[&[open]::details-content]:[block-size:auto] motion-reduce:[&::details-content]:transition-none";
-
-/** The month so far, in the engine's own dots. */
-function MonthMeter({ pct }: { pct: number }) {
-  const dots = 28;
-  const on = Math.round((pct / 100) * dots);
-  return (
-    <span className="plans-usage" aria-hidden>
-      {Array.from({ length: dots }, (_, i) => (
-        <i key={i} data-on={i < on || undefined} />
-      ))}
-    </span>
-  );
-}
 
 /** A label mid-sentence: lower case, except the product's own names. */
 function inSentence(label: string): string {
@@ -204,7 +189,7 @@ export function UpgradeView({
         {loading === selected ? "Opening checkout…" : `Upgrade to ${name}`}
       </Button>
     );
-    return features.billing ? <MetalCta className="w-full sm:w-80">{button}</MetalCta> : button;
+    return button;
   })();
 
   const onPlanKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -227,8 +212,7 @@ export function UpgradeView({
       {/* ONE DECISION, ABOVE THE FOLD: the plan worth having, its price, one
           button. Everything below is there for whoever wants to look. */}
       <section aria-live="polite" className="mx-auto flex max-w-3xl flex-col items-center pt-2 text-center">
-        <p className="ed-rise flex items-center gap-3 font-mono text-caption tabular-nums text-muted-foreground" style={{ ["--i" as string]: 0 }}>
-          {usedPct != null && <MonthMeter pct={usedPct} />}
+        <p className="ed-rise text-ui tabular-nums text-muted-foreground" style={{ ["--i" as string]: 0 }}>
           <span>
             {PLANS[currentPlan].name}
             {usedPct != null ? ` · ${usedPct}% of this month used` : ""}
@@ -241,7 +225,7 @@ export function UpgradeView({
           {headline}
         </h1>
         <p className="ed-rise mt-3 text-body-lg text-muted-foreground" style={{ ["--i" as string]: 1 }}>
-          <span key={`${p.amount}-${interval}`} className="plans-roll font-mono text-foreground tabular-nums">
+          <span key={`${p.amount}-${interval}`} className="plans-roll text-foreground tabular-nums">
             {p.amount}
           </span>{" "}
           {selected === "FREE" ? "a month" : interval === "year" ? "a month, billed yearly" : "a month"}
@@ -292,7 +276,7 @@ export function UpgradeView({
                 className="plans-chip"
               >
                 <span className="font-medium">{PLANS[plan].name}</span>
-                <span className="font-mono text-micro tabular-nums text-muted-foreground">{plan === currentPlan ? "yours" : priceLabel(plan)}</span>
+                <span className="text-caption tabular-nums text-muted-foreground">{plan === currentPlan ? "yours" : priceLabel(plan)}</span>
               </button>
             ))}
           </div>
@@ -321,11 +305,6 @@ export function UpgradeView({
           Billing isn’t configured on this deployment. Set the Stripe environment variables to enable upgrades.
         </div>
       )}
-
-      {/* The scale, for whoever wants to see it: every plan on its orbit. */}
-      <div className="ed-rise mt-14 hidden md:block" style={{ ["--i" as string]: 4 }}>
-        <PlanOrbit plans={plans} selected={selected} current={currentPlan} priceOf={priceLabel} onSelect={setPicked} onKeyDown={onPlanKey} />
-      </div>
 
       <div className="plans-rule mt-14" aria-hidden />
 

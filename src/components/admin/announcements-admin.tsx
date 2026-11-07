@@ -387,7 +387,7 @@ function MediaDropzone({
                 its own gives no sense of how much is left, and the same upload
                 already draws one in import-history. */}
             <p className="max-w-full truncate text-caption text-foreground">{fileName}</p>
-            <p className="font-mono text-caption tabular-nums text-muted-foreground" aria-live="polite">
+            <p className="text-caption tabular-nums text-muted-foreground" aria-live="polite">
               {progress >= 95 ? "Storing…" : `Uploading… ${progress}%`}
             </p>
             <div className="h-1 w-40 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">

@@ -183,7 +183,7 @@ export function ActivityBody({
                 <h2 id={`activity-group-${group.state}`} className={cn("flex items-center gap-1.5 text-label font-medium", STATUS_INK[group.state])}>
                   <ActivityStatusMark state={group.state} />
                   {ACTIVITY_COPY.states[group.state]}
-                  <span className="font-mono text-micro tabular-nums text-muted-foreground" data-no-auto-translate>
+                  <span className="text-micro tabular-nums text-muted-foreground" data-no-auto-translate>
                     {counts?.[group.state] ?? group.items.length}
                   </span>
                 </h2>

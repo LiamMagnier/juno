@@ -22,7 +22,7 @@ export function SourceRows({ rows, numbered = false }: { rows: readonly SourceRo
         const body = (
           <>
             {numbered && (
-              <span className="w-5 shrink-0 pt-px text-right font-mono text-caption tabular-nums text-muted-foreground">{row.cited}</span>
+              <span className="w-5 shrink-0 pt-px text-right text-caption tabular-nums text-muted-foreground">{row.cited}</span>
             )}
             <SourceFavicon url={row.url} variant="list" className="mt-px" />
             <span className="min-w-0 flex-1">

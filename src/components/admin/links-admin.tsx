@@ -570,13 +570,13 @@ export function LinksAdmin() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-micro tabular-nums">{s.views}</td>
+                      <td className="px-4 py-3 text-right text-micro tabular-nums">{s.views}</td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-micro text-muted-foreground">
                         {formatDate(s.createdAt)}
                       </td>
                       <td
                         className={cn(
-                          "px-4 py-3 text-right font-mono text-micro tabular-nums",
+                          "px-4 py-3 text-right text-micro tabular-nums",
                           s.openReports > 0 ? "text-warning" : "text-muted-foreground"
                         )}
                       >
@@ -640,7 +640,7 @@ export function LinksAdmin() {
             />
           </div>
           {reportsCurrent && (
-            <p className="font-mono text-caption tabular-nums text-muted-foreground">
+            <p className="text-caption tabular-nums text-muted-foreground">
               {total} {total === 1 ? "report" : "reports"}
             </p>
           )}
@@ -859,7 +859,7 @@ export function LinksAdmin() {
         )}
 
         <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
-          <p className="font-mono text-caption tabular-nums text-muted-foreground">
+          <p className="text-caption tabular-nums text-muted-foreground">
             Page {page} of {pageCount}
           </p>
           <div className="flex gap-2">

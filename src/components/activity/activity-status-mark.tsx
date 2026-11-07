@@ -35,7 +35,7 @@ export function ActivityNeedsYouBadge({ count, compact = false }: { count: numbe
       <span className="grid size-4 place-items-center rounded-full bg-signal-wash">
         <Hand motion="none" className="size-2.5" />
       </span>
-      {!compact && <span className="font-mono text-micro tabular-nums leading-none">{count > 99 ? "99+" : count}</span>}
+      {!compact && <span className="text-micro tabular-nums leading-none">{count > 99 ? "99+" : count}</span>}
     </span>
   );
 }
