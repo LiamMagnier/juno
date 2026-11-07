@@ -2942,8 +2942,10 @@ function ComposerImpl({
             },
           },
         ],
-        // Where this chat sits and what it can reach.
-        [
+        // Where this chat sits and what it can reach. On the home the tray
+        // under the composer carries Project, Apps and Skills, so the + menu
+        // leaves them out there (owner, 7 Nov 2026); in a chat it keeps them.
+        !showTray ? [
           ...(!privateMode
             ? [
                 {
@@ -2972,7 +2974,7 @@ function ComposerImpl({
               ]
             : []),
           ...(skillRow ? [skillRow] : []),
-        ],
+        ] : [],
       ];
 
   /*
