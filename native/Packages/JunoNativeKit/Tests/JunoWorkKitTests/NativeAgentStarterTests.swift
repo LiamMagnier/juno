@@ -108,4 +108,22 @@ final class NativeAgentStarterTests: XCTestCase {
         XCTAssertNil(NativeAgentStarter.footnote(for: agent("Atlas")))
         XCTAssertEqual(NativeAgentStarter.footnote(for: agent("Iris", status: .paused)), "Resume it from the menu")
     }
+
+    func testWorkspaceFiltersKeepPausedAgentsOutOfWorking() {
+        let team = [agent("Mira", state: .waiting), agent("Scout", state: .working), agent("Quill", state: .thinking), agent("Rove", state: .working, status: .paused), agent("Atlas", state: .blocked)]
+        XCTAssertEqual(NativeAgentRosterFilter.working.apply(to: team, query: "").map(\.name), ["Scout", "Quill"])
+        XCTAssertEqual(NativeAgentRosterFilter.attention.apply(to: team, query: "").map(\.name), ["Mira", "Atlas"])
+        XCTAssertEqual(NativeAgentRosterFilter.paused.apply(to: team, query: "").map(\.name), ["Rove"])
+        XCTAssertEqual(NativeAgentRosterFilter.all.apply(to: team, query: "  SCOUT  ").map(\.name), ["Scout"])
+        XCTAssertTrue(NativeAgentRosterFilter.working.apply(to: team, query: "Mira").isEmpty)
+    }
+
+    func testCapabilitySelectionIsADraftWithAUniqueIdentity() {
+        XCTAssertEqual(NativeOrbitCapability.all.count, 6)
+        let prompt = NativeOrbitCapability.all[1].prompt
+        let first = NativeAgentJobSuggestion(prompt: prompt)
+        let second = NativeAgentJobSuggestion(prompt: prompt)
+        XCTAssertEqual(first.prompt, second.prompt)
+        XCTAssertNotEqual(first.id, second.id, "choosing the same starter again can refill the field")
+    }
 }

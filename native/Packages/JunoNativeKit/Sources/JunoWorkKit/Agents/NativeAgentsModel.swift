@@ -58,6 +58,9 @@ public final class NativeAgentsModel {
     /// How long each computer idles before it rests, in minutes, as the
     /// server is configured.
     public private(set) var computerRestMinutes: [String: Double] = [:]
+    public private(set) var computerErrors: [String: String] = [:]
+    @ObservationIgnored private var computerWrites: Set<String> = []
+    @ObservationIgnored private var computerReadVersions: [String: UUID] = [:]
     /// The question each takeover is for, pinned at Take control, so Hand back
     /// answers that one and nothing else (``NativeComputerHandBack``).
     public private(set) var computerTakeoverPins: [String: NativeComputerHandBack.Pin] = [:]
@@ -191,6 +194,9 @@ public final class NativeAgentsModel {
         answeringIDs = []
         computerTakeovers = [:]
         computerRestMinutes = [:]
+        computerErrors = [:]
+        computerWrites = []
+        computerReadVersions = [:]
         computerTakeoverPins = [:]
         workHosts = []
         workHostsLoaded = false
@@ -976,27 +982,45 @@ public final class NativeAgentsModel {
 
     // MARK: - Cloud computer
 
-    public func computerAction(agentID: String, action: String) async {
-        guard let accountID else { return }
+    @discardableResult
+    public func computerAction(agentID: String, action: String) async -> Bool {
+        guard let accountID, !computerWrites.contains(agentID) else { return false }
+        computerWrites.insert(agentID)
+        computerReadVersions[agentID] = UUID()
+        defer { if self.accountID == accountID { computerWrites.remove(agentID) } }
         do {
             let reading = try await client.computerActionReading(agentID: agentID, action: action, for: accountID)
-            guard self.accountID == accountID else { return }
+            guard self.accountID == accountID else { return false }
             apply(reading, agentID: agentID)
             if var detail = details[agentID] {
                 detail.computerConfigured = true
                 details[agentID] = detail
             }
+            lastErrorDescription = nil
+            computerErrors[agentID] = nil
+            return true
         } catch {
+            guard self.accountID == accountID else { return false }
             record(error)
+            computerErrors[agentID] = presentable(error)
+            return false
         }
     }
 
     /// Reads the computer again: its status, who holds control, the rest time.
     public func refreshComputer(agentID: String) async {
-        guard let accountID else { return }
-        guard let reading = try? await client.computerReading(agentID: agentID, for: accountID) else { return }
-        guard self.accountID == accountID else { return }
-        apply(reading, agentID: agentID)
+        guard let accountID, !computerWrites.contains(agentID) else { return }
+        let version = UUID()
+        computerReadVersions[agentID] = version
+        do {
+            let reading = try await client.computerReading(agentID: agentID, for: accountID)
+            guard self.accountID == accountID, computerReadVersions[agentID] == version else { return }
+            apply(reading, agentID: agentID)
+            computerErrors[agentID] = nil
+        } catch {
+            guard self.accountID == accountID, computerReadVersions[agentID] == version else { return }
+            computerErrors[agentID] = presentable(error)
+        }
     }
 
     /// A one-time `/computer-view` link. In control it is refused, with a
@@ -1117,8 +1141,9 @@ public final class NativeAgentsModel {
     }
 
     private func apply(_ reading: NativeAgentComputerReading, agentID: String) {
-        if let computer = reading.computer, var detail = details[agentID] {
-            detail.computer = computer
+        if var detail = details[agentID] {
+            if let computer = reading.computer { detail.computer = computer }
+            if let access = reading.access { detail.computerAccess = access }
             details[agentID] = detail
         }
         if let takeover = reading.takeover { computerTakeovers[agentID] = takeover }

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight } from "@/components/ui/icons";
+import { ArrowRight, JunoOrbit, Plus, Search, X } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,8 @@ import { AGENT_NOUN, BRAND, FEATURE_NAMES } from "@/lib/brand/names";
 import { prefersReducedMotion } from "@/lib/motion-preference";
 import { staggerDelay } from "@/lib/motion";
 import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
+import { agentIsWorking, filterRoster, type RosterFilter } from "@/lib/agents/roster-view";
+import { OrbitCapabilities } from "./orbit-capabilities";
 
 /*
  * Orbit, the agents home (docs/rework/brand/ORBIT_SYSTEM.md; design V3 crew
@@ -97,6 +99,18 @@ export function AgentsHome({
   const knownPlan = plan ?? appPlan ?? null;
   const hiring = knownPlan ? agentHiringGate(knownPlan) : null;
   const canHire = hiring?.allowed !== false;
+  const [query, setQuery] = React.useState("");
+  const [filter, setFilter] = React.useState<RosterFilter>("all");
+  const [starter, setStarter] = React.useState<{ text: string } | null>(null);
+  const composerSection = React.useRef<HTMLElement>(null);
+  const focusNewAgent = () => {
+    composerSection.current?.scrollIntoView({ behavior: prefersReducedMotion() ? "instant" : "smooth", block: "center" });
+    composerSection.current?.querySelector("textarea")?.focus({ preventScroll: true });
+  };
+  const chooseStarter = (text: string) => {
+    setStarter({ text });
+    focusNewAgent();
+  };
 
   if (error && !agents) {
     return (
@@ -110,15 +124,27 @@ export function AgentsHome({
 
   const attention = ordered.filter(needsYou);
   const asked = new Set(attention.map((agent) => agent.id));
+  const working = ordered.filter(agentIsWorking).length;
+  const visible = filterRoster(ordered, query, filter);
+  const filters: { value: RosterFilter; label: string; count: number }[] = [
+    { value: "all", label: "All agents", count: ordered.length },
+    { value: "working", label: "Working", count: working },
+    { value: "attention", label: "Needs you", count: attention.length },
+    { value: "paused", label: "Paused", count: ordered.filter((a) => a.status === "paused").length },
+  ];
 
   return (
-    <AppPage measure="wide">
-      {/* No lede: the crew's own lines say who is ready, what runs next and
-          what is under way, so a calm "everyone is caught up" only said it twice. */}
-      <AppPageHeader heading={BRAND.orbit.label} className={TITLE_FINISH} />
+    <AppPage measure="wide" className="orbit-workspace">
+      <div className="orbit-masthead"><JunoOrbit className="size-4" aria-hidden="true" /><span>Your autonomous workspace</span></div>
+      <AppPageHeader
+        heading={BRAND.orbit.label}
+        lede="A capable crew. A clearer day."
+        className={cn(TITLE_FINISH, "orbit-heading")}
+        actions={<>{canHire ? <Button type="button" onClick={focusNewAgent}><Plus className="size-4" aria-hidden="true" />New agent</Button> : null}<Button variant="outline" asChild><Link href="/connections">Connections<ArrowRight className="size-3.5" aria-hidden="true" /></Link></Button></>}
+      />
 
       {attention.length > 0 ? (
-        <section aria-labelledby="orbit-needs-you" className="max-w-3xl">
+        <section aria-labelledby="orbit-needs-you" className="orbit-attention">
           <h2 id="orbit-needs-you" className="mb-3 flex items-center gap-2 text-ui font-medium text-foreground">
             {FEATURE_NAMES.needsYou.label}
             {/* A count only when there is more than one card to count. */}
@@ -128,7 +154,7 @@ export function AgentsHome({
               </span>
             ) : null}
           </h2>
-          <ul className="flex flex-col gap-2">
+          <ul className="grid gap-3 @[40rem]/page:grid-cols-2">
             {attention.map((agent, index) => (
               <li key={agent.id} className={RISE} style={stagger(1 + index)}>
                 <Attention agent={agent} />
@@ -141,16 +167,22 @@ export function AgentsHome({
       {/* The crew: one tile per agent, its live face, who it is and what it
           is doing (orbit-stage.tsx). The list a keyboard and a screen reader
           use; it is named aloud, and on screen only under the cards. */}
-      <section aria-labelledby="orbit-crew" className={cn("max-w-3xl", attention.length > 0 ? "mt-8" : "-mt-1")}>
-        <h2 id="orbit-crew" className={attention.length > 0 ? "mb-1 text-ui font-medium text-foreground" : "sr-only"}>
-          {`Your ${AGENT_NOUN.plural}`}
-        </h2>
-        <OrbitCrew agents={ordered} asked={asked} hrefOf={agentHref} onChanged={refresh} />
+      <section aria-labelledby="orbit-crew" className="mt-9">
+        <div className="orbit-section-heading">
+          <div><h2 id="orbit-crew">Your crew</h2><p>{working ? `${working} ${working === 1 ? "agent is" : "agents are"} moving work forward.` : "Ready when you are."}</p></div>
+          <div className="orbit-search"><Search className="size-4 shrink-0" aria-hidden="true" /><input type="search" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search agents" placeholder="Find an agent or task…" />{query ? <button type="button" onClick={() => setQuery("")} aria-label="Clear agent search"><X className="size-3.5" /></button> : null}</div>
+        </div>
+        <div className="orbit-filters" aria-label="Filter agents">
+          {filters.map(({ value, label, count }) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}<span>{count}</span></button>)}
+        </div>
+        <p className="sr-only" role="status">{visible.length} {visible.length === 1 ? "agent" : "agents"} shown</p>
+        {visible.length ? <OrbitCrew agents={visible} asked={asked} hrefOf={agentHref} onChanged={refresh} /> : <div className="orbit-no-results"><Search className="size-5 text-muted-foreground" aria-hidden="true" /><p>No agents match this view.</p><Button type="button" variant="link" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</Button></div>}
       </section>
 
-      <section aria-label={`New ${AGENT_NOUN.singular}`} className={cn("mt-8 max-w-3xl pb-16", RISE)} style={stagger(Math.min(ordered.length, 6) + 3)}>
-        {canHire || !hiring ? <DescribeAgent team={ordered} autoFocus={focusComposer} /> : <AgentsUpgrade gate={hiring} kept />}
+      <section ref={composerSection} aria-label={`New ${AGENT_NOUN.singular}`} className={cn("orbit-new-agent mt-7", RISE)} style={stagger(Math.min(ordered.length, 6) + 3)}>
+        {canHire || !hiring ? <DescribeAgent team={ordered} autoFocus={focusComposer} starter={starter} /> : <AgentsUpgrade gate={hiring} kept />}
       </section>
+      {canHire ? <OrbitCapabilities onChoose={chooseStarter} /> : null}
     </AppPage>
   );
 }
@@ -191,7 +223,7 @@ export function Attention({ agent }: { agent: ClientAgent }) {
     <Link
       href={href}
       className={cn(
-        "group/attn relative flex flex-col items-start gap-3 rounded-card border border-foreground/[0.08] bg-card py-3.5 pl-4 pr-4 @[40rem]/page:flex-row @[40rem]/page:items-center @[40rem]/page:gap-4",
+        "orbit-attention-card group/attn relative flex h-full flex-col items-start gap-3 rounded-card border border-foreground/[0.08] bg-card p-4",
         "transition-[border-color,background-color,transform] duration-fast ease-out-soft hover:border-foreground/[0.14] hover:bg-accent/40 active:scale-[.995] motion-reduce:active:scale-100",
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
       )}
@@ -205,7 +237,7 @@ export function Attention({ agent }: { agent: ClientAgent }) {
         <span className="mt-0.5 line-clamp-2 text-pretty text-body font-medium leading-6 text-foreground">{where ?? sentence}</span>
         {where && !generic ? <span className="mt-0.5 block text-pretty text-ui leading-5 text-muted-foreground">{sentence}</span> : null}
       </span>
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-control bg-foreground px-3 py-1.5 text-ui font-medium text-background transition-[gap] duration-fast ease-out-soft group-hover/attn:gap-2.5 motion-reduce:transition-none">
+      <span className="mt-auto inline-flex shrink-0 items-center gap-1.5 text-ui font-medium text-foreground transition-[gap] duration-fast ease-out-soft group-hover/attn:gap-2.5 motion-reduce:transition-none">
         {blocked ? "See what’s needed" : "Answer"}
         <ArrowRight className="size-3.5" aria-hidden="true" />
       </span>
@@ -249,15 +281,18 @@ export function AgentsUpgrade({ gate, kept = false }: { gate: AgentHiringGate; k
 /** No agents yet: a face, a question, and the same field. */
 function FirstAgent() {
   const { user } = useApp();
+  const [starter, setStarter] = React.useState<{ text: string } | null>(null);
   const firstName = user.name?.trim().split(/\s+/)[0];
   return (
-    <div className="flex min-h-full flex-1 flex-col items-center justify-center px-4 pb-[12vh] pt-10">
-      <div className="flex w-full max-w-2xl flex-col items-center">
+    <div className="orbit-workspace orbit-first flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-5 pb-12 pt-12">
+      <div className="flex w-full max-w-2xl shrink-0 flex-col items-center">
+        <div className="orbit-masthead mb-7"><JunoOrbit className="size-4" aria-hidden="true" /><span>Meet your next advantage</span></div>
         <HeroComposer
           team={[]}
+          starter={starter}
           heading={
             <h1 className="text-balance text-center font-serif text-display font-normal tracking-[-0.03em] text-foreground [font-optical-sizing:auto]">
-              {`Who should take care of it${firstName ? `, ${firstName}` : ""}?`}
+              {`A little more space${firstName ? `, ${firstName}` : ""}.`}<br /><span className="text-muted-foreground">A lot more possible.</span>
             </h1>
           }
         />
@@ -265,6 +300,7 @@ function FirstAgent() {
           {`An ${AGENT_NOUN.singular} carries one kind of work forward: it remembers what it learned, works on a schedule if you want, and asks before sending, paying or deleting anything.`}
         </p>
       </div>
+      <div className="mt-12 w-full max-w-5xl shrink-0"><OrbitCapabilities onChoose={(text) => setStarter({ text })} /></div>
     </div>
   );
 }
@@ -312,7 +348,7 @@ function useCreateAgent(team: readonly ClientAgent[]) {
       router.prefetch(href);
       setArrived(true);
       const reduce = prefersReducedMotion();
-      window.setTimeout(() => router.push(href), reduce ? 0 : 560);
+      window.setTimeout(() => router.push(href), reduce ? 0 : 220);
     } catch {
       setError(`Couldn’t create that ${AGENT_NOUN.singular}. Your words are still here; try again.`);
       setBusy(false);
@@ -337,18 +373,23 @@ function useAutosize(value: string, max: number) {
  * object (surface, one hairline, no shadow), one notch smaller. The note says
  * what it will never do without asking.
  */
-function DescribeAgent({ team, autoFocus }: { team: readonly ClientAgent[]; autoFocus: boolean }) {
+function DescribeAgent({ team, autoFocus, starter }: { team: readonly ClientAgent[]; autoFocus: boolean; starter: { text: string } | null }) {
   const [value, setValue] = React.useState("");
   const { busy, error, name, create } = useCreateAgent(team);
   const field = useAutosize(value, 200);
   const id = React.useId();
+  React.useEffect(() => {
+    if (!starter) return;
+    setValue(starter.text);
+    field.current?.focus({ preventScroll: true });
+  }, [starter, field]);
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
         void create(value);
       }}
-      className="rounded-panel border border-foreground/[0.1] bg-background p-2 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/[0.2] kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]"
+      className="orbit-create-form rounded-panel border border-foreground/[0.1] bg-card p-3 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/[0.2] kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]"
     >
       <div className="px-2.5 pt-2.5">
         <label htmlFor={id} className="block text-ui font-medium text-foreground">
@@ -368,10 +409,6 @@ function DescribeAgent({ team, autoFocus }: { team: readonly ClientAgent[]; auto
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && !touchReturnBreaksLine(event)) {
               event.preventDefault();
               void create(value);
-            }
-            if (event.key === "Tab" && !value) {
-              event.preventDefault();
-              setValue(EXAMPLES[0]);
             }
           }}
           placeholder={EXAMPLES[0]}
@@ -401,11 +438,17 @@ function DescribeAgent({ team, autoFocus }: { team: readonly ClientAgent[]; auto
 }
 
 /** The first agent's field: the Chat landing's twin, with the face you are about to meet. */
-function HeroComposer({ team, heading }: { team: readonly ClientAgent[]; heading: React.ReactNode }) {
+function HeroComposer({ team, heading, starter }: { team: readonly ClientAgent[]; heading: React.ReactNode; starter: { text: string } | null }) {
   const [value, setValue] = React.useState("");
   const [focused, setFocused] = React.useState(false);
   const { busy, error, arrived, face, name, create } = useCreateAgent(team);
   const field = useAutosize(value, 220);
+  React.useEffect(() => {
+    if (!starter) return;
+    setValue(starter.text);
+    field.current?.scrollIntoView({ behavior: prefersReducedMotion() ? "instant" : "smooth", block: "center" });
+    field.current?.focus({ preventScroll: true });
+  }, [starter, field]);
   const state: AgentState = arrived ? "done" : busy ? "working" : value.trim() ? "listening" : "idle";
   return (
     <div className="flex w-full flex-col items-center">
@@ -437,10 +480,6 @@ function HeroComposer({ team, heading }: { team: readonly ClientAgent[]; heading
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && !touchReturnBreaksLine(event)) {
                   event.preventDefault();
                   void create(value);
-                }
-                if (event.key === "Tab" && !value) {
-                  event.preventDefault();
-                  setValue(EXAMPLES[0]);
                 }
               }}
               placeholder={EXAMPLES[0]}

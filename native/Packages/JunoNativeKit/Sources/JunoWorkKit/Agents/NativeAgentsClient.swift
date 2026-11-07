@@ -69,7 +69,8 @@ public struct NativeAgentsClient: Sendable {
             routines: list(root["routines"], decodeRoutine),
             tasks: list(root["tasks"], decodeTask),
             computer: root["computer"].flatMap(decodeComputer),
-            computerConfigured: root["computerConfigured"]?.boolValue ?? (root["computer"] != nil && root["computer"] != .null)
+            computerConfigured: root["computerConfigured"]?.boolValue ?? (root["computer"] != nil && root["computer"] != .null),
+            computerAccess: Self.decodeComputerAccess(root["computerAccess"])
         )
     }
 
@@ -806,7 +807,19 @@ public struct NativeAgentsClient: Sendable {
         try validate(agentID)
         let response = try await get("/api/agents/\(agentID)/computer", for: accountID)
         guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
-        return reading(root["computer"])
+        var snapshot = reading(root["computer"])
+        snapshot.access = Self.decodeComputerAccess(root["access"])
+        return snapshot
+    }
+
+    static func decodeComputerAccess(_ value: JunoJSONValue?) -> NativeAgentComputerAccess? {
+        guard case .object(let raw)? = value, let ok = raw["ok"]?.boolValue else { return nil }
+        return NativeAgentComputerAccess(
+            ok: ok,
+            reason: raw["reason"]?.stringValue,
+            message: raw["message"]?.stringValue,
+            upgradePlan: raw["upgradePlan"]?.stringValue
+        )
     }
 
     public func computerView(
@@ -969,15 +982,18 @@ public struct NativeAgentComputerReading: Equatable, Sendable {
     public var computer: NativeAgentCloudComputer?
     public var takeover: NativeAgentComputerTakeover?
     public var restMinutes: Double?
+    public var access: NativeAgentComputerAccess?
 
     public init(
         computer: NativeAgentCloudComputer? = nil,
         takeover: NativeAgentComputerTakeover? = nil,
-        restMinutes: Double? = nil
+        restMinutes: Double? = nil,
+        access: NativeAgentComputerAccess? = nil
     ) {
         self.computer = computer
         self.takeover = takeover
         self.restMinutes = restMinutes
+        self.access = access
     }
 }
 

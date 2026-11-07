@@ -14,6 +14,7 @@ import { AgentChangeCard } from "@/components/chat/agent-change-card";
 import { ApprovalCard } from "@/components/chat/approval-card";
 import { ArrowUp } from "@/components/ui/icons";
 import { AppProvider } from "@/components/app/app-provider";
+import { AppShell } from "@/components/app/app-shell";
 import { bootstrap } from "@/app/dev/pages/fixtures";
 import type { ClientAgent, ClientAgentComputer, ClientAgentDetail } from "@/lib/agents/types";
 import type { ClientActionApproval } from "@/lib/action-approval";
@@ -269,14 +270,35 @@ function approval(): ClientActionApproval {
 }
 
 function useFetchShim() {
+  const [ready, setReady] = React.useState(false);
   React.useLayoutEffect(() => {
     const original = window.fetch;
+    const preview = new URLSearchParams(window.location.search);
+    let computerStatus = preview.get("computer") ?? "asleep";
+    let startReads = 0;
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const path = new URL(url, window.location.origin).pathname;
       const json = (body: unknown, status = 200) =>
         new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
       if (path === "/api/agents") return json({ agents: AGENTS });
+      if (path.startsWith("/api/projects")) return json({ projects: [] });
+      if (path === "/api/announcements") return json({ announcements: [] });
+      if (path === "/api/cross-messages/pending") return json({ messages: [] });
+      if (/^\/api\/agents\/[^/]+\/computer$/.test(path)) {
+        if (preview.get("access") === "denied") return json({ computer: null, access: { ok: false, reason: "server_off", message: "Computers aren’t available on this server.", upgradePlan: null } });
+        if (init?.method === "POST") {
+          const action = JSON.parse(String(init.body)).action;
+          if (preview.get("start") === "fail" && action === "wake") return json({ error: "unavailable", message: "The computer host is unavailable. Try again shortly." }, 503);
+          computerStatus = action === "wake" ? "starting" : action === "sleep" ? "asleep" : action === "enable" ? "asleep" : "disabled";
+          startReads = 0;
+        } else if (computerStatus === "starting") {
+          startReads += 1;
+          // This gallery tests lifecycle feedback without opening a real VNC session.
+          if (startReads > 1) computerStatus = "error";
+        }
+        return json({ computer: { ...DETAILS["agent-mira"].computer, enabled: computerStatus !== "disabled", status: computerStatus }, access: { ok: true, reason: null, message: null, upgradePlan: null } });
+      }
       const detail = path.match(/^\/api\/agents\/([^/]+)$/);
       if (detail) return json(DETAILS[detail[1]] ?? DETAILS["agent-mira"]);
       if (path.endsWith("/reflect")) return json({ outcome: { kind: "skipped", reason: "not_due" } });
@@ -284,14 +306,20 @@ function useFetchShim() {
       if (path.startsWith("/api/agents/")) return json({ ok: true });
       return original(input, init);
     };
+    setReady(true);
     return () => {
       window.fetch = original;
     };
   }, []);
+  return ready;
 }
 
 export function AgentsGallery() {
-  useFetchShim();
+  const ready = useFetchShim();
+  return <div className="contents" data-orbit-fixture-ready={ready ? "true" : "false"}><AgentsGalleryContent /></div>;
+}
+
+function AgentsGalleryContent() {
   // `?view=gallery` routes here (page.tsx); the sub-view is `&g=`.
   const params = useSearchParams();
   const sub = params?.get("g") ?? params?.get("view");
@@ -304,6 +332,7 @@ export function AgentsGallery() {
         <AgentsHome initialAgents={AGENTS} />
       </div>
     );
+  if (view === "workspace") return <AppProvider bootstrap={bootstrap()}><AppShell><AgentsHome initialAgents={AGENTS} /></AppShell></AppProvider>;
   if (view === "home-calm")
     return (
       <div className="@container/page h-dvh">

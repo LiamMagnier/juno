@@ -197,6 +197,19 @@ export function computerAction(
   return call(`${base(id)}/computer`, { method: "POST", body: { action } }, (d) => (d.computer ?? null) as ClientAgentComputer | null);
 }
 
+export interface ClientComputerStatus {
+  computer: ClientAgentComputerLive | null;
+  access: import("@/lib/computer/access").PublicComputerAccess | null;
+}
+
+/** A lightweight status read, without fetching goals, notes, routines, or task history. */
+export function fetchComputerStatus(id: string): Promise<AgentOutcome<ClientComputerStatus>> {
+  return call(`${base(id)}/computer`, {}, (data) => ({
+    computer: (data.computer ?? null) as ClientAgentComputerLive | null,
+    access: (data.access ?? null) as ClientComputerStatus["access"],
+  }));
+}
+
 /** Whether an agent's tasks may use its computer: off, ask first, or on its own. The person's setting only. */
 export type ComputerPolicySetting = "off" | "ask" | "allowed";
 
