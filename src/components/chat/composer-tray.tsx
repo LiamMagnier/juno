@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ChevronDown, Monitor } from "@/components/ui/icons";
+import { ArrowUpRight, ChevronDown, Monitor } from "@/components/ui/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -125,8 +125,12 @@ export function ComposerTray({
   // verb lives on in the accessible name. A chosen project's own name may
   // still run long: it ends on the ellipsis and its tooltip has it whole.
   return (
-    <div className="composer-tray" data-disabled={disabled ? "" : undefined}>
+    <div className="composer-tray composer-tray--dock" data-disabled={disabled ? "" : undefined}>
       <div ref={rowRef} className="composer-tray__row">
+        {/* One capsule for where the chat goes and what it can reach (owner,
+            7 Nov 2026: back, sleeker). The Mac app sits apart at the end:
+            it leaves the page, the capsule never does. */}
+        <div className="composer-tray__capsule">
         <Tooltip>
           <TrayMenu
             panel="project"
@@ -173,6 +177,7 @@ export function ComposerTray({
             <span>Skills</span>
           </TrayMenu>
         ) : null}
+        </div>
 
         {macApp.visible ? (
           <Link
@@ -182,6 +187,7 @@ export function ComposerTray({
           >
             <Monitor aria-hidden="true" className="size-4" motion="none" />
             <span>Mac app</span>
+            <ArrowUpRight aria-hidden="true" className="composer-tray__out size-3.5" motion="none" />
           </Link>
         ) : null}
       </div>
