@@ -342,6 +342,33 @@ function pushTextParts(parts: ContentPart[], text: string) {
   parts.push({ type: "text", text: rewriteLegacyBlocks(text) });
 }
 
+/**
+ * A code fence the model opened right before an artifact tag, or null.
+ *
+ * Models sometimes wrap the tag in a fence (```juno:artifact, ```xml). The
+ * tag is lifted into its card, so the fence would stay behind as an empty
+ * code block, and its closing ``` would open a second block that swallows
+ * the prose after it. Only an opener that is still open counts: an even
+ * number of fence lines before it means it is the end of an earlier block.
+ */
+const FENCE_LINE_RE = /^[ \t]*(`{3,}|~{3,})[^\n]*$/gm;
+function danglingFence(before: string): { index: number; marker: string } | null {
+  const lines = [...before.matchAll(FENCE_LINE_RE)];
+  if (lines.length % 2 === 0) return null;
+  const last = lines[lines.length - 1];
+  const index = last.index ?? 0;
+  // Only whitespace may sit between the opener and the tag.
+  if (before.slice(index + last[0].length).trim()) return null;
+  return { index, marker: last[1] };
+}
+
+/** The length of a closing fence at the head of `after` that matches `marker`, or 0. */
+function closingFenceLength(after: string, marker: string): number {
+  const close = /^[ \t]*\n?[ \t]*(`{3,}|~{3,})[ \t]*(?=\n|$)/.exec(after);
+  if (!close) return 0;
+  return close[1][0] === marker[0] && close[1].length >= marker.length ? close[0].length : 0;
+}
+
 /** Split a message into ordered text + artifact-reference parts for rendering. */
 export function splitMessageContent(raw: string): ContentPart[] {
   const stripped = stripMemoryTags(raw).replace(CLARIFICATION_WIZARD_RE, "");
@@ -359,17 +386,25 @@ export function splitMessageContent(raw: string): ContentPart[] {
   let m: RegExpExecArray | null;
   ARTIFACT_RE.lastIndex = 0;
   while ((m = ARTIFACT_RE.exec(text))) {
-    const before = text.slice(lastIndex, m.index);
+    let before = text.slice(lastIndex, m.index);
+    let end = m.index + m[0].length;
+    const fence = danglingFence(before);
+    if (fence) {
+      before = before.slice(0, fence.index);
+      end += closingFenceLength(text.slice(end), fence.marker);
+    }
     pushTextParts(parts, before);
     const attrs = parseAttrs(m[1]);
     parts.push({ type: "artifact", identifier: artifactId(attrs, m[2]) });
-    lastIndex = m.index + m[0].length;
+    lastIndex = end;
   }
 
   const rest = text.slice(lastIndex);
   const open = OPEN_ARTIFACT_RE.exec(rest);
   if (open) {
-    const before = rest.slice(0, open.index);
+    let before = rest.slice(0, open.index);
+    const fence = danglingFence(before);
+    if (fence) before = before.slice(0, fence.index);
     pushTextParts(parts, before);
     const attrs = parseAttrs(open[1]);
     parts.push({

@@ -1955,6 +1955,7 @@ export async function agentChatContext(
         routinesCount,
         recentWork,
         paused,
+        executionTarget: agent.executionTarget,
       },
       user.name
     ),
