@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, RotateCcw, ArrowUpRight, Eye, EyeOff, Maximize2 } from "@/components/ui/icons";
+import { Check, Copy, RotateCcw, Undo2, ArrowUpRight, Eye, EyeOff, Maximize2 } from "@/components/ui/icons";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LiveScope, interpolate, valueToString, type LiveValue } from "@/lib/live-ui/expr";
@@ -82,6 +82,28 @@ export function LiveUIBlock({ source, streaming = false }: { source: string; str
       messageId={host.messageId}
       onPrompt={host.onPrompt}
     />
+  );
+}
+
+/**
+ * Reset is one tap and clears everything the reader set, so it offers Undo in
+ * its place for a few seconds. Focus moves to it, so a keyboard reader who
+ * pressed Reset by mistake is one Enter away from getting their values back.
+ */
+function UndoReset({ onUndo }: { onUndo: () => void }) {
+  const ref = React.useRef<HTMLButtonElement>(null);
+  const [gone, setGone] = React.useState(false);
+  React.useEffect(() => {
+    ref.current?.focus({ preventScroll: true });
+    const t = window.setTimeout(() => setGone(true), 6000);
+    return () => window.clearTimeout(t);
+  }, []);
+  if (gone) return null;
+  return (
+    <button ref={ref} type="button" onClick={onUndo} className="live-undo motion-safe:animate-fade-in">
+      <Undo2 className="size-3.5" aria-hidden />
+      Undo
+    </button>
   );
 }
 
@@ -173,6 +195,8 @@ function LiveView({
               <button type="button" onClick={state.reset} className="live-icon-btn motion-safe:animate-fade-in" aria-label="Reset to the reply's values" title="Reset">
                 <RotateCcw className="size-3.5" aria-hidden />
               </button>
+            ) : state.canUndo ? (
+              <UndoReset onUndo={state.undoReset} />
             ) : null}
             {!live && !empty ? (
               <button type="button" className="live-icon-btn" onClick={() => setExpanded(true)} aria-label="Expand view" title="Expand">

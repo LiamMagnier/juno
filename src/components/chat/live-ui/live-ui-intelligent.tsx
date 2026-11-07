@@ -440,7 +440,7 @@ export function LiveCompare({
                 </ul>
               ) : null}
               {o.facts.length ? (
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-t border-border/60 pt-3 text-ui">
+                <dl className="mt-auto grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-t border-border/60 pt-3 text-ui">
                   {o.facts.map((f, k) => (
                     <React.Fragment key={k}>
                       <dt className="text-muted-foreground">{f.label}</dt>
@@ -459,7 +459,8 @@ export function LiveCompare({
                     onPrompt?.(o.prompt!);
                     onLock?.([i]);
                   }}
-                  className={cn("mt-auto w-full justify-center", best ? "live-primary" : "live-chip live-chip-lg")}
+                  /* The facts sit on the bottom with the button, so their rows line up across plans. */
+                  className={cn("w-full justify-center", !o.facts.length && "mt-auto", best ? "live-primary" : "live-chip live-chip-lg")}
                 >
                   {chosen === i ? <Check className="size-3.5" aria-hidden /> : null}
                   {chosen === i ? "Chosen" : `Go with ${o.name}`}

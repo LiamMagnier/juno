@@ -221,7 +221,7 @@ export function LiveSteps({
           aria-live="polite"
         >
           <div className="flex flex-col gap-2">
-            <h5 className="font-serif text-[1.375rem] font-normal leading-[1.2] tracking-[-0.01em] text-foreground">{step.title}</h5>
+            <h5 className="text-body font-semibold leading-snug tracking-[-0.01em] text-foreground">{step.title}</h5>
             {step.summary ? <p className="text-body leading-7 text-foreground">{interp(step.summary)}</p> : null}
           </div>
 
@@ -244,7 +244,7 @@ export function LiveSteps({
           ) : null}
 
           {finished && steps.takeaway ? (
-            <p className="border-l-2 border-primary/70 pl-4 font-serif text-[1.125rem] italic leading-relaxed text-foreground motion-safe:animate-fade-in-up">
+            <p className="border-l-2 border-foreground/60 pl-4 text-[0.9375rem] leading-relaxed text-foreground motion-safe:animate-fade-in-up">
               {interp(steps.takeaway)}
             </p>
           ) : null}
@@ -253,7 +253,7 @@ export function LiveSteps({
 
       {total > 1 ? (
         <div className="flex items-center justify-between gap-3 border-t border-border/50 pt-3">
-          <button type="button" onClick={() => go(active - 1)} disabled={active === 0} className={cn(navButton, "text-muted-foreground hover:bg-accent hover:text-foreground")}>
+          <button type="button" onClick={() => go(active - 1)} disabled={active === 0} className={cn(navButton, "shrink-0 whitespace-nowrap text-muted-foreground hover:bg-accent hover:text-foreground")}>
             <ArrowLeft aria-hidden className="size-3.5" />
             Back
           </button>
@@ -268,7 +268,9 @@ export function LiveSteps({
               onClick={() => go(active + 1)}
               className={cn(navButton, "max-w-[70%] bg-foreground text-background hover:bg-foreground/85")}
             >
-              <span className="truncate">Next: {steps.steps[active + 1].title}</span>
+              {/* A phone has room for "Next" alone; the step's title is on the rail above. */}
+              <span className="truncate @[32rem]:hidden">Next</span>
+              <span className="hidden truncate @[32rem]:inline">Next: {steps.steps[active + 1].title}</span>
               <ArrowRight aria-hidden className="size-3.5 shrink-0" />
             </button>
           )}
@@ -319,7 +321,7 @@ export function LiveQuiz({ quiz, interp }: { quiz: Quiz; interp: Interp }) {
       <div className="flex min-w-0 flex-col gap-4" aria-live="polite">
         {quiz.title ? <p className="text-ui font-medium">{interp(quiz.title)}</p> : null}
         <p className="flex items-baseline gap-3">
-          <span className="font-serif text-[2.25rem] leading-none tabular-nums text-foreground">
+          <span className="text-[2rem] font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
             {score}
             <span className="text-muted-foreground">/{total}</span>
           </span>
@@ -368,7 +370,7 @@ export function LiveQuiz({ quiz, interp }: { quiz: Quiz; interp: Interp }) {
         ) : null}
       </div>
 
-      <p key={current} className="font-serif text-[1.25rem] leading-snug tracking-[-0.005em] text-foreground motion-safe:animate-fade-in">
+      <p key={current} className="text-body font-medium leading-snug tracking-[-0.01em] text-foreground motion-safe:animate-fade-in">
         {interp(q.question)}
       </p>
 
@@ -387,7 +389,7 @@ export function LiveQuiz({ quiz, interp }: { quiz: Quiz; interp: Interp }) {
               }}
               className={cn(
                 "group/opt grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-3 rounded-card border px-3 py-3 text-left transition-[background-color,border-color,opacity,transform,box-shadow] duration-base ease-out-soft active:scale-[0.99] motion-reduce:transition-[background-color,border-color,opacity,box-shadow] coarse:min-h-11",
-                state === "idle" && "border-border/70 bg-card hover:border-[hsl(var(--live,var(--primary))/0.45)] hover:shadow-[0_0_0_3px_hsl(var(--live,var(--primary))/0.08)]",
+                state === "idle" && "border-border/70 bg-card hover:border-[hsl(var(--live,var(--primary))/0.45)]",
                 state === "right" && "border-success/50 bg-success/[0.07]",
                 state === "wrong" && "border-destructive/45 bg-destructive/[0.06] motion-safe:animate-nudge",
                 state === "dim" && "border-border/50 opacity-55",
@@ -463,7 +465,7 @@ export function LiveCallout({ callout, interp }: { callout: Callout; interp: Int
         <tone.Icon aria-hidden className="size-3.5" />
         {callout.title ? interp(callout.title) : tone.label}
       </p>
-      <p className="whitespace-pre-line font-serif text-[1.125rem] leading-relaxed text-foreground">{interp(callout.text)}</p>
+      <p className="whitespace-pre-line text-[0.9375rem] leading-relaxed text-foreground">{interp(callout.text)}</p>
       {callout.more ? (
         <Disclosure label="Read more">
           <p className="whitespace-pre-line pt-1 text-ui leading-relaxed text-foreground">{interp(callout.more)}</p>

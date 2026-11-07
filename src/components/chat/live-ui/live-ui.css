@@ -656,6 +656,27 @@ div:has(> .live-slider:active) > div > .live-value {
   .live-icon-btn { width: 2.75rem; height: 2.75rem; }
 }
 
+/* Undo, in Reset's place for a few seconds after it. Same height as the
+   icon buttons so the title line does not move. */
+.live-undo {
+  display: inline-flex;
+  height: 1.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.625rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: hsl(var(--foreground));
+  background: hsl(var(--foreground) / 0.06);
+  transition: background-color var(--dur-fast) var(--ease-out-soft), scale var(--dur-press, 70ms) var(--ease-out-soft);
+}
+.live-undo:hover { background: hsl(var(--foreground) / 0.1); }
+.live-undo:active { scale: 0.96; }
+@media (pointer: coarse) {
+  .live-undo { height: 2.75rem; padding: 0 0.875rem; }
+}
+
 /* "Shared with your next message": a footer that slides in under the view
    once the reader has changed something, so it is never a surprise that the
    model knows. */

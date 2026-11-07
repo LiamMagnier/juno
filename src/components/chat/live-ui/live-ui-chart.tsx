@@ -132,7 +132,9 @@ function LiveCartesianChart({ chart, scope, formatter, currency }: ChartProps) {
     if (!axis) {
       // Small plain numbers (densities, rates) need significant digits, not two decimals.
       const small = format === "number" && v !== 0 && Math.abs(v) < 1;
-      return formatter.number(v, format, { currency, digits: small ? Math.min(6, 2 - Math.floor(Math.log10(Math.abs(v)))) : undefined });
+      // Cents on a four-figure sum are noise, and the metric above already drops them.
+      const whole = format === "currency" && Math.abs(v) >= 1000;
+      return formatter.number(v, format, { currency, digits: small ? Math.min(6, 2 - Math.floor(Math.log10(Math.abs(v)))) : whole ? 0 : undefined });
     }
     if (format === "percent") return formatter.number(v, "percent", { digits: 0 });
     if (format === "currency" && Math.abs(v) < 10_000) return formatter.number(v, "currency", { currency, digits: 0 });
