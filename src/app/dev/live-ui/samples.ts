@@ -296,7 +296,7 @@ export const INTELLIGENT_SAMPLES: LiveUISample[] = [
   {
     id: "timer",
     label: "Timer · intervals that count down, round after round",
-    prompt: "Give me a quick 4-round Tabata for my lunch break.",
+    prompt: "Give me a quick Tabata for my lunch break.",
     reply: [
       "Twenty seconds flat out, ten seconds rest, eight times: four minutes. Warm up for a minute first.",
       "",

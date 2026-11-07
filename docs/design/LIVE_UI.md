@@ -331,7 +331,10 @@ web-motion lane and was not changed here.
   sending; the Mac and web send directly.
 - Liquid Glass on the explorer card cannot be photographed offscreen; check it
   in the running app.
-- Copying a whole reply copies the block's JSON with it.
+- Copying a whole reply (the answer's Copy) turns each view into its readable
+  lines (`readableLiveUIText`); the "copy last answer" shortcut still copies
+  the raw reply.
+- The timer, schedule and donut are web only; native skips them.
 
 ## 12. History: the retired learning blocks
 

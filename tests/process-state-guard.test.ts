@@ -58,6 +58,8 @@ const ALLOWED: Record<string, Category> = {
   "src/lib/teach/server.ts#globalThis": "per-process",
 
   // Module-level collections created empty
+  // The interactive views' state for the next send: one copy per tab is the point.
+  "src/lib/live-ui/view-state.ts#registry": "browser",
   "src/lib/aura.ts#states": "browser",
   "src/lib/aura.ts#timers": "browser",
   "src/lib/aura.ts#listeners": "browser",

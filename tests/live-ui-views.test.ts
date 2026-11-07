@@ -155,3 +155,26 @@ test("the new samples and the prompt's new lines are valid views", () => {
   assert.match(LIVE_UI_DO_SECTION, /schedule \(id, title\?, days/);
   assert.match(LIVE_UI_DO_SECTION, /Interactive views the user adjusted/);
 });
+
+test("copying a reply turns its views into readable lines and leaves other fences alone", async () => {
+  const { readableLiveUIText } = await import("@/lib/live-ui/summary");
+  const reply = [
+    "Here is the plan.",
+    "",
+    "```live-ui",
+    JSON.stringify({ title: "Week 1", ui: [{ type: "schedule", days: [{ label: "Mon", items: ["Run 20 min"] }, { label: "Tue", items: [] }] }] }),
+    "```",
+    "",
+    "```js",
+    "const live = 1;",
+    "```",
+    "Done.",
+  ].join("\n");
+  const text = readableLiveUIText(reply, (s) => parseLiveUI(s).spec);
+  assert.ok(!text.includes('"ui"'), text);
+  assert.ok(text.includes("**Week 1**"));
+  assert.ok(text.includes("- Mon:"));
+  assert.ok(text.includes("  ☐ Run 20 min"));
+  assert.ok(text.includes("```js\nconst live = 1;\n```"));
+  assert.ok(text.endsWith("Done."));
+});
