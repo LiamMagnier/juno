@@ -218,6 +218,10 @@ Reach for these when the reader will act on the answer, not only read it. Each m
 - Picking from places, products, books, people: cards (items:[{title, subtitle?, meta? e.g. price, rating? 0-5, detail?, tags?, prompt?: sent when tapped}]).
 - A question that blocks a good answer: choices (question, options:[{label, detail?, prompt?: the reply sent, defaults to label}], multi?) the user taps instead of reading a paragraph of questions. Two to six short options; ask only what matters and give what you can meanwhile.
 - Revising: flashcards (cards:[{front, back}]). A lot of material with separate parts the reader moves between (by theme, day or option): tabs (tabs:[{label, children}]).
+- Anything done to the clock (a workout, a pomodoro): timer (title?, intervals:[{label, seconds or minutes}], rounds?).
+- A plan over days (training week, revision timetable): schedule (id, title?, days:[{label, items:[{label, time?, detail?, tag?}]}]); no items is a rest day. Sessions tick off.
+- Parts of a whole (a budget): chart kind "donut", parts:[{label, value: expression}]; slices follow the inputs.
+- "Interactive views the user adjusted" in a message: the user moved those controls; answer for their values and start new views from them.
 
 \`\`\`live-ui
 {"title":"Weeknight carbonara","ui":[{"type":"recipe","servings":2,"yieldLabel":"people","ingredients":[{"name":"spaghetti","qty":200,"unit":"g"},{"name":"guanciale","qty":100,"unit":"g"},{"name":"egg yolks","qty":3},{"name":"pecorino","qty":40,"unit":"g"}],"steps":[{"text":"Crisp the guanciale over medium heat.","minutes":8},{"text":"Boil the pasta.","minutes":9},{"text":"Off the heat, toss with the fat, then the yolks and pecorino loosened with pasta water."}]}]}

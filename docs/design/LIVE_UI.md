@@ -107,6 +107,41 @@ Aliases: `ingredients`/`cook` → recipe, `choice`/`ask`/`follow-up` → choices
 Liquid Glass slider: a white capsule that becomes a clear lens while held
 (`live-ui.css`, `.glass-slider`).
 
+### 2.5 The doing set, round two (2026-11, web)
+
+| type | fields | behaviour |
+|------|--------|-----------|
+| `timer` | `title?`, `intervals:[{label, seconds or minutes}]` (or a bare `seconds`/`minutes`), `rounds?` (1–20) | a ring that empties as each interval runs, the interval's name and round in its middle, Start/Pause (Space), Restart, Skip, a chime between intervals (mutable), and a rail of the whole run below; each change sends one soft pulse out of the ring |
+| `schedule` | `id`, `title?`, `days:[{label, items:[{label, time?, detail?, tag?} or strings]}]` | day tabs, each with a progress ring; the chosen day's sessions tick off. Ticks share the checklist state (persisted, restored, reported). A day with no items is a rest day |
+| `chart` `kind:"donut"` | `parts:[{label, value (expr)}]`, or `rows` + `xKey` + one series | the share of each part, one hue stepped down in strength, the total in the middle (the part under the pointer or the arrow keys when focused), a legend with share and amount. Slices glide to their new size when an input moves them. Over an `x` range it draws as bars |
+
+Aliases: `countdown`/`interval`/`pomodoro`/`stopwatch` → timer;
+`calendar`/`week`/`agenda`/`planner`/`routine` → schedule; `donut`/`pie` →
+chart with kind donut. Native renderers do not draw these yet (unknown types
+are skipped; a donut written with `parts` is dropped), which is why they are
+taught only in the web-only `LIVE_UI_DO_SECTION`.
+
+### 2.6 Card chrome (2026-11)
+
+- **One ink, flat card.** The 2026-10 card read as a template to the owner
+  ("AI slop": a blue "Interactive" badge, a soft drop shadow, a 20 px radius
+  with 14–16 px tiles inside, value pills, blue ticks and glows). Now: radius
+  16 with a 20 px inset and a hairline edge, no shadow; surfaces inside are
+  10 and controls 8 (segmented tracks 10 with a 3 px inset, so segments are
+  7); `--live` is the foreground ink, so ticks, the recommended option, the
+  slider fill and chart marks are ink at steps of strength; slider values are
+  plain figures; Reset and Expand are icon buttons on the title's line.
+- **Sharing is visible and optional.** The footer says the settings go with
+  the next message and offers "Don't share", which stops the view publishing.
+- **Expand.** Every finished view has an expand button: the same view, with
+  the same values, in a wide dialog (a sheet on a phone). The inline card
+  says it is open there until the dialog closes.
+- **Arrival.** While a view streams, each part rises into place (an 8 px lift
+  and fade on the slow rung) the moment it closes, keyed by type so a
+  skeleton that becomes its component plays it too; the card's hairline
+  carries a slow sheen of the accent while it says "Building". Reduced motion
+  drops both.
+
 ## 3. Expressions
 
 A small, safe language with identical semantics in TypeScript
@@ -180,6 +215,33 @@ message. Adjusted values persist per message: `localStorage` on the web and
 `UserDefaults` on native, key `live-ui:v1:<messageId>:<hash(source)>`
 (FNV-1a 32 over the block source). A Reset control appears once anything moved
 from the author's defaults.
+
+### 6.1 The model sees what the reader set
+
+ChatGPT's intelligent UI forgets a view once you type: move the tip to 18%,
+ask "and with four people?", and the answer starts from the 10% it wrote.
+Here every view describes its state as plain lines
+(`describeLiveView` in `live-ui-block.tsx`): each input the reader moved,
+with the value the reply set; the metrics and donut parts those inputs now
+produce; what was ticked on checklists and schedules; and one line from each
+part that keeps its own state (`useLiveReport`: a quiz's score and the
+questions missed, flashcards known, a recipe rescaled or half cooked, a timer
+running or finished). A view at its defaults says nothing.
+
+The lines go into a small client registry (`src/lib/live-ui/view-state.ts`).
+The next send (`use-chat.ts`) carries the views of the last three assistant
+replies as `liveViews` (at most 4 views × 24 lines × 300 characters, a
+lenient schema: a malformed list is dropped, never a refused send). The route
+renders them into the per-turn context tail (`liveViewsSection`, after the
+conversation, so the cached prefix holds) as the user's settings, quoted and
+one per line so a label cannot open a heading or pose as an instruction.
+Never on a regenerate. `LIVE_UI_DO_SECTION` tells the model to answer for
+those values and start any new view from them.
+
+The reader is told: once a view has something to share, a footer slides in
+("Shared with your next message", with "Don't share" and "Ask about it",
+which focuses the composer). The dev gallery shows exactly what
+the next message would carry under each sample.
 
 ## 7. Prompt contract
 
@@ -279,7 +341,10 @@ web-motion lane and was not changed here.
   sending; the Mac and web send directly.
 - Liquid Glass on the explorer card cannot be photographed offscreen; check it
   in the running app.
-- Copying a whole reply copies the block's JSON with it.
+- Copying a whole reply (the answer's Copy) turns each view into its readable
+  lines (`readableLiveUIText`); the "copy last answer" shortcut still copies
+  the raw reply.
+- The timer, schedule and donut are web only; native skips them.
 
 ## 12. History: the retired learning blocks
 

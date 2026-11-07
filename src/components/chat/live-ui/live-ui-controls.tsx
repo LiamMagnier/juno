@@ -44,12 +44,12 @@ export function formatInputValue(
 
 function FieldHead({ htmlFor, id, label, value }: { htmlFor?: string; id?: string; label: string; value?: string }) {
   return (
-    <div className="flex min-w-0 items-baseline justify-between gap-3">
-      <label htmlFor={htmlFor} id={id} className="min-w-0 truncate text-ui text-muted-foreground">
+    <div className="flex h-5 min-w-0 items-center justify-between gap-3">
+      <label htmlFor={htmlFor} id={id} className="min-w-0 truncate text-ui leading-5 text-muted-foreground">
         {label}
       </label>
       {value !== undefined ? (
-        <output htmlFor={htmlFor} className="live-value shrink-0 tabular-nums">
+        <output htmlFor={htmlFor} className="live-value shrink-0 leading-5 tabular-nums">
           {value}
         </output>
       ) : null}

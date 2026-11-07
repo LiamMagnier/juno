@@ -295,7 +295,7 @@ export function LiveChecklist({
                   aria-hidden
                   className={cn(
                     "mt-0.5 flex size-[1.125rem] shrink-0 items-center justify-center rounded-full border-2 transition-[background-color,border-color,transform] duration-base ease-spring motion-reduce:transition-[background-color,border-color]",
-                    on ? "scale-105 border-[hsl(var(--live))] bg-[hsl(var(--live))] text-white" : "border-foreground/30",
+                    on ? "scale-105 border-[hsl(var(--live))] bg-[hsl(var(--live))] text-background" : "border-foreground/30",
                   )}
                 >
                   {on ? <Check className="size-3 motion-safe:animate-pop-in" /> : null}

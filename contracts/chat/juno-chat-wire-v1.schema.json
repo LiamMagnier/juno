@@ -16,7 +16,7 @@
   },
   "x-native-summary": {
     "native": 222,
-    "planned": 276,
+    "planned": 280,
     "web-only": 107,
     "unclassified": 0
   },
@@ -468,6 +468,42 @@
           },
           "x-native": "native",
           "x-native-note": "Typed context tokens (docs/rework/PRODUCT_REFOUNDATION.md §5; src/lib/chat/context-tokens.ts): the files, projects, apps, agents, skills, chats and artifacts named in the message, with UTF-16 ranges into it. The web accepts it beside the legacy `connectors`; the Mac and iPhone composers look tokens up through /api/mentions and send them on the append-then-regenerate turn (GenerationRequestWire.context)."
+        },
+        "liveViews": {
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "messageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "x-native": "planned"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 120,
+                "x-native": "planned"
+              },
+              "lines": {
+                "minItems": 1,
+                "maxItems": 24,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "x-native": "planned"
+              }
+            },
+            "required": [
+              "messageId",
+              "lines"
+            ]
+          },
+          "x-native": "planned",
+          "x-native-note": "What the reader set in the interactive views of recent replies (src/lib/live-ui/view-state.ts), for the per-turn context tail. The native Live UI renderers do not report view state yet."
         },
         "skillSlug": {
           "type": "string",

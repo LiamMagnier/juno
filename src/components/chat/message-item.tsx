@@ -969,7 +969,14 @@ export const MessageItem = React.memo(function MessageItem({
   const copy = async () => {
     // Stripped, not raw: the stored reply ends in the memory tags the model
     // wrote, and copying an answer must not paste the user's profile with it.
-    const ok = await navigator.clipboard.writeText(stripMemoryTags(view.content).trimEnd()).then(() => true, () => false);
+    // An interactive view copies as its readable lines, not its JSON; the
+    // parser loads only when the reply has one.
+    let text = stripMemoryTags(view.content).trimEnd();
+    if (/^ {0,3}(`{3,}|~{3,})\s*(live-ui|live|juno-live)\s*$/im.test(text)) {
+      const [{ readableLiveUIText }, { parseLiveUI }] = await Promise.all([import("@/lib/live-ui/summary"), import("@/lib/live-ui/spec")]);
+      text = readableLiveUIText(text, (source) => parseLiveUI(source).spec);
+    }
+    const ok = await navigator.clipboard.writeText(text).then(() => true, () => false);
     // The button is its own receipt (the glyph swaps to a check and the
     // tooltip reads "Copied"), so no toast.
     setCopied(ok);

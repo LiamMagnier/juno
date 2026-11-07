@@ -43,6 +43,10 @@ export const SPEC_LIMITS = {
   tags: 4,
   tabs: 6,
   flashcards: 30,
+  intervals: 12,
+  rounds: 20,
+  days: 14,
+  dayItems: 12,
   text: 2000,
   label: 120,
 } as const;
@@ -143,7 +147,8 @@ export type LiveComponent =
   | (Base & { type: "progress"; label: string; value: string; max: string; format?: LiveFormat })
   | (Base & {
       type: "chart";
-      kind: "line" | "area" | "bar";
+      /** `donut` draws the first series' share per row (a budget, a mix); it needs `rows`. */
+      kind: "line" | "area" | "bar" | "donut";
       title?: string;
       x?: { from: string; to: string; step: string; variable: string; label?: string };
       rows?: string;
@@ -153,6 +158,8 @@ export type LiveComponent =
       xFormat?: LiveFormat;
       /** An x to mark with a rule (a cutoff, "today"); the readout rests there. */
       mark?: string;
+      /** A donut's slices written out, each value an expression (the inputs move them). */
+      parts?: { label: string; value: string }[];
     })
   | (Base & {
       type: "table";
@@ -215,6 +222,19 @@ export type LiveComponent =
   | (Base & { type: "cards"; title?: string; items: LiveCard[] })
   | (Base & { type: "tabs"; tabs: { label: string; children: LiveComponent[] }[]; pending: boolean })
   | (Base & { type: "flashcards"; title?: string; cards: { front: string; back: string }[] })
+  /**
+   * The doing set, round two (2026-11): an interval timer for a workout, a
+   * pomodoro or a brew (a ring that counts down each interval, round after
+   * round), and a schedule for a week of training, revision or travel (days
+   * as columns, sessions ticked off as they are done).
+   */
+  | (Base & { type: "timer"; title?: string; intervals: { label: string; seconds: number }[]; rounds: number })
+  | (Base & {
+      type: "schedule";
+      id: string;
+      title?: string;
+      days: { label: string; items: { label: string; time?: string; detail?: string; tag?: string }[] }[];
+    })
   /** A leaf that has not finished arriving. */
   | (Base & { type: "pending" });
 
@@ -287,6 +307,18 @@ const TYPE_ALIASES: Record<string, string> = {
   tab: "tabs",
   flashcard: "flashcards",
   deck: "flashcards",
+  countdown: "timer",
+  interval: "timer",
+  intervals: "timer",
+  pomodoro: "timer",
+  stopwatch: "timer",
+  calendar: "schedule",
+  week: "schedule",
+  agenda: "schedule",
+  planner: "schedule",
+  routine: "schedule",
+  donut: "chart",
+  pie: "chart",
 };
 
 const LAYOUTS = new Set(["row", "grid", "section"]);
@@ -482,9 +514,23 @@ function component(
       return { key, type, label: str(raw.label) ?? "", value, max: expr(raw.max) ?? "1", format: fmt(raw.format) };
     }
     case "chart": {
-      const kindRaw = typeof raw.kind === "string" ? raw.kind : typeof raw.chart === "string" ? raw.chart : "line";
-      const kind = kindRaw === "bar" || kindRaw === "column" ? "bar" : kindRaw === "area" ? "area" : "line";
-      const seriesRaw: LiveJSON[] = Array.isArray(raw.series) ? raw.series : raw.y !== undefined ? [{ label: str(raw.label) ?? "", y: raw.y }] : [];
+      const kindRaw =
+        typeof raw.kind === "string" ? raw.kind : typeof raw.chart === "string" ? raw.chart : typeRaw === "donut" || typeRaw === "pie" ? typeRaw : "line";
+      const kind = kindRaw === "bar" || kindRaw === "column" ? "bar" : kindRaw === "area" ? "area" : kindRaw === "donut" || kindRaw === "pie" ? "donut" : "line";
+      const partsRaw = Array.isArray(raw.parts) ? raw.parts : Array.isArray(raw.slices) ? raw.slices : null;
+      if (partsRaw && (kind === "donut" || !raw.series)) {
+        const parts: { label: string; value: string }[] = [];
+        for (const pt of partsRaw) {
+          if (parts.length >= SPEC_LIMITS.options || !isRecord(pt)) continue;
+          const label = str(pt.label ?? pt.name);
+          const value = expr(pt.value ?? pt.amount ?? pt.y);
+          if (label && value) parts.push({ label, value });
+        }
+        if (parts.length === 0) return null;
+        return { key, type, kind: "donut", title: str(raw.title), series: [{ label: str(raw.label) ?? "", y: "value" }], parts, format: fmt(raw.format) };
+      }
+      const yRaw = raw.y ?? (typeRaw === "donut" || typeRaw === "pie" || raw.kind === "donut" || raw.kind === "pie" ? raw.value : undefined);
+      const seriesRaw: LiveJSON[] = Array.isArray(raw.series) ? raw.series : yRaw !== undefined ? [{ label: str(raw.label) ?? "", y: yRaw }] : [];
       const series: LiveChartSeries[] = [];
       for (const s of seriesRaw) {
         if (series.length >= SPEC_LIMITS.chartSeries) break;
@@ -507,7 +553,8 @@ function component(
       return {
         key,
         type,
-        kind,
+        // A share of a whole needs rows; a donut over an x range is a bar chart.
+        kind: kind === "donut" && x ? "bar" : kind,
         title: str(raw.title),
         x,
         rows: x ? undefined : rows,
@@ -884,6 +931,58 @@ function component(
       if (cards.length === 0) return null;
       return { key, type, title: str(raw.title), cards };
     }
+    case "timer": {
+      const list = Array.isArray(raw.intervals) ? raw.intervals : Array.isArray(raw.steps) ? raw.steps : Array.isArray(raw.phases) ? raw.phases : null;
+      const intervals: { label: string; seconds: number }[] = [];
+      const seconds = (o: { [key: string]: LiveJSON }) => {
+        const s = num(o.seconds ?? o.secs);
+        if (s !== undefined) return s;
+        const m = num(o.minutes ?? o.mins);
+        return m !== undefined ? m * 60 : undefined;
+      };
+      for (const it of list ?? [raw]) {
+        if (intervals.length >= SPEC_LIMITS.intervals || !isRecord(it)) continue;
+        const secs = seconds(it);
+        if (secs === undefined || secs <= 0) continue;
+        intervals.push({ label: str(it.label ?? it.name, 60) ?? (list ? `Interval ${intervals.length + 1}` : "Timer"), seconds: Math.min(Math.round(secs), 24 * 3600) });
+      }
+      if (intervals.length === 0) return null;
+      const rounds = Math.max(1, Math.min(SPEC_LIMITS.rounds, Math.trunc(num(raw.rounds ?? raw.repeat ?? raw.sets) ?? 1)));
+      return { key, type, title: str(raw.title), intervals, rounds };
+    }
+    case "schedule": {
+      const list = Array.isArray(raw.days) ? raw.days : Array.isArray(raw.columns) ? raw.columns : Array.isArray(raw.items) ? raw.items : [];
+      const days: Extract<LiveComponent, { type: "schedule" }>["days"] = [];
+      for (const d of list) {
+        if (days.length >= SPEC_LIMITS.days || !isRecord(d)) continue;
+        const label = str(d.label ?? d.day ?? d.title ?? d.name, 40);
+        if (!label) continue;
+        const items: Extract<LiveComponent, { type: "schedule" }>["days"][number]["items"] = [];
+        for (const it of Array.isArray(d.items) ? d.items : Array.isArray(d.sessions) ? d.sessions : Array.isArray(d.events) ? d.events : []) {
+          if (items.length >= SPEC_LIMITS.dayItems) break;
+          if (typeof it === "string" && it.trim()) {
+            items.push({ label: it.trim().slice(0, 160) });
+            continue;
+          }
+          if (!isRecord(it)) continue;
+          const itemLabel = str(it.label ?? it.title ?? it.name, 160);
+          if (!itemLabel) continue;
+          const item: { label: string; time?: string; detail?: string; tag?: string } = { label: itemLabel };
+          const time = str(it.time ?? it.when, 30);
+          const detail = str(it.detail ?? it.note ?? it.description, 300);
+          const tag = str(it.tag ?? it.kind, 24);
+          if (time) item.time = time;
+          if (detail) item.detail = detail;
+          if (tag) item.tag = tag;
+          items.push(item);
+        }
+        days.push({ label, items });
+      }
+      if (days.length === 0 || days.every((d) => d.items.length === 0)) return null;
+      const idRaw = typeof raw.id === "string" ? raw.id.trim() : "";
+      const id = IDENT.test(idRaw) ? idRaw : `schedule_${key.replace(/\./g, "_")}`;
+      return { key, type, id, title: str(raw.title), days };
+    }
     case "button": {
       const label = str(raw.label);
       const prompt = str(raw.prompt ?? raw.send, SPEC_LIMITS.text);
@@ -1046,7 +1145,7 @@ export function liveChecklistIds(ui: readonly LiveComponent[]): Set<string> {
       if (c.type === "row" || c.type === "grid" || c.type === "section") walk(c.children);
       else if (c.type === "steps") for (const s of c.steps) walk(s.ui);
       else if (c.type === "tabs") for (const t of c.tabs) walk(t.children);
-      else if (c.type === "checklist") ids.add(c.id);
+      else if (c.type === "checklist" || c.type === "schedule") ids.add(c.id);
     }
   };
   walk(ui);

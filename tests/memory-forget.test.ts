@@ -104,10 +104,11 @@ test("read-aloud never speaks a forget tag", () => {
 });
 
 test("both copy actions strip the tags before writing to the clipboard", () => {
-  assert.match(
-    src("src/components/chat/message-item.tsx"),
-    /clipboard\.writeText\(stripMemoryTags\(view\.content\)\.trimEnd\(\)\)/
-  );
+  // The answer's own copy strips first, then turns any interactive view into
+  // readable lines (src/lib/live-ui/summary.ts), and writes that text.
+  const item = src("src/components/chat/message-item.tsx");
+  assert.match(item, /let text = stripMemoryTags\(view\.content\)\.trimEnd\(\);/);
+  assert.match(item, /clipboard\.writeText\(text\)/);
   assert.match(src("src/components/chat/chat-view.tsx"), /\.writeText\(stripMemoryTags\(last\.content\)\.trimEnd\(\)\)/);
 });
 
