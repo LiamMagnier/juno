@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ChevronRight, Plus } from "@/components/ui/icons";
+import { ArrowRight, CalendarClock, ChevronRight, Globe, Mail, Plus, Telescope } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -397,28 +397,39 @@ export function AgentsUpgrade({ gate, kept = false }: { gate: AgentHiringGate; k
   );
 }
 
-/** No agents yet: a face, a question, and the same field. */
+/**
+ * No agents yet (V5): the face you are about to meet, one short question, the
+ * chat composer with the machine it will work on, and four starters as small
+ * cards (a glyph, two words, a cadence) that fill the field with the whole
+ * sentence. The promise that it asks before anything risky is one line under
+ * the field, not a paragraph.
+ */
 function FirstAgent() {
   const { user } = useApp();
   const firstName = user.name?.trim().split(/\s+/)[0];
   return (
-    <div className="flex min-h-full flex-1 flex-col items-center justify-center px-4 pb-[12vh] pt-10">
+    <div className="flex min-h-full flex-1 flex-col items-center justify-center px-4 pb-[10vh] pt-10">
       <div className="flex w-full max-w-2xl flex-col items-center">
         <HeroComposer
           team={[]}
           heading={
             <h1 className="text-balance text-center font-serif text-display font-normal tracking-[-0.03em] text-foreground [font-optical-sizing:auto]">
-              {`Who should take care of it${firstName ? `, ${firstName}` : ""}?`}
+              {firstName ? `What should run on its own, ${firstName}?` : "What should run on its own?"}
             </h1>
           }
         />
-        <p className="mt-6 max-w-[52ch] text-center text-ui text-muted-foreground">
-          {`An ${AGENT_NOUN.singular} carries one kind of work forward: it remembers what it learned, works on a schedule if you want, and asks before sending, paying or deleting anything.`}
-        </p>
       </div>
     </div>
   );
 }
+
+/** The starters: a glyph, two words and a cadence on the card; the full job goes in the field. */
+const STARTERS = [
+  { icon: Mail, title: "Inbox zero", cadence: "Every day", job: EXAMPLES[0] },
+  { icon: Telescope, title: "Competitor brief", cadence: "Mondays", job: EXAMPLES[1] },
+  { icon: Globe, title: "Fare watch", cadence: "On a change", job: EXAMPLES[2] },
+  { icon: CalendarClock, title: "Week ahead", cadence: "Sundays", job: EXAMPLES[3] },
+] as const;
 
 /** A small, stable salt from a string (FNV-1a, mod 997): the same on the server and the client. */
 function hashSalt(key: string): number {
@@ -573,13 +584,15 @@ function DescribeAgent({
 function HeroComposer({ team, heading }: { team: readonly ClientAgent[]; heading: React.ReactNode }) {
   const [value, setValue] = React.useState("");
   const [focused, setFocused] = React.useState(false);
-  const { busy, error, arrived, face, name, create } = useCreateAgent(team);
+  const [runsOn, setRunsOn] = React.useState<RunsOn>({ target: "cloud" });
+  const { state: hosts } = useWorkHosts(true);
+  const { busy, error, arrived, face, name, create } = useCreateAgent(team, runsOn);
   const field = useAutosize(value, 220);
   const state: AgentState = arrived ? "done" : busy ? "working" : value.trim() ? "listening" : "idle";
   return (
     <div className="flex w-full flex-col items-center">
-      <div className="mb-7">
-        <AgentPresence avatar={face} state={focused && !value ? "idle" : state} size={84} spread={0.6} name={name} gaze />
+      <div className="mb-6">
+        <AgentPresence avatar={face} state={focused && !value ? "idle" : state} size={96} spread={0.6} name={name} gaze />
       </div>
       {heading}
       <form
@@ -612,43 +625,58 @@ function HeroComposer({ team, heading }: { team: readonly ClientAgent[]; heading
                   setValue(EXAMPLES[0]);
                 }
               }}
-              placeholder={EXAMPLES[0]}
+              placeholder={`Describe a job for ${name}`}
               aria-label={`Describe a job for your first ${AGENT_NOUN.singular}`}
               className={composerFieldClass}
             />
           }
-          leading={
-            <span className="pl-1.5 text-caption text-muted-foreground">
-              {busy ? `${name} is setting up…` : value.trim() ? `${name} will take this on` : null}
-            </span>
-          }
+          leading={<RunsOnChip value={runsOn} onChange={setRunsOn} hosts={hosts} disabled={busy} />}
           action={<ComposerPrimaryAction face={busy ? "busy" : "send"} type="submit" disabled={busy || !value.trim()} aria-label={FEATURE_NAMES.createAgent.label} />}
           dimmed={busy}
         />
       </form>
-      {error ? (
-        <p role="alert" className="mt-3 text-ui text-destructive-ink">
-          {error}
-        </p>
-      ) : null}
-      {/* Jobs other people hand off, one tap from the field: the blank page
-          is the hardest part of a first agent. They fill, never send. */}
-      {!value && !busy ? (
-        <ul aria-label="Example jobs" className="mt-5 flex flex-wrap justify-center gap-2">
-          {EXAMPLES.slice(1).map((example, index) => (
-            <li key={example} className="[animation-fill-mode:backwards] motion-safe:animate-rise-in" style={staggerDelay(index, "tight", 120)}>
-              <button
-                type="button"
-                onClick={() => {
-                  setValue(example);
-                  field.current?.focus();
-                }}
-                className="pressable rounded-full border border-border bg-card px-3.5 py-1.5 text-ui text-muted-foreground hover:border-foreground/20 hover:bg-accent hover:text-foreground motion-reduce:active:scale-100"
-              >
-                {example}
-              </button>
-            </li>
-          ))}
+      <p className="mt-2.5 text-center text-caption text-muted-foreground" aria-live="polite">
+        {error ? (
+          <span role="alert" className="text-destructive-ink">
+            {error}
+          </span>
+        ) : busy ? (
+          `${name} is setting up…`
+        ) : (
+          "Asks before sending, paying or deleting anything."
+        )}
+      </p>
+      {/* Starters: the blank page is the hardest part of a first agent. A
+          card fills the field with the whole job and never sends. */}
+      {!busy ? (
+        <ul aria-label="Example jobs" className="mt-8 grid w-full grid-cols-2 gap-2 @[40rem]/page:grid-cols-4">
+          {STARTERS.map((starter, index) => {
+            const Icon = starter.icon;
+            const chosen = value === starter.job;
+            return (
+              <li key={starter.title} className="orbit-card-in" style={{ "--i": index } as React.CSSProperties}>
+                <button
+                  type="button"
+                  aria-pressed={chosen}
+                  title={starter.job}
+                  onClick={() => {
+                    setValue(starter.job);
+                    field.current?.focus();
+                  }}
+                  className={cn(
+                    "orbit-starter group/starter flex h-full w-full flex-col items-start gap-3 rounded-card border bg-card px-3.5 pb-3 pt-3.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                    chosen ? "border-foreground/30" : "border-foreground/[0.08]",
+                  )}
+                >
+                  <Icon className="size-5 text-muted-foreground transition-colors duration-fast group-hover/starter:text-foreground" aria-hidden="true" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-ui font-medium leading-5 text-foreground">{starter.title}</span>
+                    <span className="block truncate text-caption leading-4 text-muted-foreground">{starter.cadence}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
     </div>
