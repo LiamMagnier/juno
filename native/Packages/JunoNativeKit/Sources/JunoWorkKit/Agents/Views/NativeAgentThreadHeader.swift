@@ -215,7 +215,7 @@ public struct NativeAgentThreadHeader: View {
     private var menu: some View {
         Menu {
             Button(action: togglePause) {
-                Label(agent.isPaused ? NativeAgentControlCopy.resumeLabel : NativeAgentControlCopy.pauseLabel, icon: agent.isPaused ? .play : .pause)
+                Label(verbatim: agent.isPaused ? NativeAgentControlCopy.resumeLabel : NativeAgentControlCopy.pauseLabel, icon: agent.isPaused ? .play : .pause)
             }
             .help(agent.isPaused ? NativeAgentControlCopy.resumeHint : NativeAgentControlCopy.pauseHint)
             .accessibilityHint(agent.isPaused ? NativeAgentControlCopy.resumeHint : NativeAgentControlCopy.pauseHint)
