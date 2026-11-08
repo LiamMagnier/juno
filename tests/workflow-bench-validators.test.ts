@@ -404,6 +404,13 @@ describe("code tests", () => {
     assert.ok(allPass(checks), JSON.stringify(checks));
   });
 
+  it("local module imports work when the scratch directory has a symlinked parent", () => {
+    const alias = path.join(outputs(), "scratch-link");
+    symlinkSync(outputs(), alias);
+    const checks = validateCodeTests(spec, codeCtx(project(correct), { scratchDir: alias }));
+    assert.ok(allPass(checks), JSON.stringify(checks));
+  });
+
   it("coding-01: the unfixed fixture fails, and a weakened visible test is caught", () => {
     const unfixed = validateCodeTests(spec, codeCtx(project((s) => s)));
     assert.ok(failed(unfixed, ":tests"));

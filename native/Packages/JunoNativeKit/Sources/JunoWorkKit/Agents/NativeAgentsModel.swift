@@ -308,11 +308,11 @@ public final class NativeAgentsModel {
         }
     }
 
-    /// Pause keeps everything and starts nothing; resume picks up where it was.
+    /// Pause prevents new work; active tasks are stopped separately in chat.
     public func setPaused(id: String, paused: Bool) async {
         let changed = await update(id: id, NativeAgentPatch(status: paused ? .paused : .active))
         if changed {
-            lastMutationExplanation = paused ? "Paused." : "Resumed."
+            lastMutationExplanation = paused ? NativeAgentControlCopy.paused : NativeAgentControlCopy.resumed
             await loadDetail(id: id)
         }
     }
@@ -1008,18 +1008,21 @@ public final class NativeAgentsModel {
     }
 
     /// Reads the computer again: its status, who holds control, the rest time.
-    public func refreshComputer(agentID: String) async {
-        guard let accountID, !computerWrites.contains(agentID) else { return }
+    @discardableResult
+    public func refreshComputer(agentID: String) async -> Bool {
+        guard let accountID, !computerWrites.contains(agentID) else { return false }
         let version = UUID()
         computerReadVersions[agentID] = version
         do {
             let reading = try await client.computerReading(agentID: agentID, for: accountID)
-            guard self.accountID == accountID, computerReadVersions[agentID] == version else { return }
-            apply(reading, agentID: agentID)
+            guard self.accountID == accountID, computerReadVersions[agentID] == version else { return false }
+            apply(reading, agentID: agentID, replacesSnapshot: true)
             computerErrors[agentID] = nil
+            return true
         } catch {
-            guard self.accountID == accountID, computerReadVersions[agentID] == version else { return }
+            guard self.accountID == accountID, computerReadVersions[agentID] == version else { return false }
             computerErrors[agentID] = presentable(error)
+            return false
         }
     }
 
@@ -1029,9 +1032,13 @@ public final class NativeAgentsModel {
         guard let accountID else { return nil }
         do {
             let view = try await client.computerView(agentID: agentID, mode: mode, handoff: true, for: accountID)
+            guard self.accountID == accountID else { return nil }
+            computerErrors[agentID] = nil
             return view.handoffURL
         } catch {
+            guard self.accountID == accountID else { return nil }
             record(error)
+            computerErrors[agentID] = presentable(error)
             return nil
         }
     }
@@ -1140,11 +1147,23 @@ public final class NativeAgentsModel {
         return nil
     }
 
-    private func apply(_ reading: NativeAgentComputerReading, agentID: String) {
+    private func apply(_ reading: NativeAgentComputerReading, agentID: String, replacesSnapshot: Bool = false) {
         if var detail = details[agentID] {
-            if let computer = reading.computer { detail.computer = computer }
-            if let access = reading.access { detail.computerAccess = access }
+            if replacesSnapshot {
+                // A complete GET can remove a computer or an access verdict.
+                // Heartbeats and action replies remain partial updates.
+                detail.computer = reading.computer
+                detail.computerAccess = reading.access
+                detail.computerConfigured = reading.computer != nil
+            } else {
+                if let computer = reading.computer { detail.computer = computer }
+                if let access = reading.access { detail.computerAccess = access }
+            }
             details[agentID] = detail
+        }
+        if replacesSnapshot {
+            computerTakeovers[agentID] = reading.takeover
+            computerRestMinutes[agentID] = nil
         }
         if let takeover = reading.takeover { computerTakeovers[agentID] = takeover }
         if let minutes = reading.restMinutes, minutes.isFinite, minutes > 0 { computerRestMinutes[agentID] = minutes }

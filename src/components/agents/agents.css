@@ -1,6 +1,12 @@
 /* Orbit's workspace uses the same materials, type and motion in every theme. */
 .agent-thread-bar { position: relative; background: hsl(var(--background)); box-shadow: inset 0 -1px 0 hsl(var(--border) / .6); }
 .orbit-workspace { color: hsl(var(--foreground)); }
+.orbit-setup { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; padding-block: 1.5rem; margin-bottom: 1.5rem; border-block: 1px solid hsl(var(--border)); text-align: left; }
+.orbit-setup li { display: flex; align-items: flex-start; gap: .75rem; min-width: 0; }
+.orbit-setup__number { display: grid; place-items: center; flex-shrink: 0; width: 1.5rem; height: 1.5rem; border: 1px solid hsl(var(--border)); border-radius: 50%; font-size: .75rem; font-variant-numeric: tabular-nums; color: hsl(var(--muted-foreground)); }
+.orbit-setup h3 { font-size: .8125rem; font-weight: 600; line-height: 1.5; }
+.orbit-setup p { margin-top: .25rem; font-size: .8125rem; line-height: 1.5; color: hsl(var(--muted-foreground)); }
+@container (max-width: 40rem) { .orbit-setup { grid-template-columns: 1fr; gap: 20px; } }
 .orbit-workspace .app-page-content { padding-top: clamp(28px, 4vw, 52px); padding-bottom: 48px; }
 .orbit-masthead { display: flex; align-items: center; gap: 9px; color: hsl(var(--muted-foreground)); font-size: 12px; font-weight: 500; letter-spacing: .025em; }
 .orbit-masthead > svg { color: hsl(var(--primary)); }
@@ -36,7 +42,7 @@
 .orbit-agent-computer:hover { color: hsl(var(--foreground)); background: hsl(var(--accent) / .6); }
 .orbit-no-results { display: flex; min-height: 220px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 1px dashed hsl(var(--border)); border-radius: 16px; font-size: 14px; }
 .orbit-create-form { box-shadow: 0 2px 4px -2px hsl(var(--shadow-ink) / .05); }
-.orbit-capabilities { margin-top: 36px; padding-top: 30px; border-top: 1px solid hsl(var(--border) / .7); }
+.orbit-capabilities { container-type: inline-size; margin-top: 36px; padding-top: 30px; border-top: 1px solid hsl(var(--border) / .7); }
 .orbit-capabilities__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .orbit-capability { display: flex; align-items: flex-start; gap: 12px; padding: 17px 14px; text-align: left; border: 1px solid transparent; border-radius: 12px; transition: background var(--dur-base), border-color var(--dur-base); }
 .orbit-capability:hover, .orbit-capability:focus-visible { background: hsl(var(--card)); border-color: hsl(var(--border)); }

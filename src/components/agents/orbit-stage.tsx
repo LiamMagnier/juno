@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { AGENT_CONTROL_COPY } from "@/lib/agents/onboarding";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { intentPrefetch } from "@/lib/intent-prefetch";
@@ -82,7 +83,7 @@ function CrewTile({ agent, size, asked, href, machine, onChanged }: { agent: Cli
     if (outcome.kind === "ok") {
       announceAgentsChanged();
       onChanged();
-    } else if (outcome.kind === "failed") {
+    } else {
       toast.error(outcome.message);
     }
   };
@@ -141,9 +142,9 @@ function CrewTile({ agent, size, asked, href, machine, onChanged }: { agent: Cli
           <DropdownMenuItem onSelect={() => void act({ pinned: !agent.pinnedAt })}>
             <Pin className="size-4" aria-hidden="true" /> {agent.pinnedAt ? "Unpin" : "Pin"}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void act({ status: paused ? "active" : "paused" })}>
+          <DropdownMenuItem aria-description={paused ? AGENT_CONTROL_COPY.resumeHint : AGENT_CONTROL_COPY.pauseHint} onSelect={() => void act({ status: paused ? "active" : "paused" })}>
             {paused ? <Play className="size-4" aria-hidden="true" /> : <Pause className="size-4" aria-hidden="true" />}
-            {paused ? "Resume" : "Pause"}
+            {paused ? AGENT_CONTROL_COPY.resumeLabel : AGENT_CONTROL_COPY.pauseLabel}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

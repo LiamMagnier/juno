@@ -304,15 +304,15 @@ function FirstAgent() {
           starter={starter}
           heading={
             <h1 className="text-balance text-center font-serif text-display font-normal tracking-[-0.03em] text-foreground [font-optical-sizing:auto]">
-              {`A little more space${firstName ? `, ${firstName}` : ""}.`}<br /><span className="text-muted-foreground">A lot more possible.</span>
+              {`What would you like to hand off${firstName ? `, ${firstName}` : ""}?`}
             </h1>
           }
         />
         <p className="mt-6 max-w-[52ch] text-center text-ui text-muted-foreground">
-          {`An ${AGENT_NOUN.singular} carries one kind of work forward: it remembers what it learned, works on a schedule if you want, and asks before sending, paying or deleting anything.`}
+          Describe one useful outcome. Choose its workspace, then add apps and permissions when needed.
         </p>
       </div>
-      <div className="mt-12 w-full max-w-5xl shrink-0"><OrbitCapabilities onChoose={(text) => setStarter({ text })} /></div>
+      <div className="mt-12 w-full max-w-5xl shrink-0"><OrbitCapabilities gettingStarted onChoose={(text) => setStarter({ text })} /></div>
     </div>
   );
 }

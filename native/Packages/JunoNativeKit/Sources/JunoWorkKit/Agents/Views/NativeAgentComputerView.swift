@@ -36,6 +36,8 @@ struct NativeAgentComputerView: View {
     /// True only once the viewer reported that its control stream is up.
     @State private var controlling = false
     @State private var checking = true
+    @State private var hasFreshReading = false
+    @State private var retry = 0
     @Environment(\.scenePhase) private var scenePhase
 
     private var access: NativeAgentComputerAccess? { model.details[agent.id]?.computerAccess }
@@ -50,9 +52,11 @@ struct NativeAgentComputerView: View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             NativeAgentHeading(title: "Private Linux workspace")
 
-            if checking, computer == nil {
+            if checking {
                 ProgressView("Checking the computer…")
                     .junoType(.ui)
+            } else if !hasFreshReading {
+                failurePanel(model.computerErrors[agent.id] ?? "Couldn’t check the computer.")
             } else if let access, !access.ok {
                 Text(access.message ?? "Computers aren’t available right now.")
                     .junoType(.body)
@@ -63,17 +67,8 @@ struct NativeAgentComputerView: View {
             } else {
                 disabledContent
             }
-            if let error = model.computerErrors[agent.id] {
-                VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                    Text(error)
-                        .junoType(.ui)
-                        .foregroundStyle(Color.junoDestructiveInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("Check again") { Task { await model.refreshComputer(agentID: agent.id) } }
-                        .buttonStyle(.junoGlass)
-                        .contentShape(.rect)
-                }
-                .accessibilityElement(children: .contain)
+            if !checking, hasFreshReading, let error = model.computerErrors[agent.id] {
+                failurePanel(error)
             }
         }
         .task(id: "\(agent.id)-\(computer?.hasPoster == true)-\(computer?.lastActiveAt?.timeIntervalSince1970 ?? 0)") {
@@ -85,10 +80,19 @@ struct NativeAgentComputerView: View {
                 posterImage = Self.decodeImage(data)
             }
         }
-        .task(id: agent.id) {
+        .task(id: "\(agent.id)-\(scenePhase == .active)-\(retry)") {
+            checking = true
+            hasFreshReading = false
+            guard scenePhase == .active else { return }
             while !Task.isCancelled {
-                if scenePhase == .active, !isWorking {
-                    await model.refreshComputer(agentID: agent.id)
+                if !isWorking {
+                    let refreshed = await model.refreshComputer(agentID: agent.id)
+                    guard !Task.isCancelled else { return }
+                    if refreshed {
+                        hasFreshReading = true
+                    } else if model.computerErrors[agent.id] != nil {
+                        hasFreshReading = false
+                    }
                     checking = false
                 }
                 let status = model.details[agent.id]?.computer?.status
@@ -105,6 +109,20 @@ struct NativeAgentComputerView: View {
             handoffSheet(session)
         }
         #endif
+    }
+
+    private func failurePanel(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Text(message)
+                .junoType(.ui)
+                .foregroundStyle(Color.junoDestructiveInk)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Check again") { retry += 1 }
+                .buttonStyle(.junoGlass)
+                .contentShape(.rect)
+                .disabled(isWorking)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private func handoffSheet(_ session: HandoffSession) -> some View {
