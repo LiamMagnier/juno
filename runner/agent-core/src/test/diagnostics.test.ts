@@ -67,6 +67,22 @@ test('a check past its budget is skipped, not waited for', async () => {
   }
 });
 
+test('diagnostics match canonical edit paths to a workspace opened through a symlink', async () => {
+  const root = project();
+  const alias = path.join(tmpdir('alevr-diag-alias-'), 'workspace');
+  fs.symlinkSync(root, alias);
+  const file = path.join(root, 'src/use.ts');
+  fs.writeFileSync(file, 'export const total: string = 3;\n');
+  for (const [workspace, edited] of [[alias, fs.realpathSync(file)], [fs.realpathSync(root), path.join(alias, 'src/use.ts')]]) {
+    const checker = new EditDiagnostics(workspace!, { budgetMs: 60_000 });
+    try {
+      assert.match((await checker.afterEdit([edited!])) ?? '', /src\/use\.ts:1:14 - error TS2322/);
+    } finally {
+      checker.dispose();
+    }
+  }
+});
+
 function run(diagnostics?: false) {
   process.env.JUNO_HOME = tmpdir('alevr-diag-home-');
   const cwd = project();

@@ -155,6 +155,9 @@ export class EditDiagnostics {
     private readonly root: string,
     private readonly options: DiagnosticsOptions = {},
   ) {
+    // Edit tools return canonical paths. Match them to a workspace opened
+    // through an alias, including macOS's /var -> /private/var mapping.
+    this.root = fs.realpathSync(root);
     this.budgetMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
   }
 
@@ -197,6 +200,7 @@ export class EditDiagnostics {
     const files = paths
       .map((p) => path.resolve(p))
       .filter((p) => DIAGNOSTIC_EXTENSIONS.has(path.extname(p)) && fs.existsSync(p))
+      .map((p) => fs.realpathSync(p))
       .map((file) => ({ file, tsconfig: nearestTsconfig(file, this.root) }))
       .filter((item): item is { file: string; tsconfig: string } => item.tsconfig !== null);
     if (files.length === 0) return null;
