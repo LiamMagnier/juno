@@ -61,3 +61,13 @@ test("the six native and web starters carry the same job descriptions", () => {
   assert.equal(prompts.length, 6);
   for (const prompt of prompts) assert.ok(native.includes(`prompt: "${prompt}"`), prompt);
 });
+
+
+test("native and web explain the same first-agent setup", async () => {
+  const { ORBIT_SETUP_STEPS } = await import("../src/lib/agents/onboarding");
+  const native = readFileSync(new URL("../native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/NativeAgentWorkspace.swift", import.meta.url), "utf8");
+  for (const step of ORBIT_SETUP_STEPS) {
+    assert.ok(native.includes(`title: "${step.title}"`));
+    assert.ok(native.includes(`detail: "${step.detail}"`));
+  }
+});

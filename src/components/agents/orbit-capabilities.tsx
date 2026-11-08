@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowUpRight, Clock, Globe, Monitor, Plug, Sparkles, Terminal } from "@/components/ui/icons";
+import { ORBIT_SETUP_STEPS } from "@/lib/agents/onboarding";
 
 const CAPABILITIES = [
   { icon: Globe, name: "Research & browse", description: "Find sources. Bring back answers.", prompt: "Research topics for me, compare reliable sources, and prepare clear reports with citations." },
@@ -12,13 +13,23 @@ const CAPABILITIES = [
 ] as const;
 
 /** Starters fill a draft; creating an agent always stays an explicit action. */
-export function OrbitCapabilities({ onChoose }: { onChoose: (prompt: string) => void }) {
+export function OrbitCapabilities({ onChoose, gettingStarted = false }: { onChoose: (prompt: string) => void; gettingStarted?: boolean }) {
   return (
     <section className="orbit-capabilities" aria-labelledby="orbit-capabilities-title">
+      {gettingStarted && (
+        <ol className="orbit-setup" aria-label="Set up your first agent">
+          {ORBIT_SETUP_STEPS.map((step, index) => (
+            <li key={step.id}>
+              <span className="orbit-setup__number" aria-hidden="true">{index + 1}</span>
+              <div><h3>{step.title}</h3><p>{step.detail}</p></div>
+            </li>
+          ))}
+        </ol>
+      )}
       <div className="orbit-section-heading">
         <div>
-          <h2 id="orbit-capabilities-title">What will you put in motion?</h2>
-          <p>Start with a focus. Make it your own.</p>
+          <h2 id="orbit-capabilities-title">Choose a starting point</h2>
+          <p>Pick a job to fill the draft. You can edit it before creating your agent.</p>
         </div>
         <span className="orbit-overline hidden sm:block">Explore Orbit</span>
       </div>

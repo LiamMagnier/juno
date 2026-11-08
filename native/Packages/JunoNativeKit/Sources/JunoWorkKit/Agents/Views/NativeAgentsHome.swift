@@ -36,7 +36,7 @@ struct NativeAgentsHome: View {
                     action: { Task { await model.refresh() } }
                 )
             } else if model.agents.isEmpty {
-                NativeAgentsFirst(model: model, personName: personName, openAgent: openAgent)
+                NativeAgentsFirst(model: model, personName: personName, focusComposer: focusComposer, openAgent: openAgent)
             } else {
                 NativeAgentsTeam(model: model, focusComposer: focusComposer, openAgent: openAgent)
             }
@@ -70,6 +70,7 @@ struct NativeAgentsHome: View {
 private struct NativeAgentsFirst: View {
     let model: NativeAgentsModel
     let personName: String?
+    let focusComposer: Bool
     let openAgent: (NativeAgent) -> Void
 
     @State private var viewport = CGSize(width: 640, height: 600)
@@ -84,10 +85,10 @@ private struct NativeAgentsFirst: View {
         let size = JunoType.displaySize(forColumnWidth: min(viewport.width, 1_024))
         ScrollView {
             VStack(spacing: JunoSpace.expanse) {
-                NativeAgentJobComposer(model: model, team: [], style: .hero, autoFocus: true, suggestion: suggestion, openAgent: openAgent) {
+                NativeAgentJobComposer(model: model, team: [], style: .hero, autoFocus: focusComposer, suggestion: suggestion, openAgent: openAgent) {
                     heading(size: size)
                 }
-                NativeOrbitCapabilities { suggestion = NativeAgentJobSuggestion(prompt: $0) }
+                NativeOrbitCapabilities(gettingStarted: true) { suggestion = NativeAgentJobSuggestion(prompt: $0) }
             }
             .frame(maxWidth: 672)
             .padding(.horizontal, JunoSpace.regular)
@@ -104,9 +105,9 @@ private struct NativeAgentsFirst: View {
     private func heading(size: CGFloat) -> some View {
         Group {
             if let firstName {
-                Text("A little more space, \(firstName).\nA lot more possible.")
+                Text("What would you like to hand off, \(firstName)?")
             } else {
-                Text("A little more space.\nA lot more possible.")
+                Text("What would you like to hand off?")
             }
         }
         .junoType(.display(size: size))
@@ -381,8 +382,10 @@ struct NativeAgentCard: View {
                 Label(agent.isPinned ? "Unpin" : "Pin", icon: agent.isPinned ? .pinOff : .pin)
             }
             Button(action: togglePause) {
-                Label(agent.isPaused ? "Resume" : "Pause", icon: agent.isPaused ? .play : .pause)
+                Label(agent.isPaused ? NativeAgentControlCopy.resumeLabel : NativeAgentControlCopy.pauseLabel, icon: agent.isPaused ? .play : .pause)
             }
+            .help(agent.isPaused ? NativeAgentControlCopy.resumeHint : NativeAgentControlCopy.pauseHint)
+            .accessibilityHint(agent.isPaused ? NativeAgentControlCopy.resumeHint : NativeAgentControlCopy.pauseHint)
         } label: {
             JunoIconView(.more, size: 16)
                 .foregroundStyle(Color.junoSecondaryInk)

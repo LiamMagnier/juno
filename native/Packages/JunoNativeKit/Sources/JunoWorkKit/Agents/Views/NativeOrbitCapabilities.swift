@@ -3,16 +3,37 @@ import SwiftUI
 
 /// The same six starting points as Orbit on the web, with native focus and controls.
 struct NativeOrbitCapabilities: View {
+    var gettingStarted = false
     let choose: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            if gettingStarted {
+                VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                    ForEach(Array(NativeAgentSetupStep.all.enumerated()), id: \.element.id) { index, step in
+                        HStack(alignment: .top, spacing: JunoSpace.cozy) {
+                            Text("\(index + 1)")
+                                .junoType(.caption)
+                                .foregroundStyle(Color.junoSecondaryInk)
+                                .frame(width: 24, height: 24)
+                                .overlay(Circle().strokeBorder(Color.junoBorder, lineWidth: 1))
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                                Text(step.title).junoType(JunoType.ui.weight(.medium))
+                                Text(step.detail).junoType(.ui).foregroundStyle(Color.junoSecondaryInk)
+                            }
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(.vertical, JunoSpace.regular)
+            }
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                Text("What will you put in motion?")
+                Text("Choose a starting point")
                     .junoType(JunoType.bodyLarge.weight(.medium))
                     .foregroundStyle(Color.junoForeground)
                     .accessibilityAddTraits(.isHeader)
-                Text("Start with a focus. Make it your own.")
+                Text("Pick a job to fill the draft. You can edit it before creating your agent.")
                     .junoType(.ui)
                     .foregroundStyle(Color.junoSecondaryInk)
             }

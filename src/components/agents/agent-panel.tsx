@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { AGENT_CONTROL_COPY } from "@/lib/agents/onboarding";
 import { toast } from "sonner";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -584,7 +585,7 @@ export function AgentProfile({
             )
           }
         >
-          {agent.status === "paused" ? "Resume" : "Pause"}
+          {agent.status === "paused" ? AGENT_CONTROL_COPY.resumeLabel : AGENT_CONTROL_COPY.pauseLabel}
         </Button>
         <Button
           type="button"
