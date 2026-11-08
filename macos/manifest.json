@@ -1,0 +1,248 @@
+{
+  "platform": "macOS",
+  "app": "JunoDesktop.app",
+  "window size": "1440x900",
+  "macOS": "ProductName:\t\tmacOS; ProductVersion:\t\t26.7.2; BuildVersion:\t\t25G332",
+  "Xcode": "Xcode 26.6 Build version 17F113",
+  "commit": "998fc016abb19376666769f87173ffb40aab211b",
+  "captures": [
+    {
+      "platform": "macos",
+      "surface": "chat-home",
+      "appearance": "light",
+      "file": "chat-home-light.png",
+      "status": "ok",
+      "note": "New chat: greeting + empty composer",
+      "width": 1440,
+      "height": 677,
+      "bytes": 97233,
+      "seconds": 9.4,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread",
+      "appearance": "light",
+      "file": "chat-thread-light.png",
+      "status": "ok",
+      "note": "Pinned thread, scrolled to the latest turn",
+      "width": 1440,
+      "height": 677,
+      "bytes": 138251,
+      "seconds": 7.8,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-1"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "projects",
+      "appearance": "light",
+      "file": "projects-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 126831,
+      "seconds": 7.8,
+      "args": [
+        "--juno-preview-tab",
+        "projects"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "library",
+      "appearance": "light",
+      "file": "library-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 117168,
+      "seconds": 7.7,
+      "args": [
+        "--juno-preview-tab",
+        "library"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "agents",
+      "appearance": "light",
+      "file": "agents-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 269696,
+      "seconds": 7.7,
+      "args": [
+        "--juno-preview-tab",
+        "agents"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "agents-empty",
+      "appearance": "light",
+      "file": "agents-empty-light.png",
+      "status": "ok",
+      "note": "First-agent setup",
+      "width": 1440,
+      "height": 677,
+      "bytes": 116417,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-scenario",
+        "empty",
+        "--juno-preview-tab",
+        "agents"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-general",
+      "appearance": "light",
+      "file": "settings-general-light.png",
+      "status": "ok",
+      "note": "Settings window, general",
+      "width": 1060,
+      "height": 780,
+      "bytes": 112418,
+      "seconds": 9.1,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "general"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-home",
+      "appearance": "dark",
+      "file": "chat-home-dark.png",
+      "status": "ok",
+      "note": "New chat: greeting + empty composer",
+      "width": 1440,
+      "height": 677,
+      "bytes": 90822,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-chat-draft"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "chat-thread",
+      "appearance": "dark",
+      "file": "chat-thread-dark.png",
+      "status": "ok",
+      "note": "Pinned thread, scrolled to the latest turn",
+      "width": 1440,
+      "height": 677,
+      "bytes": 134491,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "chat",
+        "--juno-preview-conversation",
+        "conv-1"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "projects",
+      "appearance": "dark",
+      "file": "projects-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 120789,
+      "seconds": 7.4,
+      "args": [
+        "--juno-preview-tab",
+        "projects"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "library",
+      "appearance": "dark",
+      "file": "library-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 113935,
+      "seconds": 7.7,
+      "args": [
+        "--juno-preview-tab",
+        "library"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "agents",
+      "appearance": "dark",
+      "file": "agents-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1440,
+      "height": 677,
+      "bytes": 181362,
+      "seconds": 7.6,
+      "args": [
+        "--juno-preview-tab",
+        "agents"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "agents-empty",
+      "appearance": "dark",
+      "file": "agents-empty-dark.png",
+      "status": "ok",
+      "note": "First-agent setup",
+      "width": 1440,
+      "height": 677,
+      "bytes": 111334,
+      "seconds": 7.5,
+      "args": [
+        "--juno-preview-scenario",
+        "empty",
+        "--juno-preview-tab",
+        "agents"
+      ]
+    },
+    {
+      "platform": "macos",
+      "surface": "settings-general",
+      "appearance": "dark",
+      "file": "settings-general-dark.png",
+      "status": "ok",
+      "note": "Settings window, general",
+      "width": 1060,
+      "height": 780,
+      "bytes": 106585,
+      "seconds": 8.4,
+      "args": [
+        "--juno-preview-tab",
+        "settings",
+        "--juno-preview-settings-route",
+        "general"
+      ]
+    }
+  ]
+}

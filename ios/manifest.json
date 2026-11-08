@@ -1,0 +1,233 @@
+{
+  "platform": "iOS",
+  "device": "iPhone 17 Pro",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+  "app": "com.liammagnier.JunoMobile.debug",
+  "commit": "998fc016abb19376666769f87173ffb40aab211b",
+  "captures": [
+    {
+      "platform": "ios",
+      "surface": "home",
+      "appearance": "light",
+      "file": "home-light.png",
+      "status": "ok",
+      "note": "New chat home",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 188080,
+      "seconds": 12.6,
+      "args": [
+        "--juno-preview-chat-draft"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "chat-thread",
+      "appearance": "light",
+      "file": "chat-thread-light.png",
+      "status": "ok",
+      "note": "Pinned thread",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 965163,
+      "seconds": 8.7,
+      "args": [
+        "--juno-preview-conversation",
+        "conv-1"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings",
+      "appearance": "light",
+      "file": "settings-light.png",
+      "status": "ok",
+      "note": "Settings sheet",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 216828,
+      "seconds": 10.4,
+      "args": [
+        "--juno-preview-settings"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "projects",
+      "appearance": "light",
+      "file": "projects-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 259806,
+      "seconds": 8.9,
+      "args": [
+        "--juno-preview-tab",
+        "projects"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "library",
+      "appearance": "light",
+      "file": "library-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 692395,
+      "seconds": 9.5,
+      "args": [
+        "--juno-preview-tab",
+        "library"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "agents",
+      "appearance": "light",
+      "file": "agents-light.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 1304886,
+      "seconds": 9.4,
+      "args": [
+        "--juno-preview-tab",
+        "agents"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "agents-empty",
+      "appearance": "light",
+      "file": "agents-empty-light.png",
+      "status": "ok",
+      "note": "First-agent setup",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 312659,
+      "seconds": 8.8,
+      "args": [
+        "--juno-preview-scenario",
+        "empty",
+        "--juno-preview-tab",
+        "agents"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "home",
+      "appearance": "dark",
+      "file": "home-dark.png",
+      "status": "ok",
+      "note": "New chat home",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 165760,
+      "seconds": 8.8,
+      "args": [
+        "--juno-preview-chat-draft"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "chat-thread",
+      "appearance": "dark",
+      "file": "chat-thread-dark.png",
+      "status": "ok",
+      "note": "Pinned thread",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 920173,
+      "seconds": 10.1,
+      "args": [
+        "--juno-preview-conversation",
+        "conv-1"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "settings",
+      "appearance": "dark",
+      "file": "settings-dark.png",
+      "status": "ok",
+      "note": "Settings sheet",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 207556,
+      "seconds": 9.7,
+      "args": [
+        "--juno-preview-settings"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "projects",
+      "appearance": "dark",
+      "file": "projects-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 236048,
+      "seconds": 10.2,
+      "args": [
+        "--juno-preview-tab",
+        "projects"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "library",
+      "appearance": "dark",
+      "file": "library-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 660478,
+      "seconds": 9.6,
+      "args": [
+        "--juno-preview-tab",
+        "library"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "agents",
+      "appearance": "dark",
+      "file": "agents-dark.png",
+      "status": "ok",
+      "note": "",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 577683,
+      "seconds": 8.9,
+      "args": [
+        "--juno-preview-tab",
+        "agents"
+      ]
+    },
+    {
+      "platform": "ios",
+      "surface": "agents-empty",
+      "appearance": "dark",
+      "file": "agents-empty-dark.png",
+      "status": "ok",
+      "note": "First-agent setup",
+      "width": 1206,
+      "height": 2622,
+      "bytes": 311026,
+      "seconds": 9.4,
+      "args": [
+        "--juno-preview-scenario",
+        "empty",
+        "--juno-preview-tab",
+        "agents"
+      ]
+    }
+  ]
+}
