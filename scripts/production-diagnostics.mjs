@@ -39,15 +39,15 @@ export function processSummary(processes) {
   }));
 }
 
-export function healthLogPath(processID, home = homedir()) {
-  if (processID !== null && (!Number.isSafeInteger(processID) || processID < 0 || processID > 1_000_000)) throw new Error('Invalid process ID');
-  return resolve(home, '.pm2', 'logs', processID === null ? 'juno-error.log' : `juno-error-${processID}.log`);
+export function healthLogPath(home = homedir()) {
+  // deploy/ecosystem.config.js writes logs/err.log, and deploy.sh keeps
+  // that directory in APP_HOME across immutable releases.
+  return resolve(home, 'juno', 'logs', 'err.log');
 }
 
-function tailHealthLog(processID, maximum = 512 * 1024) {
-  // Derive an allowlisted name from a numeric PM2 id. Never open the path
-  // supplied in a process payload, and never follow a planted symlink.
-  const fd = openSync(healthLogPath(processID), constants.O_RDONLY | constants.O_NOFOLLOW);
+function tailHealthLog(maximum = 512 * 1024) {
+  // Never use a log path from a PM2 payload or follow a planted file symlink.
+  const fd = openSync(healthLogPath(), constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const info = fstatSync(fd);
     if (!info.isFile()) throw new Error('Not a regular log');
@@ -94,12 +94,9 @@ async function main() {
   try {
     const processes = JSON.parse(execFileSync('pm2', ['jlist'], { encoding: 'utf8', timeout: 10_000, maxBuffer: 10 * 1024 * 1024 }));
     report.processes = processSummary(processes);
-    const ids = [null, ...processes.filter(item => item.name === 'juno' && Number.isSafeInteger(item.pm_id)).map(item => item.pm_id)];
-    report.healthFailures = [...new Set(ids)].map(id => {
-      try { return summarizeHealthFailures(tailHealthLog(id)); }
-      catch { return { unavailable: true }; }
-    });
   } catch { report.processesUnavailable = true; }
+  try { report.healthFailures = summarizeHealthFailures(tailHealthLog()); }
+  catch { report.healthLogUnavailable = true; }
   try {
     const memory = readFileSync('/proc/meminfo', 'utf8');
     report.memoryKb = Object.fromEntries([...memory.matchAll(/^(MemTotal|MemAvailable|SwapTotal|SwapFree):\s+(\d+)/gm)].map(match => [match[1], Number(match[2])]));

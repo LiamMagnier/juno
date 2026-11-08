@@ -30,10 +30,10 @@ test("production diagnostics are manual, pinned to main, and use protected pinne
 });
 
 
-test("only fixed health-log names and bounded numeric process IDs become paths", () => {
-  assert.equal(healthLogPath(null, "/home/service"), "/home/service/.pm2/logs/juno-error.log");
-  assert.equal(healthLogPath(12, "/home/service"), "/home/service/.pm2/logs/juno-error-12.log");
-  for (const value of ["../../.env", "12/../../.env", -1, NaN, Infinity, 1.5, 1_000_001]) {
-    assert.throws(() => healthLogPath(value));
-  }
+test("the diagnostic reads only the deployed backend's fixed log", () => {
+  assert.equal(healthLogPath("/home/service"), "/home/service/juno/logs/err.log");
+  const source = readFileSync(new URL("../scripts/production-diagnostics.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /pm_err_log_path/);
+  assert.match(source, /O_NOFOLLOW/);
+  assert.match(source, /fstatSync\(fd\)/);
 });
