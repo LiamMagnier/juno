@@ -382,7 +382,7 @@ struct NativeAgentCard: View {
                 Label(agent.isPinned ? "Unpin" : "Pin", icon: agent.isPinned ? .pinOff : .pin)
             }
             Button(action: togglePause) {
-                Label(agent.isPaused ? NativeAgentControlCopy.resumeLabel : NativeAgentControlCopy.pauseLabel, icon: agent.isPaused ? .play : .pause)
+                Label(verbatim: agent.isPaused ? NativeAgentControlCopy.resumeLabel : NativeAgentControlCopy.pauseLabel, icon: agent.isPaused ? .play : .pause)
             }
             .help(agent.isPaused ? NativeAgentControlCopy.resumeHint : NativeAgentControlCopy.pauseHint)
             .accessibilityHint(agent.isPaused ? NativeAgentControlCopy.resumeHint : NativeAgentControlCopy.pauseHint)
