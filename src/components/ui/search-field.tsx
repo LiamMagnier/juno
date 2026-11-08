@@ -34,7 +34,7 @@ export function SearchField({
         value={value}
         onChange={(event) => onValueChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && value) {
+          if (event.key === "Escape" && value && !event.nativeEvent.isComposing) {
             event.preventDefault();
             event.stopPropagation();
             onValueChange("");
@@ -50,7 +50,7 @@ export function SearchField({
           kind="icon"
           size="sm"
           className="absolute right-1 top-1/2 -translate-y-1/2 coarse:right-0.5"
-          aria-label={`Clear ${label.toLowerCase()}`}
+          aria-label="Clear search"
           onClick={() => {
             onValueChange("");
             input.current?.focus();

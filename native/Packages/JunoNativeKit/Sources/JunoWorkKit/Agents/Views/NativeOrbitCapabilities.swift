@@ -38,8 +38,13 @@ struct NativeOrbitCapabilities: View {
                         .padding(JunoSpace.cozy)
                         .frame(minWidth: 44, maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         .contentShape(.rect(cornerRadius: JunoRadius.control))
+                        .background(Color.junoCard, in: RoundedRectangle(cornerRadius: JunoRadius.control))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: JunoRadius.control)
+                                .strokeBorder(Color.junoBorder, lineWidth: 1)
+                        }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(JunoPressButtonStyle())
                     .accessibilityHint("Fills the new agent draft")
                 }
             }

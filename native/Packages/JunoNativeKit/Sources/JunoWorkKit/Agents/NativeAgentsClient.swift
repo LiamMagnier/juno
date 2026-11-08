@@ -806,7 +806,7 @@ public struct NativeAgentsClient: Sendable {
     public func computerReading(agentID: String, for accountID: AccountID) async throws -> NativeAgentComputerReading {
         try validate(agentID)
         let response = try await get("/api/agents/\(agentID)/computer", for: accountID)
-        guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
+        guard let root = try object(response), root["computer"] != nil else { throw WorkRemoteError.malformedResponse }
         var snapshot = reading(root["computer"])
         snapshot.access = Self.decodeComputerAccess(root["access"])
         return snapshot

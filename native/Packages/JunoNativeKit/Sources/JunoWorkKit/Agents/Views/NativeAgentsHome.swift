@@ -125,6 +125,7 @@ private struct NativeAgentsTeam: View {
     let openAgent: (NativeAgent) -> Void
     @State private var query = ""
     @State private var filter: NativeAgentRosterFilter = .all
+    @FocusState private var searchFocused: Bool
     @State private var suggestion: NativeAgentJobSuggestion?
 
     private var visible: [NativeAgent] { filter.apply(to: model.orderedAgents, query: query) }
@@ -186,18 +187,22 @@ private struct NativeAgentsTeam: View {
                     .foregroundStyle(Color.junoSecondaryInk)
                 TextField("Find an agent or task…", text: $query)
                     .textFieldStyle(.plain)
+                    .focused($searchFocused)
+                    .submitLabel(.search)
+                    .onSubmit { searchFocused = false }
                     .junoType(.body)
                     .accessibilityLabel("Search agents")
                     .accessibilityIdentifier("juno.agents.search")
                 if !query.isEmpty {
-                    Button { query = "" } label: { JunoIconView(.close, size: 14) }
+                    Button { query = ""; searchFocused = true } label: { JunoIconView(.close, size: 14) }
                         .buttonStyle(.borderless)
                         .frame(minWidth: NativeAgentMetrics.target, minHeight: NativeAgentMetrics.target)
                         .contentShape(.rect)
                         .accessibilityLabel("Clear agent search")
                 }
             }
-            .padding(JunoSpace.cozy)
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(minHeight: NativeAgentMetrics.target)
             .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.control))
             ScrollView(.horizontal) {
                 HStack(spacing: JunoSpace.tight) {

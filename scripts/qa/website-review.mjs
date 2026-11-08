@@ -52,13 +52,15 @@ try {
         await page.goto(new URL(`/dev/pages?page=${routeName}`, base).href, { waitUntil: 'domcontentloaded' });
         const search = page.getByRole('searchbox', { name: label });
         await search.fill(query);
-        await page.getByRole('button', { name: `Clear ${label.toLowerCase()}` }).click();
+        await page.getByRole('button', { name: 'Clear search', exact: true }).click();
         await expect(search).toBeFocused();
         await expect(search).toHaveValue('');
         await search.fill(query);
+        await search.dispatchEvent('keydown', { key: 'Escape', isComposing: true });
+        await expect(search).toHaveValue(query);
         await search.press('Escape');
         await expect(search).toHaveValue('');
-        checks.push(`${routeName}: clear and Escape retain search focus`);
+        checks.push(`${routeName}: clear and Escape retain focus; composition is preserved`);
       }
       await page.goto(new URL('/dev/pages?page=projects', base).href);
       await page.locator('#juno-main').getByRole('button', { name: 'New project', exact: true }).click();
