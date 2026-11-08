@@ -33,7 +33,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import path from "node:path";
 import type { CheckResult, ValidatorSpec } from "../types";
 import { detectSandbox, nodeBinary, runSandboxed, type SandboxStatus } from "./sandbox";
@@ -115,7 +115,9 @@ export function validateCodeTests(spec: CodeSpec, ctx: CodeContext): CheckResult
   }
 
   mkdirSync(ctx.scratchDir, { recursive: true });
-  const work = mkdtempSync(path.join(ctx.scratchDir, "code-"));
+  // ESM resolves local imports to real paths. On macOS /var is a symlink to
+  // /private/var, so granting only the alias denies imports inside the copy.
+  const work = realpathSync(mkdtempSync(path.join(ctx.scratchDir, "code-")));
   try {
     cpSync(project, work, { recursive: true, filter: (src) => !SKIPPED_DIRS.has(path.basename(src)) });
     const hiddenName = path.basename(spec.hiddenTests);

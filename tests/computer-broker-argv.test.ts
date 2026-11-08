@@ -155,7 +155,13 @@ test("every docker argv the production provider sends is one the broker accepts"
   assert.equal(create?.filter((value) => value === "--dns").length, 1, "one DNS server, the RFC 5737 sentinel");
   assert.ok(create?.includes(docker.COMPUTER_STATE_TMPFS));
   const vnc = sent.find((argv) => argv.includes("x11vnc") && argv.includes("-rfbport"));
-  assert.deepEqual(vnc?.slice(vnc.indexOf("-allow"), vnc.indexOf("-allow") + 2), ["-allow", "172.30.0.1"]);
+  // Linux dials from the bridge gateway; macOS development uses Docker's
+  // published-port proxy and intentionally omits the Linux-only allowlist.
+  if (process.platform === "linux") {
+    assert.deepEqual(vnc?.slice(vnc.indexOf("-allow"), vnc.indexOf("-allow") + 2), ["-allow", "172.30.0.1"]);
+  } else {
+    assert.equal(vnc?.includes("-allow"), false);
+  }
   assert.ok(sent.some((argv) => argv.includes("pgrep") && argv[argv.indexOf("--user") + 1] === "1001"), "isVncRunning runs as the browser uid");
 
   const policy = { image: "juno-computer:1", network: "juno-computers", maxMemoryMb: 2048, maxCpus: 2 };
