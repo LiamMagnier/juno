@@ -6,6 +6,7 @@ import JunoCore
 import XCTest
 @testable import JunoPreviewSupport
 
+@MainActor
 final class PreviewAgentFixturesTests: XCTestCase {
     func testAgentPreviewsHaveAValidRosterInsteadOfAnUnrelatedFallback() async throws {
         let sender = PreviewSender(networkFails: false)
