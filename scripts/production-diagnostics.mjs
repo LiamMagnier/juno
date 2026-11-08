@@ -1,9 +1,10 @@
 // Read-only production evidence. Never print environment values, raw logs,
 // connection URLs, SQL text, user records, or PM2's environment payload.
 import { execFileSync } from 'node:child_process';
-import { openSync, readSync, closeSync, statSync, readFileSync, statfsSync } from 'node:fs';
+import { openSync, readSync, closeSync, fstatSync, readFileSync, statfsSync, constants } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { homedir } from 'node:os';
 
 export function classifyDatabaseFailure(value) {
   const text = String(value ?? '');
@@ -38,12 +39,20 @@ export function processSummary(processes) {
   }));
 }
 
-function tail(file, maximum = 512 * 1024) {
-  const size = statSync(file).size;
-  const fd = openSync(file, 'r');
+export function healthLogPath(processID, home = homedir()) {
+  if (processID !== null && (!Number.isSafeInteger(processID) || processID < 0 || processID > 1_000_000)) throw new Error('Invalid process ID');
+  return resolve(home, '.pm2', 'logs', processID === null ? 'juno-error.log' : `juno-error-${processID}.log`);
+}
+
+function tailHealthLog(processID, maximum = 512 * 1024) {
+  // Derive an allowlisted name from a numeric PM2 id. Never open the path
+  // supplied in a process payload, and never follow a planted symlink.
+  const fd = openSync(healthLogPath(processID), constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
-    const bytes = Buffer.alloc(Math.min(size, maximum));
-    readSync(fd, bytes, 0, bytes.length, Math.max(0, size - bytes.length));
+    const info = fstatSync(fd);
+    if (!info.isFile()) throw new Error('Not a regular log');
+    const bytes = Buffer.alloc(Math.min(info.size, maximum));
+    readSync(fd, bytes, 0, bytes.length, Math.max(0, info.size - bytes.length));
     return bytes.toString('utf8');
   } finally { closeSync(fd); }
 }
@@ -85,8 +94,9 @@ async function main() {
   try {
     const processes = JSON.parse(execFileSync('pm2', ['jlist'], { encoding: 'utf8', timeout: 10_000, maxBuffer: 10 * 1024 * 1024 }));
     report.processes = processSummary(processes);
-    report.healthFailures = processes.filter(item => item.name === 'juno').map(item => {
-      try { return summarizeHealthFailures(tail(item.pm2_env.pm_err_log_path)); }
+    const ids = [null, ...processes.filter(item => item.name === 'juno' && Number.isSafeInteger(item.pm_id)).map(item => item.pm_id)];
+    report.healthFailures = [...new Set(ids)].map(id => {
+      try { return summarizeHealthFailures(tailHealthLog(id)); }
       catch { return { unavailable: true }; }
     });
   } catch { report.processesUnavailable = true; }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 // The diagnostic exports pure reducers and performs I/O only with --run.
-import { classifyDatabaseFailure, processSummary, summarizeHealthFailures } from "../scripts/production-diagnostics.mjs";
+import { classifyDatabaseFailure, processSummary, summarizeHealthFailures, healthLogPath } from "../scripts/production-diagnostics.mjs";
 
 test("health diagnostics distinguish acquisition pressure from unavailable databases", () => {
   assert.equal(classifyDatabaseFailure("Unable to start a transaction in the given time"), "transaction_acquisition_timeout");
@@ -27,4 +27,13 @@ test("production diagnostics are manual, pinned to main, and use protected pinne
   assert.match(workflow, /environment: Production/);
   assert.match(workflow, /StrictHostKeyChecking=yes/);
   assert.match(workflow, /ref: \$\{\{ github.sha \}\}/);
+});
+
+
+test("only fixed health-log names and bounded numeric process IDs become paths", () => {
+  assert.equal(healthLogPath(null, "/home/service"), "/home/service/.pm2/logs/juno-error.log");
+  assert.equal(healthLogPath(12, "/home/service"), "/home/service/.pm2/logs/juno-error-12.log");
+  for (const value of ["../../.env", "12/../../.env", -1, NaN, Infinity, 1.5, 1_000_001]) {
+    assert.throws(() => healthLogPath(value));
+  }
 });
