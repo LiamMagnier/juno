@@ -1,6 +1,27 @@
 import Foundation
 import JunoDesignSystem
 
+public enum NativeAgentControlCopy {
+    public static let pauseLabel = "Pause future work"
+    public static let resumeLabel = "Resume agent"
+    public static let pauseHint = "Pauses routines and new work. Stop an active task from its chat."
+    public static let resumeHint = "Allows new work and restores routines paused with this agent."
+    public static let paused = "Paused for new work. Stop active tasks from their chats."
+    public static let resumed = "Ready for new work."
+}
+
+public struct NativeAgentSetupStep: Identifiable, Sendable {
+    public let id: String
+    public let title: String
+    public let detail: String
+
+    public static let all: [NativeAgentSetupStep] = [
+        .init(id: "job", title: "Start with one useful task", detail: "Describe a clear outcome, or choose a starter below."),
+        .init(id: "workspace", title: "Choose where it works", detail: "Select cloud tools or a connected Mac in the composer."),
+        .init(id: "control", title: "Stay in control", detail: "Review requests and results in your agent’s chat."),
+    ]
+}
+
 /// The web roster's query and filters, shared by iPhone and Mac.
 public enum NativeAgentRosterFilter: String, CaseIterable, Identifiable, Sendable {
     case all, working, attention, paused

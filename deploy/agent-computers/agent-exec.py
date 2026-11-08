@@ -168,6 +168,13 @@ def freeze():
             os.kill(-1, signal.SIGSTOP)
         except ProcessLookupError:
             pass  # nothing of this uid is running
+        except PermissionError:
+            # kill(-1) also visits other uids/security profiles. A racing
+            # launcher can have exited at the frozen marker, leaving only
+            # targets we cannot signal. Permission failure is not proof of a
+            # freeze: the same /proc scan below must still show every agent
+            # task stopped, or the operation fails at its existing deadline.
+            pass
         time.sleep(FREEZE_PAUSE_SECONDS)
         if not agent_tasks_not_stopped(own):
             return 0

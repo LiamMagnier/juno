@@ -694,7 +694,7 @@ public struct NativeAgentProfileView: View {
 
     private func footer(_ agent: NativeAgent) -> some View {
         HStack(spacing: JunoSpace.snug) {
-            Button(agent.isPaused ? "Resume" : "Pause") {
+            Button(agent.isPaused ? NativeAgentControlCopy.resumeLabel : NativeAgentControlCopy.pauseLabel) {
                 act("pause") { await model.setPaused(id: agent.id, paused: !agent.isPaused) }
             }
             .buttonStyle(.junoGlass)

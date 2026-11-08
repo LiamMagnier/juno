@@ -308,11 +308,11 @@ public final class NativeAgentsModel {
         }
     }
 
-    /// Pause keeps everything and starts nothing; resume picks up where it was.
+    /// Pause prevents new work; active tasks are stopped separately in chat.
     public func setPaused(id: String, paused: Bool) async {
         let changed = await update(id: id, NativeAgentPatch(status: paused ? .paused : .active))
         if changed {
-            lastMutationExplanation = paused ? "Paused." : "Resumed."
+            lastMutationExplanation = paused ? NativeAgentControlCopy.paused : NativeAgentControlCopy.resumed
             await loadDetail(id: id)
         }
     }
