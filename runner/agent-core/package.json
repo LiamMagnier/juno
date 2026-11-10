@@ -15,7 +15,7 @@
     "bundle:mac": "npm run build && ../../node_modules/.bin/esbuild src/serve.ts --bundle --platform=node --format=esm --target=node20 --banner:js='import { createRequire } from \"node:module\"; const require = createRequire(import.meta.url);' --outfile=dist/juno-agent-core.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.107.0",
+    "@anthropic-ai/sdk": "^0.131.0",
     "diff": "^7.0.0",
     "openai": "^6.45.0",
     "fast-glob": "^3.3.2",
