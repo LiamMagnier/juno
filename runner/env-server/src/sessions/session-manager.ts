@@ -31,7 +31,7 @@ import type {
   SkillActivation,
 } from "../contracts/code-v2.js";
 import { isRuntimeMode } from "../contracts/code-v2.js";
-import { SessionLog, type SessionMeta } from "../protocol/session-log.js";
+import { SessionLog, type CutOffTurn, type SessionMeta } from "../protocol/session-log.js";
 import type { ProviderRegistry } from "../providers/registry.js";
 import type { ApprovalAnswer, McpEndpoint, ProviderSession, TurnResult, TurnSink } from "../providers/types.js";
 import { GitCheckpoints, PatchError, normalizeRepoPath } from "../git/checkpoints.js";
@@ -42,6 +42,7 @@ import { deferred, describeError, newId, nowIso, type Deferred, type Logger } fr
 import { withTeamBrief } from "../mcp/team-brief.js";
 import { withCapabilityHints } from "../mcp/capability-hints.js";
 import { renderSkillInstructions, resolveSkillActivations, type SkillCatalog } from "../skills/discovery.js";
+import { CUT_OFF_MESSAGE, settledCopy } from "./cut-off-turn.js";
 
 export class WireError extends Error {
   constructor(
@@ -82,6 +83,8 @@ interface LiveSession {
   idleWaiters: (() => void)[];
   /** The running turn was started by a timer, not a person (a resume at the usage reset). */
   unattendedTurn?: boolean;
+  /** A cut-off turn's checkpoint being written; the next turn waits for it. Never rejects. */
+  settling?: Promise<void>;
 }
 
 export interface SessionManagerOptions {
@@ -180,7 +183,63 @@ export class SessionManager {
       if (item.kind === "approval_request" && item.status === "pending") log.emit({ type: "item.updated", item: { ...item, status: "expired" } });
       if (item.kind === "user_input_request" && item.status === "pending") log.emit({ type: "item.updated", item: { ...item, status: "cancelled" } });
     }
+    const cutOff = log.takeCutOffTurn();
+    if (cutOff) this.#endCutOffTurn(session, cutOff);
     return session;
+  }
+
+  /**
+   * Writes the ending of a turn the previous process never got to end (it was
+   * killed, or the Mac lost power, mid-turn).
+   *
+   * Into the log, as events: a phone or a browser that follows the thread
+   * reconnects with its cursor and is replayed what came after it, so an
+   * ending kept only in this process's memory would leave it showing a turn
+   * that runs forever. Written once: after it the log no longer ends mid-turn.
+   *
+   * The turn keeps its ordinal. It took a pre-turn checkpoint when it began
+   * and the files it wrote are its own, so the next turn must not reuse its
+   * number: that would re-take the pre-turn checkpoint with those files
+   * already in the tree, and a later restore would treat them as the person's
+   * own edits and leave them.
+   */
+  #endCutOffTurn(live: LiveSession, cutOff: CutOffTurn): void {
+    const log = live.log;
+    const { turnId, stoppedAt } = cutOff;
+    for (const item of log.snapshot.items) {
+      const settled = settledCopy(item, turnId);
+      if (settled) log.emit({ type: "item.updated", item: settled });
+    }
+    // Dated when the turn actually stopped, so "Stopped after 4m" stays true however much later the thread is opened.
+    this.#addItem(live, { id: newId("int"), kind: "interrupt", turnId, createdAt: stoppedAt, reason: "error", message: CUT_OFF_MESSAGE });
+    const ordinal = log.meta.turnCount + 1;
+    log.updateMeta({ turnCount: ordinal });
+    log.emit({ type: "turn.completed", turnId, outcome: "interrupted" });
+    live.settling = this.#checkpointCutOffTurn(live, turnId, ordinal);
+  }
+
+  /**
+   * The cut-off turn's end-of-turn checkpoint, taken as soon as the thread is
+   * loaded again rather than when the next turn starts: whatever the person
+   * edits by hand in between is theirs, not the turn's.
+   */
+  async #checkpointCutOffTurn(live: LiveSession, turnId: string, ordinal: number): Promise<void> {
+    try {
+      const cp = await this.#takeCheckpoint(live, ordinal);
+      // A turn that started meanwhile owns the end of the thread now; its own checkpoint follows.
+      if (!cp || live.active || this.#live.get(live.log.id) !== live) return;
+      this.#addItem(live, checkpointItem(turnId, ordinal, cp));
+    } catch (error) {
+      this.#o.logger.debug(`cut-off checkpoint: ${describeError(error)}`);
+    }
+  }
+
+  /** The tree as turn `ordinal` left it: a git ref in a repository, the folder store otherwise. */
+  async #takeCheckpoint(live: LiveSession, ordinal: number): Promise<TakenCheckpoint | null> {
+    const cwd = live.log.meta.cwd;
+    return (await this.checkpoints.repoRoot(cwd).catch(() => null))
+      ? this.checkpoints.create(cwd, live.log.id, ordinal)
+      : this.#folders(live).create(cwd, live.log.id, ordinal, this.#editedPaths(live, 0));
   }
 
   // ── Commands ───────────────────────────────────────────────────────────
@@ -882,12 +941,7 @@ export class SessionManager {
       const running = this.#live.get(id)?.active?.done;
       await this.close(id);
       // The interrupted turn writes its last events before the log goes.
-      if (running) {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        try {
-          await Promise.race([running.catch(() => undefined), new Promise((resolve) => { timer = setTimeout(resolve, 5_000); timer.unref(); })]);
-        } finally { if (timer) clearTimeout(timer); }
-      }
+      if (running) await settledWithin([running], TURN_ENDING_GRACE_MS);
       const live = this.#live.get(id);
       const dir = path.resolve(live?.log.dir ?? path.join(this.sessionsDir, id));
       for (const wake of live?.idleWaiters ?? []) wake();
@@ -910,7 +964,14 @@ export class SessionManager {
 
   async shutdown(): Promise<void> {
     for (const id of [...this.#scheduleTimers.keys()]) this.#clearTimer(id);
+    // A turn stopped here still has its ending to write (its checkpoint, why
+    // it stopped, turn.completed), and so does a cut-off turn whose checkpoint
+    // is being taken; the process exits when this returns.
+    // Wait for those, but only briefly: a runtime that will not stop must
+    // not keep the app from quitting (the next start ends its turn instead).
+    const endings = [...this.#live.values()].flatMap((live) => [live.active?.done, live.settling].filter((p) => p !== undefined));
     await Promise.all([...this.#live.keys()].map((id) => this.close(id)));
+    await settledWithin(endings, TURN_ENDING_GRACE_MS);
     for (const live of this.#live.values()) live.log.close();
   }
 
@@ -980,6 +1041,8 @@ export class SessionManager {
     const generation = live.generation ?? 0;
     let result: TurnResult;
     try {
+      // A cut-off turn's checkpoint is the baseline this turn builds on.
+      await live.settling;
       if (await this.checkpoints.repoRoot(cwd).catch(() => null)) {
         if (ordinal === 1 || !(await this.checkpoints.resolve(cwd, log.id, ordinal - 1).catch(() => undefined))) {
           await this.checkpoints.create(cwd, log.id, ordinal - 1).catch((e) => this.#o.logger.debug(`baseline checkpoint: ${describeError(e)}`));
@@ -1032,24 +1095,8 @@ export class SessionManager {
     for (const [requestId] of live.pending) this.#resolvePending(live, requestId, { decision: "cancel" }, "expired");
 
     try {
-      const cp = (await this.checkpoints.repoRoot(cwd).catch(() => null))
-        ? await this.checkpoints.create(cwd, log.id, ordinal)
-        : await this.#folders(live).create(cwd, log.id, ordinal, this.#editedPaths(live, 0));
-      if (cp) {
-        this.#addItem(live, {
-          id: newId("cp"),
-          kind: "checkpoint",
-          turnId,
-          createdAt: nowIso(),
-          checkpointId: `cp_${ordinal}_${turnId}`,
-          turnOrdinal: ordinal,
-          // A folder that is not a repository has no git ref; its checkpoint lives in the folder store.
-          ...("ref" in cp && typeof cp.ref === "string" ? { ref: cp.ref } : {}),
-          filesChanged: cp.filesChanged,
-          additions: cp.additions,
-          deletions: cp.deletions,
-        });
-      }
+      const cp = await this.#takeCheckpoint(live, ordinal);
+      if (cp) this.#addItem(live, checkpointItem(turnId, ordinal, cp));
     } catch (error) {
       this.#o.logger.debug(`checkpoint: ${describeError(error)}`);
     }
@@ -1268,6 +1315,45 @@ export class SessionManager {
 }
 
 const MAX_SCHEDULE_AHEAD_MS = 8 * 24 * 60 * 60 * 1000;
+/** How long a stopped turn gets to write its ending before its log is closed. */
+const TURN_ENDING_GRACE_MS = 5_000;
+
+/** Resolves when every promise has settled, or after `ms`, whichever is first. */
+async function settledWithin(promises: readonly Promise<unknown>[], ms: number): Promise<void> {
+  if (promises.length === 0) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.allSettled(promises),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, ms);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** What either checkpoint store reports for the tree it just recorded (only git has a ref). */
+type TakenCheckpoint = { ref?: string; filesChanged: number; additions: number; deletions: number };
+
+/** The thread's record of a turn's end-of-turn checkpoint. */
+function checkpointItem(turnId: string, ordinal: number, cp: TakenCheckpoint): CheckpointItem {
+  return {
+    id: newId("cp"),
+    kind: "checkpoint",
+    turnId,
+    createdAt: nowIso(),
+    checkpointId: `cp_${ordinal}_${turnId}`,
+    turnOrdinal: ordinal,
+    // A folder that is not a repository has no git ref; its checkpoint lives in the folder store.
+    ...(cp.ref ? { ref: cp.ref } : {}),
+    filesChanged: cp.filesChanged,
+    additions: cp.additions,
+    deletions: cp.deletions,
+  };
+}
 const RESUME_TEXT = "Your usage window has reset. Continue where you stopped.";
 
 function titleFrom(text: string): string {

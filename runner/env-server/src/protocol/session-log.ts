@@ -60,6 +60,13 @@ interface StoredEvent {
   event: ServerEvent;
 }
 
+/** A turn the log starts but never ends: the process stopped under it. */
+export interface CutOffTurn {
+  turnId: string;
+  /** When the last event before the stop was written (ISO-8601). */
+  stoppedAt: string;
+}
+
 type Listener = (envelope: ServerEventEnvelope) => void;
 
 interface PendingDelta {
@@ -79,6 +86,7 @@ export class SessionLog {
   #pending: PendingDelta[] = [];
   #timer: NodeJS.Timeout | undefined;
   #fd: number | undefined;
+  #cutOffTurn: CutOffTurn | undefined;
   readonly coalesceMs: number;
 
   private constructor(dir: string, meta: SessionMeta, coalesceMs: number) {
@@ -145,12 +153,30 @@ export class SessionLog {
     }
     log.#syncSnapshotFromMeta();
     // A process that died mid-turn leaves the snapshot "running"; nothing is
-    // running now, so the fold must not claim otherwise.
+    // running now, so the fold must not claim otherwise. That only corrects
+    // this process's memory: the turn is remembered so its ending can be
+    // written to the log (takeCutOffTurn), for clients that are replayed
+    // events from a cursor and never see this snapshot.
     if (log.#snapshot.state === "running" || log.#snapshot.state === "waiting") {
+      const turnId = log.#snapshot.activeTurnId;
+      const stoppedAt = log.#events[log.#events.length - 1]?.at;
+      if (turnId && stoppedAt) log.#cutOffTurn = { turnId, stoppedAt };
       log.#snapshot = { ...log.#snapshot, state: "idle" };
       delete log.#snapshot.activeTurnId;
     }
     return log;
+  }
+
+  /**
+   * The turn that was running when the process that last wrote this log
+   * stopped, with the time of the last thing it wrote. Handed over once: the
+   * caller writes the turn's ending, after which the log no longer ends
+   * mid-turn and a later load reports nothing.
+   */
+  takeCutOffTurn(): CutOffTurn | undefined {
+    const turn = this.#cutOffTurn;
+    this.#cutOffTurn = undefined;
+    return turn;
   }
 
   /** Ids of every session stored under `root`. */
