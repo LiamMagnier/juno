@@ -1228,7 +1228,8 @@ function ActivityRow({
             onClick={() => setOpen((current) => !current)}
             aria-expanded={open}
             aria-label={open ? `Hide detail: ${entry.title}` : `Show detail: ${entry.title}`}
-            className="mt-1 inline-flex items-center gap-1 rounded-xs font-mono text-micro text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
+            // 17px drawn, 25px+ to hit (WCAG 2.5.8): the transparent ::before pads it.
+            className="relative mt-1 inline-flex items-center gap-1 rounded-xs font-mono text-micro text-muted-foreground transition-colors duration-fast ease-out-soft before:absolute before:-inset-x-1 before:-inset-y-1 hover:text-foreground"
           >
             <ChevronRight
               className={cn(

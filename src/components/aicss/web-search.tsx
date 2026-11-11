@@ -199,7 +199,10 @@ export function WebSearchBlock({
                         href={site.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex min-w-0 items-center gap-1.5 !no-underline"
+                        // 18px drawn, 24px to hit (WCAG 2.5.8): the list's 6px gap
+                        // is exactly what the padding spends, so neighbours meet
+                        // without overlapping.
+                        className="relative flex min-w-0 items-center gap-1.5 !no-underline before:absolute before:inset-x-0 before:-inset-y-[3px]"
                       >
                         <span className="aicss-ws-title">{truncate(site.title, 52)}</span>
                         <span className="aicss-ws-sep">·</span>

@@ -99,7 +99,8 @@ function StreamBlock({ label, stream, logUrl }: { label: string; stream: ToolRun
               href={logUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
+              // 17px of text, 25px to hit (WCAG 2.5.8); the padding is invisible.
+              className="relative underline-offset-4 transition-colors duration-fast ease-out-soft before:absolute before:inset-x-0 before:-inset-y-1 hover:text-foreground hover:underline"
             >
               Show full output
             </a>
