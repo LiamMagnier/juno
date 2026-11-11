@@ -269,3 +269,39 @@ export type BackgroundPurpose =
    * the same policy rather than around it. See src/lib/knowledge/embed.ts.
    */
   | "knowledge_embedding";
+
+/** What `rankUtilityModels` needs of a model: kept structural so this file stays free of the catalogue. */
+export interface RankableUtilityModel {
+  id: string;
+  provider: string;
+  /** Absent reads as current, matching the catalogue's own convention. */
+  status?: "current" | "legacy" | "deprecated" | string;
+  cost: number;
+}
+
+const STATUS_RANK: Record<string, number> = { current: 0, legacy: 1, deprecated: 2 };
+
+/**
+ * The short list a background job walks: up to two models per provider, every
+ * provider's best first, then the second-string models, capped at ten.
+ *
+ * Within a provider the order is lifecycle first (current, then legacy, then
+ * deprecated), then speed, then cost. Lifecycle leads because a superseded model
+ * is usually the more expensive one (Haiku 4.5 is ten times Haiku 5.5) and a
+ * deprecated one can be retired under the walk, which costs a failed call before
+ * it moves on. A legacy model still beats nothing, so a provider with a single
+ * current model keeps one as its second string.
+ */
+export function rankUtilityModels<T extends RankableUtilityModel>(models: readonly T[], speedOf: (m: T) => number): T[] {
+  const byProvider = new Map<string, T[]>();
+  for (const model of models) {
+    const list = byProvider.get(model.provider) ?? [];
+    list.push(model);
+    byProvider.set(model.provider, list);
+  }
+  const rank = (m: T) => STATUS_RANK[m.status ?? "current"] ?? 0;
+  const tiers = [...byProvider.values()].map((list) =>
+    [...list].sort((a, b) => rank(a) - rank(b) || speedOf(b) - speedOf(a) || a.cost - b.cost).slice(0, 2),
+  );
+  return [...tiers.map((t) => t[0]), ...tiers.flatMap((t) => t.slice(1))].slice(0, 10);
+}

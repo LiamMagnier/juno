@@ -11,6 +11,7 @@ import { getModelMetrics } from "@/lib/model-metrics";
 import {
   DEFAULT_BACKGROUND_PROVIDER_MODE,
   normalizeBackgroundProviderPolicy,
+  rankUtilityModels,
   resolveBackgroundCandidates,
   type BackgroundDenialReason,
   type BackgroundProcessingRecord,
@@ -118,26 +119,18 @@ import { isUnconsumedProviderRejection } from "@/lib/utility-attempt";
 
 /**
  * Configured models eligible for background memory work — up to two FREE
- * models per provider, fastest first within each provider, ordered
- * provider-diverse (every provider's best, then the second-string models).
+ * models per provider, current before legacy before deprecated and then fastest
+ * (see `rankUtilityModels`), ordered provider-diverse (every provider's best,
+ * then the second-string models).
  * Utility prompts are small and structured, so speed and cost beat raw
  * intelligence here. Free-tier quotas and overloads are often per-MODEL, so a
  * second model from the same provider is a real fallback.
  */
 export function utilityModelCandidates(): ModelInfo[] {
-  const byProvider = new Map<string, ModelInfo[]>();
-  for (const m of MODEL_LIST) {
-    if (m.minPlan !== "FREE" || m.modality !== "chat" || m.comingSoon || !isProviderConfigured(m.provider)) continue;
-    const arr = byProvider.get(m.provider) ?? [];
-    arr.push(m);
-    byProvider.set(m.provider, arr);
-  }
-  const tiers = [...byProvider.values()].map((arr) =>
-    arr
-      .sort((a, b) => getModelMetrics(b).speed - getModelMetrics(a).speed || a.cost - b.cost)
-      .slice(0, 2)
+  const eligible = MODEL_LIST.filter(
+    (m) => m.minPlan === "FREE" && m.modality === "chat" && !m.comingSoon && isProviderConfigured(m.provider),
   );
-  return [...tiers.map((a) => a[0]), ...tiers.flatMap((a) => a.slice(1))].slice(0, 10);
+  return rankUtilityModels(eligible, (m) => getModelMetrics(m).speed);
 }
 
 /**
