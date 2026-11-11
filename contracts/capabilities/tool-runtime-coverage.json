@@ -34,7 +34,7 @@
   "compatibility": "compatible = roundTrip verified AND runCodeE2E verified (probe version 2 or later). Nothing else, including the catalog's agenticTools flag, makes a model compatible.",
   "models": [
     {
-      "id": "anthropic:claude-fable-5-1",
+      "id": "anthropic:claude-fable-5-2",
       "provider": "anthropic",
       "adapter": "anthropic-native",
       "vision": true,

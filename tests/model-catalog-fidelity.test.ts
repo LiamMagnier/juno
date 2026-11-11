@@ -130,7 +130,7 @@ test("the September 2026 models carry the ids their providers actually serve", (
     assert.equal(model.status, status);
     assert.equal(model.family, family, "Flare and Sunburst are separate families — both stay current");
   }
-  assert.equal(byId.get("openai:gpt-image-2")?.status, "legacy");
+  assert.equal(byId.get("openai:gpt-image-2")?.status, "deprecated"); // lab gave it a retirement date (2027-02-10)
 
   // xAI's volume tier. Every Grok 4.1 Fast slug retired on 2026-05-15 and
   // xAI serves them from grok-4.3, which now holds the `grok-fast` family.

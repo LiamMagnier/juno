@@ -29,7 +29,7 @@ import { tiersFor } from "@/lib/code-v2/context-tiers";
 export const CODE_MODEL_RANKING: readonly string[] = [
   "anthropic:claude-opus-5-5",
   "openai:gpt-6.1-sol",
-  "anthropic:claude-fable-5-1",
+  "anthropic:claude-fable-5-2",
   "openai:gpt-6-astra",
   "anthropic:claude-sonnet-5-5",
   "google:gemini-3.8-flash",

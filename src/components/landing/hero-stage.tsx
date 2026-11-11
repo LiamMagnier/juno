@@ -26,7 +26,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 const SHOT = "mac-chat-conversation";
 
 /** The flagship on the preview, so the cost chip has digits worth reading. */
-const MODEL: ModelInfo = getModel("anthropic:claude-fable-5-1") ?? getModel(DEFAULT_MODEL) ?? MODEL_LIST[0];
+const MODEL: ModelInfo = getModel("anthropic:claude-fable-5-2") ?? getModel(DEFAULT_MODEL) ?? MODEL_LIST[0];
 
 const TURN = {
   user: "Which model should review a 40-page contract, and which one for a quick clause check?",

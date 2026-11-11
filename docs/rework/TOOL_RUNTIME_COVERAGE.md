@@ -49,7 +49,7 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 
 | Model | Adapter | roundTrip | parallel | toolImages | runCodeE2E | skillE2E | Compatible |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `anthropic:claude-fable-5-1` | anthropic-native | untested | untested | untested | untested | untested | no |
+| `anthropic:claude-fable-5-2` | anthropic-native | untested | untested | untested | untested | untested | no |
 | `anthropic:claude-opus-5-5` | anthropic-native | untested | untested | untested | untested | untested | no |
 | `anthropic:claude-sonnet-5-5` | anthropic-native | untested | untested | untested | untested | untested | no |
 | `anthropic:claude-haiku-5-5` | anthropic-native | untested | untested | untested | untested | untested | no |

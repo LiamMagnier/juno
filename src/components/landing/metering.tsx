@@ -6,7 +6,7 @@ import { CostExplorer } from "./cost-explorer";
 import { Section } from "./section";
 import { Reveal } from "./reveal";
 
-const MODEL_IDS = ["anthropic:claude-fable-5-1","openai:gpt-6-sol","google:gemini-3.1-pro-preview","anthropic:claude-sonnet-5","zhipu:glm-5.3","deepseek:deepseek-flash"];
+const MODEL_IDS = ["anthropic:claude-fable-5-2","openai:gpt-6-sol","google:gemini-3.1-pro-preview","anthropic:claude-sonnet-5","zhipu:glm-5.3","deepseek:deepseek-flash"];
 
 export function Metering() {
   const rate = eurPerUsd();

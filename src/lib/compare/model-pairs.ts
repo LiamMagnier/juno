@@ -56,7 +56,7 @@ export const WORKLOADS: Record<CompareUse, Workload> = {
 const id = (provider: string, model: string) => `${provider}:${model}`;
 const OPUS = id("anthropic", "claude-opus-5-5");
 const SONNET = id("anthropic", "claude-sonnet-5-5");
-const FABLE = id("anthropic", "claude-fable-5-1");
+const FABLE = id("anthropic", "claude-fable-5-2");
 const SOL = id("openai", "gpt-6.1-sol");
 const ASTRA = id("openai", "gpt-6-astra");
 const LUNA = id("openai", "gpt-6-luna");
