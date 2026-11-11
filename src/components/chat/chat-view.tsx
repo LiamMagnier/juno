@@ -1532,9 +1532,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
    */
   const seedComposerDraft = React.useCallback((text: string) => {
     if (typeof window === "undefined") return;
-    if (!splitEngaged(layoutRef.current)) openThoughtPanel(null);
+    // The composer stays docked under the thought panel below the split, so
+    // the dock no longer has to close for the filled draft to be seen.
     window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: text }));
-  }, [openThoughtPanel]);
+  }, []);
 
   // SELF-HEAL. `openArtifact` is DERIVED from chat.artifacts, so every path that
   // replaces the transcript drops the canvas for free. `thoughtOpenId` is raw
@@ -2678,17 +2679,25 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       // bar the shell mounts above the page stay in view over it, where they
       // used to be covered. Kept on purpose — the shell's chrome is how the
       // user leaves a conversation, and a canvas is a view of one.
-      className="@container/split relative flex h-full min-h-0 w-full overflow-hidden"
+      className={cn(
+        "@container/split relative flex h-full min-h-0 w-full overflow-hidden",
+        // Below the split the thought dock stacks ABOVE the composer instead of
+        // replacing the whole chat column (which used to hide the composer).
+        thoughtOpenId && !sidePanelOpen && "flex-col @[50rem]/split:flex-row"
+      )}
     >
       {/* Chat column */}
       {/* Below the split the canvas replaces the chat entirely — a split there
-          leaves the chat column narrower than a phone. The thought dock follows
-          the same precedent for the same reason, rather than inventing a second
-          story. */}
+          leaves the chat column narrower than a phone. The thought dock keeps
+          only the composer: transcript and header give way, the composer stays
+          typeable under the dock. */}
       <div
         className={cn(
-          "relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-          (sidePanelOpen || thoughtOpenId) && "hidden @[50rem]/split:flex"
+          "relative flex min-h-0 min-w-0 flex-col overflow-hidden",
+          thoughtOpenId && !sidePanelOpen
+            ? "h-auto flex-none @[50rem]/split:h-full @[50rem]/split:flex-1"
+            : "h-full flex-1",
+          sidePanelOpen && "hidden @[50rem]/split:flex"
         )}
       >
         {/* The column's header band: the conversation's title at the left
@@ -2705,6 +2714,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           <div
             className={cn(
               "page-gutter relative z-20 hidden shrink-0 items-center justify-between gap-4 md:flex",
+              thoughtOpenId && "!hidden @[50rem]/split:!flex",
               // A new chat has no title, so this band held 56px of nothing and
               // pushed the centred greeting 28px above true centre with the
               // incognito toggle floating alone at the right. The toggle still
@@ -2895,6 +2905,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               )}
               <AgentThreadContext.Provider value={agentThreadIdentity}>
               <LiveUIHostProvider value={liveUIHost}>
+              {/* Below the split the thought dock covers the transcript; the
+                  wrapper hides it without unmounting so the portalled panel's
+                  owner (ActivityTimeline) and its clock keep running. */}
+              <div className={cn("flex min-h-0 flex-1 flex-col", thoughtOpenId && "hidden @[50rem]/split:flex")}>
               <MessageList
                 /*
                  * KEYED ON THE ROUTE'S CONVERSATION, which does two things
@@ -2990,6 +3004,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                 titleShownInHeader={topActionsSlotOwner && !privateMode && !!headerTitle}
                 speakerFor={room.detail ? roomSpeakerFor : undefined}
               />
+              </div>
               </LiveUIHostProvider>
               </AgentThreadContext.Provider>
               <AnswerSelectionBar
@@ -3127,7 +3142,9 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           ref={setThoughtContainer}
           style={thought.width != null ? ({ "--juno-thought-width": `${thought.width}px` } as React.CSSProperties) : undefined}
           className={cn(
-            "relative z-40 size-full shrink-0 bg-card",
+            // Below the split: fills the space above the composer (order-first,
+            // flex-1). At the split: a full-height fixed-width column again.
+            "relative z-40 order-first min-h-0 w-full flex-1 shrink-0 bg-card @[50rem]/split:order-none @[50rem]/split:h-full @[50rem]/split:flex-none",
             // min-w-0 replaces the old lg:min-w-[26rem]: that floor would have
             // silently overridden any drag below 416px and made the new minimum
             // unreachable. The real floor is enforced by thoughtWidthBounds.

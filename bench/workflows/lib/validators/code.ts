@@ -33,7 +33,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import path from "node:path";
 import type { CheckResult, ValidatorSpec } from "../types";
 import { detectSandbox, nodeBinary, runSandboxed, type SandboxStatus } from "./sandbox";
@@ -124,11 +124,15 @@ export function validateCodeTests(spec: CodeSpec, ctx: CodeContext): CheckResult
     // and the copy would otherwise reach the child).
     const late = linksAndSpecialFiles(work);
     if (late.length) return [...checks, fail(id("links"), `symlink appeared in the copy (refused): ${late.slice(0, 6).join(", ")}`)];
+    // macOS exposes temporary paths through /var, but resolves them to
+    // /private/var. Node's permission model compares canonical paths, so
+    // grant access to and execute from the resolved scratch directory.
+    const canonicalWork = realpathSync(work);
     const visible = spec.protectedFiles.filter((f) => /\.test\.m?js$|^test\.m?js$/.test(path.basename(f)));
     const nodeArgs = [
       `--max-old-space-size=${CODE_HEAP_MB}`,
       "--permission",
-      `--allow-fs-read=${work}`,
+      `--allow-fs-read=${canonicalWork}`,
       ...nodeHardeningFlags(),
       "--experimental-test-isolation=none",
       "--test",
@@ -146,8 +150,8 @@ export function validateCodeTests(spec: CodeSpec, ctx: CodeContext): CheckResult
     };
     const node = nodeBinary();
     const run = sandbox.available
-      ? runSandboxed(node, nodeArgs, { readOnly: [work, node], cwd: work }, options)
-      : spawnSync(node, nodeArgs, { ...options, cwd: work });
+      ? runSandboxed(node, nodeArgs, { readOnly: [canonicalWork, node], cwd: canonicalWork }, options)
+      : spawnSync(node, nodeArgs, { ...options, cwd: canonicalWork });
     const output = `${run.stdout ?? ""}\n${run.stderr ?? ""}`;
     const counts = tapCounts(output);
     const where = sandbox.available ? "sandboxed: own filesystem view, no network" : "UNSAFE: not sandboxed (--unsafe-code)";
