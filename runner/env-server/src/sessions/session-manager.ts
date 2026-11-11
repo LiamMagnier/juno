@@ -67,6 +67,12 @@ interface ActiveTurn {
   abort: AbortController;
   done: Promise<TurnOutcome>;
   userInterrupted?: boolean;
+  /** Ends the turn without the runtime's cooperation (a Stop it did not obey). */
+  forced: Deferred<TurnResult>;
+  /** Armed by a Stop: forces the turn to end if the runtime has not ended it in time. */
+  stopTimer?: NodeJS.Timeout;
+  /** The turn was forced to end: whatever its runtime still sends is no longer part of the thread. */
+  detached?: boolean;
 }
 
 interface LiveSession {
@@ -95,6 +101,8 @@ export interface SessionManagerOptions {
   /** Base URL of the env server's own listener, for the MCP endpoint ("http://127.0.0.1:PORT"). */
   baseUrl: () => string;
   coalesceMs?: number;
+  /** How long a runtime gets to stop after a Stop before the turn is ended without it (default 10 s). */
+  stopGraceMs?: number;
   checkpoints?: GitCheckpoints;
   /** skills lane: the skills installed on this Mac, for turns that run under one. */
   skills?: SkillCatalog;
@@ -450,8 +458,9 @@ export class SessionManager {
     log.emit({ type: "turn.started", turnId, selection: params.selection });
     const abort = new AbortController();
     const done = deferred<TurnOutcome>();
-    live.active = { turnId, ordinal, abort, done: done.promise };
-    void this.#runTurn(live, instance, params, turnId, ordinal, abort).then(
+    const active: ActiveTurn = { turnId, ordinal, abort, done: done.promise, forced: deferred<TurnResult>() };
+    live.active = active;
+    void this.#runTurn(live, instance, params, active).then(
       (outcome) => done.resolve(outcome),
       (error) => {
         this.#o.logger.error(`turn ${turnId}: ${describeError(error)}`);
@@ -591,7 +600,31 @@ export class SessionManager {
     active.userInterrupted = true;
     for (const [requestId] of live.pending) this.#resolvePending(live, requestId, { decision: "cancel" });
     active.abort.abort();
+    // Armed before the runtime is asked, so a runtime that never answers the ask is covered too.
+    if (!active.stopTimer) {
+      active.stopTimer = setTimeout(() => this.#forceStop(live, active), this.#o.stopGraceMs ?? STOP_GRACE_MS);
+      active.stopTimer.unref?.();
+    }
     await live.provider?.interrupt().catch(() => undefined);
+  }
+
+  /**
+   * Stop always works. A runtime can be alive and still not end its turn when
+   * asked (a tool that ignores the interrupt, a deadlock in the vendor's
+   * CLI); until the turn ends the thread takes no message, no restore and no
+   * second Stop. So after the grace period the turn is ended here, without
+   * the runtime: it is cut loose from the thread and closed, and the next
+   * turn opens a fresh one from the last state that was saved.
+   */
+  #forceStop(live: LiveSession, active: ActiveTurn): void {
+    if (live.active !== active) return;
+    active.detached = true;
+    const provider = live.provider;
+    live.provider = undefined;
+    live.providerInstanceId = undefined;
+    void provider?.close().catch(() => undefined);
+    this.#notice(live.log.id, "warning", FORCE_STOPPED_TEXT, "force_stopped");
+    active.forced.resolve({ outcome: "interrupted" });
   }
 
   respond(params: ClientCommandParams["approval.respond"]): void {
@@ -1028,14 +1061,8 @@ export class SessionManager {
 
   // ── Turn execution ─────────────────────────────────────────────────────
 
-  async #runTurn(
-    live: LiveSession,
-    instance: ProviderInstance,
-    params: ClientCommandParams["turn.start"],
-    turnId: string,
-    ordinal: number,
-    abort: AbortController,
-  ): Promise<TurnOutcome> {
+  async #runTurn(live: LiveSession, instance: ProviderInstance, params: ClientCommandParams["turn.start"], active: ActiveTurn): Promise<TurnOutcome> {
+    const { turnId, ordinal, abort } = active;
     const log = live.log;
     const cwd = log.meta.cwd;
     const generation = live.generation ?? 0;
@@ -1061,7 +1088,7 @@ export class SessionManager {
       // Stopped (or the session closed) while the baseline checkpoint was written: start nothing.
       if (abort.signal.aborted || (live.generation ?? 0) !== generation) throw new TurnStoppedEarly();
       const provider = await this.#ensureProvider(live, instance, params.selection, generation);
-      const sink = this.#sink(live, instance.id, turnId);
+      const sink = this.#sink(live, instance.id, active);
       // skills lane: Alevr's engine takes the skills in its system prompt; a
       // vendor runtime (Claude, Codex, ACP) gets them ahead of the message.
       const skillText = await this.skillInstructions(cwd, params.input.skills ?? []);
@@ -1070,7 +1097,7 @@ export class SessionManager {
       const turnInput: UserInput = skillText && !engineKind ? { ...bareInput, text: `${skillText}\n\n${bareInput.text}` } : bareInput;
       // Interrupted while the runtime was starting: nothing was sent yet.
       if (abort.signal.aborted) throw new TurnStoppedEarly();
-      result = await provider.runTurn({
+      const ran = provider.runTurn({
         sessionId: log.id,
         turnId,
         turnOrdinal: ordinal,
@@ -1086,11 +1113,22 @@ export class SessionManager {
         sink,
         signal: abort.signal,
       });
-      if (live.provider) log.updateMeta({ providerState: { ...live.provider.resumeState(), instanceId: instance.id } });
+      // A forced stop wins the race and leaves the runtime's own ending unread.
+      ran.catch(() => undefined);
+      result = await Promise.race([ran, active.forced.promise]);
+      if (live.provider && !active.detached) log.updateMeta({ providerState: { ...live.provider.resumeState(), instanceId: instance.id } });
     } catch (error) {
       result = error instanceof TurnStoppedEarly ? { outcome: "interrupted" } : { outcome: "failed", message: describeError(error) };
     }
-    if (live.active?.userInterrupted && result.outcome === "failed") result = { outcome: "interrupted" };
+    if (active.stopTimer) clearTimeout(active.stopTimer);
+    if (active.userInterrupted && result.outcome === "failed") result = { outcome: "interrupted" };
+    // A turn forced to end never had its live items settled by the runtime.
+    if (active.detached) {
+      for (const item of log.snapshot.items) {
+        const settled = settledCopy(item, turnId);
+        if (settled) log.emit({ type: "item.updated", item: settled });
+      }
+    }
     // Requests still open when the turn ended can no longer be answered.
     for (const [requestId] of live.pending) this.#resolvePending(live, requestId, { decision: "cancel" }, "expired");
 
@@ -1195,19 +1233,29 @@ export class SessionManager {
     return live.provider;
   }
 
-  #sink(live: LiveSession, instanceId: string, turnId: string): TurnSink {
+  #sink(live: LiveSession, instanceId: string, active: ActiveTurn): TurnSink {
     const log = live.log;
+    const { turnId } = active;
     return {
-      item: (item) => this.#addItem(live, item),
-      delta: (itemId, field, append) => {
-        if (live.known.has(itemId)) log.emit({ type: "item.delta", itemId, field, append });
+      // A turn that was forced to end is over: what its runtime sends afterwards is dropped.
+      item: (item) => {
+        if (!active.detached) this.#addItem(live, item);
       },
-      usage: (usage) => log.emit({ type: "usage.updated", usage: this.#usageWithWindow(live, usage) }),
+      delta: (itemId, field, append) => {
+        if (!active.detached && live.known.has(itemId)) log.emit({ type: "item.delta", itemId, field, append });
+      },
+      usage: (usage) => {
+        if (!active.detached) log.emit({ type: "usage.updated", usage: this.#usageWithWindow(live, usage) });
+      },
       limits: (windows) => this.#mergeLimits(instanceId, windows),
-      notice: (level, text, code) => this.#notice(log.id, level, text, code),
+      notice: (level, text, code) => {
+        if (!active.detached) this.#notice(log.id, level, text, code);
+      },
       newItemId: (prefix = "i") => newId(prefix),
       now: nowIso,
       requestApproval: (request) => {
+        // Nobody can answer for a turn that is over: the runtime is told to stop.
+        if (active.detached) return Promise.resolve({ decision: "cancel" });
         const requestId = request.requestId ?? newId("ap");
         const item: ApprovalRequestItem = {
           id: newId("apr"),
@@ -1228,6 +1276,7 @@ export class SessionManager {
         return this.#await(live, requestId, item, "approval", request.fullAccessAllows);
       },
       requestUserInput: (request) => {
+        if (active.detached) return Promise.resolve({ decision: "cancel" });
         const requestId = request.requestId ?? newId("q");
         const item: UserInputRequestItem = {
           id: newId("uir"),
@@ -1315,6 +1364,9 @@ export class SessionManager {
 }
 
 const MAX_SCHEDULE_AHEAD_MS = 8 * 24 * 60 * 60 * 1000;
+/** How long a runtime gets to end its turn after a Stop. Vendors' interrupts answer within a second or two. */
+const STOP_GRACE_MS = 10_000;
+const FORCE_STOPPED_TEXT = "The agent did not stop when asked, so it was restarted. Nothing it had already changed was undone.";
 /** How long a stopped turn gets to write its ending before its log is closed. */
 const TURN_ENDING_GRACE_MS = 5_000;
 

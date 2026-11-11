@@ -92,6 +92,16 @@ async function runTurn(params) {
     });
   }
 
+  if (/stubborn/.test(text)) {
+    // A runtime that is alive but will not stop: it acknowledges turn/interrupt and keeps going.
+    notify("item/started", { threadId: thread, turnId, startedAtMs: Date.now(), item: { id: "m0", type: "agentMessage", text: "" } });
+    for (let i = 0; i < 600; i++) {
+      notify("item/agentMessage/delta", { threadId: thread, turnId, itemId: "m0", delta: "." });
+      await wait(10);
+    }
+    notify("item/completed", { threadId: thread, turnId, completedAtMs: Date.now(), item: { id: "m0", type: "agentMessage", text: "..." } });
+  }
+
   if (/slow/.test(text)) {
     notify("item/started", { threadId: thread, turnId, startedAtMs: Date.now(), item: { id: "m0", type: "agentMessage", text: "" } });
     for (let i = 0; i < 400 && !turn.interrupted && turn.steered.length === 0; i++) {

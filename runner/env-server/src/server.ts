@@ -71,6 +71,8 @@ export interface EnvServerOptions {
   allowedOrigins?: string[];
   /** Delta coalescing window (ms); default 50. */
   coalesceMs?: number;
+  /** How long a runtime gets to stop after a Stop before its turn is ended without it; default 10 s. */
+  stopGraceMs?: number;
   /** Test seams. */
   searchDirs?: string[];
   claudeQuery?: ClaudeQueryFn;
@@ -184,6 +186,7 @@ export async function startEnvServer(options: EnvServerOptions = {}): Promise<En
     logger,
     baseUrl: () => `http://127.0.0.1:${port}`,
     ...(options.coalesceMs !== undefined ? { coalesceMs: options.coalesceMs } : {}),
+    ...(options.stopGraceMs !== undefined ? { stopGraceMs: options.stopGraceMs } : {}),
   });
   const removeSubagentTools = registerSubagentTools(mcp, sessions);
   const conversations = new ConversationHub({
