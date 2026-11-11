@@ -1198,7 +1198,11 @@ export class AgentSession {
   /** Type errors in files just edited under `cwd`; null when off or there is nothing to say. */
   private async afterEdit(cwd: string, absPaths: string[]): Promise<string | null> {
     if (this.diagnosticsOptions === false) return null;
-    const root = projectRootOf(cwd);
+    // File tools canonicalize mutated paths through realpath before returning
+    // them. Match that form here too: macOS /tmp and /var/folders are aliases,
+    // and comparing paths from both spellings makes nearestTsconfig treat an
+    // edited file as outside the workspace.
+    const root = projectRootOf(fs.realpathSync(cwd));
     let checker = this.diagnostics.get(root);
     if (!checker) {
       // Each warm language service holds a project in memory; keep a few.
