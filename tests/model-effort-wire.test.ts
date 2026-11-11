@@ -298,6 +298,7 @@ test("the native manifest carries each model's exact tiers, Instant flag and def
 type AnthropicDoc = { tiers: string[]; apiDefault: "high" | "medium"; instant: "disabled" | "between_tools" | "omit" | null; manual?: true };
 const ALL5 = ["low", "medium", "high", "xhigh", "max"];
 const ANTHROPIC_DOCS: Record<string, AnthropicDoc> = {
+  "claude-fable-5-2": { tiers: ALL5, apiDefault: "high", instant: null },
   "claude-fable-5-1": { tiers: ALL5, apiDefault: "high", instant: null },
   "claude-fable-5": { tiers: ALL5, apiDefault: "high", instant: null },
   "claude-opus-5-5": { tiers: ALL5, apiDefault: "medium", instant: null },

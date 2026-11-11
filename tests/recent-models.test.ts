@@ -7,11 +7,12 @@ import { defaultReasoning, reasoningCaps } from "../src/lib/model-metrics";
 function model(id: string) { const value = resolveModel(id); assert.ok(value, id); return value; }
 
 test("September models retain exact provider IDs and current status", () => {
-  for (const id of ["anthropic:claude-fable-5-1", "google:gemini-3.8-flash", "xai:grok-4.7"]) {
+  for (const id of ["anthropic:claude-fable-5-2", "google:gemini-3.8-flash", "xai:grok-4.7"]) {
     const entry = model(id);
     assert.equal(entry.id, id);
     assert.equal(entry.status, "current");
   }
+  assert.equal(model("anthropic:claude-fable-5-1").status, "legacy"); // superseded by Fable 5.2 (2026-11-09)
   assert.equal(model("xai:grok-4.6").status, "legacy"); // superseded by Grok 4.7 (2026-09-21)
 });
 test("Fable 5.1 cache discount does not reprice Fable 5", () => {
@@ -19,6 +20,11 @@ test("Fable 5.1 cache discount does not reprice Fable 5", () => {
     input: 10, output: 50, cacheRead: 0.25, cacheWrite: 20, cacheWrite5m: 12.5, cacheWrite1h: 20,
   });
   assert.equal(tokenRate(model("anthropic:claude-fable-5")).cacheRead, 1);
+});
+test("Fable 5.2 is priced from the lab page: $8/$40, cache read 2.5%", () => {
+  assert.deepEqual(tokenRate(model("anthropic:claude-fable-5-2")), {
+    input: 8, output: 40, cacheRead: 0.2, cacheWrite: 16, cacheWrite5m: 10, cacheWrite1h: 16,
+  });
 });
 test("Gemini Flash promotional rates include cache reads", () => {
   // Pinned inside the promo window; gemini-promo-schedule.test.ts covers 2027.

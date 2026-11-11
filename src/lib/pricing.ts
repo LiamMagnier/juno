@@ -809,7 +809,7 @@ export function toolFeesUsd(
  */
 function anthropicCacheReadRatio(providerModel: string): number {
   const pm = providerModel.toLowerCase();
-  if (/(fable|mythos)-5-1/.test(pm)) return 0.025;
+  if (/(fable|mythos)-5-[12]/.test(pm)) return 0.025;
   if (pm.includes("opus-5-5") || pm.includes("sonnet-5-5")) return 0.05;
   return 0.1;
 }

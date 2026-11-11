@@ -343,8 +343,11 @@ export function trainsOnPrompts(model: Pick<ModelInfo, "trainsOnPrompts">): bool
  * or added at runtime from a provider's model list.
  */
 const CURATED: ModelInfo[] = [
+  // Claude Fable 5.2: added by models:sync on 2026-11-11 from https://platform.claude.com/docs/en/models/overview, https://platform.claude.com/docs/en/about-claude/pricing, https://platform.claude.com/docs/en/models/fable-5-2/overview.
+  // Price and limits are the page's; check the thinking ladder (model-metrics.ts reasoningCaps) and tool record by hand.
+  def({ provider: "anthropic", id: "claude-fable-5-2", name: "Claude Fable 5.2", family: "fable", status: "current", released: "2026-11", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_000_000, description: "For demanding reasoning and long-horizon agentic work." }),
   // —— Anthropic ——
-  def({ provider: "anthropic", id: "claude-fable-5-1", name: "Claude Fable 5.1", family: "fable", status: "current", released: "2026-09", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Anthropic's frontier model: deepest reasoning, long-horizon agents." }),
+  def({ provider: "anthropic", id: "claude-fable-5-1", name: "Claude Fable 5.1", family: "fable", status: "legacy", released: "2026-09", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Anthropic's frontier model: deepest reasoning, long-horizon agents." }),
   def({ provider: "anthropic", id: "claude-fable-5", name: "Claude Fable 5", family: "fable", status: "legacy", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Anthropic's frontier model: deepest reasoning, long-horizon agents." }),
   // Released 2026-09-22 and now on Anthropic's own model page, which
   // corrects the pre-launch Console read this entry was first curated from:
@@ -773,7 +776,7 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-image-2.6-flare", name: "GPT Image 2.6 Flare", family: "gpt-image-fast", status: "current", released: "2026-11", modality: "image", minPlan: "PRO", cost: 2, description: "OpenAI's newest fast image model, built for quick iteration." }),
   def({ provider: "openai", id: "gpt-image-2.5-sunburst", name: "GPT Image 2.5 Sunburst", family: "gpt-image", status: "legacy", released: "2026-09", modality: "image", minPlan: "PRO", cost: 3, description: "Precision-first: the highest quality and the most control over an edit." }),
   def({ provider: "openai", id: "gpt-image-2.5-flare", name: "GPT Image 2.5 Flare", family: "gpt-image-fast", status: "legacy", released: "2026-09", modality: "image", minPlan: "PRO", cost: 2, description: "The everyday default: GPT Image 2 quality at half the latency." }),
-  def({ provider: "openai", id: "gpt-image-2", name: "GPT Image 2", family: "gpt-image", status: "legacy", released: "2026-05", modality: "image", minPlan: "PRO", cost: 3, description: "OpenAI's state-of-the-art image generation and editing." }),
+  def({ provider: "openai", id: "gpt-image-2", name: "GPT Image 2", family: "gpt-image", status: "deprecated", released: "2026-05", modality: "image", minPlan: "PRO", cost: 3, deprecationNote: "Retires Feb 10, 2027. Use GPT Image 2.6 Sunburst", retiresOn: "2027-02-10", replacedBy: "openai:gpt-image-2.6-sunburst", description: "OpenAI's state-of-the-art image generation and editing." }),
   // gpt-image-1-mini and gpt-image-1.5: deprecated 2026-06-02, shutdown
   // 2026-12-01, replacement gpt-image-2.5-sunburst or -flare (now pointed at 2.6).
   def({ provider: "openai", id: "gpt-image-1-mini", name: "GPT Image 1 Mini", family: "gpt-image-mini", status: "deprecated", modality: "image", minPlan: "PRO", cost: 1, description: "Lower-cost OpenAI image generation and editing.", deprecationNote: "Retires Dec 1, 2026. Use GPT Image 2.6 Flare", retiresOn: "2026-12-01", replacedBy: "openai:gpt-image-2.6-flare" }),

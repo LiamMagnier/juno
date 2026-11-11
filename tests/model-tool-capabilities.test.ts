@@ -50,6 +50,7 @@ function signature(id: string, c: ModelToolCapabilities): string {
 }
 
 const TABLE = [
+  "anthropic:claude-fable-5-2 tools cc parallel:default final:none search ws:20250305 max:128",
   "anthropic:claude-fable-5-1 tools cc parallel:default final:none search ws:20260318 max:128",
   "anthropic:claude-fable-5 tools cc parallel:default final:none search ws:20250305 max:128",
   "anthropic:claude-opus-5-5 tools cc parallel:default final:none search ws:20260318 max:128",
