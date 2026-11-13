@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { AGENT_CONTROL_COPY } from "@/lib/agents/onboarding";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,8 @@ export function AgentThreadHeader({
   const listening = state === "listening" && !!levelRef;
   const [confirmRetire, setConfirmRetire] = React.useState(false);
   const [studio, setStudio] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const mutationPending = React.useRef(false);
 
   React.useEffect(() => {
     const face = faceRef.current;
@@ -92,19 +95,30 @@ export function AgentThreadHeader({
   const computerFeatureOn = agent.computer != null;
 
   const run = async (label: string, action: () => Promise<{ kind: string; message?: string }>) => {
-    const res = await action();
-    if (res.kind === "failed") {
-      toast.error(res.message ?? `Couldn’t ${label.toLowerCase()}.`);
+    if (mutationPending.current) return false;
+    mutationPending.current = true;
+    setSaving(true);
+    try {
+      const res = await action();
+      if (res.kind !== "ok") {
+        toast.error(res.message ?? `Couldn’t ${label.toLowerCase()}.`);
+        return false;
+      }
+      announceAgentsChanged();
+      return true;
+    } catch {
+      toast.error(`Couldn’t ${label.toLowerCase()}. Try again.`);
       return false;
+    } finally {
+      mutationPending.current = false;
+      setSaving(false);
     }
-    announceAgentsChanged();
-    return true;
   };
 
   const handlePauseResume = async () => {
     const nextStatus = agent.status === "paused" ? "active" : "paused";
     if (await run(nextStatus === "paused" ? "Pause" : "Resume", () => updateAgent(agent.id, { status: nextStatus }))) {
-      toast.success(nextStatus === "paused" ? `${agent.name} is paused.` : `${agent.name} is back.`);
+      toast.success(nextStatus === "paused" ? `${agent.name}: ${AGENT_CONTROL_COPY.paused}` : `${agent.name}: ${AGENT_CONTROL_COPY.resumed}`);
     }
   };
 
@@ -221,9 +235,9 @@ export function AgentThreadHeader({
             <Shapes className="size-4" aria-hidden="true" />
             Appearance
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => void handlePauseResume()} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground @[44rem]/bar:inline-flex">
+          <Button type="button" size="sm" variant="ghost" disabled={saving} aria-busy={saving || undefined} title={agent.status === "paused" ? AGENT_CONTROL_COPY.resumeHint : AGENT_CONTROL_COPY.pauseHint} aria-description={agent.status === "paused" ? AGENT_CONTROL_COPY.resumeHint : AGENT_CONTROL_COPY.pauseHint} onClick={() => void handlePauseResume()} className="hidden gap-1.5 px-2.5 font-normal text-muted-foreground hover:text-foreground @[44rem]/bar:inline-flex">
             {agent.status === "paused" ? <Play className="size-4" aria-hidden="true" /> : <Pause className="size-4" aria-hidden="true" />}
-            {agent.status === "paused" ? "Resume" : "Pause"}
+            {agent.status === "paused" ? AGENT_CONTROL_COPY.resumeLabel : AGENT_CONTROL_COPY.pauseLabel}
           </Button>
 
           <DropdownMenu>
@@ -233,6 +247,7 @@ export function AgentThreadHeader({
                 size="icon-sm"
                 variant="ghost"
                 aria-label={`More for ${agent.name}`}
+                disabled={saving}
                 className="text-muted-foreground hover:text-foreground"
               >
                 <MoreHorizontal className="size-4" aria-hidden="true" />
@@ -244,8 +259,8 @@ export function AgentThreadHeader({
               {roomy ? null : (
                 <>
                   <DropdownMenuItem onSelect={() => setStudio(true)}>Appearance</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => void handlePauseResume()}>
-                    {agent.status === "paused" ? "Resume" : "Pause"}
+                  <DropdownMenuItem aria-description={agent.status === "paused" ? AGENT_CONTROL_COPY.resumeHint : AGENT_CONTROL_COPY.pauseHint} onSelect={() => void handlePauseResume()}>
+                    {agent.status === "paused" ? AGENT_CONTROL_COPY.resumeLabel : AGENT_CONTROL_COPY.pauseLabel}
                   </DropdownMenuItem>
                 </>
               )}

@@ -271,6 +271,9 @@ public actor PreviewSender: NativeChatRequestSending {
         if let body = PreviewShowcaseServer.body(path: path, method: request.method.rawValue, query: request.queryItems) {
             return body
         }
+        if path == "/api/agents", request.method == .get {
+            return PreviewShowcaseServer.agentRoster(empty: empty)
+        }
         if let body = PreviewPracticeFixtures.body(for: request) {
             return body
         }

@@ -68,6 +68,12 @@ try {
   await capture(page, 'orbit-mobile-light.png');
   await visit('g=home-empty');
   console.log('Checking empty workspace');
+  await expect(page.getByRole('list', { name: 'Set up your first agent' }).getByRole('listitem')).toHaveCount(3);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await capture(page, 'orbit-first-agent-mobile.png');
+  await page.evaluate(() => { document.documentElement.style.fontSize = '24px'; });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'larger text keeps setup inside the phone');
+  await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
   await page.locator('.orbit-capability').filter({ hasText: 'Work on a schedule' }).click();
   await expect(page.getByRole('textbox', { name: /Describe a job/ })).toHaveValue(/timezone/);
   await page.setViewportSize({ width: 1280, height: 900 });

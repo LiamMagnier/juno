@@ -90,7 +90,7 @@ class FreezeScan(unittest.TestCase):
 class FreezeDeadline(unittest.TestCase):
     """freeze(): strict until FREEZE_SECONDS, the D rule only at the deadline."""
 
-    def run_freeze(self, scan):
+    def run_freeze(self, scan, signal_error=None):
         clock = FakeTime()
         calls = []
 
@@ -99,7 +99,7 @@ class FreezeDeadline(unittest.TestCase):
             return scan(clock.now - 1000.0, accept_pending_stop)
 
         stderr = io.StringIO()
-        with patch.object(launcher, "time", clock), patch.object(launcher.os, "kill"), \
+        with patch.object(launcher, "time", clock), patch.object(launcher.os, "kill", side_effect=signal_error), \
                 patch.object(launcher, "agent_tasks_not_stopped", fake_scan), contextlib.redirect_stderr(stderr):
             code = launcher.freeze()
         return code, calls, stderr.getvalue()
@@ -110,6 +110,22 @@ class FreezeDeadline(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertAlmostEqual(calls[0][0], launcher.FREEZE_PAUSE_SECONDS)
         self.assertFalse(calls[0][1])
+
+    def test_a_signal_permission_error_still_requires_a_clean_scan(self):
+        for error in (PermissionError(1, "Operation not permitted"), PermissionError(13, "Permission denied")):
+            with self.subTest(error=error.errno):
+                code, calls, _ = self.run_freeze(lambda at, lenient: [], signal_error=error)
+                self.assertEqual(code, 0)
+                self.assertEqual(len(calls), 1)
+                self.assertFalse(calls[0][1])
+
+    def test_a_signal_permission_error_never_accepts_a_running_agent(self):
+        code, calls, stderr = self.run_freeze(
+            lambda at, lenient: [7], signal_error=PermissionError(13, "Permission denied")
+        )
+        self.assertEqual(code, 3)
+        self.assertGreaterEqual(calls[-1][0], launcher.FREEZE_SECONDS)
+        self.assertIn("still running after the freeze", stderr)
 
     def test_a_task_that_stops_late_is_waited_for_with_the_strict_rule(self):
         code, calls, _ = self.run_freeze(lambda at, lenient: [7] if at < 1.0 else [])

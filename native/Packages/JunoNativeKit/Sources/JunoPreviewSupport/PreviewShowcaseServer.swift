@@ -12,6 +12,10 @@ enum PreviewShowcaseServer {
         return arguments[index + 1] == "showcase"
     }
 
+    static func agentRoster(empty: Bool) -> Data {
+        Data((empty ? #"{"agents":[]}"# : agents).utf8)
+    }
+
     static func body(path: String, method: String, query: [URLQueryItem] = []) -> Data? {
         guard isActive, method == "GET" else { return nil }
         if path == "/api/library" {
