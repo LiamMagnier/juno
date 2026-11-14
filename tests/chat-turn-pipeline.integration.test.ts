@@ -1698,6 +1698,8 @@ if (!DB_URL) {
     const { autoPaidTierProviders } = await import("@/lib/router/chat-inputs");
     health.__setProviderHealthForTests([]);
     const owners = process.env.OWNER_EMAILS;
+    const paidTiers = process.env.AUTO_ROUTER_PAID_TIER_PROVIDERS;
+    process.env.AUTO_ROUTER_PAID_TIER_PROVIDERS = "google";
     delete process.env.OWNER_EMAILS;
     // The offer after ONE failed attempt is the subject here. With the retry
     // before the first byte on, Auto would spend the boundary's one remaining
@@ -1717,10 +1719,9 @@ if (!DB_URL) {
         throw Object.assign(new Error("402 Insufficient Balance"), { status: 402, error: { message: "Insufficient Balance" } });
       };
       const terms = { paidTier: autoPaidTierProviders(), boundary: "eu_us_only" as const };
-      // The cheapest labs inside the boundary are confirmed down, so the
-      // cheapest offer overall falls outside it: only the boundary can keep
-      // the Auto offer in.
-      const confirmedDown = (provider: "anthropic" | "openai") => ({
+      // Keep one healthy lab inside the boundary after the failed US request.
+      // Qwen is the cheapest alternative overall but remains outside Auto.
+      const confirmedDown = (provider: "anthropic" | "openai" | "xai" | "google") => ({
         provider,
         healthy: false,
         checkedAt: Date.now(),
@@ -1729,7 +1730,7 @@ if (!DB_URL) {
         source: "probe" as const,
         recheckAt: null,
       });
-      const downLabs = [confirmedDown("anthropic"), confirmedDown("openai")];
+      const downLabs = [confirmedDown("anthropic"), confirmedDown("openai"), confirmedDown("xai")];
       health.__setProviderHealthForTests(downLabs);
 
       const onAuto = await chat({ message: "Hello?", model: AUTO_MODEL_ID });
@@ -1742,11 +1743,11 @@ if (!DB_URL) {
       assert.equal(autoDataUseVerdict(autoOffer, terms).eligible, true, `${autoOffer.id} clears the reader's Auto boundary`);
       assert.notEqual(autoOffer.provider, getModel(seen.at(-1)!)?.provider, "on a different lab from the one that failed");
 
-      // The same account choosing that model explicitly: its offer is held
+      // If the last in-boundary fallback is unavailable, the same account choosing that model explicitly: its offer is held
       // to the platform's training terms (the model row and the provider's
       // API terms) but not to the reader's Auto boundary, which governs only
       // what Auto picks, so here it is the cheaper model outside it.
-      health.__setProviderHealthForTests(downLabs);
+      health.__setProviderHealthForTests([...downLabs, confirmedDown("google")]);
       const explicit = await chat({ message: "Hello again?", model: seen.at(-1)! });
       const explicitError = explicit.frames.at(-1) as Frame & { suggestedModelId?: string };
       assert.equal(explicitError.type, "error", explicit.text.slice(-400));
@@ -1763,6 +1764,8 @@ if (!DB_URL) {
     } finally {
       delete process.env.CHAT_PRESTREAM_RETRY;
       health.__setProviderHealthForTests([]);
+      if (paidTiers === undefined) delete process.env.AUTO_ROUTER_PAID_TIER_PROVIDERS;
+      else process.env.AUTO_ROUTER_PAID_TIER_PROVIDERS = paidTiers;
       if (owners === undefined) delete process.env.OWNER_EMAILS;
       else process.env.OWNER_EMAILS = owners;
     }
