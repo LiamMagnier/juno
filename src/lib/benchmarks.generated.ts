@@ -19,12 +19,13 @@ export interface ModelBenchmark {
 }
 
 /** ISO timestamp of the last successful fetch (null = never fetched). */
-export const BENCHMARK_STAMP: string | null = "2026-11-05T12:19:33.011Z";
+export const BENCHMARK_STAMP: string | null = "2026-11-14T11:28:18.462Z";
 
 /** Canonical Juno model id → live leaderboard data. */
 export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "anthropic:claude-fable-5": { priceInPerMTok: 10, priceOutPerMTok: 50, source: "openrouter", slug: "anthropic/claude-fable-5" },
   "anthropic:claude-fable-5-1": { priceInPerMTok: 10, priceOutPerMTok: 50, source: "openrouter", slug: "anthropic/claude-fable-5.1" },
+  "anthropic:claude-fable-5-2": { priceInPerMTok: 8, priceOutPerMTok: 40, source: "openrouter", slug: "anthropic/claude-fable-5.2" },
   "anthropic:claude-haiku-4-5": { priceInPerMTok: 1, priceOutPerMTok: 5, source: "openrouter", slug: "anthropic/claude-haiku-4.5" },
   "anthropic:claude-haiku-5-5": { priceInPerMTok: 0.09999999999999999, priceOutPerMTok: 0.5, source: "openrouter", slug: "anthropic/claude-haiku-5.5" },
   "anthropic:claude-opus-4-5": { priceInPerMTok: 5, priceOutPerMTok: 25, source: "openrouter", slug: "anthropic/claude-opus-4.5" },
@@ -37,8 +38,8 @@ export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "anthropic:claude-sonnet-4-6": { priceInPerMTok: 3, priceOutPerMTok: 15, source: "openrouter", slug: "anthropic/claude-sonnet-4.6" },
   "anthropic:claude-sonnet-5": { priceInPerMTok: 2, priceOutPerMTok: 10, source: "openrouter", slug: "anthropic/claude-sonnet-5" },
   "anthropic:claude-sonnet-5-5": { priceInPerMTok: 2, priceOutPerMTok: 10, source: "openrouter", slug: "anthropic/claude-sonnet-5.5" },
-  "deepseek:deepseek-flash": { priceInPerMTok: 0.045, priceOutPerMTok: 0.5, source: "openrouter", slug: "deepseek/deepseek-v4.1-flash" },
-  "deepseek:deepseek-v4-pro": { priceInPerMTok: 1.5999999999999999, priceOutPerMTok: 3.1999999999999997, source: "openrouter", slug: "deepseek/deepseek-v4-pro" },
+  "deepseek:deepseek-flash": { priceInPerMTok: 0.050699999999999995, priceOutPerMTok: 0.20279999999999998, source: "openrouter", slug: "deepseek/deepseek-v4.1-flash" },
+  "deepseek:deepseek-v4-pro": { priceInPerMTok: 0.8999999999999999, priceOutPerMTok: 1.5, source: "openrouter", slug: "deepseek/deepseek-v4-pro" },
   "google:gemini-2.5-pro": { priceInPerMTok: 1.25, priceOutPerMTok: 10, source: "openrouter", slug: "google/gemini-2.5-pro" },
   "google:gemini-3-flash-preview": { priceInPerMTok: 0.5, priceOutPerMTok: 3, source: "openrouter", slug: "google/gemini-3-flash-preview" },
   "google:gemini-3.1-flash-lite": { priceInPerMTok: 0.25, priceOutPerMTok: 1.5, source: "openrouter", slug: "google/gemini-3.1-flash-lite" },
@@ -58,7 +59,7 @@ export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "mimo:mimo-v2.6-pro": { priceInPerMTok: 0.435, priceOutPerMTok: 0.87, source: "openrouter", slug: "xiaomi/mimo-v2.6-pro" },
   "mimo:mimo-v2.6-pro-ultraspeed": { priceInPerMTok: 4.35, priceOutPerMTok: 8.7, source: "openrouter", slug: "xiaomi/mimo-v2.6-pro-ultraspeed" },
   "minimax:MiniMax-M2.5": { priceInPerMTok: 0.27, priceOutPerMTok: 0.95, source: "openrouter", slug: "minimax/minimax-m2.5" },
-  "minimax:MiniMax-M2.7": { priceInPerMTok: 0.3, priceOutPerMTok: 1.2, source: "openrouter", slug: "minimax/minimax-m2.7" },
+  "minimax:MiniMax-M2.7": { priceInPerMTok: 0.21, priceOutPerMTok: 0.84, source: "openrouter", slug: "minimax/minimax-m2.7" },
   "minimax:MiniMax-M3": { priceInPerMTok: 0.3, priceOutPerMTok: 1.2, source: "openrouter", slug: "minimax/minimax-m3" },
   "minimax:MiniMax-M3.1-Flash": { priceInPerMTok: 0.15, priceOutPerMTok: 0.6, source: "openrouter", slug: "minimax/minimax-m3.1-flash" },
   "mistral:mistral-large-latest": { priceInPerMTok: 2, priceOutPerMTok: 6, source: "openrouter", slug: "mistralai/mistral-large" },
@@ -88,6 +89,7 @@ export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "openai:gpt-6-luna": { priceInPerMTok: 0.09999999999999999, priceOutPerMTok: 0.5, source: "openrouter", slug: "openai/gpt-6-luna" },
   "openai:gpt-6-sol": { priceInPerMTok: 2, priceOutPerMTok: 10, source: "openrouter", slug: "openai/gpt-6-sol" },
   "openai:gpt-6.1-sol": { priceInPerMTok: 2, priceOutPerMTok: 10, source: "openrouter", slug: "openai/gpt-6.1-sol" },
+  "openai:gpt-6.1-terra": { priceInPerMTok: 1, priceOutPerMTok: 5, source: "openrouter", slug: "openai/gpt-6.1-terra" },
   "openai:o3": { priceInPerMTok: 2, priceOutPerMTok: 8, source: "openrouter", slug: "openai/o3" },
   "qwen:qwen3-30b-a3b": { priceInPerMTok: 0.12, priceOutPerMTok: 0.5, source: "openrouter", slug: "qwen/qwen3-30b-a3b" },
   "qwen:qwen3.6-flash": { priceInPerMTok: 0.1875, priceOutPerMTok: 1.125, source: "openrouter", slug: "qwen/qwen3.6-flash" },
@@ -106,7 +108,7 @@ export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "xai:grok-4.6": { priceInPerMTok: 2, priceOutPerMTok: 6, source: "openrouter", slug: "x-ai/grok-4.6" },
   "xai:grok-4.7": { priceInPerMTok: 2, priceOutPerMTok: 6, source: "openrouter", slug: "x-ai/grok-4.7" },
   "xai:grok-build-0.1": { priceInPerMTok: 1, priceOutPerMTok: 2, source: "openrouter", slug: "x-ai/grok-build-0.1" },
-  "zhipu:glm-4.5-air": { priceInPerMTok: 0.13, priceOutPerMTok: 0.85, source: "openrouter", slug: "z-ai/glm-4.5-air" },
+  "zhipu:glm-4.5-air": { priceInPerMTok: 0.19999999999999998, priceOutPerMTok: 1.1, source: "openrouter", slug: "z-ai/glm-4.5-air" },
   "zhipu:glm-4.5v": { priceInPerMTok: 0.6, priceOutPerMTok: 1.7999999999999998, source: "openrouter", slug: "z-ai/glm-4.5v" },
   "zhipu:glm-4.6": { priceInPerMTok: 0.5, priceOutPerMTok: 2, source: "openrouter", slug: "z-ai/glm-4.6" },
   "zhipu:glm-4.6v": { priceInPerMTok: 0.3, priceOutPerMTok: 0.8999999999999999, source: "openrouter", slug: "z-ai/glm-4.6v" },
@@ -114,8 +116,9 @@ export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "zhipu:glm-4.7-flash": { priceInPerMTok: 0.060500000000000005, priceOutPerMTok: 0.39999999999999997, source: "openrouter", slug: "z-ai/glm-4.7-flash" },
   "zhipu:glm-5": { priceInPerMTok: 1, priceOutPerMTok: 3.1999999999999997, source: "openrouter", slug: "z-ai/glm-5" },
   "zhipu:glm-5.1": { priceInPerMTok: 1.4, priceOutPerMTok: 4.4, source: "openrouter", slug: "z-ai/glm-5.1" },
-  "zhipu:glm-5.2": { priceInPerMTok: 0.006, priceOutPerMTok: 6.8, source: "openrouter", slug: "z-ai/glm-5.2" },
-  "zhipu:glm-5.3": { priceInPerMTok: 0.0699, priceOutPerMTok: 1.4, source: "openrouter", slug: "z-ai/glm-5.3" },
-  "zhipu:glm-5.3-flash": { priceInPerMTok: 0.15, priceOutPerMTok: 0.5, source: "openrouter", slug: "z-ai/glm-5.3-flash" },
+  "zhipu:glm-5.2": { priceInPerMTok: 0.007, priceOutPerMTok: 6.8, source: "openrouter", slug: "z-ai/glm-5.2" },
+  "zhipu:glm-5.3": { priceInPerMTok: 0.08399999999999999, priceOutPerMTok: 3.5999999999999996, source: "openrouter", slug: "z-ai/glm-5.3" },
+  "zhipu:glm-5.3-flash": { priceInPerMTok: 0.0399, priceOutPerMTok: 0.0784, source: "openrouter", slug: "z-ai/glm-5.3-flash" },
   "zhipu:glm-5.3-flashx": { priceInPerMTok: 0.37, priceOutPerMTok: 1.25, source: "openrouter", slug: "z-ai/glm-5.3-flashx" },
+  "zhipu:glm-5.3-flashx-legal": { priceInPerMTok: 0.37, priceOutPerMTok: 1.25, source: "openrouter", slug: "z-ai/glm-5.3-flashx-legal" },
 };
