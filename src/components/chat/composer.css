@@ -558,6 +558,28 @@
   }
 }
 
+/* Keep the composer inside a short viewport as the draft grows. */
+@media (max-height: 560px) {
+  .chat-home {
+    flex: 1 0 0;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) auto auto;
+  }
+  .chat-home__greet {
+    align-self: stretch;
+    min-height: 0;
+    overflow: clip;
+    padding: 0;
+    margin-bottom: 0;
+  }
+  .chat-home__suggest {
+    padding-bottom: 0;
+  }
+  .chat-composer .context-composer-field {
+    max-height: 32dvh;
+  }
+}
+
 /* ——————————————————————————— The tray ——————————————————————————— */
 
 /* A shelf the home composer rests on (composer-tray.tsx): inset 14px each

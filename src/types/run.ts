@@ -149,10 +149,11 @@ export type RunFact =
   | { key: "model"; modelId: string; provider: string; label: string; routed?: boolean }
   | { key: "effort"; effort: "instant" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"; auto: boolean }
   | { key: "context"; historyMessages: number; attachments: number; projectFiles: number }
+  | { key: "context_usage"; inputTokens: number; cachedTokens: number | null; windowTokens: number }
   | { key: "tools"; offered: CanonicalToolId[]; nativeSearch: boolean; roundBudget: number }
   | { key: "connectors"; ready: Array<{ id: string; label: string; tools: number }>;
       failed: Array<{ id: string; label: string; reason: ConnectorFailure }> }
-  | { key: "memory" }   // payload in memoryReceipt
+  | { key: "memory"; summaryScope?: "account" | "project" }   // individual facts in memoryReceipt
   /** Research completion message only (SPEC §9.6.3). */
   | { key: "research"; runId: string; title: string; workedMs: number; cited: number; read: number;
       pages: number; leadModel: string; state: "completed" | "partially_completed" };

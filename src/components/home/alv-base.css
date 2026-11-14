@@ -115,6 +115,15 @@
   .alv-access-promise { animation: alv-enter var(--dur-emphasis) var(--alv-ease) var(--dur-emphasis) both; }
   .alv-access-main .alevr-auth-form { animation: alv-enter var(--dur-emphasis) var(--alv-ease) 120ms both; }
 }
+@media (max-width: 380px) {
+  .alv-access-main { padding-inline: 16px; }
+  .alv-access-head { gap: 8px; flex-wrap: wrap; }
+  .alv-access-main .alevr-auth-form { padding-block: 24px; }
+}
+@media (max-height: 560px) {
+  .alv-access-main .alevr-auth-form { padding-block: 24px; }
+  .alv-access-promise .alv-display { font-size: clamp(36px, 5vw, 64px); }
+}
 @media (max-width: 1023px) {
   .alv-access { grid-template-columns: minmax(0, 1fr); }
   .alv-access-panel { display: none; }

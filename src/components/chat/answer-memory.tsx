@@ -2,12 +2,15 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ChevronDown } from "@/components/ui/icons";
+import { ChevronDown, BookmarkPlus } from "@/components/ui/icons";
 import { ComposerIcons } from "@/lib/app-icons";
 import { MemoryFactRow } from "@/components/chat/memory-fact-row";
 import { answerMemory, answerMemoryLabel } from "@/lib/chat/memory-receipts";
 import { cn } from "@/lib/utils";
 import type { ClientActivityEvent } from "@/types/chat";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { receiptChip } from "@/components/chat/turn-receipt";
+import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
  * THE ANSWER'S MEMORY RECEIPT — which saved memories this answer was given,
@@ -29,29 +32,85 @@ export function AnswerMemory({
   activity,
   conversationId = null,
   className,
+  compact = false,
 }: {
   activity: readonly ClientActivityEvent[] | undefined;
   /** The chat this answer is in: a fact learned here says so instead of linking to itself. */
   conversationId?: string | null;
   className?: string;
+  compact?: boolean;
 }) {
   const memory = React.useMemo(() => answerMemory(activity), [activity]);
   const [open, setOpen] = React.useState(false);
   const listId = React.useId();
+  const reduceMotion = useReducedMotion();
   // Clip only while the fold moves, so focus outlines on the first and last
   // rows are not cut once it has opened (the SourcesPill note explains why).
   const [settled, setSettled] = React.useState(false);
   React.useEffect(() => {
-    if (!open) {
+    if (compact || !open) {
       setSettled(false);
       return;
     }
     const timer = window.setTimeout(() => setSettled(true), 240);
     return () => window.clearTimeout(timer);
-  }, [open]);
+  }, [compact, open]);
 
-  if (memory.used.length === 0 && memory.saved.length === 0 && memory.forgotten.length === 0) return null;
+  const hadMemoryContext = memory.used.length > 0 || !!memory.summaryScope;
+  if (!hadMemoryContext && memory.saved.length === 0 && memory.forgotten.length === 0) return null;
   const { kind, count, updated } = answerMemoryLabel(memory);
+
+  const details = (
+    <>
+      {hadMemoryContext && (
+        <section aria-label="Available to this answer">
+          <h4 className="text-caption font-medium text-muted-foreground">Available to this answer</h4>
+          {memory.summaryScope && <p className="py-2 text-ui text-foreground">{memory.summaryScope === "project" ? "Project memory summary" : "Account memory summary"}</p>}
+          {memory.used.length > 0 && <ul className="divide-y divide-border/60">
+            {memory.used.map((fact) => <MemoryFactRow key={fact.id} fact={fact} conversationId={conversationId} />)}
+          </ul>}
+        </section>
+      )}
+      {memory.saved.length > 0 && (
+        <section aria-label="Saved from this turn" className={cn(hadMemoryContext && "mt-2 border-t border-border/60 pt-3")}>
+          <h4 className="text-caption font-medium text-muted-foreground">Saved from this turn</h4>
+          <ul className="divide-y divide-border/60">
+            {memory.saved.map((fact) => <MemoryFactRow key={fact.id} fact={fact} saved />)}
+          </ul>
+        </section>
+      )}
+      {memory.forgotten.length > 0 && (
+        <section aria-label="Forgotten at your request" className={cn((hadMemoryContext || memory.saved.length > 0) && "mt-2 border-t border-border/60 pt-3")}>
+          <h4 className="text-caption font-medium text-muted-foreground">Forgotten at your request</h4>
+          <ul className="divide-y divide-border/60">
+            {memory.forgotten.map((statement) => (
+              <li key={statement} className="py-2 text-ui text-muted-foreground line-through decoration-muted-foreground/40">{statement}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <Link href="/memory" className="mt-1 inline-flex min-h-8 items-center rounded-xs text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline">
+        Manage memory
+      </Link>
+    </>
+  );
+
+  if (compact) {
+    const label = memory.saved.length || updated ? "Memory updated" : kind === "forgotten" ? "Forgotten" : "Memory";
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <button type="button" data-answer-memory="" className={cn(receiptChip, "max-w-full shrink-0 hover:bg-accent data-[state=open]:bg-accent motion-safe:transition-colors motion-safe:duration-fast coarse:min-h-11", className)}>
+            <BookmarkPlus aria-hidden="true" className="size-3.5 shrink-0" />
+            <span>{label}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent aria-label={label} align="start" sideOffset={8} animate={!reduceMotion} className="w-80 rounded-panel">
+          {details}
+        </PopoverContent>
+      </Popover>
+    );
+  }
 
   return (
     <div className={cn("mt-2", className)} data-answer-memory="">
@@ -73,7 +132,7 @@ export function AnswerMemory({
           <span className="font-mono text-caption tabular-nums text-muted-foreground">
             {count}
             <span className="sr-only"> </span>
-            <span className="sr-only">{count === 1 ? "memory used in this answer" : "memories used in this answer"}</span>
+            <span className="sr-only">{count === 1 ? "memory available to this answer" : "memories available to this answer"}</span>
           </span>
         )}
         {updated && (
@@ -100,47 +159,7 @@ export function AnswerMemory({
       >
         <div className={cn("min-h-0", settled ? "overflow-visible" : "overflow-hidden")} inert={!open}>
           <div className="mt-2 max-w-xl rounded-card border border-border/60 bg-card/60 px-3.5 pb-1.5 pt-3">
-            {memory.used.length > 0 && (
-              <section aria-label="Used in this answer">
-                <h4 className="text-caption font-medium text-muted-foreground">Used in this answer</h4>
-                <ul className="divide-y divide-border/60">
-                  {memory.used.map((fact) => (
-                    <MemoryFactRow key={fact.id} fact={fact} conversationId={conversationId} />
-                  ))}
-                </ul>
-              </section>
-            )}
-            {memory.saved.length > 0 && (
-              <section aria-label="Saved from this turn" className={cn(memory.used.length > 0 && "mt-2 border-t border-border/60 pt-3")}>
-                <h4 className="text-caption font-medium text-muted-foreground">Saved from this turn</h4>
-                <ul className="divide-y divide-border/60">
-                  {memory.saved.map((fact) => (
-                    <MemoryFactRow key={fact.id} fact={fact} saved />
-                  ))}
-                </ul>
-              </section>
-            )}
-            {memory.forgotten.length > 0 && (
-              <section
-                aria-label="Forgotten at your request"
-                className={cn((memory.used.length > 0 || memory.saved.length > 0) && "mt-2 border-t border-border/60 pt-3")}
-              >
-                <h4 className="text-caption font-medium text-muted-foreground">Forgotten at your request</h4>
-                <ul className="divide-y divide-border/60">
-                  {memory.forgotten.map((statement) => (
-                    <li key={statement} className="py-2 text-ui text-muted-foreground line-through decoration-muted-foreground/40">
-                      {statement}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            <Link
-              href="/memory"
-              className="mt-1 inline-flex min-h-8 items-center rounded-xs text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
-            >
-              Manage memory
-            </Link>
+            {details}
           </div>
         </div>
       </div>

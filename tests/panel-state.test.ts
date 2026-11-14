@@ -16,6 +16,7 @@ import {
   askToRunAgainSpec,
   canAskToRunAgain,
   clampLines,
+  toolPayloadPreview,
   contextLine,
   detailsModel,
   hasDetails,
@@ -476,6 +477,22 @@ test("Details: the model's window when both numbers are known, else the turn's i
   assert.deepEqual(legacy.model, { label: "Claude Fable 5.1", provider: null, routed: false });
   assert.deepEqual(legacy.context, { kind: "tokens", used: 900, window: 1_000_000 });
   assert.equal(hasDetails(detailsModel(view(), { promptTokens: null, model: null }, catalog)), false);
+});
+
+test("Details uses the measured request for context, even if the turn spent more input tokens", () => {
+  const contextUsage = { key: "context_usage", inputTokens: 50_000, cachedTokens: 28_000, windowTokens: 200_000 } as const;
+  const details = detailsModel(view({ facts: { memory: [], contextUsage } }), { promptTokens: 240_000, model: null }, () => null);
+  assert.deepEqual(details.context, { kind: "tokens", used: 50_000, window: 200_000 });
+});
+
+test("large tool payload previews stay bounded even when JSON is on a single line", () => {
+  const raw = JSON.stringify({ data: "🪐".repeat(4_000) });
+  const preview = toolPayloadPreview(raw, 12);
+  assert.ok(preview.head.length <= 1_200);
+  assert.ok(preview.truncated);
+  assert.doesNotMatch(preview.head, /[\uD800-\uDBFF]$/);
+  assert.deepEqual(toolPayloadPreview("first\nsecond\nthird", 2), { head: "first\nsecond", truncated: true });
+  assert.deepEqual(toolPayloadPreview("short", 2), { head: "short", truncated: false });
 });
 
 test("the tool list is phrases, never raw tool ids (INV-28)", () => {

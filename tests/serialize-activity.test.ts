@@ -185,5 +185,6 @@ test("run-record stays importable without server-only or node:crypto (harness ru
   const runtimeImports = source.split("\n").filter((line) => /^import (?!type )/.test(line)).join("\n");
   assert.doesNotMatch(runtimeImports, /action-approval"|node:crypto/);
   const serializers = readFileSync(path.join(process.cwd(), "src/lib/serializers.ts"), "utf8");
-  assert.match(serializers, /import \{ serializeActivity \} from "@\/lib\/chat\/run-record";/, "serializers.ts delegates to it");
+  assert.match(serializers, /import \{ serializeActivity as readActivity \} from "@\/lib\/chat\/run-record";/);
+  assert.match(serializers, /return readActivity\(raw\);/, "the decrypted message delegates to the shared parser");
 });

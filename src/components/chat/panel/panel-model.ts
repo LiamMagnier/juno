@@ -228,6 +228,14 @@ export function clampLines(text: string, max: number): { head: string; hidden: n
   return { head: lines.slice(0, max).join("\n"), hidden: lines.length - max };
 }
 
+/** Bound both multi-line output and single-line JSON while retaining the original for disclosure. */
+export function toolPayloadPreview(text: string, maxLines: number): { head: string; truncated: boolean } {
+  const { head, hidden } = clampLines(text, maxLines);
+  const limit = maxLines * 100;
+  const preview = head.slice(0, limit).replace(/[\uD800-\uDBFF]$/, "");
+  return { head: preview, truncated: hidden > 0 || preview.length < head.length };
+}
+
 /** A reasoning item's provider headline (`**Planning the search**` on its first line), shown as an h3. */
 export function splitHeadline(text: string): { headline: string | null; body: string } {
   const match = /^\*\*(.{3,80})\*\*[ \t]*(?:\n|$)/.exec(text.trimStart());
@@ -463,8 +471,8 @@ export function detailsModel(
   const effort = effortFact && effortFact.effort in PANEL_COPY.details.rung ? { rung: effortFact.effort, auto: effortFact.auto } : null;
 
   const contextFact = view.facts.context?.key === "context" ? view.facts.context : null;
-  const used = message.promptTokens;
-  const window = entry?.contextWindow;
+  const used = view.facts.contextUsage?.inputTokens ?? message.promptTokens;
+  const window = view.facts.contextUsage?.windowTokens ?? entry?.contextWindow;
   const context =
     used != null && used > 0 && window != null && window > 0
       ? ({ kind: "tokens", used, window } as const)

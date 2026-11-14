@@ -25,7 +25,7 @@ export function SearchField({
   const input = React.useRef<HTMLInputElement>(null);
   return (
     <div className={cn("relative min-w-0", className)}>
-      <span className="pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-muted-foreground" aria-hidden="true">
+      <span className="pointer-events-none absolute start-3 top-1/2 z-[1] -translate-y-1/2 text-muted-foreground" aria-hidden="true">
         {busy ? <Loader2 className="size-4 motion-safe:animate-spin" /> : <Search className="size-4" />}
       </span>
       <Input
@@ -43,13 +43,13 @@ export function SearchField({
         aria-label={label}
         aria-busy={busy || undefined}
         placeholder={placeholder}
-        className="pl-9 pr-11 [&::-webkit-search-cancel-button]:hidden"
+        className="rounded-full bg-secondary/60 pe-11 ps-9 [&::-webkit-search-cancel-button]:hidden"
       />
       {value && (
         <Pressable
           kind="icon"
           size="sm"
-          className="absolute right-1 top-1/2 -translate-y-1/2 coarse:right-0.5"
+          className="absolute end-1 top-1/2 -translate-y-1/2 coarse:end-0.5"
           aria-label={`Clear ${label.toLowerCase()}`}
           onClick={() => {
             onValueChange("");

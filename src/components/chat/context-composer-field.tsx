@@ -161,6 +161,8 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
 ) {
   const reduce = useReducedMotion() ?? false;
   const rootRef = React.useRef<HTMLDivElement>(null);
+  const [ready, setReady] = React.useState(false);
+  React.useLayoutEffect(() => setReady(true), []);
   const enterKeyHint = useEnterKeyHint();
   const composing = React.useRef(false);
   const lastReported = React.useRef<string | null>(null);
@@ -782,7 +784,7 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
         {...Object.fromEntries(Object.entries(aria).filter(([key]) => key.startsWith("aria-")))}
         ref={rootRef}
         id={id}
-        contentEditable={!disabled}
+        contentEditable={ready && !disabled}
         suppressContentEditableWarning
         // A combobox, as the textarea it replaces was: the field drives the
         // palette and names the row the arrows are on. No aria-multiline (a
@@ -799,7 +801,7 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
         aria-activedescendant={
           paletteOpen && items.length ? `${paletteId}-opt-${Math.min(active, items.length - 1)}` : aria["aria-activedescendant"]
         }
-        aria-disabled={disabled || undefined}
+        aria-disabled={(!ready || disabled) || undefined}
         data-placeholder={placeholder}
         // Drawn from the draft, not from `:empty`: a stray node in the editor
         // (a browser extension's, a restored <br>) hid the hint on a field
@@ -807,7 +809,7 @@ export const ContextComposerField = React.forwardRef<HTMLTextAreaElement, Props>
         data-empty={value === "" ? "" : undefined}
         className={cn(className, "context-composer-field whitespace-pre-wrap break-words")}
         style={style}
-        tabIndex={disabled ? -1 : 0}
+        tabIndex={ready && !disabled ? 0 : -1}
         spellCheck
         onInput={publish}
         onKeyDown={keyDown}

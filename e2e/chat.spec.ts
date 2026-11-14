@@ -120,7 +120,9 @@ test.describe("Chat workspace", () => {
     await expect(page.locator(".prose-juno").last()).toContainText(SUCCESS_TOKEN, { timeout: 30_000 });
     await expect(providerErrorSurface(page)).toHaveCount(0);
 
-    const sidebarLink = page.locator(`a[href="/chat/${conversationId}"]`).first();
+    const sidebarToggle = page.getByRole("button", { name: "Open menu", exact: true });
+    if (await sidebarToggle.isVisible()) await sidebarToggle.click();
+    const sidebarLink = page.locator(`a[href="/chat/${conversationId}"]:visible`).first();
     await expect(sidebarLink).toBeVisible({ timeout: 30_000 });
     await sidebarLink.click();
     await expect(page).toHaveURL(conversationUrl);
@@ -148,6 +150,81 @@ test.describe("Chat workspace", () => {
     } finally {
       await copiedTab.close();
     }
+  });
+
+  test("saved chat context usage survives a reload", async ({ page }, testInfo) => {
+    const prompt = `Context usage probe: reply with ${SUCCESS_TOKEN}.`;
+    const expectedInput = String(Math.ceil(prompt.length / 4));
+    await sendSuccessfulTurn(page, prompt);
+    await expect(page).toHaveURL(/\/chat\/[a-z0-9]+/i);
+
+    const meter = page.getByRole("button", { name: `${expectedInput} Context usage`, exact: true });
+    const details = page.getByRole("dialog", { name: "Context usage" });
+    const inputUsage = details.locator("dl > div").filter({ hasText: "Input tokens" }).locator("dd");
+    await meter.click();
+    await expect(inputUsage).toHaveText(expectedInput);
+    await expect(details.getByText("Cache hits", { exact: true })).toHaveCount(0);
+
+    await page.reload();
+    await meter.click();
+    await expect(inputUsage).toHaveText(expectedInput);
+    await page.screenshot({ path: testInfo.outputPath("desktop-context.png"), animations: "disabled" });
+  });
+
+  test("context opens as a phone sheet and returns keyboard focus", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 580 });
+    const prompt = `Mobile context probe: reply with ${SUCCESS_TOKEN}.`;
+    await sendSuccessfulTurn(page, prompt);
+    const meter = page.getByRole("button", { name: /Context usage/ });
+    await meter.focus();
+    await page.keyboard.press("Enter");
+    const details = page.getByRole("dialog", { name: "Context usage" });
+    await expect(details).toHaveAttribute("data-side", "bottom");
+    await expect(details.getByRole("button", { name: "Close context usage" })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("phone-context.png"), animations: "disabled" });
+    await page.keyboard.press("Escape");
+    await expect(details).toHaveCount(0);
+    await expect(meter).toBeFocused();
+  });
+
+  test("chat keeps model search and sending reachable in a short window", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 320, height: 430 });
+    const model = page.getByRole("button", { name: /^Model:/ });
+    await model.click();
+    const picker = page.getByRole("dialog", { name: "Models" });
+    const search = picker.getByRole("combobox", { name: "Search models" });
+    await expect(search).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath("short-model-picker.png"), animations: "disabled" });
+    await search.fill("no models match this query");
+    await expect(picker.getByText(/No models/)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(model).toBeFocused();
+
+    await composer(page).fill(Array.from({ length: 45 }, (_, i) => `Draft line ${i + 1}`).join("\n"));
+    await expect(composer(page)).toBeInViewport();
+    await expect(page.locator(".composer-primary-action")).toBeInViewport({ ratio: 1 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  });
+
+  test("model search selects a named model without dropping a draft", async ({ page }, testInfo) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.evaluate(() => localStorage.setItem("theme", "dark"));
+    await page.reload();
+    await composer(page).fill("Compare the forecast with actual revenue.");
+    const model = page.getByRole("button", { name: /^Model:/ });
+    await model.focus();
+    await page.keyboard.press("Enter");
+    const picker = page.getByRole("dialog", { name: "Models" });
+    const search = picker.getByRole("combobox", { name: "Search models" });
+    await search.fill("qwen3.7 flash");
+    await expect(picker.getByRole("option", { name: /^Qwen3\.7 Flash,/ }).first()).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("desktop-model-picker.png"), animations: "disabled" });
+    await search.press("Home");
+    await search.press("Enter");
+    await expect(picker).toHaveCount(0);
+    await expect(model).toHaveAccessibleName(/^Model: Qwen3\.7 Flash/);
+    await expect(model).toBeFocused();
+    await expect(composer(page)).toHaveText("Compare the forecast with actual revenue.");
   });
 
   test("typed provider failure renders a controlled error and retry action", async ({ page }) => {

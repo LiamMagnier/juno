@@ -227,8 +227,8 @@ export function ProductSwitch({
      * Still LINKS (see the note at the top of the file), still the plan gate
      * and the chord in the tooltip.
      */
-    <nav aria-label={`${PRODUCT_NAME} products`} className="w-full shrink-0 px-2">
-      <div className="grid grid-cols-2 gap-0.5 rounded-field bg-sidebar-accent/80 p-0.5">
+    <nav aria-label={`${PRODUCT_NAME} products`} className="w-full shrink-0 px-3">
+      <div className="grid grid-cols-2 gap-0.5 rounded-full bg-sidebar-accent/80 p-1">
         {PRODUCTS.map((product) => (
           <Segment
             key={product.id}
@@ -272,7 +272,7 @@ function Segment({
           // Primary navigation: a destination, so its glyph answers the pointer (icons.css).
           data-jicon-articulate={locked ? undefined : ""}
           className={cn(
-            "pressable jicon-trigger group relative flex h-7 items-center justify-center gap-1.5 rounded-control px-2 text-ui font-medium",
+            "pressable jicon-trigger group relative flex h-8 items-center justify-center gap-2 rounded-full px-2 text-ui font-medium",
             // `coarse:h-11`: 44px under a thumb, the drawer's own floor. The
             // track's `p-0.5` sits outside it, so nothing else grows.
             "motion-reduce:active:scale-100 coarse:h-11",
@@ -292,7 +292,7 @@ function Segment({
               aria-hidden="true"
               transition={thumbTransition}
               className="product-switch-thumb absolute inset-0"
-              style={{ borderRadius: 8 }}
+              style={{ borderRadius: 999 }}
             />
           )}
           <span className="relative flex size-4 items-center justify-center [&_svg]:size-4">

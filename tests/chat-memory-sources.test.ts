@@ -49,6 +49,18 @@ const SAVED = row({
 });
 const FORGOT = row({ title: "Forgotten", memoryWrite: { saved: [], forgotten: ["The user works at Acme."] } });
 
+test("a summary-only memory receipt survives reload without exposing the summary", () => {
+  const event = row({ fact: { key: "memory", summaryScope: "project" } });
+  const activity = serializeActivity([event]);
+  assert.equal(answerMemory(activity).summaryScope, "project");
+  assert.equal(answerMemoryLabel(answerMemory(activity)).kind, "used");
+  assert.equal(memoryWriteOf(activity), null);
+  assert.equal(serializeActivity([row({ fact: { key: "memory" } })])?.[0]?.fact?.key, "memory");
+  const html = renderToStaticMarkup(React.createElement(AnswerMemory, { activity: activity ?? undefined }));
+  assert.match(html, /Project memory summary/);
+  assert.doesNotMatch(html, /Forgotten/);
+});
+
 test("an answer's memory is read off its own activity, once per fact", () => {
   const memory = answerMemory([USED, SAVED, FORGOT, USED]);
   assert.deepEqual(memory.used.map((m) => m.id), ["m1", "m2"]);
@@ -115,12 +127,12 @@ test("the answer's receipt renders what was used and saved, with the actions", (
   assert.match(html, />Memory</);
   assert.match(html, />2</);
   assert.match(html, />updated</);
-  assert.match(html, />memories used in this answer</);
+  assert.match(html, />memories available to this answer</);
   assert.equal(
     renderToStaticMarkup(React.createElement(AnswerMemory, { activity: [SAVED] })).includes(">Memory updated<"),
     true,
   );
-  assert.match(html, /Used in this answer/);
+  assert.match(html, /Available to this answer/);
   assert.match(html, /Saved from this turn/);
   assert.match(html, /The user lives in Lisbon\./);
   assert.match(html, />Forget</);
@@ -171,11 +183,13 @@ test("the notice owns one timer per notice, cleared on unmount, and the chat key
   const turn = read("../src/lib/chat/turn/run-turn.ts");
   const save = turn.slice(turn.indexOf("await saveAutoMemories("), turn.indexOf("await forgetStatements("));
   assert.match(save, /onActivity: sendActivity/);
-  // The receipt sits under each finished answer.
+  // The finished web turn opens memory from its receipt strip.
   assert.match(
     read("../src/components/chat/message-item.tsx"),
-    /\{!message\.streaming && <AnswerMemory activity=\{view\.activity\} conversationId=\{message\.conversationId\} \/>\}/,
+    /showMemory=\{surface !== "code" && !privateMode\}/,
   );
+  assert.match(read("../src/components/chat/activity-timeline.tsx"), /showMemory && !streaming/);
+  assert.match(read("../src/components/chat/activity-timeline.tsx"), /<AnswerMemory activity=\{list\} conversationId=\{conversationId\} compact \/>/);
 });
 
 test("a linked fact opens on the memory page, lit, and editable on request", () => {

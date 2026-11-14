@@ -2,8 +2,7 @@
  * The user turn's bubble, in one string.
  *
  * FLAT_UI.md: the transcript stays flat, and the user bubble is the ONE tonal
- * fill in it — `bg-secondary` at `rounded-card`, no border, no shadow, with
- * the bottom-right corner tucked (`rounded-br-md`) toward the margin the
+ * fill in it, with the bottom-right corner tucked toward the margin the
  * message hangs from. This is the Claude / ChatGPT bubble: a shade of the
  * page, never a box with an edge.
  *
@@ -16,4 +15,4 @@
  * with a `leading-relaxed` of its own; the rung now carries both numbers.
  */
 export const USER_BUBBLE_CLASS =
-  "whitespace-pre-wrap rounded-card rounded-br-md bg-[hsl(var(--user-bubble))] px-4 py-2.5 text-reading";
+  "whitespace-pre-wrap rounded-composer bg-[hsl(var(--user-bubble))] px-4 py-2.5 text-reading";

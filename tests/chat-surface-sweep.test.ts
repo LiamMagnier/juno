@@ -268,7 +268,8 @@ test("a deprecated model's note is written from its date and replacement, like i
 
 test("the listbox holds only options and groups: Past models is an option row, not a <summary>", () => {
   const catalogue = read("src/components/chat/model-catalogue.tsx");
-  assert.doesNotMatch(catalogue, /<(summary|details)[\s\n]/);
+  const listbox = catalogue.slice(catalogue.indexOf('role="listbox"'), catalogue.indexOf('</ScrollFade>', catalogue.indexOf('role="listbox"')));
+  assert.doesNotMatch(listbox, /<(summary|details)[\s\n]/);
   const toggle = catalogue.slice(catalogue.indexOf("const renderLegacyToggle"), catalogue.indexOf("const renderRows"));
   assert.match(toggle, /role="option"/);
   assert.match(toggle, /aria-selected=\{false\}/);
@@ -311,7 +312,7 @@ test("the catalogue's popovers hand focus back sensibly", async () => {
   const selector = read("src/components/chat/model-selector.tsx");
   assert.match(selector, /aria-busy=\{busy \|\| undefined\}/);
   assert.doesNotMatch(selector, /disabled=\{busy\}/, "a busy retry keeps the focus it holds");
-  assert.match(selector, /returnFocusTo=\{thinking \? chipRef : undefined\}/);
+  assert.match(selector, /returnFocusTo=\{chipRef\}/);
 });
 
 test("the Pro switch is named for the setting and its tooltip names the press and its cost", async () => {

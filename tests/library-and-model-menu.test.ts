@@ -222,14 +222,11 @@ test("the client's view test mirrors the route's where", () => {
 const SELECTOR = readFileSync(new URL("../src/components/chat/model-selector.tsx", import.meta.url), "utf8");
 const CATALOGUE = readFileSync(new URL("../src/components/chat/model-catalogue.tsx", import.meta.url), "utf8");
 
-test("the chip opens thinking first for an effort model, and the catalogue directly for every other model", () => {
-  // Owner, 2026-10-03: a model with effort levels opens on the thinking slider,
-  // whose model name opens the catalogue; any other model (one effort, Auto,
-  // image, video, audio) opens the catalogue straight away.
-  assert.match(SELECTOR, /\{thinking \? \(/, "the chip's stage depends on whether there is a thinking control");
+test("the composer opens straight to the searchable model catalogue and includes the selected effort control", () => {
+  assert.match(SELECTOR, /\{thinking && !inComposer \? \(/, "only a non-composer effort trigger opens the slider first");
   assert.match(SELECTOR, /<EffortPanelContext\.Provider value=\{\{ modelName: [^}]*onOpenModels: openCatalogue \}\}>/, "the panel's model name opens the catalogue");
   assert.match(SELECTOR, /:\s*\(\s*<PopoverTrigger asChild>\{chip\}<\/PopoverTrigger>\s*\)\}/, "without thinking, the chip is the catalogue's trigger");
-  assert.doesNotMatch(SELECTOR, /<ModelCatalogue[\s\S]*thinking=\{thinking\}/, "the slider is not repeated in the catalogue");
+  assert.match(SELECTOR, /<ModelCatalogue[\s\S]*thinking=\{inComposer \? thinking : undefined\}/);
   // The favourites menu stays gone.
   assert.doesNotMatch(SELECTOR, /<ModelQuickMenu|quickListModels\(|>All models</);
   assert.doesNotMatch(readFileSync(new URL("../src/lib/model-picker.ts", import.meta.url), "utf8"), /quickListModels/);
@@ -244,5 +241,5 @@ test("the catalogue opens on the selected model's section, with thinking under t
   // The effort control sits at the foot of the list and keeps its own arrow keys.
   assert.match(CATALOGUE, /data-model-thinking=""/);
   assert.match(CATALOGUE, /closest\("\[data-model-thinking\]"\)\) return;/);
-  assert.match(CATALOGUE, /<EffortPanelContext\.Provider/);
+  assert.match(CATALOGUE, /<details data-model-thinking=""/);
 });

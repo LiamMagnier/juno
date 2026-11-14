@@ -415,7 +415,7 @@ function SectionMenu({
         aria-expanded={sheetOpen}
         onClick={() => setSheetOpen(true)}
         className={cn(
-          "group h-11 w-full min-w-0 items-center gap-2.5 rounded-control bg-foreground/[0.045] px-3 text-left text-body text-foreground outline-none transition-colors duration-fast ease-out-soft hover:bg-foreground/[0.07] active:bg-selected focus-visible:outline-none kbd-focus:shadow-[0_0_0_2px_hsl(var(--ring)/0.55)]",
+          "group h-11 w-full min-w-0 items-center gap-2.5 rounded-full border border-border/70 bg-card px-3.5 text-start text-body text-foreground outline-none transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-selected focus-visible:outline-none kbd-focus:shadow-[0_0_0_2px_hsl(var(--ring)/0.55)]",
           className
         )}
       >

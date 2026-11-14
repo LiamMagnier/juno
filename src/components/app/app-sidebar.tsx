@@ -34,7 +34,6 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { UserAvatar, UserMenu } from "@/components/app/user-menu";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
-import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { ContinuumMark } from "@/components/brand/continuum-mark";
 import { ArrowUpCircle } from "@/components/ui/icons";
 import { upgradeNudge } from "@/lib/billing/upgrade-nudge";
@@ -1226,9 +1225,7 @@ export function AppSidebar({
         : { label: `${usagePct}% used`, tone: "text-warning" };
   // The whole truth always rides the accessible name, so nothing a sighted
   // reader can see is lost to the truncation on that one line.
-  const accountLabel = `${user.name ?? user.email ?? "Account"}, ${plan.name} plan${
-    usagePct == null ? ", no usage cap" : `, ${usagePct}% of this month's usage`
-  }`;
+  const accountDescription = usagePct == null ? "No usage cap" : `${usagePct}% of this month's usage`;
 
   /*
    * The column's motion starts one frame after mount, for the reason the
@@ -1502,7 +1499,12 @@ export function AppSidebar({
                 <ContinuumMark size={14} tight tone="current" />
               ) : (
                 <motion.span initial={revealOnMount} animate={{ opacity: 1 }} transition={transition.base} className="flex items-center">
-                  <AlevrLockup height={14} tone="current" decorative />
+                  <span aria-hidden="true" className="flex items-center gap-2">
+                    <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-foreground text-background">
+                      <ContinuumMark size={14} tight tone="current" />
+                    </span>
+                    <span className="text-heading font-semibold tracking-tight">{PRODUCT_NAME}</span>
+                  </span>
                 </motion.span>
               )}
             </Link>
@@ -1731,6 +1733,61 @@ export function AppSidebar({
                       />
                     )}
 
+                    {/* ONE LIST, ONE HEADING: "Recent", drawn by the same
+                        `Section` as Pinned projects above it, so the two read
+                        as one family and fold the same way. It was four date
+                        folds — Today, Yesterday, Previous 7 days, Older —
+                        which put up to four headings into the busiest part of
+                        the column to say what the order of the rows already
+                        says: the newest is at the top.
+
+                        THE PINNED CHATS ARE ITS FIRST ROWS, each with its pin
+                        mark (ConversationRow's trailing pin), and not a
+                        "Pinned chats" section of their own (owner decision,
+                        2026-10-26): the extra heading kept Recent's first row
+                        off the first screen of a laptop-height window. Folding
+                        Recent folds them with it. */}
+                    {needsYouOnly ? null : recents.length > 0 ? (
+                      <Section
+                        label="Recent"
+                        isCollapsed={sectionCollapsed.recents}
+                        onToggleCollapse={() => toggleSection("recents")}
+                      >
+                        {visibleRecents.map((c) => (
+                          <ConversationRow
+                            key={c.id}
+                            conversation={c}
+                            active={c.id === activeConversationId}
+                            signal={rowSignals.get(c.id)}
+                            unread={crossUnread.has(c.id) && c.id !== activeConversationId}
+                            {...rowProps}
+                          />
+                        ))}
+                        {recents.length > recentsLimit && (
+                          <div ref={setSentinel} className="flex justify-center py-2" aria-hidden>
+                            <span className="skeleton h-2 w-16 rounded-full" />
+                          </div>
+                        )}
+                      </Section>
+                    ) : (
+                      live.length === 0 &&
+                      sidebarProjects.length === 0 && (
+                        /* LEFT, on the column's own text edge, and not
+                           centred. It was the only centred text in this
+                           panel — every heading, fold and title above it
+                           starts at the same vertical — so it floated in the
+                           middle of a left-aligned column and read as
+                           belonging to nothing. `py-8` went with it: eight
+                           above and eight below put it a third of the way
+                           down an empty list rather than under the thing it
+                           is about. */
+                        <p className="px-2 pb-2 pt-3 text-ui text-muted-foreground" aria-live="polite">
+                          Your recent chats will
+                          <br />
+                          appear here.
+                        </p>
+                      )
+                    )}
                     {/* AGENTS — the roster at a glance, above the filing. Each
                         row is a live face, so the column says which teammate
                         is working and which is waiting before a name is read
@@ -1772,7 +1829,7 @@ export function AppSidebar({
                             onClick={() => setSidebarOpen(false)}
                             prefetch={false}
                             aria-current={pathname === "/agents" ? "page" : undefined}
-                            aria-label={`${BRAND.orbit.label}, ${BRAND.orbit.description.toLowerCase()}${orbitCount > orbitLimit ? `, ${orbitCount} at work or just finished` : ""}`}
+                            aria-description={`${BRAND.orbit.description}${orbitCount > orbitLimit ? ", active or recently finished" : ""}`}
                             className={cn(
                               "group/orbit flex h-7 min-w-0 flex-1 items-center gap-2 rounded-control px-2 text-label transition-colors duration-fast ease-out-soft coarse:h-11",
                               pathname === "/agents" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -1877,61 +1934,6 @@ export function AppSidebar({
                       </Section>
                     )}
 
-                    {/* ONE LIST, ONE HEADING: "Recent", drawn by the same
-                        `Section` as Pinned projects above it, so the two read
-                        as one family and fold the same way. It was four date
-                        folds — Today, Yesterday, Previous 7 days, Older —
-                        which put up to four headings into the busiest part of
-                        the column to say what the order of the rows already
-                        says: the newest is at the top.
-
-                        THE PINNED CHATS ARE ITS FIRST ROWS, each with its pin
-                        mark (ConversationRow's trailing pin), and not a
-                        "Pinned chats" section of their own (owner decision,
-                        2026-10-26): the extra heading kept Recent's first row
-                        off the first screen of a laptop-height window. Folding
-                        Recent folds them with it. */}
-                    {needsYouOnly ? null : recents.length > 0 ? (
-                      <Section
-                        label="Recent"
-                        isCollapsed={sectionCollapsed.recents}
-                        onToggleCollapse={() => toggleSection("recents")}
-                      >
-                        {visibleRecents.map((c) => (
-                          <ConversationRow
-                            key={c.id}
-                            conversation={c}
-                            active={c.id === activeConversationId}
-                            signal={rowSignals.get(c.id)}
-                            unread={crossUnread.has(c.id) && c.id !== activeConversationId}
-                            {...rowProps}
-                          />
-                        ))}
-                        {recents.length > recentsLimit && (
-                          <div ref={setSentinel} className="flex justify-center py-2" aria-hidden>
-                            <span className="skeleton h-2 w-16 rounded-full" />
-                          </div>
-                        )}
-                      </Section>
-                    ) : (
-                      live.length === 0 &&
-                      sidebarProjects.length === 0 && (
-                        /* LEFT, on the column's own text edge, and not
-                           centred. It was the only centred text in this
-                           panel — every heading, fold and title above it
-                           starts at the same vertical — so it floated in the
-                           middle of a left-aligned column and read as
-                           belonging to nothing. `py-8` went with it: eight
-                           above and eight below put it a third of the way
-                           down an empty list rather than under the thing it
-                           is about. */
-                        <p className="px-2 pb-2 pt-3 text-ui text-muted-foreground" aria-live="polite">
-                          Your recent chats will
-                          <br />
-                          appear here.
-                        </p>
-                      )
-                    )}
                     {/* The Needs you live region (its note is at the top of
                         this list). Last, not first: as the first child it
                         took `first:mt-0` from whichever section opens the
@@ -2034,7 +2036,6 @@ export function AppSidebar({
               trigger={
                 <button
                   type="button"
-                  aria-label={accountLabel}
                   /* An open menu is drawn as the row's selected fill, the same
                      "you are here" the destinations above use. `-on-open`
                      because a className cannot read Radix's `data-state`. */
@@ -2042,7 +2043,7 @@ export function AppSidebar({
                 >
                   {/* The SAME avatar helper the menu this opens draws with, so
                       the person has one face in the footer and in the menu. */}
-                  <UserAvatar className="size-8" />
+                  <span aria-hidden="true"><UserAvatar className="size-8" /></span>
                   <motion.span
                     initial={revealOnMount}
                     animate={{ opacity: 1 }}
@@ -2067,6 +2068,7 @@ export function AppSidebar({
                       )}
                     </span>
                   </motion.span>
+                  <span className="sr-only"> {accountDescription}</span>
                   {/* A state mark, not an action: the up-down caret says
                       "this opens a menu" without claiming a direction, and
                       it inks up while the menu is open rather than flipping,
@@ -2338,7 +2340,7 @@ function AttentionRow({
         prefetch={false}
         data-row-link=""
         aria-current={active ? "page" : undefined}
-        aria-label={`${item.who}. ${item.ask}: ${what}`}
+        aria-description={`${item.who}. ${item.ask}.`}
         aria-keyshortcuts={conversation ? "Shift+F10" : undefined}
         title={`${item.who}. ${item.ask}: ${what}`}
         className={cn(
@@ -2365,7 +2367,7 @@ function AttentionRow({
           </span>
           <span
             className={cn(
-              "flex shrink-0 items-baseline font-sans text-label text-status-needs-you-ink",
+              "flex w-fit max-w-full shrink-0 items-baseline rounded-full bg-status-needs-you/[.07] px-1.5 font-sans text-label font-medium text-warning-foreground coarse:bg-transparent coarse:px-0",
               conversation && TRAILING_MARK_YIELDS
             )}
           >
@@ -2895,7 +2897,7 @@ function ConversationRow({
          finding is the one that is ABOUT to be active. */
       data-conversation-row={conversation.id}
       className={cn(
-        "group relative flex h-8 items-center rounded-control coarse:h-11",
+        "group relative flex h-8 items-center rounded-full coarse:h-11",
         LIST_ROW_TRANSITION,
         nested && "ml-4",
         listRowClass(!!active)
@@ -3191,7 +3193,7 @@ function AgentRow({ agent, active, onNavigate }: { agent: ClientAgent; active: b
         prefetch={false}
         data-row-link=""
         aria-current={active ? "page" : undefined}
-        aria-label={`${agent.name}, ${(word ?? AGENT_STATE_LABEL.idle).toLowerCase()}. ${sentence}`}
+        aria-description={sentence}
         className={cn("flex min-w-0 flex-1 items-center gap-2.5 px-2 text-nav font-normal", ROW_LINK_FOCUS)}
         title={sentence}
       >
@@ -3202,7 +3204,7 @@ function AgentRow({ agent, active, onNavigate }: { agent: ClientAgent; active: b
           {agent.name}
         </span>
         {word && (
-          <span aria-hidden="true" className="shrink-0 font-sans text-label font-normal text-muted-foreground transition-opacity duration-fast ease-out-soft">
+          <span className="shrink-0 font-sans text-label font-normal text-muted-foreground transition-opacity duration-fast ease-out-soft">
             {word}
           </span>
         )}

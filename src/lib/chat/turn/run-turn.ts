@@ -68,6 +68,7 @@ import { CHAT_SKILL_REFUSAL_MESSAGES, narrowRuntimeToolsForSkill, skillAppliedAc
 import { turnTaintReader } from "@/lib/chat/skill-draft-tool";
 import { contextActivityRows, type TurnContext } from "@/lib/chat/context-resolution";
 import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
+import { requestContextUsage, type ContextUsage } from "@/lib/chat/context-usage";
 import {
   INTERNAL_ERROR_FAILURE_CODE,
   PERSISTENCE_FAILED_FAILURE_CODE,
@@ -473,14 +474,16 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
     // can act on; naming the facts is what lets them notice a wrong one and
     // say so. Only sent when memory actually contributed — an empty line
     // every turn would train people to stop reading the trail.
-    if (memoryEnabled && memoryProfile.used.length > 0) {
+    if (memoryEnabled && (memoryProfile.used.length > 0 || memoryProfile.summary)) {
+      const summaryScope = memoryProfile.summary ? memoryProfile.summaryScope : undefined;
       sendActivity({
         kind: "context",
-        title: "Remembered about you",
-        detail: memoryReceiptDetail({
+        title: memoryProfile.used.length > 0 ? "Remembered about you" : "Read saved memory summary",
+        ...(summaryScope ? { fact: { key: "memory" as const, summaryScope } } : {}),
+        detail: memoryProfile.used.length > 0 ? memoryReceiptDetail({
           selected: memoryProfile.used,
           droppedForBudget: memoryProfile.droppedForBudget,
-        }),
+        }) : undefined,
         memoryReceipt: memoryProfile.used.map((memory) => ({
           id: memory.id,
           content: memory.content,
@@ -860,13 +863,16 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
         const label = activeConnectors.find((connector) => connector.id === id)?.label ?? id;
         sendActivity(connectorUnavailableRow({ label, reason: state }));
       };
-      // One provider request for this generation; `attempt` 2 is the retry
-      // before the first byte, which the request meter records as a retry.
-      // Reads the answering model and effort, which that retry may move.
+      let contextUsage: ContextUsage | null = null;
+      // A stream can make several requests for tool rounds. Attempt 2 can also
+      // change the answering model, so read its window when opening the stream.
       const openModelStream = (attempt: number) => streamChat({
         attempt,
         model: modelInfo,
         onRequestUsage: (usage) => acc.recordRequestUsage(usage),
+        onRequestRecord: (record) => {
+          contextUsage = requestContextUsage(record, modelInfo.contextWindow ?? 0);
+        },
         system: synthesisSystem,
         systemStablePrefix: baseSystemSections.stable,
         history: turnHistory,
@@ -963,6 +969,10 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
             generationController.signal
           )
         );
+        const smokeInput = acc.rawUsage({ promptChars: 0 }).input;
+        if (smokeInput && modelInfo.contextWindow) {
+          contextUsage = { key: "context_usage", inputTokens: smokeInput, cachedTokens: null, windowTokens: modelInfo.contextWindow };
+        }
       } else {
         // The model call, and at most one more if the provider rejected the
         // first before anything arrived (`retryBeforeFirstByte`). Counted on
@@ -1167,6 +1177,9 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
 
       if (usage.totalInput || usage.output) {
         sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
+      }
+      if (contextUsage) {
+        sendActivity({ kind: "usage", title: "Context usage recorded", fact: contextUsage });
       }
       appendFinishWarning(finishReason, sendActivity, acc.finishNote);
       sendActivity({

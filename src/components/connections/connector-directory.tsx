@@ -420,7 +420,7 @@ export function ConnectorDirectory({
   connectingId: string | null;
   /** Custom MCP servers: open one's tools, add a new one. */
   onManageCustom?: (id: string) => void;
-  onAddCustom?: () => void;
+  onAddCustom?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onConnectCustom?: (id: string) => void;
   /** A connector that just finished signing in, flashed once. */
   landedId?: string | null;
@@ -894,7 +894,7 @@ export function tileAnchor(id: string): string {
  * it alone answers the pointer: the recess firms up, the plus turns a
  * quarter. Pressing sinks it a touch.
  */
-function AddServerTile({ index: _index, onClick }: { index: number; onClick: () => void }) {
+function AddServerTile({ index: _index, onClick }: { index: number; onClick: React.MouseEventHandler<HTMLButtonElement> }) {
   return (
     <button
       type="button"

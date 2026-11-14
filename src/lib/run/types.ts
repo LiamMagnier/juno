@@ -28,6 +28,7 @@ export interface RunView {
   items: RunItem[];                    // chronological by seq
   tools: Extract<RunItem, { kind: "tool" }>[];
   facts: { model?: RunFact; effort?: RunFact; context?: RunFact; tools?: RunFact; connectors?: RunFact;
+           contextUsage?: Extract<RunFact, { key: "context_usage" }>;
            /** The research completion message's fact (SPEC §9.6.3): its line leads "Researched for". */
            research?: RunFact;
            memory: ClientMemoryReceipt[] };

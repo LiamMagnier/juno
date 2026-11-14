@@ -63,6 +63,7 @@
 .ui-dialog-header h2 { text-wrap: balance; letter-spacing: -0.025em; }
 .ui-dialog-header p { text-wrap: pretty; }
 .ui-dialog-footer { gap: 0.5rem; }
+.ui-dialog-header :is(h2, p) { overflow-wrap: anywhere; }
 
 /* Sticky offsets are measured inside the scroller's padding (every engine
    deflates the sticky rectangle by it), so a row pinned flush with the
@@ -88,6 +89,13 @@
   padding-bottom: var(--dialog-pad);
   padding-inline: var(--dialog-pad);
   background-color: hsl(var(--popover));
+}
+
+@media (max-height: 32rem) {
+  .ui-dialog-body .ui-dialog-header {
+    position: relative;
+    top: auto;
+  }
 }
 
 /* The band on each pinned row's inner side, in the panel's fill, so text

@@ -360,9 +360,9 @@ function approval(over: Partial<ClientActionApproval> = {}): ClientActionApprova
   } as ClientActionApproval;
 }
 
-test("the card heads the call as 'Slack · Post message' and keeps the identifier with what is sent", () => {
+test("the card names the Slack destination and keeps the identifier with what is sent", () => {
   const html = renderToStaticMarkup(React.createElement(ApprovalCard, { approval: approval() }));
-  assert.match(html, /<span class="font-medium text-foreground">Slack<\/span><span aria-hidden="true"> · <\/span><span class="sr-only">, <\/span>Post message/);
+  assert.match(html, /Post this to <bdi translate="no">#design<\/bdi> in Slack\?/);
   // The raw identifier is not in the visible heading; it waits behind "Exactly what will be sent".
   assert.doesNotMatch(html, /font-mono">slack__post_message/);
   const source = read("../src/components/chat/approval-card.tsx");

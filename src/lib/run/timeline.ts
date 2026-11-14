@@ -210,6 +210,9 @@ function recordFact(facts: RunView["facts"], fact: RunFact): void {
     case "context":
       facts.context = fact;
       break;
+    case "context_usage":
+      facts.contextUsage = fact;
+      break;
     case "research":
       facts.research = fact;
       break;

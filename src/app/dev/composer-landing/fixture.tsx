@@ -6,6 +6,14 @@ import * as React from "react";
 import { AppProvider } from "@/components/app/app-provider";
 import { DictationStageContext, dictationStageFromParam, type DictationStage } from "@/components/chat/composer-dictation-stage";
 import { Composer } from "@/components/chat/composer";
+import { ContextUsageMeter } from "@/components/chat/context-usage-meter";
+import { MessageList } from "@/components/chat/message-list";
+import { ThreadHeader, threadProjectClass } from "@/components/chat/thread-header";
+import { ConversationMoreMenu } from "@/components/chat/conversation-export-menu";
+import { Share2 } from "@/components/ui/icons";
+import { Pressable } from "@/components/ui/pressable";
+import { ShareDialog } from "@/components/share/share-dialog";
+import { renewalApproval, RENEWALS_PROJECT, RENEWALS_TITLE, RENEWALS_USAGE, RENEWAL_MESSAGES } from "./renewals";
 import { EmptyGreeting, HomeField, PrivateGreeting } from "@/components/chat/empty-state";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { loadMentionFixtures } from "./mention-fixtures";
@@ -311,27 +319,47 @@ function PrivateView(common: React.ComponentProps<typeof Composer>) {
   );
 }
 
-/** A thread's foot: a stub transcript and the docked composer, as the column holds it. */
+/** The shell preview uses the same transcript and controls as a saved chat. */
+function RenewalThread(common: React.ComponentProps<typeof Composer>) {
+  const [approval] = React.useState(() => renewalApproval(new Date()));
+  const [shareOpen, setShareOpen] = React.useState(false);
+  const messages = React.useMemo(() => [RENEWAL_MESSAGES[0], { ...RENEWAL_MESSAGES[1], approvals: [approval] }], [approval]);
+  return (
+    <section className="flex h-full min-h-0 flex-col overflow-hidden" data-fixture="renewals">
+      <ThreadHeader
+        title={RENEWALS_TITLE}
+        project={<span className={threadProjectClass}>{RENEWALS_PROJECT}</span>}
+        actions={<>
+          <Pressable kind="chip" aria-label="Share chat" className="min-h-8 gap-1.5 rounded-full bg-secondary px-3 text-ui text-foreground hover:bg-accent" onClick={() => setShareOpen(true)}>
+            <Share2 className="size-4" /><span>Share</span>
+          </Pressable>
+          <ConversationMoreMenu onExport={() => {}} />
+        </>}
+      />
+      <MessageList messages={messages} busy={false} artifacts={[]} onOpenArtifact={() => {}} onFeedback={() => {}} canFeedback={() => false} conversationTitle={RENEWALS_TITLE} titleShownInHeader />
+      <Composer {...common} conversationId="c-active" frame="dock" placeholder={`Reply to ${PRODUCT_NAME}`} contextUsage={<ContextUsageMeter usage={RENEWALS_USAGE} />} />
+      {shareOpen && <ShareDialog kind="CHAT" open={shareOpen} onOpenChange={setShareOpen} transcript={() => null} />}
+    </section>
+  );
+}
+
 function DockView(common: React.ComponentProps<typeof Composer>) {
   return (
     <section data-fixture="dock" className="flex min-h-dvh flex-col">
-      <div className="page-gutter mx-auto w-full max-w-3xl flex-1 space-y-4 pt-16 text-body text-foreground">
-        <p className={cn(USER_BUBBLE_CLASS, "ml-auto w-fit max-w-[80%]")}>Compare the Q3 forecast with what Stripe shows for renewals.</p>
-        <p>Stripe shows €412,000 of the €438,000 the forecast expects from renewals. Three accounts make up the gap.</p>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="page-gutter mx-auto w-full max-w-3xl space-y-5 pt-16 text-body text-foreground">
+          <p className={cn(USER_BUBBLE_CLASS, "ms-auto w-fit max-w-[80%]")}>Compare the Q3 forecast with what Stripe shows for renewals.</p>
+          <p>Stripe shows €412,000 of the €438,000 the forecast expects from renewals. Three accounts make up the gap.</p>
+        </div>
       </div>
       <div className="relative isolate w-full">
-        <Composer
-          {...common}
-          conversationId="conv-dev"
-          frame="dock"
-          footnote={<p className="hidden sm:block">{`${PRODUCT_NAME} can make mistakes. Check important info.`}</p>}
-        />
+        <Composer {...common} conversationId="conv-dev" frame="dock" footnote={<p className="hidden sm:block">{`${PRODUCT_NAME} can make mistakes. Check important info.`}</p>} />
       </div>
     </section>
   );
 }
 
-export function ComposerLandingFixture() {
+export function ComposerLandingFixture({ inShell = false }: { inShell?: boolean }) {
   const [model, setModel] = React.useState<ModelId>(AUTO_MODEL_ID);
   const [effort, setEffort] = React.useState<ReasoningEffort | null>(null);
   // The chat composer's task mode (G15); `?taskMode=permissive` opens on one.
@@ -367,6 +395,8 @@ export function ComposerLandingFixture() {
       <TaskModeChip chosen={taskMode} effective={taskMode ?? "balanced"} narrowedBy={null} onChange={setTaskMode} />
     ),
   };
+
+  if (inShell) return <RenewalThread {...common} />;
 
   return (
     <AppProvider bootstrap={BOOTSTRAP}>

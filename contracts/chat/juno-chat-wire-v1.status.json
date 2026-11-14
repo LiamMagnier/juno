@@ -1,9 +1,10 @@
 {
   "$comment": "The native status of every field on the chat wire (POST /api/chat and its SSE frames). Read by scripts/generate-chat-wire-contract.ts, which stamps each status into contracts/chat/juno-chat-wire-v1.schema.json as `x-native` and fails `npm run native:wire:check` on a field nobody has classified. native: the Swift apps send or read it today (checked against the Swift sources under `swift`). planned: native means to; the gap is known. web-only: only the web sends or reads it, by decision; the note says why. A field under a native parent must be listed; a field under a planned or web-only parent inherits it. `nativeOnly` lists keys the Swift sends or reads that today's web does not define; each fails the check once the web defines it, so it moves into `fields`.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "changes": {
     "1.0.0": "The wire as generated before the contract carried a version.",
-    "1.1.0": "Additive: the error frame gains errorClass, retryable, retryAfterSeconds, suggestedModelId and suggestedModelName (ChatErrorRecovery). errorClass reports both of the platform's provider-account faults (a rejected key, no credit) as one class, account, and never which. A 1.0 client ignores them; the Swift decoder reads them lossily and accepts 1.0 frames without them. The native API contract version (contracts/openapi, x-juno-contract-version) does not move: installed apps compare it for equality and an additive field must not sign them out."
+    "1.1.0": "Additive: the error frame gains errorClass, retryable, retryAfterSeconds, suggestedModelId and suggestedModelName (ChatErrorRecovery). errorClass reports both of the platform's provider-account faults (a rejected key, no credit) as one class, account, and never which. A 1.0 client ignores them; the Swift decoder reads them lossily and accepts 1.0 frames without them. The native API contract version (contracts/openapi, x-juno-contract-version) does not move: installed apps compare it for equality and an additive field must not sign them out.",
+    "1.2.0": "Additive: chat activity can include provider-reported context usage and the scope of a saved memory summary."
   },
   "fields": {
     "request.conversationId": "native",
@@ -759,6 +760,22 @@
     "ClientActivityEvent.fact.projectFiles": {
       "status": "planned",
       "note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+    },
+    "ClientActivityEvent.fact.inputTokens": {
+      "status": "web-only",
+      "note": "Input tokens from the last successful model request, displayed in the web composer."
+    },
+    "ClientActivityEvent.fact.cachedTokens": {
+      "status": "web-only",
+      "note": "Provider-reported cache hits displayed in the web composer when available."
+    },
+    "ClientActivityEvent.fact.windowTokens": {
+      "status": "web-only",
+      "note": "Context limit of the model used by the request."
+    },
+    "ClientActivityEvent.fact.summaryScope": {
+      "status": "web-only",
+      "note": "Whether a stored summary supplied to the prompt came from account or project memory."
     },
     "ClientActivityEvent.fact.pages": {
       "status": "planned",

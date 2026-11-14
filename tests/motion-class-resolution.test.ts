@@ -51,7 +51,7 @@ test("every animate-* class in src/ resolves to a compiled animation", () => {
 
 test("the sent bubble rises in; the assistant root does not animate (spec C1)", () => {
   const item = readFileSync(path.join(ROOT, "src/components/chat/message-item.tsx"), "utf8");
-  assert.match(item, /cn\("group flex flex-col items-end", animateIn && "animate-rise-user"\)/);
+  assert.match(item, /cn\("group relative flex flex-col items-end", animateIn && "animate-rise-user"\)/);
   assert.match(item, /className="group flex scroll-mt-24 flex-col gap-2"/, "the assistant root animates again");
   assert.doesNotMatch(item, /animate-turn-in/);
   // The edit bubble's fade is Tier A (opacity only): it plays under reduced motion too.

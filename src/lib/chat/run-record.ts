@@ -56,6 +56,12 @@ import {
   type ToolWebDetail,
 } from "@/types/run";
 
+import { readContextReceipt } from "@/lib/chat/context-tokens";
+import { readRoutineProposal } from "@/lib/work/routine-proposal";
+import { readSkillDraft } from "@/lib/skills/teach";
+import { readImageGeneration } from "@/lib/media/image-generation";
+import { isCodeToolStatus } from "@/lib/agent-protocol/code-task-transcript";
+
 // ── Vocabularies ─────────────────────────────────────────────────────────────
 
 export const ACTIVITY_KINDS: ReadonlySet<ActivityKind> = new Set<ActivityKind>([
@@ -493,6 +499,14 @@ export function readRunFact(raw: unknown): RunFact | undefined {
         attachments: readInteger(raw.attachments, 0) ?? 0,
         projectFiles: readInteger(raw.projectFiles, 0) ?? 0,
       };
+    case "context_usage": {
+      const inputTokens = readInteger(raw.inputTokens, 1);
+      const cachedTokens = raw.cachedTokens === null ? null : readInteger(raw.cachedTokens, 0);
+      const windowTokens = readInteger(raw.windowTokens, 1);
+      if (inputTokens === undefined || cachedTokens === undefined || windowTokens === undefined) return undefined;
+      if (cachedTokens !== null && cachedTokens > inputTokens) return undefined;
+      return { key: "context_usage", inputTokens, cachedTokens, windowTokens };
+    }
     case "tools":
       return {
         key: "tools",
@@ -504,8 +518,10 @@ export function readRunFact(raw: unknown): RunFact | undefined {
       };
     case "connectors":
       return readConnectorFacts(raw);
-    case "memory":
-      return { key: "memory" };
+    case "memory": {
+      const summaryScope = readEnum(raw.summaryScope, ["account", "project"] as const);
+      return summaryScope ? { key: "memory", summaryScope } : { key: "memory" };
+    }
     case "research": {
       const runId = readString(raw.runId, MAX_ID_CHARS);
       const title = readLine(raw.title, 2_000);
@@ -620,6 +636,59 @@ export function readArtifactVerification(raw: unknown): ArtifactVerification | u
   return { version: 1, status, attempts, checked, accepted, refused, problems, repairs };
 }
 
+function readAgentChange(raw: unknown): ClientActivityEvent["agentChange"] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.agentId !== "string" || typeof r.agentName !== "string" || typeof r.summary !== "string") {
+    return undefined;
+  }
+  const rawChanges = Array.isArray(r.changes) ? r.changes : [];
+  const changes = rawChanges.flatMap((c) => {
+    if (!c || typeof c !== "object" || Array.isArray(c)) return [];
+    const item = c as Record<string, unknown>;
+    if (typeof item.label !== "string" || typeof item.to !== "string") return [];
+    return [
+      {
+        label: item.label,
+        ...(typeof item.from === "string" ? { from: item.from } : {}),
+        to: item.to,
+      },
+    ];
+  });
+  const setupChange = readSetupChangeRef(r.setupChange);
+  return {
+    agentId: r.agentId,
+    agentName: r.agentName,
+    ...(typeof r.eventId === "string" ? { eventId: r.eventId } : {}),
+    summary: r.summary,
+    changes,
+    ...(typeof r.undone === "boolean" ? { undone: r.undone } : {}),
+    ...(setupChange ? { setupChange } : {}),
+  };
+}
+
+/** A persisted setup-change reference, field by field, or nothing. */
+function readSetupChangeRef(raw: unknown): NonNullable<ClientActivityEvent["agentChange"]>["setupChange"] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const text = (key: string) => (typeof r[key] === "string" ? (r[key] as string) : null);
+  const id = text("id");
+  const kind = text("kind");
+  const digest = text("digest");
+  if (!id || !kind || !digest) return undefined;
+  return {
+    id,
+    kind,
+    kindLabel: text("kindLabel") ?? "Setup",
+    direction: text("direction") ?? "neutral",
+    directionSentence: text("directionSentence") ?? "",
+    affects: text("affects") ?? "",
+    status: text("status") ?? "proposed",
+    detail: text("detail"),
+    digest,
+  };
+}
+
 // ── The row ──────────────────────────────────────────────────────────────────
 
 /**
@@ -661,6 +730,13 @@ export function serializeActivity(decrypted: unknown): ClientActivityEvent[] | u
     const exitCode =
       typeof record.exitCode === "number" && Number.isFinite(record.exitCode) ? record.exitCode : undefined;
 
+    const toolStatus = isCodeToolStatus(record.toolStatus) ? record.toolStatus : undefined;
+    const agentChange = readAgentChange(record.agentChange);
+    const contextReceipt = readContextReceipt(record.contextReceipt);
+    const routineProposal = readRoutineProposal(record.routineProposal);
+    const skillDraft = readSkillDraft(record.skillDraft);
+    const imageGeneration = readImageGeneration(record.imageGeneration);
+
     // What the rework adds (SPEC §2.4), each read by its own tolerant reader.
     const memoryReceipt = readMemoryReceipt(record.memoryReceipt);
     const memoryWrite = readMemoryWrite(record.memoryWrite);
@@ -687,6 +763,12 @@ export function serializeActivity(decrypted: unknown): ClientActivityEvent[] | u
         ...(artifactVerification ? { artifactVerification } : {}),
         ...(patch ? { patch } : {}),
         ...(exitCode !== undefined ? { exitCode } : {}),
+        ...(toolStatus ? { toolStatus } : {}),
+        ...(agentChange ? { agentChange } : {}),
+        ...(contextReceipt ? { contextReceipt } : {}),
+        ...(routineProposal ? { routineProposal } : {}),
+        ...(skillDraft ? { skillDraft } : {}),
+        ...(imageGeneration ? { imageGeneration } : {}),
         ...(seq !== undefined ? { seq } : {}),
         ...(round !== undefined ? { round } : {}),
         ...(call ? { call } : {}),

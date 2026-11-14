@@ -93,6 +93,28 @@ test("a typed state is never retired by a transition", () => {
   assert.equal(statesResolvedBy({ content: "The user works at Hooli.", observedAt: at("2026-06-01T00:00:00Z") }, [typed]).length, 0);
 });
 
+test("a clear update about one named pet retires only that pet's inferred current state", () => {
+  const biscuit = row("The user has a dog called Biscuit.", "2026-01-10T10:00:00Z");
+  const other = row("The user has a dog called Waffles.", "2026-01-10T10:00:00Z");
+  const otherSpecies = row("The user has a cat called Biscuit.", "2026-01-10T10:00:00Z");
+  const typed = { ...biscuit, id: "typed", source: "MANUAL" as const };
+  const project = { ...biscuit, id: "project", projectId: "project-1" };
+  const observedAt = at("2026-05-20T10:00:00Z");
+  const content = "The user’s dog Biscuit passed away in May.";
+  const updates = statesResolvedBy({ content, observedAt }, [biscuit, other, otherSpecies, typed, project]);
+  assert.deepEqual(updates.map(({ entry }) => entry.id), [biscuit.id]);
+  for (const unrelated of ["The user’s sister’s dog Biscuit died.", "The user's dog Biscuit almost died.", "The user's dog Biscuit might have died.", "The user's dog Biscuit died in a dream."]) {
+    assert.equal(statesResolvedBy({ content: unrelated, observedAt }, [biscuit]).length, 0);
+  }
+  const differentName = row("The user has a dog called Biscuit Jr.", "2026-01-10T10:00:00Z");
+  assert.equal(statesResolvedBy({ content, observedAt }, [differentName]).length, 0);
+  const unicode = row("The user has a dog called Миша.", "2026-01-10T10:00:00Z");
+  assert.equal(statesResolvedBy({ content: "The user's dog Бобик died.", observedAt }, [unicode]).length, 0);
+  const later = row(content, observedAt.toISOString());
+  assert.equal(laterResolverOf({ content: biscuit.content, observedAt: biscuit.observedAt! }, [later])?.entry.id, later.id);
+  assert.deepEqual(planTimelineReconciliation([later, biscuit], { now: observedAt }).map((change) => change.id), [biscuit.id]);
+});
+
 test("the re-judge pass replays denials: a denied employer is not believed again by re-reading", () => {
   const initech = row("The user works at Initech.", "2026-01-01T00:00:00Z");
   const denial = row("The user no longer works at Initech.", "2026-04-01T00:00:00Z");

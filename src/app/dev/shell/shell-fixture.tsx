@@ -10,6 +10,7 @@ import { AppSidebar } from "@/components/app/app-sidebar";
 import type { AppBootstrap } from "@/types/app";
 import type { ClientConversation } from "@/types/chat";
 import type { ClientAgent } from "@/lib/agents/types";
+import { renewalApproval, RENEWALS_TITLE } from "../composer-landing/renewals";
 import type { AgentState } from "@/lib/agents/domain";
 import { defaultAgentAvatar } from "@/lib/agents/avatar";
 
@@ -66,6 +67,16 @@ const CONVERSATIONS: ClientConversation[] = [
   conversation("k-6", "Cart total regression suite", 0.5, { kind: "code", codeWorkspaceName: "shop" }),
   conversation("k-7", "Upgrade to React 20", 120, { kind: "code", codeWorkspaceName: "alevr-web" }),
   conversation("k-8", "Drop the legacy billing webhook", 200, { kind: "code", codeWorkspaceName: "alevr-api" }),
+];
+
+const RENEWAL_CONVERSATIONS = [
+  conversation("c-mira", "Post renewal summary", 0.1),
+  conversation("c-needs", "Quarterly board deck", 0.2),
+  conversation("c-playbook", "Renewals 2026 playbook", 0.5),
+  conversation("c-metrics", "Weekly metrics, how to read them", 0.8),
+  conversation("c-active", RENEWALS_TITLE, 1),
+  conversation("c-sync", "Why the sync worker drops cursors", 2),
+  conversation("c-copy", "Pricing page copy, second pass", 3),
 ];
 
 /** A hundred older chats for `?many=1`: more than two pages of Recent, so the
@@ -170,7 +181,7 @@ const AGENTS: ClientAgent[] = [
   agent("nori", "Nori", "idle", null),
 ];
 
-function bootstrap(nearCap: boolean, many: boolean): AppBootstrap {
+function bootstrap(nearCap: boolean, many: boolean, renewals = false): AppBootstrap {
   return {
     user: { id: "fixture-user", name: "Liam Magnier", email: "liam@example.com", image: null },
     settings: {
@@ -210,7 +221,7 @@ function bootstrap(nearCap: boolean, many: boolean): AppBootstrap {
       },
       billing: { renewsAtMs: null, cancelAtPeriodEnd: false },
     },
-    conversations: many ? [...CONVERSATIONS, ...MANY] : CONVERSATIONS,
+    conversations: renewals ? RENEWAL_CONVERSATIONS : many ? [...CONVERSATIONS, ...MANY] : CONVERSATIONS,
     folders: [],
     features: {
       billing: true,
@@ -247,6 +258,11 @@ function installFixtureFetch(): () => void {
     if (path === "/api/work/sessions") return json({ sessions: WORK_SESSIONS });
     if (path === "/api/code/tasks") return json({ tasks: [] });
     if (path === "/api/code/devices") return json({ devices: [] });
+    if (path === "/api/approvals/fixture-renewal-summary" && init?.method === "POST") {
+      const { decision } = JSON.parse(String(init.body));
+      const now = new Date();
+      return json({ approval: { ...renewalApproval(now), status: decision === "deny" ? "denied" : "allowed", decision, decidedAt: now.toISOString() } });
+    }
     if (path === "/api/conversations" && url.includes("archived=only")) return json({ conversations: [] });
     return real(input, init);
   };
@@ -308,6 +324,7 @@ export function ShellFixture({
   shell,
   drawer,
   width,
+  workspace,
 }: {
   nearCap: boolean;
   many: boolean;
@@ -316,6 +333,7 @@ export function ShellFixture({
   drawer?: ProductSurface;
   /** The expanded frames' width, 288 unless `?w=` asks for another. */
   width: number;
+  workspace?: React.ReactNode;
 }) {
   const [ready, setReady] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(false);
@@ -330,7 +348,8 @@ export function ShellFixture({
     };
   }, []);
 
-  const data = React.useMemo(() => bootstrap(nearCap, many), [nearCap, many]);
+  const hasWorkspace = Boolean(workspace);
+  const data = React.useMemo(() => bootstrap(nearCap, many, hasWorkspace), [nearCap, many, hasWorkspace]);
   if (!ready) return null;
 
   if (shell) {
@@ -341,7 +360,7 @@ export function ShellFixture({
       <AppProvider bootstrap={data}>
         <SelectConversation id="c-active" />
         <AppShell>
-          <div className="p-6 text-body text-muted-foreground">Page content.</div>
+          {workspace ?? <div className="p-6 text-body text-muted-foreground">Page content.</div>}
         </AppShell>
       </AppProvider>
     );

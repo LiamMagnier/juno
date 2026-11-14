@@ -44,7 +44,7 @@ import {
   argumentsOf,
   askToRunAgainSpec,
   canAskToRunAgain,
-  clampLines,
+  toolPayloadPreview,
   toolRowState,
   type ToolItem,
 } from "./panel-model";
@@ -90,25 +90,30 @@ function SectionHeading({ text }: { text: string }) {
   );
 }
 
-/** A monospace block cut at `maxLines`, with "Show all". Verbatim, never translated. */
+/** Bounded preview with an exact, scrollable disclosure of the recorded payload. */
 function ClampedBlock({ text, maxLines }: { text: string; maxLines: number }) {
   const [all, setAll] = React.useState(false);
-  const { head, hidden } = React.useMemo(() => clampLines(text, maxLines), [text, maxLines]);
+  const id = React.useId();
+  const { head, truncated } = React.useMemo(() => toolPayloadPreview(text, maxLines), [text, maxLines]);
   return (
     <div>
       <pre
+        id={id}
+        tabIndex={truncated ? 0 : undefined}
         translate="no"
         data-no-auto-translate
-        className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-control bg-secondary px-2.5 py-2 font-mono text-caption text-foreground"
+        className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-control bg-secondary px-2.5 py-2 font-mono text-caption text-foreground"
       >
         {all ? text : head}
+        {truncated && !all ? <span aria-hidden="true">…</span> : null}
       </pre>
-      {hidden > 0 && (
+      {truncated && (
         <button
           type="button"
           aria-expanded={all}
+          aria-controls={id}
           onClick={() => setAll((open) => !open)}
-          className="mt-1 text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
+          className="mt-1 inline-flex min-h-8 items-center rounded-control px-1 text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline coarse:min-h-11"
         >
           <Phrase text={all ? PANEL_COPY.call.showLess : PANEL_COPY.call.showAll} />
         </button>

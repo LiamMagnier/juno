@@ -2,10 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://juno.app/contracts/chat/juno-chat-wire-v1.schema.json",
   "title": "Juno chat wire",
-  "x-wire-version": "1.1.0",
+  "x-wire-version": "1.2.0",
   "x-wire-changes": {
     "1.0.0": "The wire as generated before the contract carried a version.",
-    "1.1.0": "Additive: the error frame gains errorClass, retryable, retryAfterSeconds, suggestedModelId and suggestedModelName (ChatErrorRecovery). errorClass reports both of the platform's provider-account faults (a rejected key, no credit) as one class, account, and never which. A 1.0 client ignores them; the Swift decoder reads them lossily and accepts 1.0 frames without them. The native API contract version (contracts/openapi, x-juno-contract-version) does not move: installed apps compare it for equality and an additive field must not sign them out."
+    "1.1.0": "Additive: the error frame gains errorClass, retryable, retryAfterSeconds, suggestedModelId and suggestedModelName (ChatErrorRecovery). errorClass reports both of the platform's provider-account faults (a rejected key, no credit) as one class, account, and never which. A 1.0 client ignores them; the Swift decoder reads them lossily and accepts 1.0 frames without them. The native API contract version (contracts/openapi, x-juno-contract-version) does not move: installed apps compare it for equality and an additive field must not sign them out.",
+    "1.2.0": "Additive: chat activity can include provider-reported context usage and the scope of a saved memory summary."
   },
   "description": "POST /api/chat: the request body (ChatRequest) and the SSE frames the response streams (StreamEvent, one JSON object per `data:` line; GET /api/chat/stream/{generationId} replays the same frames). Generated from src/lib/chat/request.ts (chatBodySchema) and src/types/chat.ts (StreamChunk), with each field's `x-native` status from contracts/chat/juno-chat-wire-v1.status.json. Do not edit by hand; run `npm run native:wire`.",
   "x-native-legend": {
@@ -16,8 +17,8 @@
   },
   "x-native-summary": {
     "native": 222,
-    "planned": 280,
-    "web-only": 107,
+    "planned": 281,
+    "web-only": 111,
     "unclassified": 0
   },
   "x-native-only": {
@@ -1903,6 +1904,41 @@
               "properties": {
                 "key": {
                   "type": "string",
+                  "const": "context_usage",
+                  "x-native": "planned",
+                  "x-native-note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+                },
+                "inputTokens": {
+                  "type": "number",
+                  "x-native": "web-only",
+                  "x-native-note": "Input tokens from the last successful model request, displayed in the web composer."
+                },
+                "cachedTokens": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "x-native": "web-only",
+                  "x-native-note": "Provider-reported cache hits displayed in the web composer when available."
+                },
+                "windowTokens": {
+                  "type": "number",
+                  "x-native": "web-only",
+                  "x-native-note": "Context limit of the model used by the request."
+                }
+              },
+              "required": [
+                "key",
+                "inputTokens",
+                "cachedTokens",
+                "windowTokens"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
                   "const": "tools",
                   "x-native": "planned",
                   "x-native-note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
@@ -2011,6 +2047,15 @@
                   "const": "memory",
                   "x-native": "planned",
                   "x-native-note": "Added by the 2026-10-02 web integration; the Swift apps do not read it yet."
+                },
+                "summaryScope": {
+                  "type": "string",
+                  "enum": [
+                    "account",
+                    "project"
+                  ],
+                  "x-native": "web-only",
+                  "x-native-note": "Whether a stored summary supplied to the prompt came from account or project memory."
                 }
               },
               "required": [

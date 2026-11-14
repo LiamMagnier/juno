@@ -22,7 +22,7 @@ import type { AdapterRequest } from "@/lib/llm/types";
 import { undispatchedToolsetReason } from "@/lib/llm/tool-round";
 import type { LlmEvent, MessageForModel, PromptCacheMode } from "@/types/llm";
 import { logSync } from "@/lib/logger";
-import { createRequestMeter, type RequestRole } from "@/lib/llm/request-meter";
+import { createRequestMeter, type ProviderRequestRecord, type RequestRole } from "@/lib/llm/request-meter";
 import { systemWithUntrustedReadTools } from "@/lib/untrusted-content";
 
 export { clampMaxTokens };
@@ -83,6 +83,8 @@ export async function* streamChat(opts: {
   attempt?: number;
   /** Internal billing receipts, one per provider request including tool rounds. */
   onRequestUsage?: (usage: GenerationCostOpts) => void;
+  /** Per-request telemetry with normalized counters and success status. */
+  onRequestRecord?: (record: ProviderRequestRecord) => void;
   /** Premium "fast mode": Anthropic speed:"fast" / OpenAI service_tier:"priority".
    *  The route only sets this on models that support it. */
   fastMode?: FastMode;
@@ -216,7 +218,13 @@ export async function* streamChat(opts: {
       requestId: opts.requestContext?.requestId ?? null,
       generationId: opts.requestContext?.generationId ?? null,
     },
-    { sink: (record) => logSync("info", "llm.request", { ...record }), onUsage: opts.onRequestUsage }
+    {
+      sink: (record) => {
+        opts.onRequestRecord?.(record);
+        logSync("info", "llm.request", { ...record });
+      },
+      onUsage: opts.onRequestUsage,
+    }
   );
   try {
     // `webSearch` picks Meta's transport: its search exists only on Responses.

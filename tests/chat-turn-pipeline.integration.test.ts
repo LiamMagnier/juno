@@ -1125,7 +1125,7 @@ if (!DB_URL) {
         res.write(
           sse("message_start", {
             type: "message_start",
-            message: { id: "msg_local", type: "message", role: "assistant", model: "local", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 12345, output_tokens: 1 } },
+            message: { id: "msg_local", type: "message", role: "assistant", model: "local", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 12345, cache_read_input_tokens: 2000, output_tokens: 1 } },
           }),
         );
         if (behaviour === "answer") {
@@ -1165,10 +1165,17 @@ if (!DB_URL) {
       hits.length = 0;
       behaviours.push("429", "answer");
       const { frames } = await chat({ message: "Hello again?", model });
-      const done = frames.at(-1) as Frame & { message: { content: string } };
+      const done = frames.at(-1) as Frame & { message: import("@/types/chat").ClientMessage };
       assert.equal(done.type, "done", JSON.stringify(frames.slice(-3)));
       assert.equal(hits.length, 2, "the rejected request, then the one retry");
       assert.equal(done.message.content, "Answered through the real adapter.");
+      const { contextUsageFrom } = await import("@/lib/chat/context-usage");
+      assert.deepEqual(contextUsageFrom(done.message.activity), {
+        key: "context_usage",
+        inputTokens: 14_345,
+        cachedTokens: 2_000,
+        windowTokens: getModel(model)!.contextWindow,
+      });
       assert.equal(frames.filter((frame) => frame.type === "delta").map((frame) => frame.text).join(""), "Answered through the real adapter.");
       assert.equal(retryRows(frames).length, 1);
       const generationId = frames[0].generationId as string;

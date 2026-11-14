@@ -139,7 +139,7 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
             is how the model chip finds the row's slack when it picks the
             label it has room for (model-selector.tsx, `useChipFit`). */}
         <div data-composer-row="" className="flex flex-nowrap items-center gap-0.5 px-2.5 pb-2.5 pt-1.5 shrink-0">
-          <div className={cn("flex min-w-0 shrink-0 items-center gap-0.5", dim)}>
+          <div data-composer-leading="" className={cn("flex min-w-0 shrink-0 items-center gap-0.5", dim)}>
             {leading}
           </div>
           {/* 8px between the last control and the disc (owner, 7 Nov 2026:

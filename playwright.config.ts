@@ -42,7 +42,12 @@ const storageState = path.join(ROOT, "e2e", ".auth", "e2e-user.json");
 // Local runs may use an installed Chrome instead of Playwright's download
 // (run-prod-e2e.sh --chromium-channel chrome). CI uses the bundled browsers.
 const chromiumChannel = process.env.ALEVR_QA_CHROMIUM_CHANNEL || undefined;
-const withChannel = <T extends object>(device: T): T => (chromiumChannel ? { ...device, channel: chromiumChannel } : device);
+const withChannel = <T extends object>(device: T) => (chromiumChannel ? {
+  ...device,
+  channel: chromiumChannel,
+  // Installed Chrome on macOS can lose its GPU surface when a test repeatedly resizes the window.
+  ...(process.platform === "darwin" ? { launchOptions: { args: ["--disable-gpu"] } } : {}),
+} : device);
 
 // The pre-wave-2 suites keep their projects; the wave-2 suites (e2e/wave2/**)
 // run on the matrix projects below instead.

@@ -24,11 +24,9 @@ import { cn } from "@/lib/utils";
 /**
  * The model control: a chip, and what it opens depends on the model.
  *
- * A model with thinking levels opens on the thinking slider first, the thing
- * most turns change; the model name in that panel opens the full catalogue.
- * Every other model (one effort, Auto, image, video, audio) opens the full
- * catalogue (model-catalogue.tsx) straight away: search, every lab, each
- * lab's Text / Image / Video / Audio sections, and the selected model in view.
+ * Chat opens directly to search and the selected model's controls. Outside
+ * the composer, an effort-only button can open its slider first and the
+ * model name in that panel opens the catalogue.
  * The short favourites menu that used to sit between the chip and the
  * catalogue is gone (owner, 2026-10-03).
  *
@@ -144,7 +142,7 @@ function CatalogueUnavailable({
   const interactedOutside = React.useRef(false);
   return (
     <PopoverContent
-      align="end"
+      align="start"
       side={side}
       sideOffset={8}
       collisionPadding={COMPOSER_MENU_COLLISION_PADDING}
@@ -540,7 +538,9 @@ export function ModelSelector({
           if (disabled) return;
           event.preventDefault();
           openedByKeyboard.current = true;
-          if (thinking && effortOpen) {
+          if (inComposer) {
+            onOpenChange(true);
+          } else if (thinking && effortOpen) {
             // Opened by pointer a moment ago, focus still on the chip: step in.
             focusEffortSlider();
           } else if (thinking) {
@@ -567,7 +567,7 @@ export function ModelSelector({
         inComposer ? "max-w-[16rem]" : "max-w-[11.5rem] sm:max-w-[16rem]",
         // A phone row's chip is short of room by a few pixels, so its own
         // padding and gaps give some back before the label has to.
-        inComposer && "composer-model-chip coarse:h-11 max-sm:gap-1 max-sm:pl-2 max-sm:pr-1",
+        inComposer && "composer-model-chip rounded-full border border-border/70 bg-secondary/60 text-foreground hover:bg-accent data-[state=open]:bg-selected coarse:h-11 max-sm:gap-1 max-sm:px-2",
       )}
     >
       {current && (!fit || fit.mark) ? <ModelMark model={current} className="size-3.5" /> : null}
@@ -610,7 +610,7 @@ export function ModelSelector({
 
   return (
     <Popover open={open && !disabled} onOpenChange={onOpenChange}>
-      {thinking ? (
+      {thinking && !inComposer ? (
         // Thinking first (owner): the chip opens the effort panel; its model
         // name opens the catalogue. The catalogue's popover is anchored to the
         // span around the chip, because the chip is already the panel's
@@ -655,7 +655,7 @@ export function ModelSelector({
 
       {catalogueMounted &&
         (ModelCatalogue ? (
-          <CatalogueBoundary side={inComposer ? side : undefined} returnFocusTo={thinking ? chipRef : undefined}>
+          <CatalogueBoundary side={inComposer ? side : undefined} returnFocusTo={chipRef}>
             <ModelCatalogue
               key={openCount}
               value={value}
@@ -663,21 +663,24 @@ export function ModelSelector({
               autoSelected={autoSelected}
               filter={modelFilter}
               onPick={select}
+              thinking={inComposer ? thinking : undefined}
               side={inComposer ? side : undefined}
-              // Opened from the thinking panel, the catalogue's popover has
-              // an anchor and no trigger: Escape hands focus to the chip.
-              returnFocusTo={thinking ? chipRef : undefined}
+              returnFocusTo={chipRef}
             />
           </CatalogueBoundary>
         ) : catalogue.failures > 0 ? (
           <CatalogueUnavailable
             side={inComposer ? side : undefined}
-            returnFocusTo={thinking ? chipRef : undefined}
+            returnFocusTo={chipRef}
             failures={catalogue.failures}
             busy={catalogue.loading}
             onRetry={catalogue.retry}
           />
-        ) : null)}
+        ) : (
+          <PopoverContent side="top" align="start" aria-label="Models" className="w-60 rounded-panel p-4">
+            <p role="status" className="text-ui text-muted-foreground">Loading models…</p>
+          </PopoverContent>
+        ))}
     </Popover>
   );
 }

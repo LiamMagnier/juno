@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { PageRoot } from "@/components/app/page-root";
 import { ComposerLandingFixture } from "./fixture";
+import { ShellFixture } from "../shell/shell-fixture";
 
 /**
  * Dev-only fixture for the chat composer's two frames and the in-chat task
@@ -16,11 +17,16 @@ import { ComposerLandingFixture } from "./fixture";
  * Not linked from anywhere and 404s outside development, the same contract as
  * /dev/controls.
  */
-export default function ComposerLandingDevPage() {
+export default async function ComposerLandingDevPage({ searchParams }: {
+  searchParams: Promise<{ shell?: string }>;
+}) {
   if (process.env.NODE_ENV === "production") notFound();
+  const { shell } = await searchParams;
   return (
     <PageRoot>
-      <ComposerLandingFixture />
+      {shell === "1"
+        ? <ShellFixture nearCap={false} many={false} shell width={272} workspace={<ComposerLandingFixture inShell />} />
+        : <ComposerLandingFixture />}
     </PageRoot>
   );
 }

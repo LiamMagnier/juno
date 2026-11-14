@@ -42,6 +42,10 @@ import { ToolRunOutputs } from "@/components/chat/tool-run-files";
 import { FaviconStack } from "@/components/chat/run/favicon-stack";
 import type { ClientActivityEvent, ClientAttachment, ClientSource } from "@/types/chat";
 import { reasoningHeadline } from "@/lib/chat/reasoning-headline";
+import { buildRunView } from "@/lib/run/timeline";
+import { AnswerMemory } from "@/components/chat/answer-memory";
+import { TurnReceipt } from "@/components/chat/turn-receipt";
+import { answerMemory } from "@/lib/chat/memory-receipts";
 
 /**
  * WHAT THE RUN IS DOING, RIGHT NOW — one sentence, computed once.
@@ -143,6 +147,8 @@ export function ActivityTimeline({
   streaming,
   finishNote,
   attachments,
+  conversationId,
+  showMemory = false,
 }: {
   /** Identifies THIS run's panel in the chat-scoped open state, so only one
    *  dock is open at a time across the whole thread. */
@@ -168,6 +174,8 @@ export function ActivityTimeline({
   /** The message's own attachments: run files already among them are drawn
    *  by the message, so the strip leaves them out. */
   attachments?: readonly ClientAttachment[];
+  conversationId?: string;
+  showMemory?: boolean;
 }) {
   // Open/close lives in chat-view (see thought-panel-context): the panel is a
   // docked column and cannot be painted from inside this scrolling row. The RUN
@@ -289,6 +297,11 @@ export function ActivityTimeline({
     () => buildRun(list, nowServer, anchorT0, { sources, reasoning, reasoningParts }),
     [list, nowServer, anchorT0, sources, reasoning, reasoningParts],
   );
+  const settledTools = React.useMemo(() => !streaming && list.length
+    ? buildRunView({ activity: list, sources, content: "" }).tools.map(({ call }) => call).filter((call) => call.status === "succeeded")
+    : [], [list, sources, streaming]);
+  const memory = React.useMemo(() => showMemory && !streaming ? answerMemory(list) : null, [list, showMemory, streaming]);
+  const hasMemory = Boolean(memory && (memory.used.length || memory.saved.length || memory.forgotten.length || memory.summaryScope));
 
   if (!hasEvents && !hasReasoning) return null;
 
@@ -361,12 +374,13 @@ export function ActivityTimeline({
   const lead = did.length ? null : hasReasoning ? (span ? `Thought for ${span}` : "Thought process") : null;
   const restingParts = did.length ? [...did, ...(span ? [span] : [])] : lead ? [lead] : [];
   const restingLine = restingParts.join(" · ");
+  const hasTrace = Boolean(restingLine || settledTools.length);
   // A settled run with no reasoning, no searches, no sources and no tool calls
   // has nothing to open: the line would invite a reader into an empty panel.
   // ChatGPT and Claude show no trace line for a plain completion, and neither
   // does this. Live runs always render: the live line IS the feedback while
   // the first token is on its way.
-  if (!streaming && !restingLine) return null;
+  if (!streaming && !hasTrace && !hasMemory) return null;
   // A phase change asks the mark for one pass. Reasoning-token growth never
   // changes this key, so the collapsed UI stays calm during long streams.
   const copyKey = streaming ? `${active?.key ?? "think"}-${latest?.kind ?? "reasoning"}-${live.message}` : "complete";
@@ -436,12 +450,18 @@ export function ActivityTimeline({
             )}
           />
         </button>
+      ) : showMemory ? (
+        <TurnReceipt
+          calls={settledTools}
+          fallback={hasTrace ? (lead ?? did.join(" · ")) || "Activity" : null}
+          duration={hasTrace && !lead ? span : null}
+          memory={hasMemory && <AnswerMemory activity={list} conversationId={conversationId} compact />}
+          expanded={inlineOpen}
+          controls={inlineDomId}
+          onToggle={() => setInlineOpen((value) => !value)}
+          triggerRef={triggerRef}
+        />
       ) : (
-        /*
-         * RESTING: one quiet sentence and a caret, set as type in the third
-         * ink. It inks up under the pointer and while its panel is open; the
-         * caret turns a quarter when the dock is open. Nothing else changes.
-         */
         <button
           ref={triggerRef}
           type="button"

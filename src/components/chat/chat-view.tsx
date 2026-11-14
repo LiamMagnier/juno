@@ -11,6 +11,9 @@ import { EyeOff, GitFork, GripVertical } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
+import { contextUsageFrom } from "@/lib/chat/context-usage";
+import { ContextUsageMeter } from "@/components/chat/context-usage-meter";
+import { ThreadHeader, threadProjectClass } from "@/components/chat/thread-header";
 import { useSplitPane } from "@/hooks/use-split-pane";
 // Type only: realtime voice is downloaded when voice is first opened
 // (lazy-realtime-voice.tsx), never with the conversation.
@@ -2437,6 +2440,16 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     [forkedFrom, privateMode, chatMemoryOff],
   );
 
+  const contextUsage = React.useMemo(() => {
+    if (privateMode) return null;
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      const message = chat.messages[i];
+      if (message.role === "ASSISTANT" && !message.streaming && !message.pending && !message.error) {
+        return contextUsageFrom(message.activity);
+      }
+    }
+    return null;
+  }, [chat.messages, privateMode]);
   const composer = (
     <Composer
       conversationId={conversationId}
@@ -2451,6 +2464,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       onModelChange={setModel}
       onSend={onComposerSend}
       taskModeControl={taskModeControl}
+      contextUsage={contextUsage ? <ContextUsageMeter usage={contextUsage} /> : undefined}
       chatMemory={chatMemory}
       modeControl={researchSteering?.accepting ? (
         <GuideModeSwitch mode={researchGuideMode} onModeChange={setResearchGuideMode} disabled={research.busy || research.disconnected || research.failed} className="mb-2" />
@@ -2557,7 +2571,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                   ? "Type while you talk…"
                   : agent
                     ? `Message ${agent.name}`
-                    : undefined
+                    : hasMessages ? `Reply to ${PRODUCT_NAME}` : undefined
       }
       selectedProjectId={activeProjectId}
       onPickProject={handlePickProject}
@@ -2614,15 +2628,13 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
         <Tooltip>
           <TooltipTrigger asChild>
             <Pressable
-              kind="icon"
-              size="lg"
+              kind="chip"
               aria-label="Share chat"
               onClick={() => setShareOpen(true)}
-              className="text-muted-foreground"
+              className="min-h-8 gap-1.5 rounded-full bg-secondary px-3 text-ui text-foreground hover:bg-accent"
             >
-              {/* The page-header rung (size-5), matching the private-chat
-                  toggle beside it; 18px is the sidebar's destination rung. */}
-              <ActionIcons.share className="size-5" />
+              <ActionIcons.share className="size-4" />
+              <span>Share</span>
             </Pressable>
           </TooltipTrigger>
           <TooltipContent>Share chat</TooltipContent>
@@ -2700,86 +2712,22 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           sidePanelOpen && "hidden @[50rem]/split:flex"
         )}
       >
-        {/* The column's header band: the conversation's title at the left
-            (Claude's header) and the share / incognito cluster at the right,
-            spanning THIS column — not the whole main area — so it travels
-            with the transcript when the canvas opens beside it. 56px in flow,
-            no plate. Below md the shell's mobile bar carries the title and
-            this band does not exist. The Chat ⇄ Work switcher that used to sit
-            centred here moved into the sidebar's product switch. */}
-        {/* In incognito the band would be a title that is not a title
-            ("Incognito chat") beside an invisible cluster, above the incognito
-            header that already names the mode. Drop it entirely. */}
         {topActionsSlotOwner && !privateMode && (
-          <div
-            className={cn(
-              "page-gutter relative z-20 hidden shrink-0 items-center justify-between gap-4 md:flex",
-              thoughtOpenId && "!hidden @[50rem]/split:!flex",
-              // A new chat has no title, so this band held 56px of nothing and
-              // pushed the centred greeting 28px above true centre with the
-              // incognito toggle floating alone at the right. The toggle still
-              // needs a home, so the row collapses to the control's own height
-              // rather than disappearing — h-14 the moment there is a title to
-              // carry.
-              headerTitle ? "h-14" : "h-11"
-            )}
-          >
-            {/* The page's visible <h1> from md up; the transcript's own
-                heading (message-list.tsx) leaves the tree at this width so
-                there is exactly one. A new chat has nothing to be titled yet,
-                and an <h1> with nothing in it is a blank entry at the top of
-                the heading list — the first thing a screen-reader user opens
-                on a page — so before a conversation exists the slot is a
-                spacer instead: it keeps `justify-between` pushing the cluster
-                right and the h-11 collapse exactly as it was. */}
-            {headerTitle ? (
-              <div className="flex min-w-0 flex-1 items-baseline gap-2">
-              {/* Filed in a project: the project leads the title as a
-                  breadcrumb ("Perf project / Perf project chat"), in the
-                  title's own face but quiet, and opens the project. It
-                  replaces the floating pill that sat over the transcript;
-                  leaving the project is in the composer's + menu. */}
-              {showProjectCrumb && projectMeta && (
-                <>
-                  <Link
-                    href={`/projects/${projectMeta.id}`}
-                    className="shell-title min-w-0 max-w-[16rem] shrink truncate text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
-                  >
-                    {projectMeta.name}
-                  </Link>
-                  <span aria-hidden className="shell-title shrink-0 text-ink-tertiary">/</span>
-                </>
-              )}
-              <h1 className="shell-title min-w-0 flex-1 text-foreground">
-                <AnimatedTitle
-                  title={headerTitle}
-                  animate={headerTitleSource === "ai"}
-                  /* Moving to another conversation crosses this title over as
-                     well, whoever wrote it — `animate` alone only covers the
-                     model renaming THIS chat, so a switch to a manually named
-                     one cut the heading while the transcript beneath it was
-                     still settling in. */
-                  subject={currentConversationId}
-                  className="max-w-[40rem]"
-                />
+          <ThreadHeader
+            className={thoughtOpenId ? "!hidden @[50rem]/split:!flex" : undefined}
+            title={headerTitle ? (
+              <>
+                <AnimatedTitle title={headerTitle} animate={headerTitleSource === "ai"} subject={currentConversationId} />
                 {room.detail && (
-                  <span className="mt-0.5 block truncate font-mono text-caption font-normal text-muted-foreground">
-                    {roomMembersLine(room.detail)}
-                  </span>
+                  <span className="block truncate text-caption font-normal text-muted-foreground">{roomMembersLine(room.detail)}</span>
                 )}
-              </h1>
-              </div>
-            ) : (
-              <div className="min-w-0 flex-1" aria-hidden="true" />
-            )}
-            {/* The cluster sits out in the panel's corner, not on the
-                title's gutter: its last control's centre is 24px in from the
-                right edge, the same inset the sidebar's collapse control keeps
-                from the sidebar's edge, so the two header rows close on the
-                same rhythm at either side of the window. On the 32px gutter it
-                floated 50px in, reading as lost in the page rather than placed. */}
-            <div className="-mr-[calc(var(--page-gutter)-0.375rem)] hidden shrink-0 items-center gap-1.5 md:flex">{actionsContent}</div>
-          </div>
+              </>
+            ) : undefined}
+            project={showProjectCrumb && projectMeta ? (
+              <Link href={`/projects/${projectMeta.id}`} className={threadProjectClass}>{projectMeta.name}</Link>
+            ) : undefined}
+            actions={actionsContent}
+          />
         )}
 
         {memoryNotice && !phoneWidth && (

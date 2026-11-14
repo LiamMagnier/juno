@@ -120,7 +120,7 @@ export function AppPageHeader({
     // Full --border: this rule separates the header from the page body, so it
     // carries layout. The alpha came from a light-theme habit and now compounds
     // with a token that already dropped five points for the black ground.
-    <header className={cn("mb-5 @[40rem]/page:mb-8", className)}>
+    <header className={cn("app-section-header mb-5 pb-4 @[40rem]/page:mb-7 @[40rem]/page:pb-5", className)}>
       {/* The whole row is conditional now, and so is each half of it. A page
           with neither a parent nor a section opens on its name — no leading
           row, and no 28px of empty chrome where one used to be. */}
@@ -152,10 +152,10 @@ export function AppPageHeader({
       {/* The page's action sits on its TITLE's line (design V3, revision 2),
           not beside the lede's last line, where it floated below the title. */}
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <h1 className="app-page-title ed-rise min-w-0 text-balance text-page-title font-semibold" style={{ ["--i" as string]: 0 }}>{heading}</h1>
+        <h1 className="app-page-title ed-rise min-w-0 break-words text-balance text-page-title font-semibold" style={{ ["--i" as string]: 0 }}>{heading}</h1>
         {/* max-w-full: on a phone the actions wrap to their own line, and a
             row wider than that line (Admin's four tabs) scrolls inside its own track. */}
-        {actions && <div className="ed-rise flex max-w-full shrink-0 items-center gap-1.5 @[40rem]/page:mt-1.5" style={{ ["--i" as string]: 2 }}>{actions}</div>}
+        {actions && <div className="ed-rise flex min-w-0 max-w-full flex-wrap items-center gap-2 @[40rem]/page:mt-1.5" style={{ ["--i" as string]: 2 }}>{actions}</div>}
       </div>
       {lede && <p className="ed-rise mt-2 max-w-prose text-pretty text-body text-muted-foreground" style={{ ["--i" as string]: 1 }}>{lede}</p>}
     </header>
@@ -245,7 +245,7 @@ export function AppPageHeaderSkeleton({
     // bottom margin and nothing else. This drew a hairline and `mb-6 pb-5`
     // under a header that has neither, so every page opened from the sidebar
     // showed a rule that then vanished and content that jumped ~13px up.
-    <div className={cn("mb-5 @[40rem]/page:mb-8", className)} aria-hidden="true">
+    <div className={cn("app-section-header mb-5 pb-4 @[40rem]/page:mb-7 @[40rem]/page:pb-5", className)} aria-hidden="true">
       {nav && (
         <div className="mb-3 flex items-center gap-2">
           {/* The back control is a `size="icon-sm"` Button: 32px, 40 on coarse.

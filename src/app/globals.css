@@ -1665,25 +1665,12 @@
     .juno-mark-popping { animation: none; }
   }
 
-  /*
-   * THE SELECTED ROW IN THE SIDEBAR: one recipe, every list in the panel.
-   *
-   * A FILL, AND ONLY A FILL. `--sidebar-selected` is one rung past the hover
-   * (the rungs are in the token block at the top of this file), a colour of
-   * its own rather than a strength of the hover's, so the row you are on
-   * always outranks the one under the pointer.
-   *
-   * It used to carry an inset hairline as well, on the argument that
-   * boundedness is the one property hover never has. In the column it read as
-   * the only outlined object among rows of text, a small button parked in the
-   * list, and neither reference draws one: Claude and ChatGPT mark the current
-   * row with a fill alone. The fill came one rung deeper instead.
-   *
-   * No shadow either. This is a flat panel (docs/design/FLAT_UI.md §2.1); a
-   * raised row inside a recessed well is the Soft UI idiom the flat retune
-   * spent a release removing. Rows transition `background-color` only.
-   */
+  /* A raised selection on the sidebar ground, shared by destinations and history. */
   .sidebar-row-selected {
+    background-color: hsl(var(--card));
+    box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .08), 0 1px 2px hsl(var(--shadow-ink) / .08);
+  }
+  .dark .sidebar-row-selected {
     background-color: hsl(var(--sidebar-selected));
   }
   /* The product switch's down cell: lifted out of its tonal track (raised
@@ -1920,6 +1907,25 @@
       inset 0 1px 0 hsl(0 0% 100% / 0.07),
       0 1px 2px hsl(0 0% 0% / 0.3),
       0 20px 48px -18px hsl(0 0% 0% / 0.75);
+  }
+  .chat-composer [data-composer-row] {
+    gap: 0.375rem;
+  }
+  .chat-composer [data-composer-leading] {
+    flex-shrink: 1;
+    gap: 0.375rem;
+  }
+  .chat-composer .context-composer-field {
+    max-height: 42dvh;
+    overflow-y: auto !important;
+  }
+  .chat-composer:not(.voice-glow-host) {
+    background-image: none;
+    box-shadow: 0 2px 4px hsl(var(--shadow-ink) / .06), 0 12px 30px -20px hsl(var(--shadow-ink) / .22);
+  }
+  .chat-composer .composer-primary-action[data-face="send"] {
+    background: hsl(var(--foreground));
+    color: hsl(var(--background));
   }
   @media (hover: hover) and (pointer: fine) {
     .composer-surface:hover:not(:focus-within) {
@@ -4314,7 +4320,9 @@
     height: 100%;
     overflow-y: auto;
     overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
   }
+  .app-section-header { border-block-end: 1px solid hsl(var(--border) / .8); }
 
   /*
    * ——— THE PAGE GUTTER: ONE NUMBER, FOR EVERY SURFACE ———
@@ -4726,8 +4734,29 @@
 @layer components {
   .juno-frame { background: hsl(var(--sidebar)); }
   .juno-content-panel { background: hsl(var(--background)); }
+  :root:not(.dark) .juno-content-panel[data-product="chat"] { background: hsl(var(--card)); }
+  :root:not(.dark) .juno-content-panel[data-product="chat"] .prose-juno [data-table-scroll] {
+    --table-ground: var(--card);
+  }
+  .juno-content-panel[data-product="chat"] .prose-juno th {
+    border-bottom-color: hsl(var(--border));
+    color: hsl(var(--muted-foreground));
+    font-weight: 500;
+  }
+  .juno-content-panel[data-product="chat"] .prose-juno :is(th, td) { padding-block: 0.65em; }
+  .chat-transcript-scroll {
+    scroll-padding-block: 0.75rem 1.25rem;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .chat-user-actions {
+      position: absolute;
+      inset-inline-end: 0;
+      inset-block-start: 100%;
+      z-index: 10;
+    }
+  }
   @media (min-width: 768px) {
-    .juno-content-panel { margin: 8px 8px 8px 0; border-radius: 14px; box-shadow: 0 0 0 1px hsl(var(--foreground) / .07); isolation: isolate; }
+    .juno-content-panel { margin: 8px 8px 8px 0; border-radius: 24px; box-shadow: 0 0 0 1px hsl(var(--foreground) / .08); isolation: isolate; }
   }
   /* A token in a SENT turn (context-receipt.tsx; the composer's own chip is
      composer.css). Its fill is one step off whatever it sits on, the ink at
@@ -4926,6 +4955,9 @@ html[data-vt="canvas"][data-vt-dir="close"]::view-transition-new(canvas-panel) {
 @layer utilities {
   /* The transcript and composer column: one width, set by the reader. */
   .transcript-column { max-width: var(--transcript-max); }
+  @container page (min-width: 64rem) {
+    .transcript-column.page-gutter { --page-gutter: 1.5rem; }
+  }
   /* A tone step (bubble, composer, card, chip, selected row) gains a 1px
      edge in high contrast and nothing otherwise: --tone-edge is transparent
      at standard contrast. Opt in on a box with no shadow of its own. */

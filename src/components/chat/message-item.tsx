@@ -997,7 +997,7 @@ export const MessageItem = React.memo(function MessageItem({
       // to name the `turn-in` entrance, retired with its 420ms blur, so the
       // class compiled to nothing and a sent message simply appeared
       // (tests/motion-class-resolution.test.ts).
-      <div className={cn("group flex flex-col items-end", animateIn && "animate-rise-user")}>
+      <div className={cn("group relative flex flex-col items-end", animateIn && "animate-rise-user")}>
         {/* Turn marker. On screen the alignment and bubble say who is speaking;
             in a screen reader nothing did, and a transcript with no headings is
             a wall of text with no way to move through it. */}
@@ -1020,7 +1020,7 @@ export const MessageItem = React.memo(function MessageItem({
           />
         ) : (
           view.content && (
-            <div className="flex max-w-[85%] flex-col items-end">
+            <div className="flex max-w-[88%] flex-col items-end sm:max-w-[min(78%,33rem)]">
               {quoted && <QuotedSelection quote={quoted} standalone={!bubbleText} />}
               {bubbleText && (
               <div
@@ -1089,7 +1089,7 @@ export const MessageItem = React.memo(function MessageItem({
           // The pager is LAST, flush with the bubble's edge: at rest the
           // hidden Copy and Edit keep their width, and with the pager first
           // that width pushed it ~115px in from the bubble, off its line.
-          <div className="mt-1 flex items-center">
+          <div className={cn("mt-1 flex items-center", !pager && !message.unsent && "chat-user-actions")}>
             <div ref={actionRowRef} className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
               <IconAction label={copied ? "Copied" : copyFailed ? "Couldn’t copy" : "Copy"} onClick={copy}>
                 <CopyGlyph copied={copied} />
@@ -1188,6 +1188,12 @@ export const MessageItem = React.memo(function MessageItem({
               ? "The provider stopped the response for safety reasons."
               : null;
 
+  const approvalCards = message.approvals?.length ? (
+    <div className="space-y-2">
+      {message.approvals.map((approval) => <ApprovalCard key={approval.id} approval={approval} />)}
+    </div>
+  ) : null;
+
   return (
     <div
       // NAMED, so the thought panel can find this turn's citation chips. A jump
@@ -1235,6 +1241,8 @@ export const MessageItem = React.memo(function MessageItem({
         {surface !== "code" || view.reasoning?.trim() ? (
           <ActivityTimeline
             messageId={message.id}
+            showMemory={surface !== "code" && !privateMode}
+            conversationId={message.conversationId}
             events={
               surface === "code"
                 ? (view.activity ?? []).filter(
@@ -1262,13 +1270,7 @@ export const MessageItem = React.memo(function MessageItem({
           the reader's eye already is rather than under a partial answer they
           would have to scroll past to find out why nothing is happening.
         */}
-        {message.approvals?.length ? (
-          <div className="mb-3 space-y-2">
-            {message.approvals.map((approval) => (
-              <ApprovalCard key={approval.id} approval={approval} />
-            ))}
-          </div>
-        ) : null}
+        {message.streaming && approvalCards}
         {view.activity?.some((evt) => Boolean(evt.agentChange)) ? (
           <div className="mb-3 space-y-2">
             {view.activity
@@ -1529,6 +1531,8 @@ export const MessageItem = React.memo(function MessageItem({
             page, where the only Save is (skill-draft-card.tsx). */}
         {view.activity?.some((evt) => Boolean(evt.skillDraft)) ? <SkillDraftList activity={view.activity} /> : null}
 
+        {!message.streaming && approvalCards}
+
         {/* Footer, below the answer it backs — the inline chips are the citation,
             this is the bibliography. */}
         {sources && sources.length > 0 && (
@@ -1537,7 +1541,7 @@ export const MessageItem = React.memo(function MessageItem({
         {/* Which saved memories this answer was given, and what the turn
             saved or forgot, each with Edit, Forget or Undo, Not relevant,
             View, and the chat it was learned in. */}
-        {!message.streaming && <AnswerMemory activity={view.activity} conversationId={message.conversationId} />}
+        {!message.streaming && (surface === "code" || privateMode) && <AnswerMemory activity={view.activity} conversationId={message.conversationId} />}
         {/* Above the model/cost line but below the bibliography: what the answer
             rests on, then how well it rests on it. */}
         {citationAudit.phase !== "idle" && citationAudit.phase !== "none" && (

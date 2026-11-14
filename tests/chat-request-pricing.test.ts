@@ -6,6 +6,8 @@ import { estimateTurnCostUsd } from "@/lib/turn-pricing";
 import { buildUsage } from "@/lib/chat-usage";
 import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
 import { createRequestMeter } from "@/lib/llm/request-meter";
+import { requestContextUsage } from "@/lib/chat/context-usage";
+import { readRunFact } from "@/lib/chat/run-record";
 
 function model(id: string): ModelInfo {
   const value = getModel(id);
@@ -186,4 +188,26 @@ test("the accumulator and displayed chat receipt use the provider request bounda
   assert.equal(usage.totalInput, 300_000);
   assert.equal(usage.output, 2_000);
   assert.equal(usage.basis, "reported");
+});
+
+test("the context receipt reports one successful request, including cache, and survives serialization", () => {
+  const anthropic = model("claude-opus-5-5");
+  const meter = createRequestMeter({ model: anthropic, role: "chat" }, { sink: () => undefined });
+  const begin = (round: number) => meter.begin({ wire: "anthropic", round, body: {} });
+  begin(0).end({ input: 12_000, cacheRead: 30_000, cacheWrite: 2_000 });
+  const last = begin(1).end({ input: 9_000, cacheRead: 40_000, cacheWrite5m: 1_000 });
+  const usage = requestContextUsage(last, 200_000);
+  assert.deepEqual(usage, { key: "context_usage", inputTokens: 50_000, cachedTokens: 40_000, windowTokens: 200_000 });
+  assert.deepEqual(readRunFact(usage), usage);
+  assert.equal(readRunFact({ ...usage, cachedTokens: 51_000 }), undefined);
+  assert.equal(requestContextUsage(begin(2).end({ input: 52_000 }, { ok: false }), 200_000), null);
+  assert.equal(requestContextUsage(begin(3).end({ webSearchRequests: 1 }), 200_000), null);
+  const withoutCacheCount = requestContextUsage(begin(4).end({ input: 52_000 }), 200_000);
+  assert.deepEqual(withoutCacheCount, { key: "context_usage", inputTokens: 52_000, cachedTokens: null, windowTokens: 200_000 });
+  assert.deepEqual(readRunFact(withoutCacheCount), withoutCacheCount);
+  assert.equal(requestContextUsage(begin(5).end({ input: 52_000, cacheRead: 0 }), 200_000)?.cachedTokens, 0);
+
+  const compat = createRequestMeter({ model: grok, role: "chat" }, { sink: () => undefined });
+  const compatRecord = compat.begin({ wire: "responses", round: 0, body: {} }).end({ input: 50_000, cacheRead: 40_000 });
+  assert.deepEqual(requestContextUsage(compatRecord, 200_000), usage);
 });

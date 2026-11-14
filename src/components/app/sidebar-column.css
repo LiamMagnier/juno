@@ -110,3 +110,7 @@
     hsl(var(--scroll-fade-ground, var(--background)) / 0)
   );
 }
+/* The app sidebar's section labels need the full muted text contrast. */
+[data-sidebar-section] span.shell-annot.shell-annot {
+  color: hsl(var(--muted-foreground));
+}

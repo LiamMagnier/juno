@@ -18,11 +18,12 @@ const schema = read("contracts/chat/juno-chat-wire-v1.schema.json") as Record<st
 const streamEvent = (schema.$defs as Record<string, unknown>).StreamEvent as Record<string, unknown>;
 const fixtures = read("contracts/chat/error-frame.fixtures.json").frames as Record<string, Record<string, unknown>>;
 
-test("the wire is versioned 1.1.0, and the version says what changed", () => {
-  assert.equal(schema["x-wire-version"], "1.1.0");
+test("the wire records the 1.1 error-frame changes and the additive 1.2 activity fields", () => {
+  assert.equal(schema["x-wire-version"], "1.2.0");
   const changes = schema["x-wire-changes"] as Record<string, string>;
   assert.match(changes["1.1.0"], /errorClass/);
   assert.match(changes["1.1.0"], /suggestedModelId/);
+  assert.match(changes["1.2.0"], /context usage/);
 });
 
 test("the native API contract version did not move for an additive field", () => {

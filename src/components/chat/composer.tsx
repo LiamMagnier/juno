@@ -195,6 +195,7 @@ interface ComposerProps {
    * tasks at all; absent, the row is as it was.
    */
   taskModeControl?: React.ReactNode;
+  contextUsage?: React.ReactNode;
   /**
    * "Memory off for this chat" (src/lib/chat/memory-off.ts). Given, the +
    * menu's Memory switch is this chat's: off keeps this chat out of memory and
@@ -541,6 +542,7 @@ function ComposerImpl({
   steering,
   modeControl,
   taskModeControl,
+  contextUsage,
   chatMemory,
   pendingClarification,
   onSubmitClarification,
@@ -3126,7 +3128,7 @@ function ComposerImpl({
           frame={frame === "landing" ? "home" : "dock"}
           dimmed={controlsLocked && !steerMode}
           className={cn(
-            "max-h-[600px]",
+            "chat-composer max-h-[min(37.5rem,65dvh)]",
             // In a call the glow's layers sit under the shell's contents.
             voiceCall && "voice-glow-host",
             // Private mode redraws the edge dashed; every other state's border
@@ -3527,6 +3529,20 @@ function ComposerImpl({
                 tooltip="Add files and more"
                 sections={plusSections}
               />
+              {!voiceCall && (
+                <div className={cn("flex min-w-0", controlsLocked && "pointer-events-none")}>
+                  <ModelSelector
+                    value={model}
+                    onChange={changeModel}
+                    disabled={controlsLocked}
+                    thinking={thinkingControl}
+                    effortLabel={effortLabel}
+                    speed={chipSpeed}
+                    pro={chipPro}
+                    inComposer
+                  />
+                </div>
+              )}
               {/* What is armed for the next message, as pills in the row
                   beside the + that armed it (owner, 6 Nov 2026: inside the
                   text they read as misplaced). */}
@@ -3541,26 +3557,7 @@ function ComposerImpl({
               {taskModeControl && modality === "chat" && !steerMode && (
                 <div className={cn("shrink-0", controlsLocked && "pointer-events-none")}>{taskModeControl}</div>
               )}
-              {/* The model chip — and, inside its popover, the thinking effort
-                  for that model (`thinkingControl`). One chip for one decision.
-                  A FLEX slot, not a block: the chip is inline-flex, and a
-                  block parent let it keep its whole label's width while the
-                  slot shrank, so on a 360px phone it spilled under the mic
-                  and taps on its chevron went to Dictate. As a flex item its
-                  own `min-w-0` holds, and its label steps down to fit
-                  (model-chip-label.ts). */}
-              <div className={cn("flex min-w-0", controlsLocked && "pointer-events-none")}>
-                <ModelSelector
-                  value={model}
-                  onChange={changeModel}
-                  disabled={controlsLocked}
-                  thinking={thinkingControl}
-                  effortLabel={effortLabel}
-                  speed={chipSpeed}
-                  pro={chipPro}
-                  inComposer
-                />
-              </div>
+              {modality === "chat" && !steerMode && contextUsage}
               {speechSupported && (
                 <Tooltip>
                   <TooltipTrigger asChild>

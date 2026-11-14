@@ -176,7 +176,7 @@ test("the settings loading page draws the rail's groups, names and all", () => {
   assert.match(page, /settings-rail-col relative flex shrink-0 flex-col px-3 pb-3 pt-3 md:h-full md:w-\[15\.5rem\]/);
   assert.match(loading, /<div className="mb-3 flex h-9 items-center pl-2\.5 md:mb-4">/);
   assert.match(page, /<div className="mb-3 flex h-9 items-center justify-between pl-2\.5 md:mb-4">/);
-  assert.match(loading, /<Skeleton className="h-11 w-full rounded-control md:mb-4 md:h-9" \/>/);
+  assert.match(loading, /<Skeleton className="h-11 w-full rounded-full md:mb-4 md:h-9" \/>/);
 });
 
 test("a Mac's facts wrap whole; its name and workload are never ellipsized", () => {

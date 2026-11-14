@@ -68,6 +68,8 @@ export interface ProviderRequestRecord {
   ok: boolean;
   /** False when the provider reported no usage: the token counts are then zero, not estimates. */
   usageReported: boolean;
+  /** Whether the adapter supplied a cache-read count for this request. */
+  cacheReadReported: boolean;
   tokens: {
     totalInput: number;
     fresh: number;
@@ -203,6 +205,7 @@ export function createRequestMeter(
             fallback: !!(input.fallback || outcome.fallback),
             ok: outcome.ok ?? true,
             usageReported: reported,
+            cacheReadReported: typeof u.cacheRead === "number" && Number.isSafeInteger(u.cacheRead) && u.cacheRead >= 0,
             tokens: {
               totalInput: n.totalInput,
               fresh: n.freshInput,

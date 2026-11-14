@@ -19,9 +19,8 @@ test.describe("Agents", () => {
     await expect(create).toBeDisabled();
 
     // An example fills the field; it never sends on its own.
-    await field.focus();
-    await field.press("Tab");
-    await expect(field).toHaveValue(AGENT_JOB_EXAMPLES[0]);
+    await page.getByRole("button", { name: AGENT_JOB_EXAMPLES[1], exact: true }).click();
+    await expect(field).toHaveValue(AGENT_JOB_EXAMPLES[1]);
     await expect(page).toHaveURL(/\/agents$/);
     await expect(create).toBeEnabled();
   });

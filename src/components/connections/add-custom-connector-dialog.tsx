@@ -44,14 +44,16 @@ export function AddCustomConnectorDialog({
   open,
   onOpenChange,
   onSaved,
+  onCloseAutoFocus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent bare className="max-w-lg gap-0" aria-describedby={undefined}>
+      <DialogContent bare className="max-w-lg gap-0" aria-describedby={undefined} onCloseAutoFocus={onCloseAutoFocus}>
         {open ? <AddCustomConnectorFlow onSaved={() => { onSaved?.(); onOpenChange(false); }} /> : null}
       </DialogContent>
     </Dialog>

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, CreditCard } from "@/components/ui/icons";
+import { ChevronRight, CreditCard, Timer } from "@/components/ui/icons";
 import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { NeedsLead, QuietButton, TELL_INSTEAD_LABEL, VerbButton, tellInstead } from "@/components/chat/decision";
@@ -883,6 +883,11 @@ export function ApprovalCard({
           : RECEIPT_DETAIL_LABEL.sent;
   const receiptAt = receiptStatus === "executed" ? (current.completedAt ?? current.decidedAt) : current.decidedAt;
   const receiptTime = useClockText(receipt ? receiptAt : null);
+  const expiration = useClockText(answerable ? current.expiresAt : null);
+  const slackChannel = current.connectorId === "slack" && verbLabel.toLowerCase() === "post message"
+    && typeof current.detail.channel === "string" && /^#[\p{L}\p{N}_-]{1,80}$/u.test(current.detail.channel)
+    ? current.detail.channel
+    : null;
 
   const mark = payment ? (
     <CreditCard className="size-4" />
@@ -898,7 +903,7 @@ export function ApprovalCard({
    * question shows it up front; the receipt keeps a task's or a setup
    * change's behind its disclosure. */
   const payload = (
-    <div className="pl-3.5 shadow-[inset_2px_0_0_hsl(var(--border))]">
+    <div className={cn("min-w-0 break-words", receipt ? "border-s border-border ps-3.5" : "rounded-panel border border-border/70 bg-card px-3.5 py-2.5")}>
       {payment ? (
         <>
           <p className="text-nav font-medium text-foreground tabular-nums" translate="no">
@@ -962,13 +967,13 @@ export function ApprovalCard({
         </>
       ) : (
         <>
-          <p className="text-ui text-muted-foreground">
+          {!slackChannel && <p className="text-ui text-muted-foreground">
             <span className="font-medium text-foreground">{current.connectorLabel}</span>
             <span aria-hidden="true">{" · "}</span>
             <span className="sr-only">, </span>
             {approvalToolTitle(current.toolName, current.connectorLabel)}
-          </p>
-          <p className="mt-0.5 text-nav text-foreground">{current.preview}</p>
+          </p>}
+          <p className="whitespace-pre-wrap text-nav text-foreground">{current.preview}</p>
         </>
       )}
     </div>
@@ -1039,13 +1044,9 @@ export function ApprovalCard({
       aria-busy={sending || undefined}
       data-answerable={answerable ? "" : undefined}
       className={cn(
-        // `@container`: the argument rows lay out by the card's own width.
-        // A flat tone step, radius 10 (the field rung), no border, no shadow, no warning wash
-        // (INTERACTION_SPEC T6, critique 1): the attention words in the title
-        // are what make it stand out from the prose, not a tinted box.
-        "@container w-full rounded-field bg-muted contrast-more:border contrast-more:border-border",
-        receipt ? "my-3" : "my-5 px-4 pb-4 pt-3.5",
-        "motion-safe:animate-rise-in motion-reduce:animate-fade-in [animation-fill-mode:backwards]"
+        "@container w-full min-w-0 bg-muted contrast-more:border contrast-more:border-border",
+        receipt ? "my-3 rounded-field" : "my-3 rounded-composer p-2.5",
+        "motion-safe:animate-fade-in [animation-fill-mode:backwards]"
       )}
     >
       {receipt ? (
@@ -1103,21 +1104,26 @@ export function ApprovalCard({
           </span>
         </button>
       ) : (
-        <header className="flex items-start gap-3">
-          <span aria-hidden="true" className="mt-px flex size-5 shrink-0 items-center justify-center text-muted-foreground">
+        <header className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1.5">
+          <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-xs border border-border/60 bg-card text-foreground">
             {mark}
           </span>
-          <p id={labelId} className={cn("min-w-0 flex-1 text-body", answerable ? "font-medium text-foreground" : "text-muted-foreground")}>
+          <p id={labelId} className={cn("min-w-[min(100%,10rem)] flex-1 break-words text-ui", answerable ? "font-semibold text-foreground" : "text-muted-foreground")}>
             {answerable ? (
               <>
-                <NeedsLead>Needs your approval:</NeedsLead> {verbPhrase}
+                {slackChannel ? <><span className="sr-only">Needs your approval. </span>Post this to <bdi translate="no">{slackChannel}</bdi> in Slack?</> : <><NeedsLead>Needs your approval:</NeedsLead> {verbPhrase}</>}
               </>
             ) : (
               settledTitle
             )}
           </p>
-          {!task && !agentConfig && answerable && (
-            <span className="mt-0.5 shrink-0 text-ui text-muted-foreground">{risk.label}</span>
+          {slackChannel && expiration ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-card px-2 py-0.5 text-caption tabular-nums text-muted-foreground">
+              <Timer className="size-3.5" />
+              <span className="sr-only">Expires at </span><time dateTime={current.expiresAt}>{expiration}</time>
+            </span>
+          ) : !task && !agentConfig && answerable && (
+            <span className="rounded-full bg-status-needs-you/10 px-2 py-0.5 text-label font-medium text-warning-foreground">{risk.label}</span>
           )}
         </header>
       )}
@@ -1134,11 +1140,11 @@ export function ApprovalCard({
           </div>
         </Collapse>
       ) : (
-      <div className="mt-2.5 @[28rem]:ml-8">
+      <div className="mt-2">
         {payload}
 
         {(!task || answerable) && !agentConfig && (
-          <p className="mt-2.5 text-ui leading-relaxed text-muted-foreground">
+          <p className={cn(slackChannel && current.riskClass === "external_write" && !current.derivedFromUntrusted ? "sr-only" : "mt-2.5 text-ui leading-relaxed text-muted-foreground")}>
             {payment ? PAYMENT_CARD_COPY.description : task ? taskCopy.description : risk.detail}
           </p>
         )}
@@ -1159,9 +1165,12 @@ export function ApprovalCard({
 
         {!agentConfig && (
           <div className="mt-1.5">
-            {disclosure(handoff ? "What they will be told" : task ? "What the task will be told" : "Exactly what will be sent", "-ml-2")}
+            {disclosure(handoff ? "What they will be told" : task ? "What the task will be told" : "Exactly what will be sent", "ml-0.5")}
             <Collapse open={detailOpen}>
               <div id={detailId} className="pb-1 pt-1.5">
+                {slackChannel && current.riskClass === "external_write" && !current.derivedFromUntrusted && (
+                  <p className="mb-2 text-ui text-muted-foreground">{risk.detail}</p>
+                )}
                 {argumentList}
               </div>
             </Collapse>
@@ -1173,10 +1182,7 @@ export function ApprovalCard({
           // danger fill for a destructive verb); "Not now" and the redirect
           // are the same quiet outline. A standing permission waits behind the
           // verb's caret. Both answers wait for the card to arm.
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <QuietButton disabled={sending || !armed} onClick={() => decide("deny")}>
-              Not now
-            </QuietButton>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <VerbButton
               label={verbLabel}
               accessibleLabel={`${verbLabel}: ${task && taskTitle ? taskTitle : current.preview}`}
@@ -1185,6 +1191,7 @@ export function ApprovalCard({
               danger={danger}
               onClick={() => decide("allow_once")}
               menuLabel="More ways to approve"
+              pill
               alternatives={
                 canAllowScope && !agentConfig && !payment
                   ? [
@@ -1198,7 +1205,10 @@ export function ApprovalCard({
                   : undefined
               }
             />
-            <QuietButton disabled={sending} className="@[28rem]:ml-auto" onClick={() => tellInstead("Instead of this action, ")}>
+            <QuietButton disabled={sending || !armed} onClick={() => decide("deny")} className="rounded-full bg-card">
+              Not now
+            </QuietButton>
+            <QuietButton disabled={sending} className="rounded-full border-transparent bg-transparent shadow-none @[28rem]:ms-auto" onClick={() => tellInstead("Instead of this action, ")}>
               {TELL_INSTEAD_LABEL}
             </QuietButton>
           </div>
@@ -1232,7 +1242,7 @@ export function ApprovalCard({
         {resultText}
       </p>
 
-      {answerable && !sending && untouched && (
+      {answerable && !sending && untouched && (!slackChannel || !expiration) && (
         <p className="mt-2.5 text-ui text-muted-foreground @[28rem]:ml-8">
           {expiryLine}
           {remaining !== null && remaining <= COUNTDOWN_WITHIN_MS && (

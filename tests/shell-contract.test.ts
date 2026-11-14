@@ -393,7 +393,7 @@ test("each product's archive opens from the account menu, with the contract's la
   }
 });
 
-test("the list's section headings are the contract's, in order, per product", () => {
+test("the web Chat sidebar puts recent conversations directly below Needs you", () => {
   // Needs you is its own fold (`NeedsYouFold`), drawn above every Section.
   const needsYouFold = functionNamed(SIDEBAR, "NeedsYouFold");
   const needsYouLabel = descendants(needsYouFold)
@@ -438,11 +438,8 @@ test("the list's section headings are the contract's, in order, per product", ()
       assert.match(CODE_WORK_LIST_TEXT, /<Section label=\{`Settled/);
       continue;
     }
-    assert.deepEqual(
-      drawn,
-      CONTRACT.sidebar[product].sections.map((section) => section.label),
-      `${product}'s section headings`,
-    );
+    const labels = new Map(CONTRACT.sidebar[product].sections.map(({ id, label }) => [id, label]));
+    assert.deepEqual(drawn, ["needsYou", "recent", "agents", "pinnedProjects"].map((id) => labels.get(id)), "web Chat section headings");
   }
 });
 

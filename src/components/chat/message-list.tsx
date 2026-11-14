@@ -120,11 +120,6 @@ function RoomHandoffLine({ text }: { text: string }) {
 }
 
 
-const SCROLL_FADE_STYLE: React.CSSProperties = {
-  maskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 72px), transparent 100%)",
-  WebkitMaskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 72px), transparent 100%)",
-};
-
 /** Follow is instant: streaming, measurement corrections and virtual jumps
  *  cannot race a smooth-scroll animation. The window hook preserves the
  *  reader's measured anchor whenever they leave the newest turn. */
@@ -136,9 +131,10 @@ const TranscriptMessage = React.memo(function TranscriptMessage({ receiptActivit
   return <MessageItem {...props} contextReceipt={receipt} />;
 });
 
-function MeasuredTurn({ message, observe, children }: {
+function MeasuredTurn({ message, observe, last, children }: {
   message: ChatMessage;
   observe: (element: HTMLDivElement, key: string) => () => void;
+  last: boolean;
   children: React.ReactNode;
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
@@ -151,7 +147,8 @@ function MeasuredTurn({ message, observe, children }: {
   // the answer's step grows to keep the pair reading as one. Heights are
   // measured (observeRow), so windowing, the rail and the answer bed follow
   // without knowing the rule.
-  return <div ref={ref} data-message-id={message.id} data-transcript-key={key} className={message.role === "USER" ? "pb-1" : "pb-8 coarse:pb-12"}>{children}</div>;
+  const spacing = message.role === "USER" ? "pb-4" : last ? "pb-2" : "pb-6 coarse:pb-10";
+  return <div ref={ref} data-message-id={message.id} data-transcript-key={key} className={spacing}>{children}</div>;
 }
 
 // The chat's turn actions arrive as new functions on every streamed token
@@ -321,10 +318,9 @@ export function MessageList(props: MessageListProps) {
         // sits outside it. Reserving the gutter on both sides keeps the two
         // columns on one centre line whatever the platform's scrollbars do.
         className={cn(
-          "h-full overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]",
+          "chat-transcript-scroll h-full overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]",
           hasRail && "sm:[scrollbar-width:none] sm:[&::-webkit-scrollbar]:hidden",
         )}
-        style={SCROLL_FADE_STYLE}
       >
         {/*
         role="log" gives screen-reader users a named region to navigate to —
@@ -376,12 +372,9 @@ export function MessageList(props: MessageListProps) {
         // The same column as the composer, and now literally the same gutter
         // as every other surface in the product (`.page-gutter`, globals.css):
         // bubbles' outer edges and the composer's edges are one line.
-        // `pb-12`: at the end of the scroll range the newest answer's toolbar
-        // clears the 72px bottom fade (its row's own pb-8 plus these 48px);
-        // text still fades under the composer while the reader is scrolled up.
-        // The answer bed measures from this same box, so the pin holds.
+        // The answer bed measures from this same box to pin the newest turn.
         className={cn(
-          "page-gutter mx-auto w-full transcript-column pt-6 pb-12",
+          "page-gutter mx-auto w-full transcript-column pb-2 pt-2",
           !entered && "motion-safe:animate-rise-in",
         )}
       >
@@ -391,7 +384,7 @@ export function MessageList(props: MessageListProps) {
             const gap = transcript.layout.offsets[i] - previousEnd;
             return <React.Fragment key={m.renderKey ?? m.id}>
             {gap > 0 && <div aria-hidden style={{ height: gap }} />}
-            <MeasuredTurn message={m} observe={transcript.observeRow}>
+            <MeasuredTurn message={m} observe={transcript.observeRow} last={i === messages.length - 1}>
             {(() => {
             const speaker = m.role === "ASSISTANT" && props.speakerFor ? props.speakerFor(m, i === messages.length - 1) : null;
             const item = <TranscriptMessage

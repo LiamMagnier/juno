@@ -73,7 +73,6 @@ import {
   sortModelsForDisplay,
 } from "@/lib/model-metrics";
 import { isModelLocked, readRecent } from "@/lib/model-picker";
-import { EffortPanelContext } from "@/components/chat/reasoning-slider";
 import { cn } from "@/lib/utils";
 import { audioRequestCostMicroUsd } from "@/lib/audio-gen-core";
 import { PRODUCT_NAME } from "@/lib/brand/names";
@@ -635,12 +634,13 @@ export function ModelCatalogue({
   thinking?: React.ReactNode;
   /** The side the chip opens toward. */
   side?: "top" | "bottom";
-  /** Where focus goes on close when the popover has no trigger (opened from the thinking panel). */
+  /** The model button retains focus after closing from the keyboard. */
   returnFocusTo?: React.RefObject<HTMLElement | null>;
 }) {
   const { quota, models, settings } = useApp();
   /** Closed by a press or focus elsewhere: focus stays where the person put it. */
   const interactedOutside = React.useRef(false);
+  const escaped = React.useRef(false);
   const save = useSettingsSave();
   const plan = quota.plan;
   const [query, setQuery] = React.useState("");
@@ -1136,16 +1136,11 @@ export function ModelCatalogue({
   };
   return (
       <PopoverContent
-        // `end`, not `start`. The model chip sits at the right of the
-        // composer, so aligning the box's LEFT edge to it threw 680px
-        // rightward into a viewport edge that was only ~18px away — the
-        // collision clamp then did the positioning, which is why the panel
-        // always sat hard against the right of the window whatever the width.
-        // Anchoring its right edge to the chip's puts the box back over the
-        // conversation, where there is room for it, and keeps it tied to the
-        // control that opened it rather than to a screen edge.
-        align="end"
+        // The composer puts the model next to the add button. Align to that
+        // leading group and let Radix keep the panel inside narrow windows.
+        align="start"
         side={side}
+        aria-label="Models"
         sideOffset={8}
         collisionPadding={16}
         avoidCollisions
@@ -1157,7 +1152,10 @@ export function ModelCatalogue({
         // Escape in the detail sheet goes back to the list, not out of the
         // popover.
         onEscapeKeyDown={(event) => {
-          if (!infoKey) return;
+          if (!infoKey) {
+            escaped.current = true;
+            return;
+          }
           event.preventDefault();
           closeInfo();
         }}
@@ -1173,7 +1171,14 @@ export function ModelCatalogue({
         onInteractOutside={() => {
           interactedOutside.current = true;
         }}
-        onCloseAutoFocus={(event) => catalogueCloseFocus(event, { returnFocusTo, interactedOutside: interactedOutside.current })}
+        onCloseAutoFocus={(event) => {
+          if (escaped.current && returnFocusTo?.current) {
+            event.preventDefault();
+            returnFocusTo.current.focus({ preventScroll: true });
+            return;
+          }
+          catalogueCloseFocus(event, { returnFocusTo, interactedOutside: interactedOutside.current });
+        }}
         // 600 wide: a 48px rail, a ~284px names column and a 268px panel.
         // Names at one line each mean a lab's whole current range is visible
         // at once, so the list no longer needs the width it used to.
@@ -1188,10 +1193,10 @@ export function ModelCatalogue({
         // short lab leaves room under its last row, and that is the cheaper
         // trade: the panel beside it fills the height either way.
         style={{
-          width: "min(640px, calc(100vw - 2rem))",
-          height: "min(500px, var(--radix-popover-content-available-height))",
+          width: "min(42rem, calc(100vw - 2rem))",
+          height: "min(32rem, var(--radix-popover-content-available-height))",
         }}
-        className="flex max-w-none origin-bottom-right flex-col overflow-hidden rounded-menu p-0"
+        className="flex max-w-none flex-col overflow-hidden rounded-composer p-0"
       >
         <div className="relative flex min-h-0 flex-1">
           {/* Lab rail — 48px of marks, folds under `sm`. Only labs with
@@ -1249,13 +1254,13 @@ export function ModelCatalogue({
 
           {/* List */}
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="shrink-0 border-b border-border/60 px-2 py-1.5">
+            <div className="shrink-0 border-b border-border/60 px-2.5 py-2">
               {/* `.surface-inset` is the material FLAT_UI.md §3.3 assigns to a
                   search field, and `focus-within:border-ring` is the accent's
                   one decorative home in this popover. The field had neither:
                   the control the popover autofocuses was the one that looked
                   inert. */}
-              <div className="flex h-10 items-center gap-2.5 rounded-control px-2.5 coarse:h-11">
+              <div className="flex h-10 items-center gap-2.5 rounded-full border border-transparent bg-secondary px-3 transition-colors duration-fast focus-within:border-ring coarse:h-11">
                 <Search aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                 <input
                   ref={searchRef}
@@ -1272,7 +1277,7 @@ export function ModelCatalogue({
                   aria-expanded
                   aria-controls="model-picker-list"
                   aria-activedescendant={cursor ? rowDomId(cursor) : undefined}
-                  className="h-full min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground"
+                  className="h-full min-w-0 flex-1 bg-transparent text-reading outline-none placeholder:text-muted-foreground sm:text-ui"
                 />
                 {q && (
                   <Tooltip>
@@ -1429,23 +1434,16 @@ export function ModelCatalogue({
                 </div>
               </div>
             </ScrollFade>
-            {/* How hard the selected model thinks: one control for one
-                setting, under the list rather than in the panel, because the
-                panel folds away on a narrow screen and this must not. Its
-                model name puts the selected model back under the cursor. */}
             {thinking ? (
-              <div data-model-thinking="" className="shrink-0 border-t border-border/60 px-3 pb-3 pt-2.5">
-                <EffortPanelContext.Provider
-                  value={{
-                    modelName: current?.name ?? "Model",
-                    onOpenModels: () => {
-                      if (selectedKey) moveCursorTo(selectedKey);
-                    },
-                  }}
-                >
+              <details data-model-thinking="" className="group shrink-0 border-t border-border/60 px-2.5 py-1.5">
+                <summary className="flex min-h-8 cursor-pointer list-none items-center justify-between gap-2 rounded-control px-2 text-label font-medium hover:bg-accent [&::-webkit-details-marker]:hidden coarse:min-h-11">
+                  Thinking effort
+                  <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast group-open:rotate-180 motion-reduce:transition-none" />
+                </summary>
+                <div className="max-h-[24dvh] overflow-y-auto overscroll-contain px-2 pb-1.5 pt-2">
                   {thinking}
-                </EffortPanelContext.Provider>
-              </div>
+                </div>
+              </details>
             ) : null}
           </div>
 

@@ -162,7 +162,7 @@ DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 /** Pinned to the top of the body, with a gutter for the ✕ (dialog.css). */
 function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("ui-dialog-header flex flex-col space-y-1.5 text-center sm:text-left", className)} {...props} />;
+  return <div className={cn("ui-dialog-header flex flex-col space-y-1.5 text-start", className)} {...props} />;
 }
 
 /** Pinned to the bottom of the body (dialog.css), so the actions never scroll away. */

@@ -7,10 +7,7 @@ test.describe("Projects, Automations and Library", () => {
   test("signed-in navigation reaches Projects, Automations and Library routes", async ({ page }) => {
     for (const [path, heading] of [
       ["/projects", /projects/i],
-      // `/work` used to be here. Work is not a place any more
-      // (docs/design/TWO_PRODUCTS.md §2); the destination that came out of it
-      // and is testable without a delegated run in the account is Automations.
-      ["/automations", /automations/i],
+      ["/automations", /routines/i],
       ["/library", /library/i],
     ] as const) {
       await page.goto(path);
@@ -54,5 +51,14 @@ test.describe("Projects, Automations and Library", () => {
     await expect(page.locator("h1").first()).toContainText(/Settings/i, {
       timeout: 15_000,
     });
+  });
+
+  test("Escape closes settings from the pane", async ({ page }) => {
+    await page.goto("/settings");
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    await dialog.getByRole("button", { name: "Close settings" }).focus();
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page).toHaveURL(/\/chat$/);
   });
 });

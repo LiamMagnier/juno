@@ -29,26 +29,7 @@ import { coerceTitleSource } from "@/lib/title-ownership";
 import { resolveModel } from "@/lib/models";
 import { estimateCostUsd } from "@/lib/pricing";
 import { coerceChatOrigin } from "@/lib/chat-origin";
-import { readToolDetail } from "@/lib/chat/tool-detail";
-import { readContextReceipt } from "@/lib/chat/context-tokens";
-import { readRoutineProposal } from "@/lib/work/routine-proposal";
-import { readSkillDraft } from "@/lib/skills/teach";
-import { readImageGeneration } from "@/lib/media/image-generation";
-import { isCodeToolStatus } from "@/lib/agent-protocol/code-task-transcript";
-// import { serializeActivity } from "@/lib/chat/run-record";
-
-const ACTIVITY_KINDS = new Set<ClientActivityEvent["kind"]>([
-  "context",
-  "model",
-  "reasoning",
-  "search",
-  "visit",
-  "write",
-  "usage",
-  "done",
-  "warning",
-  "tool",
-]);
+import { serializeActivity as readActivity } from "@/lib/chat/run-record";
 
 /**
  * Decrypt the stored reasoning parts back into plain strings.
@@ -65,146 +46,10 @@ function serializeReasoningParts(raw: unknown): string[] | undefined {
   return parts.length ? parts : undefined;
 }
 
-/**
- * Rebuild the activity log from the `Message.activity` JSON column.
- *
- * THIS IS A FIELD WHITELIST, and that is the trap it lays: an event is rebuilt
- * from named fields, so anything added to `ClientActivityEvent` without being
- * added here streams live and then vanishes the moment the page reloads. The
- * failure is silent and looks exactly like the feature working.
- *
- * The column is encrypted at rest (src/lib/field-crypto.ts), so the JSON is
- * unsealed FIRST and everything below runs on the recovered structure. Rows
- * written before the backfill have no envelope and come back from
- * `decryptJsonField` unchanged, which is why this needed no version check; a
- * row that cannot be decrypted comes back as null and lands on the
- * `!Array.isArray` branch — the same "no activity" rendering a message written
- * before the column existed already gets.
- */
+/** Unseal a message's activity before applying the shared field whitelist. */
 function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
   const raw = decryptJsonField(stored);
-  if (!Array.isArray(raw)) return undefined;
-
-  const events = raw.flatMap((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
-    const record = item as Record<string, unknown>;
-    const id = typeof record.id === "string" ? record.id : "";
-    const kind = typeof record.kind === "string" && ACTIVITY_KINDS.has(record.kind as ClientActivityEvent["kind"]) ? record.kind : "";
-    const title = typeof record.title === "string" ? record.title : "";
-    const createdAt = typeof record.createdAt === "string" ? record.createdAt : "";
-    if (!id || !kind || !title || !createdAt) return [];
-
-    // The connector payload behind a tool row. Absent on every message written
-    // before it shipped, and on every row that is not one real call — which is
-    // exactly why replay degrades to the old name-only row rather than needing
-    // a version check.
-    const tool = readToolDetail(record.tool);
-
-    // Juno Code's two extra keys on the shared row shape. `patch` is the
-    // unified diff a `write` row may carry (capped at write time by
-    // persistCodeTaskOutcome in lib/code-task-outcome.ts); `exitCode` is a tool
-    // row's process status. Both were being written and then dropped HERE on
-    // the way back out — the exact silent failure the note above describes —
-    // so a reloaded Code session lost every diff it had shown live. Read
-    // additively: a chat row never carries either and sees no change.
-    const patch = typeof record.patch === "string" && record.patch.length > 0 ? record.patch : undefined;
-    const exitCode =
-      typeof record.exitCode === "number" && Number.isFinite(record.exitCode) ? record.exitCode : undefined;
-    // How a Code tool row's call ended, as the producer typed it (the agent
-    // protocol's tool_result status, folded in code-task-transcript.ts). Read
-    // additively like the two above: without it a reloaded row would fall back
-    // to reading its outcome out of its title, the thing it exists to end.
-    const toolStatus = isCodeToolStatus(record.toolStatus) ? record.toolStatus : undefined;
-    const agentChange = readAgentChange(record.agentChange);
-    // The context-token receipt: parsed against its schema, so a row that does
-    // not match is dropped here rather than handed to a renderer that trusts it.
-    const contextReceipt = readContextReceipt(record.contextReceipt);
-    // A routine the model drafted (`propose_routine`). Read field by field for
-    // the reason above: without this line the card streams live and is gone
-    // after a reload, and with it a row that does not match is dropped.
-    const routineProposal = readRoutineProposal(record.routineProposal);
-    // A skill the person taught (`draft_skill`), for the same reason.
-    const skillDraft = readSkillDraft(record.skillDraft);
-    // A picture the model made (`generate_image`). Read field by field for the
-    // same reason; the live-only `images` (signed URLs) is never read back —
-    // the files come back as the answer's attachments.
-    const imageGeneration = readImageGeneration(record.imageGeneration);
-
-    return [
-      {
-        id,
-        kind: kind as ClientActivityEvent["kind"],
-        title,
-        detail: typeof record.detail === "string" ? record.detail : undefined,
-        url: typeof record.url === "string" ? record.url : undefined,
-        createdAt,
-        ...(tool ? { tool } : {}),
-        ...(patch ? { patch } : {}),
-        ...(exitCode !== undefined ? { exitCode } : {}),
-        ...(toolStatus ? { toolStatus } : {}),
-        ...(agentChange ? { agentChange } : {}),
-        ...(contextReceipt ? { contextReceipt } : {}),
-        ...(routineProposal ? { routineProposal } : {}),
-        ...(skillDraft ? { skillDraft } : {}),
-        ...(imageGeneration ? { imageGeneration } : {}),
-      },
-    ];
-  });
-
-  return events.length ? events : undefined;
-}
-
-function readAgentChange(raw: unknown): ClientActivityEvent["agentChange"] {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const r = raw as Record<string, unknown>;
-  if (typeof r.agentId !== "string" || typeof r.agentName !== "string" || typeof r.summary !== "string") {
-    return undefined;
-  }
-  const rawChanges = Array.isArray(r.changes) ? r.changes : [];
-  const changes = rawChanges.flatMap((c) => {
-    if (!c || typeof c !== "object" || Array.isArray(c)) return [];
-    const item = c as Record<string, unknown>;
-    if (typeof item.label !== "string" || typeof item.to !== "string") return [];
-    return [
-      {
-        label: item.label,
-        ...(typeof item.from === "string" ? { from: item.from } : {}),
-        to: item.to,
-      },
-    ];
-  });
-  const setupChange = readSetupChangeRef(r.setupChange);
-  return {
-    agentId: r.agentId,
-    agentName: r.agentName,
-    ...(typeof r.eventId === "string" ? { eventId: r.eventId } : {}),
-    summary: r.summary,
-    changes,
-    ...(typeof r.undone === "boolean" ? { undone: r.undone } : {}),
-    ...(setupChange ? { setupChange } : {}),
-  };
-}
-
-/** A persisted setup-change reference, field by field, or nothing. */
-function readSetupChangeRef(raw: unknown): NonNullable<ClientActivityEvent["agentChange"]>["setupChange"] {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const r = raw as Record<string, unknown>;
-  const text = (key: string) => (typeof r[key] === "string" ? (r[key] as string) : null);
-  const id = text("id");
-  const kind = text("kind");
-  const digest = text("digest");
-  if (!id || !kind || !digest) return undefined;
-  return {
-    id,
-    kind,
-    kindLabel: text("kindLabel") ?? "Setup",
-    direction: text("direction") ?? "neutral",
-    directionSentence: text("directionSentence") ?? "",
-    affects: text("affects") ?? "",
-    status: text("status") ?? "proposed",
-    detail: text("detail"),
-    digest,
-  };
+  return readActivity(raw);
 }
 
 /**

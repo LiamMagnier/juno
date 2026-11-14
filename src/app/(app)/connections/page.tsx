@@ -78,6 +78,11 @@ export default function ConnectionsPage() {
   const [permissionTarget, setPermissionTarget] = React.useState<string | null>(null);
   const [enabled, setEnabled] = React.useState<Record<string, boolean>>({});
   const [addOpen, setAddOpen] = React.useState(false);
+  const addOpener = React.useRef<HTMLButtonElement>(null);
+  const openAdd = (event: React.MouseEvent<HTMLButtonElement>) => {
+    addOpener.current = event.currentTarget;
+    setAddOpen(true);
+  };
   const [manageId, setManageId] = React.useState<string | null>(null);
   const [landedId, setLandedId] = React.useState<string | null>(null);
   const [justConnected, setJustConnected] = React.useState<string | null>(null);
@@ -317,7 +322,7 @@ export default function ConnectionsPage() {
       ) : (
         <ConnectorDirectory
           headerAction={
-            <Button variant="outline" onClick={() => setAddOpen(true)} className="shrink-0 gap-1.5 px-3.5">
+            <Button variant="outline" aria-haspopup="dialog" onClick={openAdd} className="shrink-0 gap-1.5 px-3.5">
               <Plus className="size-4" aria-hidden="true" />
               Add
             </Button>
@@ -332,7 +337,7 @@ export default function ConnectionsPage() {
           onDisconnect={setDisconnectTarget}
           onTestUserMcp={(item) => void testUserMcp(item)}
           connectingId={connectingId}
-          onAddCustom={() => setAddOpen(true)}
+          onAddCustom={openAdd}
           onManageCustom={setManageId}
           onConnectCustom={(id) => {
             setConnectingId(id);
@@ -361,7 +366,17 @@ export default function ConnectionsPage() {
         </DialogContent>
       </Dialog>
 
-      <AddCustomConnectorDialog open={addOpen} onOpenChange={setAddOpen} onSaved={() => { void load(); toast.success("Server saved."); }} />
+      <AddCustomConnectorDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onCloseAutoFocus={(event) => {
+          const opener = addOpener.current;
+          if (!opener?.isConnected) return;
+          event.preventDefault();
+          opener.focus({ preventScroll: true });
+        }}
+        onSaved={() => { void load(); toast.success("Server saved."); }}
+      />
 
       <CustomConnectorDialog
         connectorId={manageId}

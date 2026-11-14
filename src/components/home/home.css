@@ -347,7 +347,7 @@
   .alv-trust-grid { grid-template-columns: minmax(0, 1fr); gap: 48px; }
 }
 /* The static hero: phones, and anyone who asked for reduced motion. */
-@media (max-width: 860px), (prefers-reduced-motion: reduce) {
+@media (max-width: 860px), (max-height: 640px), (prefers-reduced-motion: reduce) {
   .alv-hero { height: auto; }
   .alv-hero-pin { position: relative; height: auto; overflow: hidden; padding-bottom: 32px; }
   .alv-hero-copy { position: relative; }
@@ -357,6 +357,11 @@
   .alv-hero-stage { position: relative; margin-top: 72px; transform: none; }
   .alv-hero-stage > div { transform: none; }
   .alv-hero-veil { display: none; }
+}
+@media (min-width: 861px) and (max-height: 640px) {
+  .alv-hero-copy { padding-top: 6rem; }
+  .alv-hero h1 { font-size: clamp(64px, 8vw, 112px); }
+  .alv-hero-stage { margin-top: 2.5rem; }
 }
 @media (max-width: 860px) {
   .alv { --alv-gutter: 20px; }

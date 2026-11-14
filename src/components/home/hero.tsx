@@ -23,7 +23,7 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 function useWide() {
   const [wide, setWide] = React.useState(false);
   React.useEffect(() => {
-    const q = window.matchMedia("(min-width: 861px)");
+    const q = window.matchMedia("(min-width: 861px) and (min-height: 641px)");
     const on = () => setWide(q.matches);
     on();
     q.addEventListener("change", on);

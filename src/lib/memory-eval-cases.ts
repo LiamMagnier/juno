@@ -173,7 +173,7 @@ export const CORRECTION_CASES: CorrectionCase[] = [
     notBelieved: [],
   },
   {
-    // Known gap, kept in: no rule connects a pet's death to "has a dog".
+    // An explicit update ends the previous state for the same named pet.
     id: "pet-died",
     kind: "correction",
     steps: [

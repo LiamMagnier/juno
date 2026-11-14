@@ -523,6 +523,12 @@ const TRANSITIONS: Transition[] = [
   },
 ];
 
+// Limit this transition to an explicitly named pet and an unqualified death
+// statement (optionally dated). Matching both species and name keeps a second
+// pet's memory intact, even when two pets share a name.
+const NAMED_PET = /^the user (?:has|owns) (?:a|an) (dog|cat|rabbit|hamster|parrot|bird|ferret|guinea pig) (?:named|called) ([\p{L}\p{N}][\p{L}\p{N}\p{M}'’ -]{0,39})[.!]?$/iu;
+const PET_DEATH = /^the user['’]s (dog|cat|rabbit|hamster|parrot|bird|ferret|guinea pig) (?:named |called )?([\p{L}\p{N}][\p{L}\p{N}\p{M}'’ -]{0,39}?) (?:died|passed away)(?: (?:yesterday|today|last (?:night|week|month|year)|(?:in|on) (?:january|february|march|april|may|june|july|august|september|october|november|december)(?: \d{1,4}(?:,? \d{4})?)?|on \d{4}-\d{2}-\d{2}))?[.!]?$/iu;
+
 /** The pattern matches, and what comes before it is about the user (not their sister). */
 function userClause(content: string, pattern: RegExp): boolean {
   const match = pattern.exec(content);
@@ -532,6 +538,19 @@ function userClause(content: string, pattern: RegExp): boolean {
 /** Which transition state this fact is, if it is one about the user. */
 export function transitionStateOf(content: string): Transition | null {
   for (const transition of TRANSITIONS) if (userClause(content, transition.state)) return transition;
+  const pet = NAMED_PET.exec(content.trim());
+  if (pet) {
+    const [, species, name] = pet;
+    return {
+      id: "named-pet",
+      noun: name,
+      state: NAMED_PET,
+      resolvedBy(update) {
+        const death = PET_DEATH.exec(update.trim());
+        return !!death && death[1].toLowerCase() === species.toLowerCase() && death[2].trim().normalize("NFC").toLowerCase() === name.trim().normalize("NFC").toLowerCase();
+      },
+    };
+  }
   return null;
 }
 

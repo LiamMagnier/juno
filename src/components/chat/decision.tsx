@@ -72,6 +72,7 @@ export function VerbButton({
   danger,
   alternatives,
   menuLabel,
+  pill = false,
 }: {
   label: string;
   accessibleLabel?: string;
@@ -81,6 +82,7 @@ export function VerbButton({
   danger?: boolean;
   alternatives?: VerbAlternative[];
   menuLabel?: string;
+  pill?: boolean;
 }) {
   const fill = danger ? VERB_DANGER_CLASS : VERB_INK_CLASS;
   const inert = !armed || !!busy;
@@ -94,7 +96,7 @@ export function VerbButton({
         onClick={() => {
           if (!inert) onClick();
         }}
-        className={cn("h-9 px-4 coarse:h-11", fill, split && "rounded-r-none")}
+        className={cn("h-9 px-4 coarse:h-11", fill, pill && "rounded-full", split && "rounded-r-none", pill && split && "rounded-e-none")}
       >
         {label}
       </Button>
@@ -104,7 +106,7 @@ export function VerbButton({
             <Button
               type="button"
               aria-label={menuLabel ?? "More ways to approve"}
-              className={cn("h-9 w-9 rounded-l-none border-l-background/25 px-0 coarse:h-11", fill)}
+              className={cn("h-9 w-9 rounded-l-none border-l-background/25 px-0 coarse:h-11", fill, pill && "rounded-full rounded-s-none")}
             >
               <ChevronDown className="size-4" aria-hidden="true" />
             </Button>

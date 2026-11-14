@@ -7,18 +7,17 @@ import test from "node:test";
  * WHAT A CODE TRANSCRIPT KEEPS ACROSS A RELOAD.
  *
  * `persistCodeTaskOutcome` (src/lib/code-task-outcome.ts) folds a run's events into
- * one ASSISTANT row, and `serializeActivity` (src/lib/serializers.ts) rebuilds
+ * one ASSISTANT row, and `serializeActivity` (src/lib/chat/run-record.ts) rebuilds
  * that row from a FIELD WHITELIST on the way back out. The trap the whitelist
  * lays is that a field written on one side and not read on the other streams
  * live and then vanishes on reload — silently, and looking exactly like the
- * feature working. The unified diff did exactly that for a while. Both files
- * are server-only and cannot be imported here, so this pins the seam as text.
+ * feature working. The unified diff did exactly that for a while.
  */
 
 const root = process.cwd();
 const read = (rel: string) => fs.readFileSync(path.join(root, rel), "utf8");
 
-const serializers = read("src/lib/serializers.ts");
+const runRecord = read("src/lib/chat/run-record.ts");
 const remote = read("src/lib/code-task-outcome.ts");
 // Both readers of a task's events build their rows here (the one fold).
 const transcript = read("src/lib/agent-protocol/code-task-transcript.ts");
@@ -28,10 +27,10 @@ const activity = read("src/components/code/code-activity.tsx");
 
 /** The body of `function serializeActivity(...) { … }` up to the next top-level function. */
 const serializeActivity = (() => {
-  const start = serializers.indexOf("function serializeActivity(");
+  const start = runRecord.indexOf("function serializeActivity(");
   assert.notEqual(start, -1, "serializeActivity is gone — was it renamed?");
-  const end = serializers.indexOf("\nexport ", start);
-  return serializers.slice(start, end === -1 ? undefined : end);
+  const end = runRecord.indexOf("\nexport ", start);
+  return runRecord.slice(start, end === -1 ? undefined : end);
 })();
 
 test("the diff a write row carries survives the read-back whitelist", () => {

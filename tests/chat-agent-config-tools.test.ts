@@ -355,7 +355,7 @@ test("actionPreview and approval-card render structured juno_agents diffs with t
   // outline beside it, and a setup change is never offered a standing grant.
   assert.match(cardSource, /const verbLabel = handoff \? "Hand off" : task \? "Start task" : agentConfig \? "Apply setup change" : approvalVerb\(current\.toolName\);/);
   assert.match(cardSource, /label=\{verbLabel\}[\s\S]*?onClick=\{\(\) => decide\("allow_once"\)\}/);
-  assert.match(cardSource, /<QuietButton disabled=\{sending \|\| !armed\} onClick=\{\(\) => decide\("deny"\)\}>\s*Not now\s*<\/QuietButton>/);
+  assert.match(cardSource, /<QuietButton disabled=\{sending \|\| !armed\} onClick=\{\(\) => decide\("deny"\)\}[^>]*>\s*Not now\s*<\/QuietButton>/);
   assert.match(cardSource, /canAllowScope && !agentConfig/);
   // Both answers wait for the card to arm, so a click meant for something
   // else cannot land on a card that has just appeared.
@@ -385,7 +385,7 @@ test("describeAgentPatchChanges, summarizeAgentConfigToolInput, serializer white
   );
 
   // Serializer whitelists agentChange on ClientActivityEvent
-  const serializerSource = read("../src/lib/serializers.ts");
+  const serializerSource = read("../src/lib/chat/run-record.ts");
   assert.match(serializerSource, /const agentChange = readAgentChange\(record\.agentChange\);/);
   assert.match(serializerSource, /\.\.\.\(agentChange \? \{ agentChange \} : \{\}\),/);
 

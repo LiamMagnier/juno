@@ -114,7 +114,7 @@
     }
   },
   "current": {
-    "recordedAt": "2026-10-25",
+    "recordedAt": "2026-11-14",
     "results": {
       "lifecycle": {
         "live": {
@@ -138,13 +138,10 @@
       },
       "corrections": {
         "cases": 15,
-        "passed": 14,
-        "passedReread": 14,
+        "passed": 15,
+        "passedReread": 15,
         "falseContradictions": 0,
-        "failures": [
-          "pet-died (in order)",
-          "pet-died (re-read)"
-        ]
+        "failures": []
       },
       "falseMemory": {
         "believedNotTrue": 0,
@@ -238,12 +235,12 @@
       }
     },
     "latency": {
-      "factSelectP50Ms": 5.32,
-      "factSelectP95Ms": 9.07,
-      "factSelectGatedP50Ms": 11.45,
-      "factSelectGatedP95Ms": 17.57,
-      "recallRankP50Ms": 0.02,
-      "recallRankP95Ms": 0.47
+      "factSelectP50Ms": 2.25,
+      "factSelectP95Ms": 2.76,
+      "factSelectGatedP50Ms": 4.69,
+      "factSelectGatedP95Ms": 6.58,
+      "recallRankP50Ms": 0.01,
+      "recallRankP95Ms": 0.14
     }
   }
 }

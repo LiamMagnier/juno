@@ -14,6 +14,8 @@ import type { ClientActivityEvent, ClientMemoryReceipt, ClientMemoryWrite } from
  */
 
 export interface AnswerMemory {
+  /** Scope of a consolidated summary provided to the turn. Its text stays out of the receipt. */
+  summaryScope?: "account" | "project";
   /** Facts the answer was given, in the order the turn listed them. */
   used: ClientMemoryReceipt[];
   /** Facts the turn saved, or believed again. */
@@ -29,13 +31,15 @@ export function answerMemory(activity: readonly ClientActivityEvent[] | null | u
   const used = new Map<string, ClientMemoryReceipt>();
   const saved = new Map<string, ClientMemoryReceipt>();
   const forgotten: string[] = [];
+  let summaryScope: AnswerMemory["summaryScope"];
   for (const event of activity) {
+    if (event.fact?.key === "memory" && event.fact.summaryScope) summaryScope = event.fact.summaryScope;
     for (const receipt of event.memoryReceipt ?? []) if (!used.has(receipt.id)) used.set(receipt.id, receipt);
     for (const receipt of event.memoryWrite?.saved ?? []) if (!saved.has(receipt.id)) saved.set(receipt.id, receipt);
     for (const statement of event.memoryWrite?.forgotten ?? []) if (!forgotten.includes(statement)) forgotten.push(statement);
   }
-  if (used.size === 0 && saved.size === 0 && forgotten.length === 0) return EMPTY;
-  return { used: [...used.values()], saved: [...saved.values()], forgotten };
+  if (!summaryScope && used.size === 0 && saved.size === 0 && forgotten.length === 0) return EMPTY;
+  return { used: [...used.values()], saved: [...saved.values()], forgotten, ...(summaryScope ? { summaryScope } : {}) };
 }
 
 /** The turn's write, for the "Memory updated" notice, or null when it wrote nothing it can name. */
@@ -69,7 +73,7 @@ export function answerMemoryLabel(memory: AnswerMemory): {
 } {
   const used = memory.used.length;
   const wrote = memory.saved.length + memory.forgotten.length > 0;
-  if (used > 0) return { kind: "used", count: used, updated: wrote };
+  if (used > 0 || memory.summaryScope) return { kind: "used", count: used || null, updated: wrote };
   return { kind: memory.saved.length > 0 ? "saved" : "forgotten", count: null, updated: false };
 }
 

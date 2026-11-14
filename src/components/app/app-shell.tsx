@@ -56,7 +56,7 @@ const SIDEBAR_MAX = 336;
  * Still resizable between SIDEBAR_MIN and SIDEBAR_MAX; this is only where it
  * starts.
  */
-const SIDEBAR_DEFAULT = 260;
+const SIDEBAR_DEFAULT = 272;
 const RAIL_WIDTH = 52;
 // The landing route of every product mode belongs here: switching modes routes
 // immediately, so a cold /code is the one navigation the user cannot absorb as
@@ -658,6 +658,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <main
           id="juno-main"
+          data-product={product}
           tabIndex={-1}
           className="app-main-canvas juno-content-panel relative flex min-w-0 flex-1 flex-col"
           style={{ "--juno-sidebar-width": !shown || floating ? `${RAIL_WIDTH}px` : `${sidebarWidth}px` } as React.CSSProperties}
