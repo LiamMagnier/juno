@@ -99,6 +99,12 @@ function wireContract(model: ModelInfo, caps: ReasoningCaps) {
   };
 }
 
+const NOVEMBER_MODEL_DOCS: Record<string, string> = {
+  "google:gemini-4-carbon": "https://aistudio.google.com/docs/models/gemini-4-carbon",
+  "google:gemini-4-hydrogen": "https://aistudio.google.com/docs/models/gemini-4-hydrogen",
+  "meta:muse-ember-1.0": "https://dev.meta.ai/docs/muse-ember",
+};
+
 function providerValue(tier: ReasoningTier): string | number {
   return tier;
 }
@@ -122,6 +128,7 @@ export function reasoningCapabilityForModel(model: ModelInfo): ModelReasoningCap
           : wire.parameter?.includes("reasoning") ? "none" : false;
   }
   if (caps.onOff) tierMapping.thinking = objectWire ? (model.provider === "minimax" ? "adaptive" : "enabled") : wire.parameter?.includes("reasoning") ? "high" : true;
+  const modelDocs = NOVEMBER_MODEL_DOCS[model.id];
   return {
     canonicalId: model.id,
     provider: model.provider,
@@ -137,9 +144,9 @@ export function reasoningCapabilityForModel(model: ModelInfo): ModelReasoningCap
     parameter: wire.parameter,
     tierMapping,
     apiSurface: wire.apiSurface,
-    officialDocs: OFFICIAL_REASONING_DOCS[model.provider] ?? "",
-    verifiedAt: "2026-10-18",
-    method: LIVE_PROBED.has(model.provider) ? "both" : "official_docs",
+    officialDocs: modelDocs ?? OFFICIAL_REASONING_DOCS[model.provider] ?? "",
+    verifiedAt: modelDocs ? "2026-11-14" : "2026-10-18",
+    method: !modelDocs && LIVE_PROBED.has(model.provider) ? "both" : "official_docs",
   };
 }
 

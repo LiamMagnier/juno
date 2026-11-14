@@ -206,7 +206,7 @@ export function geminiThinkingBudget(
   }
 }
 
-export type GeminiThinkingLevel = "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
+export type GeminiThinkingLevel = "MINIMAL" | "LOW" | "MEDIUM" | "HIGH" | "XHIGH";
 
 export type GeminiThinkingConfig =
   | { includeThoughts: true; thinkingLevel: GeminiThinkingLevel }
@@ -237,6 +237,8 @@ function geminiLevelFor(tier: Exclude<ReasoningEffort, null>): GeminiThinkingLev
       return "LOW";
     case "medium":
       return "MEDIUM";
+    case "xhigh":
+      return "XHIGH";
     default:
       return "HIGH";
   }

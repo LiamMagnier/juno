@@ -174,11 +174,10 @@ describe("auto-model and training tiers", () => {
     });
   });
 
-  it("still takes the standard tier of the same model, not nothing at all", () => {
-    // Excluding the cheap tier must not exclude the line: the point is to route
-    // past the training endpoint, not to route past Meta.
+  it("selects an available Meta model that does not train on prompts", () => {
+    // Ember is the cheapest non-training Meta model for this prompt.
     withOnlyMeta(() => {
-      assert.equal(pickAutoModel({ message: "write me a haiku", plan: "PRO" }).model.id, "meta:muse-spark-1.3");
+      assert.equal(pickAutoModel({ message: "write me a haiku", plan: "PRO" }).model.id, "meta:muse-ember-1.0");
     });
   });
 });

@@ -1,5 +1,5 @@
 import type { ModelInfo } from "@/lib/models";
-import { geminiArgonRate, geminiFlashRate, isGeminiArgon, isGeminiPromoFlash } from "@/lib/scheduled-prices";
+import { geminiFrontierRate, geminiFlashRate, isGeminiPromoFrontier, isGeminiPromoFlash } from "@/lib/scheduled-prices";
 import { OFFICIAL_RATES, type OfficialRateEntry } from "@/lib/model-rates.generated";
 
 /**
@@ -239,7 +239,8 @@ function baseRate(model: ModelInfo, at: Date | number = Date.now()): { input: nu
       return { input: 2.5, output: 10 };
     case "google":
       // $2/$10 through 2026-11-30, $4/$20 from 2026-12-01 UTC (scheduled-prices.ts).
-      if (isGeminiArgon(pm)) return { ...geminiArgonRate(at) };
+      if (isGeminiPromoFrontier(pm)) return { ...geminiFrontierRate(at) };
+      if (pm === "gemini-4-hydrogen") return { input: 1.5, output: 7.5 };
       if (pm.includes("3.1-flash-lite")) return { input: 0.25, output: 1.5 };
       // $0.75/$3.75 through 2026-12-31, $1.50/$7.50 from 2027-01-01 UTC
       // (scheduled-prices.ts), priced at the moment the tokens were used.
@@ -265,6 +266,7 @@ function baseRate(model: ModelInfo, at: Date | number = Date.now()): { input: nu
       if (pm.includes("contributor")) return { input: 0.1, output: 0.2 };
       // Muse Wonder 1.0 (dev.meta.ai/docs/pricing-rate-limits, 2026-10-14):
       // $4 / $20, cached $0.20, no long-context premium, no contributor tier.
+      if (pm === "muse-ember-1.0") return { input: 0.1, output: 0.5 };
       if (pm.includes("muse-wonder")) return { input: 4, output: 20 };
       if (pm.includes("muse-spark")) return { input: 1.25, output: 4.25 };
       // No muse-image row, for the reason model-metrics.ts gives: it bills per
@@ -537,15 +539,16 @@ function computedRate(model: ModelInfo, input: number, output: number): TokenRat
     };
   }
   if (model.provider === "google") {
-    // Every Gemini text model Juno serves prices a cached token at 10% of its
+    const pm = model.providerModel.toLowerCase();
+    // Most Gemini text models price a cached token at 10% of their
     // input rate (ai.google.dev/gemini-api/docs/pricing, read 2026-10-04:
     // 3.1 Pro $0.20 on $2, 3.5 Flash $0.15 on $1.50, 2.5 Pro $0.125 on $1.25,
     // 2.5 Flash-Lite $0.01 on $0.10). Only the 3.5-3.8 Flash rows used to get
     // it; Pro, Flash-Lite and 3 Flash fell through to the 0.25x default and a
     // reader was billed 2.5x the real price on every implicit-cache hit.
     // Implicit caching has no storage fee, so writes cost plain input.
-    // Gemini 4 Argon is the exception: $0.10 on $2, then $0.20 on $4 — 5%.
-    const cacheRatio = isGeminiArgon(model.providerModel) ? 0.05 : 0.1;
+    // Gemini 4 Argon, Carbon, and Hydrogen price cache reads at 5%.
+    const cacheRatio = isGeminiPromoFrontier(pm) || pm === "gemini-4-hydrogen" ? 0.05 : 0.1;
     return { input, output, cacheRead: input * cacheRatio, cacheWrite: input, cacheWrite5m: input, cacheWrite1h: input };
   }
   if (model.provider === "deepseek") {
@@ -632,7 +635,7 @@ function computedRate(model: ModelInfo, input: number, output: number): TokenRat
     return {
       input,
       output,
-      cacheRead: input * (pm.includes("contributor") ? 0.02 : pm.includes("muse-wonder") ? 0.05 : 0.12),
+      cacheRead: pm === "muse-ember-1.0" ? 0.004 : input * (pm.includes("contributor") ? 0.02 : pm.includes("muse-wonder") ? 0.05 : 0.12),
       cacheWrite: input,
       cacheWrite5m: input,
       cacheWrite1h: input,
@@ -847,6 +850,9 @@ export function longContextPricing(
   const pm = model.providerModel.toLowerCase();
   if (model.provider === "openai" && /gpt-6(?:\.\d+)?-(astra|sol|terra|luna)/.test(pm)) {
     return { threshold: 272_000, inclusive: false, inputMultiplier: 2, outputMultiplier: 1.5 };
+  }
+  if (model.provider === "meta" && pm === "muse-ember-1.0") {
+    return { threshold: 200_000, inclusive: false, inputMultiplier: 3, outputMultiplier: 3 };
   }
   if (model.provider === "xai" && pm.startsWith("grok-") && model.modality === "chat") {
     return { threshold: 200_000, inclusive: true, inputMultiplier: 2, outputMultiplier: 2 };

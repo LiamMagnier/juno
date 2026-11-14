@@ -102,3 +102,31 @@ test("only the three Flash chat models are on the schedule", () => {
     );
   }
 });
+
+test("Carbon's picker and billing switch together, while Hydrogen stays on standard rates", () => {
+  const carbon = resolveModel("google:gemini-4-carbon");
+  const hydrogen = resolveModel("google:gemini-4-hydrogen");
+  assert.ok(carbon);
+  assert.ok(hydrogen);
+  const december = Date.UTC(2026, 11, 1);
+  for (const [at, input, output, cache] of [[december - 1, 2, 10, 0.1], [december, 4, 20, 0.2]]) {
+    const rates = tokenRate(carbon, false, at);
+    assert.deepEqual([rates.input, rates.output, rates.cacheRead], [input, output, cache]);
+    const metrics = getModelMetrics(carbon, at);
+    assert.deepEqual([metrics.inputUsdPerMTok, metrics.outputUsdPerMTok], [input, output]);
+    const hydrogenRate = tokenRate(hydrogen, false, at);
+    assert.deepEqual([hydrogenRate.input, hydrogenRate.output], [1.5, 7.5]);
+    assert.ok(Math.abs(hydrogenRate.cacheRead - 0.075) < 1e-9);
+  }
+});
+
+test("Muse Ember applies its higher tier to the entire request above 200K input tokens", () => {
+  const ember = resolveModel("meta:muse-ember-1.0");
+  assert.ok(ember);
+  const rates = tokenRate(ember, false);
+  assert.deepEqual([rates.input, rates.output, rates.cacheRead], [0.1, 0.5, 0.004]);
+  const atLimit = { input: 200_000, cacheRead: 100_000, output: 1000 };
+  const aboveLimit = { ...atLimit, input: 200_001 };
+  assert.ok(Math.abs(estimateCostUsd(ember, atLimit, false) - 0.0109) < 1e-9);
+  assert.ok(Math.abs(estimateCostUsd(ember, aboveLimit, false) - 0.0327003) < 1e-9);
+});

@@ -237,3 +237,12 @@ test("only the Gemini modules know Google's native host", () => {
   // …and the native adapter never reaches for the compat shim.
   assert.equal(readFileSync("src/lib/gemini.ts", "utf8").includes("/v1beta/openai/"), false);
 });
+
+test("Gemini 4 Hydrogen sends XHIGH while Carbon uses its default for unsupported effort", () => {
+  const hydrogen = Object.values(MODELS).find((entry) => entry.providerModel === "gemini-4-hydrogen");
+  const carbon = Object.values(MODELS).find((entry) => entry.providerModel === "gemini-4-carbon");
+  assert.ok(hydrogen);
+  assert.ok(carbon);
+  assert.deepEqual(geminiThinkingConfig(hydrogen, "xhigh"), { includeThoughts: true, thinkingLevel: "XHIGH" });
+  assert.deepEqual(geminiThinkingConfig(carbon, "xhigh"), { includeThoughts: true, thinkingLevel: "MEDIUM" });
+});

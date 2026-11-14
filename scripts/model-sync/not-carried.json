@@ -56,6 +56,7 @@
   "qwen:qwen-plus-character-ja": "specialised task model (translation, role-play or OCR), not a general chat model",
   "qwen:qwen-vl-ocr": "specialised task model (translation, role-play or OCR), not a general chat model",
   "qwen:qwen-vl-plus": "open-weight or older Qwen variant; Juno carries the hosted flagship lines",
+  "qwen:qwen4-max-preview": "temporary preview requiring Alibaba Token Plan credentials",
   "qwen:qwen2.5-omni-7b": "open-weight or older Qwen variant; Juno carries the hosted flagship lines",
   "qwen:qwen3-14b": "open-weight or older Qwen variant; Juno carries the hosted flagship lines",
   "qwen:qwen3-32b": "open-weight or older Qwen variant; Juno carries the hosted flagship lines",

@@ -450,6 +450,8 @@ const CURATED: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-4o-mini", name: "GPT-4o Mini", family: "gpt-4o-mini", status: "deprecated", released: "2024-07", minPlan: "FREE", vision: true, cost: 1, contextWindow: 128_000, description: "Small GPT-4o tier.", deprecationNote: "Retires Jan 14, 2027. Use GPT-6 Luna", retiresOn: "2027-01-14", replacedBy: "openai:gpt-6-luna" }),
 
   // —— Google ——
+  def({ provider: "google", id: "gemini-4-hydrogen", name: "Gemini 4 Hydrogen", family: "hydrogen", status: "current", released: "2026-11", minPlan: "FREE", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Google's fast multimodal Gemini 4 model, with a 1M context window and adjustable reasoning." }),
+  def({ provider: "google", id: "gemini-4-carbon", name: "Gemini 4 Carbon", family: "carbon", status: "current", released: "2026-10", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_048_576, description: "Google's Gemini 4 model for complex multimodal work with a 1M context window." }),
   // Gemini 4 Argon (owner-requested 2026-10-14), read 2026-10-14 from
   // ai.google.dev/gemini-api/docs/models/gemini-4-argon, the thinking table
   // and the pricing page: id `gemini-4-argon` (stable, not preview), text /
@@ -498,6 +500,7 @@ const CURATED: ModelInfo[] = [
   // are registered as SEPARATE FAMILIES so neither can shadow the other in a
   // picker that shows one current row per family. See `trainsOnPrompts` for
   // what keeps the cheap one out of Auto.
+  def({ provider: "meta", id: "muse-ember-1.0", name: "Muse Ember", family: "muse-ember", status: "current", released: "2026-11", minPlan: "PRO", vision: true, reasoning: true, cost: 1, contextWindow: 1_048_576, description: "Meta's multimodal model for efficient reasoning and tool use with a 1M context window." }),
   // Muse Wonder 1.0 (owner-requested 2026-10-14), read 2026-10-14 from
   // dev.meta.ai/docs/models and /docs/pricing-rate-limits: id
   // `muse-wonder-1.0`, Preview, 1,048,576 context, text/image/video/audio/PDF
