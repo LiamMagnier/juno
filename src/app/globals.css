@@ -671,10 +671,15 @@
     --shadow-raised-lg: 0 1px 2px hsl(var(--shadow-ink) / 0.04), 0 6px 16px -6px hsl(var(--shadow-ink) / 0.08);
     --shadow-inset: 0 0 0 0 transparent;
     --shadow-pressed: 0 0 0 0 transparent;
-    /* The out-of-flow rung — popovers, dialogs, toasts, tooltips, sheets. A
-       crisp contact shadow, a long soft throw pulled in by negative spread so
-       it never smears across the page, and the rim light along the top edge. */
-    --shadow-float: 0 0 0 1px hsl(var(--shadow-ink) / 0.04), 0 2px 6px -1px hsl(var(--shadow-ink) / 0.06), 0 16px 40px -12px hsl(var(--shadow-ink) / 0.18);
+    /* The out-of-flow rung — menus, popovers, dialogs, toasts, sheets: ONE
+       recipe (design audit 2026-11 #23 counted three: menus drew four layers,
+       popovers three, and dialogs this token, whose 1px ring sat on top of
+       their own border as a doubled edge). A contact shadow, a short middle
+       step, and a long soft throw pulled in by negative spread so it never
+       smears across the page. The edge is the panel's own 1px border, in
+       `--float-edge`, so no layer repeats it. */
+    --shadow-float: 0 1px 2px hsl(var(--shadow-ink) / 0.05), 0 4px 8px -2px hsl(var(--shadow-ink) / 0.04), 0 16px 40px -12px hsl(var(--shadow-ink) / 0.16);
+    --float-edge: hsl(var(--foreground) / 0.09);
 
     /* The legacy elevation ladder. `soft` and `lift` are the in-flow rungs a
        call site reaches for when it wants "a little" rather than the full raised
@@ -935,7 +940,10 @@
        Same geometry as light otherwise; the inks are the only difference. */
     --shadow-raised: 0 1px 2px hsl(0 0% 0% / 0.25);
     --shadow-raised-lg: 0 1px 2px hsl(0 0% 0% / 0.25), 0 8px 20px -8px hsl(0 0% 0% / 0.5);
-    --shadow-float: 0 0 0 1px hsl(220 7% 96% / 0.07), 0 4px 12px hsl(0 0% 0% / 0.35), 0 18px 44px -12px hsl(0 0% 0% / 0.6);
+    /* The lit top edge (an inset highlight) is added by the surfaces
+       themselves (`.dark .surface-float`), so it is not repeated here. */
+    --shadow-float: 0 1px 2px hsl(0 0% 0% / 0.3), 0 18px 44px -10px hsl(0 0% 0% / 0.62);
+    --float-edge: hsl(40 10% 96% / 0.08);
     --shadow-glass: 0 4px 12px hsl(0 0% 0% / 0.35), 0 18px 44px -12px hsl(0 0% 0% / 0.6);
 
     /* The sheen is a warm near-white kept low: over charcoal it is light along
@@ -1548,7 +1556,7 @@
     background-color: hsl(var(--popover));
     --scroll-fade-ground: var(--popover);
     color: hsl(var(--popover-foreground));
-    border: 1px solid hsl(var(--border) / .9);
+    border: 1px solid var(--float-edge);
     box-shadow: var(--shadow-float);
   }
 
@@ -2275,7 +2283,7 @@
      a competing `shadow-*` or `bg-*` utility on the same element silently wins.
      Check each call site for one. */
   .overlay-glass {
-    border: 1px solid hsl(var(--border) / .7);
+    border: 1px solid var(--float-edge);
     background-color: hsl(var(--popover));
     --scroll-fade-ground: var(--popover);
     color: hsl(var(--popover-foreground));

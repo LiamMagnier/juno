@@ -29,6 +29,21 @@ const errors = req("../src/lib/computer/errors") as typeof import("@/lib/compute
 const remote = req("../src/lib/computer/remote") as typeof import("@/lib/computer/remote");
 const providerModule = req("../src/lib/computer/provider") as typeof import("@/lib/computer/provider");
 
+/**
+ * `now`, or an earlier instant, such that [t − before, t + after] lies inside
+ * one UTC week (the allowance's unit, store.weekStartUtc). Never later than
+ * `now`: rows stamped with it read as history, as they would in a real outage.
+ */
+function weekSafeNow(now: number, before: number, after: number): number {
+  const start = store.weekStartUtc(new Date(now)).getTime();
+  const end = start + 7 * 24 * 60 * 60_000;
+  // Too early in this week: put the whole span in the week before.
+  if (now - before < start) return start - after - 60_000;
+  // Too late: end the span a minute short of next Monday.
+  if (now + after >= end) return end - after - 60_000;
+  return now;
+}
+
 const TOKEN = "f".repeat(64);
 const KEYS = ["COMPUTER_PROVIDER", "AGENT_COMPUTER_PROVIDER", "COMPUTER_HOST_URL", "COMPUTER_HOST_TOKEN", "AGENT_COMPUTER_ROLLOUT", "AUTH_SECRET", "AGENT_COMPUTER_COST_USD_PER_MIN", "COMPUTER_COST_MICRO_USD_PER_SECOND"];
 const saved: Record<string, string | undefined> = {};
@@ -141,7 +156,11 @@ describe("losing the computer host mid-run", () => {
   let handle: { name: string; volume: string };
   let containerRef: string | null = null;
   // The outage: the computer woke 10 minutes before `t0`, the last contact was 5 minutes before.
-  const t0 = Date.now();
+  // `t0` is the wall clock, pulled back when the outage's span (10 minutes
+  // before it to an hour after) would cross Monday 00:00 UTC: the allowance is
+  // counted per UTC week (store.weekStartUtc), so a run in the last hour of a
+  // Sunday split the five metered minutes into the week before and failed.
+  const t0 = weekSafeNow(Date.now(), 10 * MINUTE, 60 * MINUTE);
   const resumedAt = new Date(t0 - 10 * MINUTE);
   const contactAt = new Date(t0 - 5 * MINUTE);
 

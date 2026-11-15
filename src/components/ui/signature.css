@@ -236,44 +236,30 @@ button[role="switch"][data-state="checked"] > span > span,
   --cm-radius: 16px;
   --cm-pad: 6px;
   border-radius: var(--cm-radius);
-  border: 1px solid hsl(var(--foreground) / 0.09);
+  border: 1px solid var(--float-edge);
   background-color: hsl(var(--popover));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.75),
-    0 1px 2px hsl(220 10% 10% / 0.05),
-    0 4px 8px -2px hsl(220 10% 10% / 0.04),
-    0 16px 40px -12px hsl(220 10% 10% / 0.16);
+  box-shadow: var(--shadow-float);
 }
 .dark .cmenu.cmenu.cmenu {
-  border-color: hsl(40 10% 96% / 0.08);
-  background-color: hsl(var(--popover));
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.06),
-    0 1px 2px hsl(0 0% 0% / 0.3),
-    0 18px 44px -10px hsl(0 0% 0% / 0.62);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06), var(--shadow-float);
 }
 /* Popovers that are not menus (the model card, the date picker, the hover
-   cards) take the same sheet so they read as the same material. */
+   cards) take the same sheet so they read as the same material: the float
+   shadow and edge every floating panel shares (globals.css, --shadow-float). */
 .z-popper.surface-float:not(.cmenu),
 .z-popper.overlay-glass:not(.cmenu) {
   border-radius: 16px;
-  border: 1px solid hsl(var(--foreground) / 0.09);
+  border: 1px solid var(--float-edge);
   background-color: hsl(var(--popover));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.75),
-    0 1px 2px hsl(220 10% 10% / 0.05),
-    0 16px 40px -12px hsl(220 10% 10% / 0.16);
+  box-shadow: var(--shadow-float);
 }
 .dark .z-popper.surface-float:not(.cmenu),
 .dark .z-popper.overlay-glass:not(.cmenu) {
-  border-color: hsl(40 10% 96% / 0.08);
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.06),
-    0 18px 44px -10px hsl(0 0% 0% / 0.62);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06), var(--shadow-float);
 }
 
 .menu-item.menu-item,
