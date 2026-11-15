@@ -225,6 +225,17 @@ export interface RecordSpendInput {
    */
   costUsd?: number;
   /**
+   * `costUsd` was already priced request by request by a server-side meter
+   * that saw what these token counts cannot say: each request's cache split
+   * and its own context size. Today that is the Work runner's budget guard
+   * only. The tokens are then stored as counts and `costUsd` is the charge;
+   * the usual max against a recompute would price the aggregate as ONE
+   * request, cache reads at the full input rate and a long-context surcharge
+   * on a sum no request reached, which billed Work runs 5.6x to 22x
+   * (metering-findings.md, M1). Without a positive `costUsd` it is ignored.
+   */
+  preReconciled?: boolean;
+  /**
    * The call went through the provider's Batch API, which bills tokens at a
    * discount (`batchPriceMultiplier`). The user is billed what Juno paid: the
    * recompute from tokens applies the same discount, so the "never underbill"
@@ -298,8 +309,9 @@ export async function recordSpend(input: RecordSpendInput): Promise<boolean> {
         const fromTokens = Math.round(billed.costUsd * 1_000_000);
         const fromCaller =
           input.costUsd != null && input.costUsd > 0 ? Math.round(input.costUsd * 1_000_000) : 0;
-        // Never underbill: prefer the higher of the two honest estimates.
-        costMicroUsd = Math.max(fromTokens, fromCaller);
+        // Never underbill: prefer the higher of the two honest estimates —
+        // unless the caller's is the per-request one and the recompute is not.
+        costMicroUsd = input.preReconciled && fromCaller > 0 ? fromCaller : Math.max(fromTokens, fromCaller);
       } else {
         if (!promptTokens) promptTokens = estimateTokensFromChars(input.promptChars);
         if (!completionTokens) {
@@ -310,7 +322,7 @@ export async function recordSpend(input: RecordSpendInput): Promise<boolean> {
         const fromTokens = modelRequestCost({ modelId: input.model, promptTokens, completionTokens });
         const fromCaller =
           input.costUsd != null && input.costUsd > 0 ? Math.round(input.costUsd * 1_000_000) : 0;
-        costMicroUsd = Math.max(fromTokens, fromCaller);
+        costMicroUsd = input.preReconciled && fromCaller > 0 ? fromCaller : Math.max(fromTokens, fromCaller);
       }
     }
 
@@ -418,10 +430,9 @@ export async function recordWorkRunSpend(input: {
       return;
     }
 
-    // The token counts are cumulative too, and `recordSpend` re-costs from them
-    // and keeps the HIGHER of the two figures. Handing it cumulative tokens
-    // beside a delta cost would therefore bill the whole run again at the
-    // second terminal point, which is the exact bug deltas exist to avoid.
+    // The token counts are cumulative too, and are stored as deltas so the
+    // next stretch's delta reads back right. They are counts only: the charge
+    // is the guard's (`preReconciled` below).
     const promptDelta = Math.max(0, (input.inputTokens ?? 0) - (billed._sum.promptTokens ?? 0));
     const completionDelta = Math.max(
       0,
@@ -437,8 +448,13 @@ export async function recordWorkRunSpend(input: {
       promptTokens: promptDelta,
       completionTokens: completionDelta,
       // The runner's own accounting includes tool fees and every non-chat call
-      // the run made, so it is the floor rather than a hint.
+      // the run made, and its guard prices each request as the provider does:
+      // cache reads at the read rate, a long-context surcharge only on a
+      // request whose own prompt crossed it (runner/agent-core work/budget.ts).
+      // A recompute here sees only the stretch's summed tokens, and pricing
+      // those as one request is what billed Work runs 5.6x to 22x.
       costUsd: delta / 1_000_000,
+      preReconciled: true,
       idempotencyKey: `${prefix}${cumulative}`,
     });
     if (recorded && input.terminal && input.reservationRef) {

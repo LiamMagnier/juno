@@ -3510,9 +3510,11 @@ function reasoningEffortFor(
  * currency summed over a few hundred steps drifts away from the ceiling it is
  * compared against.
  *
- * The base rate, not the cache-adjusted or fast-mode one. A Work run makes
- * ordinary requests, and pricing a cache read it never performs would make the
- * ceiling fire early on a run that had spent less than it was charged for.
+ * Standard speed, not fast mode: a Work run makes ordinary requests. But the
+ * cache-read and write rates and the lab's long-context tier ride along, and
+ * the guard prices each step's own cache split and prompt size with them. Its
+ * figure is what the run is billed (`recordWorkRunSpend`), and reads at the
+ * input rate made a cached run cost 5x what the provider charged for it.
  */
 function pricingFor(model: ModelInfo | null, provider: string): WorkModelPricing {
   return workRunPricing(model, provider);

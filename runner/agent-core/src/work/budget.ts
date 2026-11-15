@@ -48,6 +48,26 @@ export interface WorkModelPricing {
    * quarter of its prefix. Optional: absent means "same as input".
    */
   cacheWriteMicroUsdPerMillion?: number;
+  /**
+   * What a token READ from the prompt cache costs: a tenth of input or less on
+   * most labs. The guard's figure is what the account is billed for the run,
+   * and a run re-sends its whole transcript every step, so pricing reads at
+   * the input rate billed a cached Work run 5x what the provider charged.
+   * Optional: absent means "same as input", the never-under-billing default.
+   */
+  cacheReadMicroUsdPerMillion?: number;
+  /**
+   * A lab's long-context surcharge (`longContextPricing` in the web app): once
+   * ONE request's prompt crosses `threshold`, that whole request bills at the
+   * multipliers. Checked against each step's own `inputTokens`, as the lab
+   * prices it, never against the run's sum.
+   */
+  longContext?: {
+    threshold: number;
+    inclusive: boolean;
+    inputMultiplier: number;
+    outputMultiplier: number;
+  };
 }
 
 /** Fraction of a ceiling at which the user is warned, once, per limit. */
@@ -197,18 +217,27 @@ export class WorkBudgetGuard {
     // Rounded once per step rather than once at the end: the run's recorded
     // cost has to match the sum of the steps a user can be shown, and a total
     // rounded separately from its parts is a total that does not add up.
-    // Cache writes are inside `inputTokens`; only the premium above the input
-    // rate is added. Cache READS stay at the full input rate — over-billing a
-    // discount the run did get, never under-billing.
-    const writePremium = Math.max(
-      0,
-      (this.pricing.cacheWriteMicroUsdPerMillion ?? this.pricing.inputMicroUsdPerMillion) -
-        this.pricing.inputMicroUsdPerMillion,
+    //
+    // Both cache buckets are inside `inputTokens` and are carved out of it, so
+    // a step with no cache counters bills every input token at the full rate.
+    // Clamped, so counters a provider over-reported cannot price a negative
+    // fresh remainder. A write never bills below input, as before.
+    const pricing = this.pricing;
+    const input = Math.max(0, step.inputTokens);
+    const read = Math.min(input, Math.max(0, step.cacheReadTokens ?? 0));
+    const written = Math.min(input - read, Math.max(0, step.cacheWriteTokens ?? 0));
+    const readRate = pricing.cacheReadMicroUsdPerMillion ?? pricing.inputMicroUsdPerMillion;
+    const writeRate = Math.max(
+      pricing.inputMicroUsdPerMillion,
+      pricing.cacheWriteMicroUsdPerMillion ?? pricing.inputMicroUsdPerMillion,
     );
+    const lc = pricing.longContext;
+    const long = lc !== undefined && (lc.inclusive ? input >= lc.threshold : input > lc.threshold);
+    const inputCost =
+      (input - read - written) * pricing.inputMicroUsdPerMillion + read * readRate + written * writeRate;
+    const outputCost = step.outputTokens * pricing.outputMicroUsdPerMillion;
     this.costMicroUsd += Math.round(
-      (step.inputTokens * this.pricing.inputMicroUsdPerMillion) / 1_000_000 +
-        (step.outputTokens * this.pricing.outputMicroUsdPerMillion) / 1_000_000 +
-        ((step.cacheWriteTokens ?? 0) * writePremium) / 1_000_000,
+      (inputCost * (long ? lc.inputMultiplier : 1) + outputCost * (long ? lc.outputMultiplier : 1)) / 1_000_000,
     );
   }
 

@@ -98,6 +98,67 @@ test('cost is priced per step in integer micro-USD', () => {
   assert.equal(guard.outcome?.terminalReason, 'budget_exceeded');
 });
 
+/*
+ * The guard's figure is what the account is billed for a Work run
+ * (metering-findings.md, M1), so it prices each request as the provider does:
+ * a cache read at the read rate, and a long-context surcharge only on a
+ * request whose OWN prompt crosses the threshold, never on the run's sum.
+ */
+const CACHED = {
+  inputMicroUsdPerMillion: 3_000_000,
+  outputMicroUsdPerMillion: 15_000_000,
+  cacheWriteMicroUsdPerMillion: 3_750_000,
+};
+const NO_CEILING: WorkBudget = { maxCostMicroUsd: 0, maxTokens: 0, maxRuntimeMs: 0 };
+
+test('a cache read is priced at the cache-read rate', () => {
+  const guard = new WorkBudgetGuard({ budget: NO_CEILING, pricing: { ...CACHED, cacheReadMicroUsdPerMillion: 300_000 } });
+  guard.record({ inputTokens: 100_000, outputTokens: 1_000, cacheReadTokens: 90_000, cacheWriteTokens: 5_000 });
+  // 5k fresh at $3/M + 90k read at $0.30/M + 5k written at $3.75/M + 1k out at $15/M.
+  assert.equal(guard.usage.costMicroUsd, 15_000 + 27_000 + 18_750 + 15_000);
+  assert.equal(guard.usage.inputTokens, 100_000, 'the token ceiling still counts every input token');
+});
+
+test('with no cache-read rate, a read is billed at the input rate, as before', () => {
+  const guard = new WorkBudgetGuard({ budget: NO_CEILING, pricing: CACHED });
+  guard.record({ inputTokens: 100_000, outputTokens: 1_000, cacheReadTokens: 90_000, cacheWriteTokens: 5_000 });
+  assert.equal(guard.usage.costMicroUsd, 300_000 + 3_750 + 15_000);
+});
+
+test('cache counters larger than the prompt cannot price a negative fresh remainder', () => {
+  const guard = new WorkBudgetGuard({ budget: NO_CEILING, pricing: { ...CACHED, cacheReadMicroUsdPerMillion: 300_000 } });
+  guard.record({ inputTokens: 10_000, outputTokens: 0, cacheReadTokens: 8_000, cacheWriteTokens: 8_000 });
+  // 8k read, the remaining 2k written, nothing fresh.
+  assert.equal(guard.usage.costMicroUsd, 2_400 + 7_500);
+});
+
+test('a long-context surcharge applies only to a step whose own input crosses the threshold', () => {
+  const pricing = {
+    inputMicroUsdPerMillion: 100_000,
+    outputMicroUsdPerMillion: 500_000,
+    cacheReadMicroUsdPerMillion: 10_000,
+    cacheWriteMicroUsdPerMillion: 125_000,
+    longContext: { threshold: 100_000, inclusive: false, inputMultiplier: 5, outputMultiplier: 5 },
+  };
+  const guard = new WorkBudgetGuard({ budget: NO_CEILING, pricing });
+  // Ten 20k steps: 200k between them, none over the threshold.
+  for (let i = 0; i < 10; i++) guard.record({ inputTokens: 20_000, outputTokens: 400 });
+  assert.equal(guard.usage.costMicroUsd, 10 * (2_000 + 200));
+  // Exactly at a non-inclusive threshold is still the standard band.
+  guard.record({ inputTokens: 100_000, outputTokens: 1_000 });
+  assert.equal(guard.usage.costMicroUsd, 22_000 + 10_000 + 500);
+  // Over it: the whole request at 5x, cache read and output included.
+  guard.record({ inputTokens: 120_000, outputTokens: 1_000, cacheReadTokens: 100_000 });
+  assert.equal(guard.usage.costMicroUsd, 32_500 + (2_000 + 1_000) * 5 + 500 * 5);
+
+  const inclusive = new WorkBudgetGuard({
+    budget: NO_CEILING,
+    pricing: { ...pricing, longContext: { ...pricing.longContext, inclusive: true } },
+  });
+  inclusive.record({ inputTokens: 100_000, outputTokens: 1_000 });
+  assert.equal(inclusive.usage.costMicroUsd, (10_000 + 500) * 5);
+});
+
 test('with no pricing, cost stays zero and only tokens can stop the run', () => {
   const guard = new WorkBudgetGuard({
     budget: { maxCostMicroUsd: 1, maxTokens: 0, maxRuntimeMs: 0 },
