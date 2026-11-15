@@ -460,7 +460,7 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
             mode === "signin" ? (
               <Link
                 href="/forgot-password"
-                className="rounded-xs text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline focus-visible:text-foreground"
+                className="hit-24 rounded-xs text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline focus-visible:text-foreground"
               >
                 Forgot your password?
               </Link>

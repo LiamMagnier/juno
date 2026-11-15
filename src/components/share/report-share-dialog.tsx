@@ -122,7 +122,7 @@ export function ReportShareButton({ token }: { token: string }) {
             footer links; the glyph is the bold 12px cut, sized to the caption. */}
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-xs text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground"
+          className="hit-24 inline-flex items-center gap-1.5 rounded-xs text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground"
         >
           <StatusIcons.warning className="size-3 shrink-0" aria-hidden="true" />
           Report

@@ -1058,6 +1058,27 @@ const config: Config = {
             },
           },
         },
+        // The same pad for a control under 24px on any pointer (WCAG 2.5.8,
+        // design audit 2026-11 #20): a text link or a tick keeps its drawn
+        // size, a centred pad makes it 24 by 24, and 44 under touch.
+        ".hit-24": {
+          position: "relative",
+          "&::before": {
+            content: '""',
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            width: "max(100%, 1.5rem)",
+            height: "max(100%, 1.5rem)",
+            translate: "-50% -50%",
+          },
+          "@media (pointer: coarse)": {
+            "&::before": {
+              width: "max(100%, 2.75rem)",
+              height: "max(100%, 2.75rem)",
+            },
+          },
+        },
       });
     }),
   ],
