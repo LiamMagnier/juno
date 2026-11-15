@@ -161,7 +161,11 @@ function RowContent({ section, selected, enterHint }: { section: SettingsSection
 }
 
 // `group` for the glyph ink. 44px on a touch screen (WCAG 2.5.8).
-const rowClass = "group w-full shrink-0 whitespace-nowrap coarse:min-h-11";
+// The sidebar's type and gap (text-nav, 12px), so the rail reads as the same
+// navigation as the list that opens it; 36px rather than the sidebar's 32 for
+// a window's roomier list. It was text-body on 38px rows: a rung of type above
+// the sidebar, beside it on screen.
+const rowClass = "group w-full shrink-0 whitespace-nowrap h-9 gap-3 py-0 text-nav coarse:h-auto coarse:min-h-11";
 
 /**
  * The settings rail: one row per section, text on the surface, with the open
