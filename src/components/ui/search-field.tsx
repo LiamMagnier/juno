@@ -43,7 +43,7 @@ export function SearchField({
         aria-label={label}
         aria-busy={busy || undefined}
         placeholder={placeholder}
-        className="rounded-full bg-secondary/60 pe-11 ps-9 [&::-webkit-search-cancel-button]:hidden"
+        className="rounded-full pe-11 ps-9 [&::-webkit-search-cancel-button]:hidden"
       />
       {value && (
         <Pressable

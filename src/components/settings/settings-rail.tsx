@@ -1,5 +1,6 @@
 "use client";
 
+import { fieldSurfaceClass } from "@/components/ui/field-recipe";
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -97,7 +98,7 @@ function SearchField({
         placeholder="Search settings"
         aria-label="Search settings"
         enterKeyHint="go"
-        className="peer h-9 w-full rounded-control border border-transparent bg-foreground/[0.045] pl-8 pr-8 text-ui text-foreground outline-none transition-[background-color,border-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground hover:bg-foreground/[0.07] focus:border-border focus:bg-background focus:shadow-[0_1px_2px_hsl(var(--foreground)/0.06)] kbd-focus:border-[hsl(var(--ring)/0.55)] kbd-focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)] coarse:h-11 coarse:pr-12 [&::-webkit-search-cancel-button]:hidden"
+        className={cn("peer h-9 w-full rounded-full border pl-8 pr-8 text-ui outline-none coarse:h-11 coarse:pr-12 [&::-webkit-search-cancel-button]:hidden", fieldSurfaceClass)}
       />
       {query && (
         <button

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ActionIcons } from "@/lib/app-icons";
 import { Pressable } from "@/components/ui/pressable";
+import { CloseButton } from "@/components/ui/dialog";
 import { SettingsRail } from "@/components/settings/settings-rail";
 import { SettingsPane } from "@/components/settings/settings-pane";
 import { resolveSettingsSection, settingsHref } from "@/components/settings/settings-sections";
@@ -110,15 +111,13 @@ function SettingsPageContent() {
               </div>
             </aside>
             <div className="relative min-h-0 min-w-0 flex-1">
-              <Pressable
-                kind="icon"
-                size="md"
+              {/* The product's one close control (ui/dialog.tsx): bare, 36px,
+                  a fill under the pointer. This one was a grey filled disc. */}
+              <CloseButton
                 onClick={close}
-                aria-label="Close settings"
-                className="absolute end-4 top-4 z-10 hidden bg-secondary text-muted-foreground md:inline-flex"
-              >
-                <ActionIcons.dismiss className="size-4" aria-hidden="true" />
-              </Pressable>
+                label="Close settings"
+                className="absolute end-4 top-4 z-10 hidden text-muted-foreground md:inline-flex"
+              />
               <main ref={mainRef} className="h-full overflow-y-auto overscroll-contain">
                 <div className="@container/pane mx-auto w-full max-w-[42rem] px-5 pb-16 pt-6 sm:px-10 md:pt-12">
                   <SettingsPane section={section} />

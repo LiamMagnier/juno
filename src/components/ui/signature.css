@@ -88,44 +88,37 @@
    a 1px contact shadow and one short ambient layer. Focus steps the hairline
    up and lengthens the ambient layer a little; nothing coloured, no halo.
    Only box-shadow and border-color move, on the strong ease-out at 200ms. */
+/* The composer sits in the page, so it is drawn as in-flow material: a
+   neutral hairline and a 1px contact shadow, the edge darkening on focus. It
+   carried warm-tinted borders and a three-layer drop shadow on a cool
+   palette, the heaviest object on an otherwise flat page. */
 .composer-surface.composer-surface {
   caret-color: hsl(var(--foreground));
-  border-color: hsl(30 8% 14% / 0.1);
-  box-shadow:
-    0 1px 1px hsl(30 10% 10% / 0.03),
-    0 2px 6px -2px hsl(220 10% 10% / 0.05),
-    0 10px 24px -14px hsl(30 10% 10% / 0.1);
+  border-color: hsl(var(--foreground) / 0.12);
+  box-shadow: 0 1px 2px hsl(var(--foreground) / 0.04);
   transition:
     border-color 160ms var(--ease-out-soft),
     box-shadow 200ms var(--alv-ease-out);
 }
 .composer-surface.composer-surface:focus-within {
-  border-color: hsl(30 8% 14% / 0.17);
-  box-shadow:
-    0 1px 1px hsl(220 10% 10% / 0.04),
-    0 3px 8px -3px hsl(30 10% 10% / 0.07),
-    0 14px 32px -16px hsl(30 10% 10% / 0.14);
+  border-color: hsl(var(--foreground) / 0.22);
+  box-shadow: 0 1px 2px hsl(var(--foreground) / 0.06);
 }
 .dark .composer-surface.composer-surface {
-  border-color: hsl(40 10% 96% / 0.1);
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.05),
-    0 1px 2px hsl(0 0% 0% / 0.35),
-    0 12px 28px -14px hsl(0 0% 0% / 0.6);
+  border-color: hsl(var(--foreground) / 0.12);
+  box-shadow: none;
 }
 .dark .composer-surface.composer-surface:focus-within {
-  border-color: hsl(40 10% 96% / 0.17);
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.06),
-    0 1px 2px hsl(0 0% 0% / 0.4),
-    0 16px 36px -16px hsl(0 0% 0% / 0.7);
+  border-color: hsl(var(--foreground) / 0.22);
+  box-shadow: none;
 }
 
 /* The send arrow sits on a solid disc, where a 1.5px line thins against the
    fill; it takes a heavier line there (2.25 units of 24 is 1.7px at 18px). */
 .composer-primary-action[data-face="send"] .ag,
 .composer-primary-action[data-face="stop"] .ag {
-  stroke-width: 2.25;
+  /* Screen pixels: interface glyphs draw a non-scaling line (§12). */
+  stroke-width: 1.75px;
 }
 
 /* Sidebar destinations: 18px glyphs in the second ink at rest, so a row
@@ -138,20 +131,19 @@
   color: hsl(var(--foreground) / 0.66);
 }
 
-/* Send is a solid ink disc while there is something to send, the one heavy
-   mark on the composer; empty, the disc stays the quiet voice entry. */
+/* Send is the accent while there is something to send: the one primary
+   action on the page, in the colour every primary takes (owner, 15 Nov 2026:
+   the accent everywhere). Flat, like every primary. Empty, the disc stays
+   the quiet voice entry. */
 .composer-primary-action[data-face="send"]:not(:disabled) {
-  background-color: hsl(var(--foreground));
-  color: hsl(var(--background));
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.16),
-    0 1px 2px hsl(220 10% 10% / 0.16),
-    0 4px 10px -4px hsl(30 10% 10% / 0.3);
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  box-shadow: none;
 }
 @media (hover: hover) and (pointer: fine) {
   .composer-primary-action[data-face="send"]:not(:disabled):hover {
-    background-color: hsl(var(--foreground) / 0.86);
-    filter: none;
+    background-color: hsl(var(--primary));
+    filter: brightness(1.06);
   }
 }
 

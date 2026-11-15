@@ -1686,10 +1686,12 @@
   /* The segment you are in: the page's own ground with a hairline, flat. It
      was a lifted white pill under a three-layer shadow, a phone toggle in a
      desktop sidebar. */
-  .product-switch-thumb {
+  .product-switch-thumb,
+  .segmented-thumb {
     background-color: hsl(var(--card));
     box-shadow: 0 0 0 1px hsl(var(--foreground) / .08);
   }
+  .dark .segmented-thumb,
   .dark .product-switch-thumb {
     background-color: hsl(var(--foreground) / .10);
     box-shadow: 0 0 0 1px hsl(var(--foreground) / .06);

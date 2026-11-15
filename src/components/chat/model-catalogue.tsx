@@ -1224,7 +1224,7 @@ export function ModelCatalogue({
                   one decorative home in this popover. The field had neither:
                   the control the popover autofocuses was the one that looked
                   inert. */}
-              <div className="flex h-10 items-center gap-2.5 rounded-full border border-transparent bg-secondary px-3 transition-colors duration-fast focus-within:border-ring coarse:h-11">
+              <div className="flex h-9 items-center gap-2.5 rounded-full border border-field-border bg-field px-3 transition-colors duration-fast hover:border-field-hover focus-within:border-field-focus coarse:h-11">
                 <Search aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                 <input
                   ref={searchRef}

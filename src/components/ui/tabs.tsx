@@ -79,7 +79,7 @@ const TabsList = React.forwardRef<
     <TabsPrimitive.List
       ref={ref}
       className={cn(
-        "surface-inset isolate inline-flex items-center justify-center gap-1 p-1 text-muted-foreground",
+        "isolate inline-flex items-center justify-center gap-0.5 bg-foreground/[0.05] p-0.5 text-muted-foreground",
         SEGMENTED_METRICS[size].track,
         className
       )}
@@ -127,7 +127,7 @@ const TabsTrigger = React.forwardRef<
         // here", not "a second selected state".
         "relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap border border-transparent text-ui font-medium transition-[color,background-color,border-color,box-shadow] duration-fast ease-out-soft hover:text-foreground data-[state=inactive]:hover:bg-accent/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground [&_svg]:size-4 [&_svg]:shrink-0",
         metrics.segment,
-        thumb === null && "data-[state=active]:surface-key data-[state=active]:border-border/60",
+        thumb === null && "data-[state=active]:segmented-thumb",
         className
       )}
       {...props}
@@ -144,7 +144,7 @@ const TabsTrigger = React.forwardRef<
               // The raised key. The radius rides `style` so framer keeps the
               // corners true while it scales the box between two triggers of
               // different widths.
-              className="surface-key pointer-events-none absolute -inset-px -z-10 border-border/60"
+              className="segmented-thumb pointer-events-none absolute -inset-px -z-10"
               style={{ borderRadius: metrics.thumbRadius }}
             />
           )}

@@ -78,17 +78,21 @@ export const SEGMENTED_METRICS: Record<
   SegmentedSize,
   { track: string; segment: string; iconSegment: string; thumbRadius: number }
 > = {
+  // One recipe with the sidebar's Chat / Code switch (owner, 15 Nov 2026):
+  // a quiet track with a 2px inset at radius 10, segments at radius 8 that
+  // nest in it exactly. md 32 + 4 = 36 (coarse 40 → 44); sm 28 + 4 = 32
+  // (it was 22, under the 24px minimum a target needs).
   md: {
-    track: "rounded-menu",
-    segment: "h-[1.625rem] px-3 coarse:h-[2.125rem] hit-44",
-    iconSegment: "h-[1.625rem] w-8 coarse:h-[2.125rem] coarse:w-10 hit-44",
-    thumbRadius: 9,
+    track: "rounded-field",
+    segment: "h-8 px-3 coarse:h-10 hit-44",
+    iconSegment: "h-8 w-9 coarse:h-10 coarse:w-10 hit-44",
+    thumbRadius: 8,
   },
   sm: {
-    track: "rounded-card",
-    segment: "h-[1.375rem] px-2.5 coarse:h-[1.875rem] hit-44",
-    iconSegment: "h-[1.375rem] w-7 coarse:h-[1.875rem] coarse:w-9 hit-44",
-    thumbRadius: 7,
+    track: "rounded-field",
+    segment: "h-7 px-2.5 coarse:h-9 hit-44",
+    iconSegment: "h-7 w-8 coarse:h-9 coarse:w-9 hit-44",
+    thumbRadius: 8,
   },
 };
 
@@ -174,7 +178,7 @@ export function SegmentedControl<T extends string>({
         // in the well. Concentric: the thumb's radius is the track's minus the
         // hairline (1) and the padding (4) — see SEGMENTED_METRICS. TabsList
         // shares these numbers: two renderings of one idiom.
-        "surface-inset relative gap-1 p-1",
+        "relative gap-0.5 bg-foreground/[0.05] p-0.5",
         metrics.track,
         orientation === "vertical" ? "flex flex-col items-center" : "grid",
         className,
@@ -249,7 +253,7 @@ export function SegmentedControl<T extends string>({
                 <motion.span
                   aria-hidden="true"
                   style={{ ...thumbSquash, borderRadius: metrics.thumbRadius }}
-                  className="surface-key block size-full"
+                  className="segmented-thumb block size-full"
                 />
               </motion.span>
             )}
