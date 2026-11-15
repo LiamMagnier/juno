@@ -361,6 +361,9 @@ export class RelaySession {
   }
 
   private async startProvider(id: VoiceProviderId, thinking: boolean, requestedEffort?: unknown): Promise<void> {
+    // A caller who hung up — while memory and the persona loaded, say — is
+    // owed no provider session: one opened now bills with nobody on the line.
+    if (this.closed) return;
     if (this.sessionLimitReached) {
       this.send({ type: "error", message: "This voice session reached its time limit. Start a new session to continue." });
       return;
@@ -384,6 +387,8 @@ export class RelaySession {
         await this.provider.close().catch(() => {});
         this.provider = null;
       }
+      // Hung up mid-switch, while the old session closed: dial nothing new.
+      if (this.closed) return;
       if (this.sessionTimer) clearTimeout(this.sessionTimer);
 
       // A provider with no reasoning variant is not given one to ignore:
@@ -415,6 +420,14 @@ export class RelaySession {
         },
         events
       );
+      // destroy() closes `this.provider`, which a session still connecting is
+      // not yet, so one that connects after the hang-up is closed here and
+      // never adopted. Left open it billed (by the second, on GPT-Live and
+      // xAI) to its own session cap, unmetered: the usage tick was gone too.
+      if (this.closed) {
+        await session.close().catch(() => {});
+        return;
+      }
       this.provider = session;
       this.providerId = id;
       if (this.sessionTimer) clearTimeout(this.sessionTimer);
