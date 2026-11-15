@@ -48,6 +48,21 @@
  * @layer base tokens; scoped to [data-accent] so a page without one keeps the
  * brand blue.
  */
+/*
+ * Context usage (context-usage-meter.tsx): fresh input in teal, cache hits in
+ * amber, owner's choice. Data colours, so they do not follow the accent. The
+ * pair passes the dataviz palette validator in both themes (lightness band,
+ * chroma floor, colour-blind separation ΔE 16.6 light / 17.0 dark, 3:1 on the
+ * popover), and every swatch carries a label and an exact count beside it.
+ */
+:root {
+  --ctx-fresh: 185.1 84.5% 35.5%; /* #0e9aa7 */
+  --ctx-cache: 39.7 100% 39.4%; /* #c98500 */
+}
+.dark {
+  --ctx-fresh: 183.9 79.3% 37.8%; /* #14a3ad */
+}
+
 :root[data-accent] {
   --tint: var(--primary);
   --presence: var(--primary-ink);
