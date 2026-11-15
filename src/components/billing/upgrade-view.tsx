@@ -165,7 +165,7 @@ export function UpgradeView({
   const name = PLANS[selected].name;
 
   const headline =
-    selected === currentPlan ? `You're on ${name}` : rank > 0 ? `Upgrade to ${name}` : `Switch to ${name}`;
+    selected === currentPlan ? `You’re on ${name}` : rank > 0 ? `Upgrade to ${name}` : `Switch to ${name}`;
 
   const action = (() => {
     const wide = "h-12 w-full text-body font-medium sm:w-80";
@@ -220,7 +220,7 @@ export function UpgradeView({
         </p>
         <h1
           key={headline}
-          className="plans-roll mt-5 text-balance font-serif text-[clamp(2.6rem,1.6rem+3.2vw,4.25rem)] font-normal leading-[1.02] tracking-[-0.02em]"
+          className="plans-roll mt-5 text-balance font-serif text-page-title font-normal"
         >
           {headline}
         </h1>

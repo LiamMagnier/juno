@@ -104,7 +104,8 @@ test("the type ladder: the 12px floor, the kbd rung and the new title rungs (§3
   assert.equal(rung("kbd").minSize, 11);
   assert.deepEqual([rung("label").minSize, rung("label").lineHeight, rung("label").tracking, rung("label").weight], [12, 1.4, 0.01, 500]);
   assert.deepEqual([rung("home-title").minSize, rung("home-title").maxSize, rung("home-title").weight], [34, 50, 400]);
-  assert.deepEqual([rung("page-title").minSize, rung("page-title").maxSize, rung("page-title").weight], [32, 44, 500]);
+  // One page-title style (owner, 15 Nov 2026): Newsreader 400, 28 → 32px.
+  assert.deepEqual([rung("page-title").minSize, rung("page-title").maxSize, rung("page-title").weight], [28, 32, 400]);
   // Nothing under the floor except the keycap rung.
   for (const t of typeRungs) if (t.name !== "kbd") assert.ok(t.minSize >= 12, `${t.name} is ${t.minSize}px`);
 });

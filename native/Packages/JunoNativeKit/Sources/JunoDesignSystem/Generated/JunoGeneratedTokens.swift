@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: 05067f3e2c19cbd1
+// tokens-digest: b8b6d5849bc38364
 //
 
 import CoreGraphics
@@ -1098,7 +1098,7 @@ public enum JunoGeneratedType {
     /// `text-display`
     public static let display = JunoGeneratedTypeRung(minSize: 32.0, maxSize: 48.0, fluidIntercept: 5.3328, fluidSlope: 0.041667, lineHeight: 1.08, tracking: -0.02, weight: 500)
     /// `text-page-title`
-    public static let pageTitle = JunoGeneratedTypeRung(minSize: 32.0, maxSize: 44.0, fluidIntercept: 12.0, fluidSlope: 0.03125, lineHeight: 1.08, tracking: -0.03, weight: 500)
+    public static let pageTitle = JunoGeneratedTypeRung(minSize: 28.0, maxSize: 32.0, fluidIntercept: 20.0, fluidSlope: 0.0125, lineHeight: 1.15, tracking: -0.01, weight: 400)
     /// `text-home-title`
     public static let homeTitle = JunoGeneratedTypeRung(minSize: 34.0, maxSize: 50.0, fluidIntercept: 24.0, fluidSlope: 0.022, lineHeight: 1.1, tracking: -0.02, weight: 400)
     /// `text-title`

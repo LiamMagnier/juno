@@ -202,7 +202,10 @@
 }
 
 /* App headings have one optical alignment, independent of their content. */
-.app-page-title { font-family: var(--font-sans), system-ui, sans-serif; letter-spacing: -0.04em; }
+/* Every app page's h1, one style: the page-title rung in Newsreader 400. A
+   sans 44/600 here overrode the serif the rung names, and with the pages that
+   set their own, eight title styles were measured on one product. */
+.app-page-title { font-family: var(--font-serif), Newsreader, serif; font-weight: 400; letter-spacing: -0.01em; }
 /* Leads and running titles are prose, so they keep a normal weight. */
 .ed-lead, .shell-title { font-weight: 400; }
 .customize-title { font-size: 17px; line-height: 1.4; font-weight: 600; }

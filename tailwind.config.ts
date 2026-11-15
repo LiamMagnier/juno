@@ -495,9 +495,11 @@ const config: Config = {
         // included, sets this rung in `font-serif`. Below a 640px viewport it
         // is a fixed 1.75rem (globals.css, `.text-page-title` in utilities),
         // which a clamp keyed to the column cannot say.
+        // One page-title style (owner, 15 Nov 2026; the audit measured eight):
+        // Newsreader 400, the greeting's family, 28 → 32px with the column.
         "page-title": [
-          "clamp(2rem, 0.75rem + 3.125cqi, 2.75rem)",
-          { lineHeight: "1.08", letterSpacing: "-0.03em", fontWeight: "500" },
+          "clamp(1.75rem, 1.25rem + 1.25cqi, 2rem)",
+          { lineHeight: "1.15", letterSpacing: "-0.01em", fontWeight: "400" },
         ],
         /*
          * The home greeting (spec §3.5, C3): Newsreader 400, one step under
