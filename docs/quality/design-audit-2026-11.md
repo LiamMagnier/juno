@@ -136,7 +136,7 @@ Also fixed beyond the list: the Settings rail on the sidebar's type (14px,
 more instead of cutting a word in half; a phone's composer shows the model's
 whole name before the context meter (from 25% of the window).
 
-Open: **14** (spacing off the 4px grid), **15** (type sprawl beyond the rail),
+Open: **9** (sidebar left edges, not re-measured), **14** (spacing off the 4px grid), **15** (type sprawl beyond the rail),
 **16** (radius sprawl), **18** (outlined buttons ~1.3:1), **24** (phone
 truncation), **25** (titles cut mid-word, mono labels), and the placeholders
 at 4.30 / 4.46:1.
