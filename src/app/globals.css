@@ -1671,9 +1671,10 @@
   }
 
   /* A raised selection on the sidebar ground, shared by destinations and history. */
+  /* State is a fill, not an elevation: the selected row was a raised white
+     card with a ring and a shadow, an object standing on the sidebar. */
   .sidebar-row-selected {
-    background-color: hsl(var(--card));
-    box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .08), 0 1px 2px hsl(var(--shadow-ink) / .08);
+    background-color: hsl(var(--sidebar-selected));
   }
   .dark .sidebar-row-selected {
     background-color: hsl(var(--sidebar-selected));

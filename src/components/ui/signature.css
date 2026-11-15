@@ -93,7 +93,7 @@
   border-color: hsl(30 8% 14% / 0.1);
   box-shadow:
     0 1px 1px hsl(30 10% 10% / 0.03),
-    0 2px 6px -2px hsl(30 10% 10% / 0.05),
+    0 2px 6px -2px hsl(220 10% 10% / 0.05),
     0 10px 24px -14px hsl(30 10% 10% / 0.1);
   transition:
     border-color 160ms var(--ease-out-soft),
@@ -102,7 +102,7 @@
 .composer-surface.composer-surface:focus-within {
   border-color: hsl(30 8% 14% / 0.17);
   box-shadow:
-    0 1px 1px hsl(30 10% 10% / 0.04),
+    0 1px 1px hsl(220 10% 10% / 0.04),
     0 3px 8px -3px hsl(30 10% 10% / 0.07),
     0 14px 32px -16px hsl(30 10% 10% / 0.14);
 }
@@ -145,7 +145,7 @@
   color: hsl(var(--background));
   box-shadow:
     inset 0 1px 0 hsl(0 0% 100% / 0.16),
-    0 1px 2px hsl(30 10% 10% / 0.18),
+    0 1px 2px hsl(220 10% 10% / 0.16),
     0 4px 10px -4px hsl(30 10% 10% / 0.3);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -199,8 +199,10 @@
    stretches 3px while pressed, the way a real toggle gives under a thumb
    before it flips; it lands round again. */
 button[role="switch"][data-state="checked"] {
-  background-color: hsl(var(--foreground));
-  border-color: hsl(var(--foreground));
+  /* The accent, as the Accent setting promises ("buttons, switches and
+     selection"): an on switch was the foreground ink on every accent. */
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
 }
 button[role="switch"] > span {
   transition: transform var(--spring-reward-dur, 320ms) var(--spring-reward, var(--alv-ease-out));
@@ -221,7 +223,7 @@ button[role="switch"] > span > span {
 }
 button[role="switch"][data-state="checked"] > span > span,
 .dark button[role="switch"][role="switch"][data-state="checked"][data-state="checked"] > span > span {
-  background-color: hsl(var(--background));
+  background-color: hsl(var(--primary-foreground));
 }
 
 /* ── 4. Menus (owner, 6 Nov 2026: "rework the design completely of all the
@@ -241,16 +243,16 @@ button[role="switch"][data-state="checked"] > span > span,
 .cmenu.cmenu.cmenu {
   --cm-radius: 16px;
   --cm-pad: 6px;
-  border-radius: 18px;
-  border: 1px solid hsl(30 8% 14% / 0.09);
+  border-radius: var(--cm-radius);
+  border: 1px solid hsl(var(--foreground) / 0.09);
   background-color: hsl(var(--popover));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow:
     inset 0 1px 0 hsl(0 0% 100% / 0.75),
-    0 1px 2px hsl(30 10% 10% / 0.05),
-    0 4px 8px -2px hsl(30 10% 10% / 0.04),
-    0 16px 40px -12px hsl(30 10% 10% / 0.18);
+    0 1px 2px hsl(220 10% 10% / 0.05),
+    0 4px 8px -2px hsl(220 10% 10% / 0.04),
+    0 16px 40px -12px hsl(220 10% 10% / 0.16);
 }
 .dark .cmenu.cmenu.cmenu {
   border-color: hsl(40 10% 96% / 0.08);
@@ -265,14 +267,14 @@ button[role="switch"][data-state="checked"] > span > span,
 .z-popper.surface-float:not(.cmenu),
 .z-popper.overlay-glass:not(.cmenu) {
   border-radius: 16px;
-  border: 1px solid hsl(30 8% 14% / 0.09);
+  border: 1px solid hsl(var(--foreground) / 0.09);
   background-color: hsl(var(--popover));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow:
     inset 0 1px 0 hsl(0 0% 100% / 0.75),
-    0 1px 2px hsl(30 10% 10% / 0.05),
-    0 16px 40px -12px hsl(30 10% 10% / 0.18);
+    0 1px 2px hsl(220 10% 10% / 0.05),
+    0 16px 40px -12px hsl(220 10% 10% / 0.16);
 }
 .dark .z-popper.surface-float:not(.cmenu),
 .dark .z-popper.overlay-glass:not(.cmenu) {
@@ -284,10 +286,12 @@ button[role="switch"][data-state="checked"] > span > span,
 
 .menu-item.menu-item,
 .cmenu.cmenu.cmenu [role^="menuitem"] {
+  /* 36 tall; the glyph starts 16px from the sheet's edge (6 inset + 10), the
+     label 12px after it; the row's corners nest in the sheet's (16 - 6). */
   min-height: 36px;
-  gap: 11px;
-  padding: 0 10px 0 9px;
-  border-radius: 12px;
+  gap: 12px;
+  padding: 0 10px;
+  border-radius: 10px;
   font-size: 14px;
   line-height: 20px;
   letter-spacing: -0.003em;
@@ -329,6 +333,12 @@ button[role="switch"][data-state="checked"] > span > span,
 .dark .menu-item.menu-item[data-highlighted],
 .dark .menu-item.menu-item[data-state="open"] {
   background-color: hsl(40 10% 96% / 0.075);
+}
+.menu-item.menu-item.danger-hover,
+.menu-item.menu-item.danger-hover svg:not([class*="text-"]),
+.cmenu.cmenu.cmenu [role^="menuitem"].danger-hover,
+.cmenu.cmenu.cmenu [role^="menuitem"].danger-hover > svg:first-child {
+  color: hsl(var(--destructive-ink, var(--destructive)));
 }
 .menu-item.menu-item.danger-hover[data-highlighted] {
   background-color: hsl(var(--destructive) / 0.08);
@@ -610,15 +620,16 @@ button[role="switch"][data-state="checked"] > span > span,
 }
 
 /* ── 10. The sidebar's rhythm (app-sidebar.tsx) ──────────────────────────────
-   One pitch for every destination (34px), one radius for every fill (10px),
+   One pitch for every row, destinations and history alike (32px, 44 on
+   touch), one radius for every fill (8px), a 12px gap after the glyph,
    two inks: destinations in the near-full ink at a half-step of weight,
    conversation titles a step quieter at the book weight, section heads the
    quietest. Sections sit 20px apart so a heading belongs to the list under
    it, not the one above. */
 .sidebar-nav-row.sidebar-nav-row {
-  height: 34px;
-  border-radius: 10px;
-  gap: 11px;
+  height: 32px;
+  border-radius: 8px;
+  gap: 12px;
 }
 .sidebar-nav-row .text-nav {
   font-size: 14px;
@@ -631,7 +642,7 @@ button[role="switch"][data-state="checked"] > span > span,
 }
 .sidebar-list-row.sidebar-list-row {
   min-height: 32px;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 14px;
   letter-spacing: -0.003em;
 }
@@ -868,7 +879,7 @@ section[data-sidebar-section]:not(:first-child) {
   border-color: hsl(30 8% 14% / 0.1);
   box-shadow:
     0 1px 1px hsl(30 10% 10% / 0.03),
-    0 2px 6px -2px hsl(30 10% 10% / 0.05),
+    0 2px 6px -2px hsl(220 10% 10% / 0.05),
     0 10px 24px -14px hsl(30 10% 10% / 0.1);
   transition:
     border-color 160ms var(--ease-out-soft),
@@ -877,7 +888,7 @@ section[data-sidebar-section]:not(:first-child) {
 .cv2-composer.cv2-composer:focus-within {
   border-color: hsl(30 8% 14% / 0.17);
   box-shadow:
-    0 1px 1px hsl(30 10% 10% / 0.04),
+    0 1px 1px hsl(220 10% 10% / 0.04),
     0 3px 8px -3px hsl(30 10% 10% / 0.07),
     0 14px 32px -16px hsl(30 10% 10% / 0.14);
 }
@@ -937,7 +948,7 @@ section[data-sidebar-section]:not(:first-child) {
   color: hsl(var(--background));
   box-shadow:
     inset 0 1px 0 hsl(0 0% 100% / 0.16),
-    0 1px 2px hsl(30 10% 10% / 0.18),
+    0 1px 2px hsl(220 10% 10% / 0.16),
     0 4px 10px -4px hsl(30 10% 10% / 0.3);
 }
 .cv2-composer .cv2-send[data-mode="voice"] {
@@ -955,4 +966,18 @@ section[data-sidebar-section]:not(:first-child) {
 @media (max-width: 640px) {
   .cv2-composer.cv2-composer { padding: 14px 8px 8px 16px; }
   .cv2-composer .cv2-cfoot { margin-left: -8px; }
+}
+
+/* ── 12. One line weight for every interface glyph ────────────────────────
+   icons.tsx draws a stroke chosen for the size in the glyph's class, so a
+   glyph that CSS then resized (the sidebar's 18px, the menus' 18px) painted
+   another weight: eight strokes measured on one screen. Every glyph at an
+   interface size (12 to 24px) now draws one 1.5px line whatever size it
+   ends up, so a menu, the sidebar and the composer read as one drawing.
+   Larger glyphs (empty states) keep a stroke that grows with them. */
+svg.ag:is([width="12"], [width="14"], [width="15"], [width="16"], [width="18"], [width="20"], [width="22"], [width="24"]) {
+  stroke-width: 1.5px;
+}
+svg.ag:is([width="12"], [width="14"], [width="15"], [width="16"], [width="18"], [width="20"], [width="22"], [width="24"]) :is(path, circle, ellipse, line, polyline, polygon, rect) {
+  vector-effect: non-scaling-stroke;
 }
