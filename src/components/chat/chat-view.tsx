@@ -60,6 +60,7 @@ const DocumentViewer = nextDynamic(
   { ssr: false },
 );
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
+import { dockNamesRow } from "@/lib/chat/thought-dock";
 import { SPLIT_MIN_WIDTH, THOUGHT_DEFAULT_WIDTH, canvasWidthBounds, splitEngaged, thoughtWidthBounds } from "@/components/chat/split-layout";
 import { HistoricalResearchRunPanel, ResearchRunPanel } from "@/components/chat/research-run-panel";
 import { useConversationResearch } from "@/components/research/use-conversation-run";
@@ -1552,7 +1553,9 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   // call sites at all.
   React.useEffect(() => {
     if (!thoughtOpenId) return;
-    if (!chat.messages.some((m) => m.id === thoughtOpenId)) {
+    // By render key: a streamed answer keeps its key when its saved row
+    // replaces the temporary one, so a dock opened mid-stream survives it.
+    if (!dockNamesRow(chat.messages, thoughtOpenId)) {
       // Reconciliation, not a gesture: the run this dock named no longer exists,
       // so there is nothing to play an exit for.
       setThoughtOpenId(null);
@@ -1580,12 +1583,13 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const thoughtPanel = React.useMemo(
     () => ({
       openId: thoughtOpenId,
+      closingId: closingThoughtId,
       setOpenId: openThoughtPanel,
       container: thoughtContainer,
       seedDraft: seedComposerDraft,
       coversChat: () => !splitEngaged(layoutRef.current),
     }),
-    [thoughtOpenId, openThoughtPanel, thoughtContainer, seedComposerDraft]
+    [thoughtOpenId, closingThoughtId, openThoughtPanel, thoughtContainer, seedComposerDraft]
   );
 
   /* ─── The two docked columns ───────────────────────────────────────────────
@@ -2691,459 +2695,475 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       // bar the shell mounts above the page stay in view over it, where they
       // used to be covered. Kept on purpose — the shell's chrome is how the
       // user leaves a conversation, and a canvas is a view of one.
-      className={cn(
-        "@container/split relative flex h-full min-h-0 w-full overflow-hidden",
-        // Below the split the thought dock stacks ABOVE the composer instead of
-        // replacing the whole chat column (which used to hide the composer).
-        thoughtOpenId && !sidePanelOpen && "flex-col @[50rem]/split:flex-row"
-      )}
+      className="@container/split relative flex h-full min-h-0 w-full overflow-hidden"
     >
-      {/* Chat column */}
-      {/* Below the split the canvas replaces the chat entirely — a split there
-          leaves the chat column narrower than a phone. The thought dock keeps
-          only the composer: transcript and header give way, the composer stays
-          typeable under the dock. */}
+      {/*
+       * The chat column and the thought dock share one flex box, and THIS box
+       * decides whether they sit side by side or stack. It has to be a child
+       * of the `@container/split` mount: a container query only ever matches
+       * against an ancestor, so the `@[50rem]/split:flex-row` this switch used
+       * to carry on the mount itself never applied. The mount stayed a column
+       * at every width, the dock took the full height and the chat column
+       * collapsed to nothing — opening the thought process on a desktop
+       * blanked the conversation and the composer.
+       */}
       <div
         className={cn(
-          "relative flex min-h-0 min-w-0 flex-col overflow-hidden",
-          thoughtOpenId && !sidePanelOpen
-            ? "h-auto flex-none @[50rem]/split:h-full @[50rem]/split:flex-1"
-            : "h-full flex-1",
+          "flex min-h-0 min-w-0 flex-1",
+          // Below the split the dock stacks ABOVE the composer instead of
+          // replacing the whole chat column; at the split it docks beside it.
+          thoughtOpenId && !sidePanelOpen ? "flex-col @[50rem]/split:flex-row" : "flex-row",
+          // Below the split the canvas covers the chat: nothing of this box shows.
           sidePanelOpen && "hidden @[50rem]/split:flex"
         )}
       >
-        {topActionsSlotOwner && !privateMode && (
-          <ThreadHeader
-            className={thoughtOpenId ? "!hidden @[50rem]/split:!flex" : undefined}
-            title={headerTitle ? (
-              <>
-                <AnimatedTitle title={headerTitle} animate={headerTitleSource === "ai"} subject={currentConversationId} />
-                {room.detail && (
-                  <span className="block truncate text-caption font-normal text-muted-foreground">{roomMembersLine(room.detail)}</span>
-                )}
-              </>
-            ) : undefined}
-            project={showProjectCrumb && projectMeta ? (
-              <Link href={`/projects/${projectMeta.id}`} className={threadProjectClass}>{projectMeta.name}</Link>
-            ) : undefined}
-            actions={actionsContent}
-          />
-        )}
-
-        {memoryNotice && !phoneWidth && (
-          <div className="flex justify-center px-4 pt-2">
-            {/* Names what was saved and offers View, Edit and Undo; owns its
-                own timer, so a second update never inherits the first's. */}
-            <MemoryUpdatedNotice key={memoryNotice.key} write={memoryNotice.write} onDismiss={dismissMemoryNotice} />
-          </div>
-        )}
-        {/* A phone never gets it over the conversation: the answer's own
-            chip says it, so only a screen reader is told (the unnamed write,
-            which has no chip, is drawn above the composer instead). */}
-        {memoryNotice && phoneWidth && memoryNotice.write && (
-          <MemoryUpdatedAnnouncement key={memoryNotice.key} write={memoryNotice.write} onDismiss={dismissMemoryNotice} />
-        )}
-
-        {/* Incognito header — grid-rows collapse keeps height animation smooth. */}
-        <div
-          ref={incognitoBandRef}
-          // Folded, the band is invisible but its close button was still in
-          // the tab order: `inert` takes it out (as dictation-swap does).
-          inert={!privateMode}
-          className={cn(
-            "relative z-30 grid transition-[grid-template-rows,opacity] duration-slow ease-out-soft",
-            privateMode ? "grid-rows-[1fr] opacity-100 pointer-events-auto" : "grid-rows-[0fr] opacity-0 pointer-events-none"
-          )}
-        >
-          <div className={cn("min-h-0 overflow-hidden", !privateMode && "pointer-events-none")}>
-            <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/60 px-4 text-ui text-muted-foreground sm:px-5">
-              {forkedFrom ? (
-                <div className="inline-flex min-w-0 items-center gap-2 font-medium">
-                  <GitFork className="size-4 shrink-0 text-primary" />
-                  <span className="min-w-0 truncate">
-                    Branched from <span className="font-sans italic">&ldquo;{forkedFrom.title}&rdquo;</span>
-                  </span>
-                  <span className="shrink-0 font-mono text-label text-muted-foreground">
-                    {forkedFrom.count} {forkedFrom.count === 1 ? "message" : "messages"}
-                  </span>
-                </div>
-              ) : (
-                <div className="inline-flex items-center gap-2 font-medium">
-                  {/* The private-chat toggle's own mark in its ON cut, so the
-                      header and the control that set it name one state with
-                      one drawing. It was a hand-drawn ghost on a 48 grid. */}
-                  <EyeOff weight="fill" className="size-4 text-muted-foreground" />
-                  Incognito chat
-                </div>
-              )}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    ref={leaveIncognitoRef}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      askBeforeLeavingIncognito(() => exitPrivateMode());
-                    }}
-                    // `.pressable` carries the tonal hover's timing and the dip
-                    // on --dur-press; the stray `active:scale-95` ran the press
-                    // at the colour's 120ms, to a deeper scale than any other
-                    // control in the header.
-                    className="pressable pointer-events-auto relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:size-11 motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
-                    aria-label={forkedFrom ? "Discard branch" : "Leave incognito"}
-                  >
-                    <ActionIcons.dismiss className="size-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{forkedFrom ? "Discard branch" : "Leave incognito"}</TooltipContent>
-              </Tooltip>
-            </div>
-          </div>
-        </div>
-
-        {/* Main column — settles into a quiet framed card in incognito. */}
+        {/* Chat column */}
+        {/* Below the split the canvas replaces the chat entirely — a split there
+            leaves the chat column narrower than a phone. The thought dock keeps
+            only the composer: transcript and header give way, the composer stays
+            typeable under the dock. */}
         <div
           className={cn(
-            // The frame fades in; its inset does not travel. This used to
-            // transition `margin` and `border-radius`, which re-laid-out the
-            // whole transcript column on every frame for 360ms: the windowed
-            // transcript re-measured, the composer's width crept, and long
-            // answers re-wrapped line by line (D27: only transform, opacity,
-            // clip-path and grid rows animate). Now the inset lands in one
-            // frame and the card's fill, edge and shadow cross-fade over it.
-            // Those are Tier A, so they fade under reduced motion too.
-            "flex min-h-0 flex-1 flex-col overflow-hidden transition-[border-color,background-color,box-shadow] duration-slow ease-out-soft",
-            privateMode
-              // `bg-card`, not `bg-card/50` — half a 6.5% fill over black is
-              // ~3.3%, so the "quiet framed card" incognito settles into was a
-              // rounded border with the page inside it.
-              ? "m-2 rounded-popover border border-border/70 bg-card shadow-soft sm:m-3 sm:rounded-composer"
-              : "m-0 rounded-none border border-transparent bg-transparent shadow-none"
+            "relative flex min-h-0 min-w-0 flex-col overflow-hidden",
+            thoughtOpenId && !sidePanelOpen
+              ? "h-auto flex-none @[50rem]/split:h-full @[50rem]/split:flex-1"
+              : "h-full flex-1",
+            sidePanelOpen && "hidden @[50rem]/split:flex"
           )}
         >
-          {agent && !privateMode ? (
-            <AgentThreadHeader
-              agent={agent}
-              state={agentState ?? "idle"}
-              taskTitle={
-                composerTask?.session?.title ??
-                [...taskSessions].reverse().find((session) => !isTerminalStatus(session.status))?.title ??
-                taskSessions[taskSessions.length - 1]?.title ??
-                null
-              }
-              levelRef={voiceOpen ? realtimeVoice.levelRef : undefined}
-              activePanelTab={agentPanelTab}
-              onTogglePanel={toggleAgentTab}
+          {topActionsSlotOwner && !privateMode && (
+            <ThreadHeader
+              className={thoughtOpenId ? "!hidden @[50rem]/split:!flex" : undefined}
+              title={headerTitle ? (
+                <>
+                  <AnimatedTitle title={headerTitle} animate={headerTitleSource === "ai"} subject={currentConversationId} />
+                  {room.detail && (
+                    <span className="block truncate text-caption font-normal text-muted-foreground">{roomMembersLine(room.detail)}</span>
+                  )}
+                </>
+              ) : undefined}
+              project={showProjectCrumb && projectMeta ? (
+                <Link href={`/projects/${projectMeta.id}`} className={threadProjectClass}>{projectMeta.name}</Link>
+              ) : undefined}
+              actions={actionsContent}
             />
-          ) : null}
-          {/* `handoff === "leaving"` holds the empty branch through its one exit
-              beat after the first message lands — see the handoff block above. */}
-          {hasMessages && handoff !== "leaving" ? (
-            // Message view
-            <div className="flex min-h-0 flex-1 flex-col relative h-full">
-              {findOpen && (
-                <ConversationFind
-                  key={conversationId ?? "new"}
-                  messages={displayMessages}
-                  onSearch={loadWholeTranscript}
-                  onClose={() => setFindOpen(false)}
-                  loadingHistory={chat.loadingOlder}
-                  hasOlderHistory={chatHistory.hasOlder}
-                />
-              )}
-              <AgentThreadContext.Provider value={agentThreadIdentity}>
-              <LiveUIHostProvider value={liveUIHost}>
-              {/* Below the split the thought dock covers the transcript; the
-                  wrapper hides it without unmounting so the portalled panel's
-                  owner (ActivityTimeline) and its clock keep running. */}
-              <div className={cn("flex min-h-0 flex-1 flex-col", thoughtOpenId && "hidden @[50rem]/split:flex")}>
-              <MessageList
-                /*
-                 * KEYED ON THE ROUTE'S CONVERSATION, which does two things
-                 * that were both missing.
-                 *
-                 * App Router preserves this ChatView across /chat/A → /chat/B
-                 * (see the note on the deep-link ref above), so the transcript
-                 * used to have the next conversation's messages pushed through
-                 * the same mounted list. Two pieces of state that are only
-                 * correct per thread came along with it: `prevRef`, which the
-                 * follow reads to decide whether the reader was at the bottom
-                 * — so a chat you had scrolled up in opened the NEXT chat at
-                 * that same offset instead of at its last turn — and `seenRef`,
-                 * which exists to stop an already-written conversation
-                 * replaying its entrances, and which was seeded with the
-                 * LENGTH OF THE PREVIOUS ONE, so opening a long thread after a
-                 * short one cascaded every message past the short one's count.
-                 * A fresh mount is the fix for both, and it is also what gives
-                 * the switch something to animate.
-                 *
-                 * `conversationId`, the ROUTE's id — never `currentConversationId`.
-                 * A brand-new chat gets its id from the first reply and rewrites
-                 * its own URL with replaceState; keying on the live id would
-                 * remount the list mid-stream and drop the reply being written
-                 * into it. The route prop stays null through all of that.
-                 */
-                key={conversationId ?? "new"}
-                history={chatHistory}
-                loadingOlder={chat.loadingOlder}
-                onLoadOlder={loadOlderMessages}
-                entrance={handoff === null}
-                className={handoff === "entering" ? "motion-safe:animate-fade-in" : undefined}
-                messages={displayMessages}
-                inlineRuns={privateMode ? [] : [
-                  ...(research.run ? [{ id: research.run.id, createdAt: research.run.createdAt ?? "", node: <ResearchRunPanel runId={research.runId} run={research.run} events={research.events} busy={research.busy} notice={research.notice} post={research.post} disconnected={research.disconnected} failed={research.failed} reload={research.reload} fetchedAt={research.fetchedAt} className="mt-5" /> }] : []),
-                  ...research.history.filter(run => run.id !== research.runId).map(run => ({ ...run, node: <HistoricalResearchRunPanel runId={run.id} /> })),
-                  // Placed by its own createdAt, so it lands under the turn that
-                  // asked for it rather than at the end of a transcript the
-                  // reader has carried on adding to while it worked.
-                  // Every task, stacked by its own createdAt, newest last.
-                  // A task another crew member (or the person) owns speaks as
-                  // Juno here rather than as this thread's member.
-                  ...crossMessages.messages.map((row) => ({
-                    id: `cross-${row.id}`,
-                    createdAt: row.createdAt,
-                    node: <CrossMessageRow row={row} />,
-                  })),
-                  ...workTasks.sessions.map((session) => ({
-                    id: session.id,
-                    createdAt: session.createdAt,
-                    node: (
-                      <ConversationTaskPanel
-                        session={session}
-                        onReport={reportTask}
-                        className="mt-5"
-                        actor={
-                          agent && (session.agentId === undefined || session.agentId === agent.id)
-                            ? agent.name
-                            : undefined
-                        }
-                      />
-                    ),
-                  })),
-                ]}
-                busy={chat.isBusy}
-                status={chat.status}
-                artifacts={chat.artifacts}
-                onOpenArtifact={openArtifactByIdentifier}
-                onArtifactChanged={handleArtifactChanged}
-                onRegenerate={chat.regenerate}
-                onRegenerateAt={privateMode ? undefined : chat.regenerateAt}
-                onSelectBranch={privateMode ? undefined : chat.selectBranch}
-                onContinue={chat.continueResponse}
-                onEdit={chat.editAndResend}
-                onResend={chat.resendUnsent}
-                onFeedback={chat.setFeedback}
-                onFork={handleFork}
-                onSpeak={handleSpeak}
-                speakingId={speakingId}
-                privateMode={privateMode}
-                onImageEdit={chat.sendImageEdit}
-                onOpenAttachment={privateMode ? undefined : openAttachment}
-                currentModelId={model}
-                conversationTitle={privateMode ? "Incognito chat" : headerTitle || undefined}
-                // The header band above draws the visible h1 from md up,
-                // except in incognito, where the band is dropped — and only
-                // once it has a title. On the first send the messages exist
-                // before the new conversation reaches the app context's list,
-                // so `headerTitle` is "" and the band renders its spacer, not
-                // an <h1>; keying this on the band alone left the page with no
-                // h1 at all for that window. The list's hidden fallback stays
-                // until the band has something to show.
-                titleShownInHeader={topActionsSlotOwner && !privateMode && !!headerTitle}
-                speakerFor={room.detail ? roomSpeakerFor : undefined}
-              />
-              </div>
-              </LiveUIHostProvider>
-              </AgentThreadContext.Provider>
-              <AnswerSelectionBar
-                scopeRef={layoutRef}
-                activeQuote={composerQuote}
-                canSend={!chat.isBusy && !voiceSaving && !voiceSaveError && !voiceTurnSending}
-                {...answerSelection}
-              />
-              <div
-                ref={dockComposerRef}
-                className={cn(
-                  "relative isolate w-full",
-                  privateMode && "px-2 sm:px-4"
-                )}
-              >
-                {agent && !privateMode && agentPanelTab !== "computer" ? (
-                  <div className="pointer-events-none absolute bottom-full right-4 z-10 mb-3 hidden @[50rem]/split:block">
-                    <AgentComputerPip agent={agent} onOpen={() => setAgentTab("computer")} />
-                  </div>
-                ) : null}
-                {voiceOpen && voiceUi && <voiceUi.VoiceCallNotices voice={realtimeVoice} />}
-                {voiceSaveNotice}
-                {memoryNotice && phoneWidth && !memoryNotice.write && (
-                  <div className="mb-2 flex justify-center px-2">
-                    <MemoryUpdatedNotice key={memoryNotice.key} write={null} onDismiss={dismissMemoryNotice} />
-                  </div>
-                )}
-                {composer}
-              </div>
-            </div>
-          ) : (
-            // Empty / greeting view (V3 home): the composer at the panel's
-            // optical centre, the greeting resting on it, at most three
-            // suggestions from real state hanging beneath (composer.css,
-            // `.chat-home`). overflow-x-clip so the composer aura can never put
-            // a horizontal scrollbar over dead space.
-            <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip">
-              {/*
-                `isolate` bounds where the aura is allowed to fall: it paints on
-                z-index -1, so without a floor here the bloom would drop to
-                whatever distant ancestor establishes a stacking context.
-              */}
-              <div className="chat-home page-gutter relative isolate">
-                  {/* Headers cross-fade — opacity only; scale was causing a jump. */}
-                  <div
-                    className={cn(
-                      "chat-home__greet grid w-full grid-cols-1 grid-rows-1 justify-items-center",
-                      // The greeting's exit beat: up and out on title-out while
-                      // the composer below holds still for its travel. Forwards
-                      // fill, or the final frame would snap back before the swap
-                      // — same pattern as the memory pill above.
-                      handoff === "leaving" &&
-                        "motion-safe:animate-title-out motion-safe:[animation-fill-mode:forwards]"
-                    )}
-                  >
-                    <div
-                      aria-hidden={Boolean(privateMode || chat.pendingClarification)}
-                      inert={Boolean(privateMode || chat.pendingClarification)}
-                      className={cn(
-                        "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
-                        privateMode || chat.pendingClarification
-                          ? "pointer-events-none opacity-0"
-                          : "opacity-100"
-                      )}
-                    >
-                      {agent ? (
-                        <AgentGreeting
-                          agent={agent}
-                          onSelectSuggestion={(chip) => void sendFromComposer(chip, [])}
-                        />
-                      ) : (
-                        <EmptyGreeting />
-                      )}
-                    </div>
-                    <div
-                      aria-hidden={Boolean(!privateMode || chat.pendingClarification)}
-                      inert={Boolean(!privateMode || chat.pendingClarification)}
-                      className={cn(
-                        "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
-                        privateMode && !chat.pendingClarification
-                          ? "opacity-100"
-                          : "pointer-events-none opacity-0"
-                      )}
-                    >
-                      <PrivateGreeting />
-                    </div>
-                  </div>
+          )}
 
-                  <div
-                    ref={emptyComposerRef}
-                    className="chat-home__composer relative isolate w-full"
-                  >
-                    {/* No dot field behind the home composer any more (Graphite §1:
-                        no decorative drawing in the product). Masked to stay
-                        clear of the greeting, the chips and the tray, what was
-                        left on screen was broken arcs of dots beside the
-                        composer, which read as a rendering fault, not a mark.
-                        The construction stays on the marketing site. */}
-                    {voiceOpen && voiceUi && <voiceUi.VoiceCallNotices voice={realtimeVoice} />}
-                    {voiceSaveNotice}
-                    {modelNoticeLine}
-                    {composer}
-                  </div>
-                  {/* The third track balances the first, so the composer sits
-                      at the panel's centre. It stays empty: the starter chips
-                      (Code, Write, Plan, Learn) are gone from the home (owner,
-                      7 Nov 2026); the composer's tray carries Project, Apps
-                      and Skills. The arrival focus the chips carried (New
-                      chat puts the caret in the composer) stays. */}
-                  <div className="chat-home__suggest">
-                    {!agent ? (
-                      <HomeArrivalFocus
-                        hidden={Boolean(privateMode || chat.pendingClarification || voiceOpen || handoff === "leaving")}
-                      />
-                    ) : null}
-                  </div>
-              </div>
+          {memoryNotice && !phoneWidth && (
+            <div className="flex justify-center px-4 pt-2">
+              {/* Names what was saved and offers View, Edit and Undo; owns its
+                  own timer, so a second update never inherits the first's. */}
+              <MemoryUpdatedNotice key={memoryNotice.key} write={memoryNotice.write} onDismiss={dismissMemoryNotice} />
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Thought dock — a real column, not an overlay. The chat narrows beside it
-          and stays fully readable, scrollable and typeable: no backdrop, no
-          dimming, no focus trap, no scroll lock. Sized like the canvas (shrink-0
-          column at the split, full-bleed below it) and, since this session,
-          resizable like it too — the handle below.
-          ActivityTimeline portals the panel in here — see thought-panel-context.
-          `duration-slow` sits on an `animate-*` element ON PURPOSE, exactly as
-          the canvas does below: tailwindcss-animate makes it the slide's
-          duration, which is the intent — so it must come off during a drag, or
-          every pointer move would re-trigger a 400ms slide. */}
-      {(thoughtOpenId ?? closingThoughtId) && (
-        <div
-          ref={setThoughtContainer}
-          style={thought.width != null ? ({ "--juno-thought-width": `${thought.width}px` } as React.CSSProperties) : undefined}
-          className={cn(
-            // Below the split: fills the space above the composer (order-first,
-            // flex-1). At the split: a full-height fixed-width column again.
-            "relative z-40 order-first min-h-0 w-full flex-1 shrink-0 bg-card @[50rem]/split:order-none @[50rem]/split:h-full @[50rem]/split:flex-none",
-            // min-w-0 replaces the old lg:min-w-[26rem]: that floor would have
-            // silently overridden any drag below 416px and made the new minimum
-            // unreachable. The real floor is enforced by thoughtWidthBounds.
-            //
-            // The left edge carries the resize affordance AT REST. The grip
-            // inside the handle stays hidden until hover, which meant nothing on
-            // screen ever said this column was draggable — and this is the one
-            // panel in the product whose default width is most often wrong for
-            // its content.
-            "@[50rem]/split:min-w-0 @[50rem]/split:border-l @[50rem]/split:border-border/70 @[50rem]/split:hover:border-border",
-            // Undragged: the default class, on the split's own step.
-            thought.width == null ? "@[50rem]/split:w-[30rem]" : "@[50rem]/split:w-[var(--juno-thought-width)]",
-            thoughtOpenId
-              ? // The entrance is a MOUNT effect, so it is dropped for good the
-                // moment the user grabs the handle. Re-adding `animate-in` after
-                // a drag re-triggers it — the dock would replay its slide on
-                // every pointer-up.
-                //
-                // `slide-in-from-right-4` is tailwindcss-animate's hardcoded
-                // translate and `--motion-shift` cannot reach it, so the reduced
-                // tier needs its own fade or it gets the full 16px of travel.
-                animateDock &&
-                "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
-              : // Leaving: absolute, so the chat reflows underneath while the
-                // exit plays — the same recipe the canvas beside it uses.
-                "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out motion-safe:slide-out-to-right-4 fill-mode-forwards",
-            thought.resizing && "select-none"
+          {/* A phone never gets it over the conversation: the answer's own
+              chip says it, so only a screen reader is told (the unnamed write,
+              which has no chip, is drawn above the composer instead). */}
+          {memoryNotice && phoneWidth && memoryNotice.write && (
+            <MemoryUpdatedAnnouncement key={memoryNotice.key} write={memoryNotice.write} onDismiss={dismissMemoryNotice} />
           )}
-        >
-          {/* Below the split the dock is full-bleed `w-full`, so there is nothing
-              to resize and the handle is display:none — matching the canvas. */}
-          <button
-            type="button"
-            {...thought.separatorProps}
-            aria-label="Resize thought process panel"
-            title="Drag to resize. Arrow keys adjust, Home resets."
-            /* The hairline under the pointer tints BEFORE the grip appears, so
-               the edge itself reads as draggable rather than only the 12px the
-               grip happens to occupy. */
-            className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
+
+          {/* Incognito header — grid-rows collapse keeps height animation smooth. */}
+          <div
+            ref={incognitoBandRef}
+            // Folded, the band is invisible but its close button was still in
+            // the tab order: `inert` takes it out (as dictation-swap does).
+            inert={!privateMode}
+            className={cn(
+              "relative z-30 grid transition-[grid-template-rows,opacity] duration-slow ease-out-soft",
+              privateMode ? "grid-rows-[1fr] opacity-100 pointer-events-auto" : "grid-rows-[0fr] opacity-0 pointer-events-none"
+            )}
           >
-            {/* `bg-popover`. The grip was `bg-background/90` behind a blur — the
-                page colour, over the page, i.e. a handle whose only visible part
-                was its 1px border. It floats above two panels, so it takes the
-                floating rung. */}
-            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
-              <GripVertical className="size-3.5" />
-            </span>
-          </button>
+            <div className={cn("min-h-0 overflow-hidden", !privateMode && "pointer-events-none")}>
+              <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/60 px-4 text-ui text-muted-foreground sm:px-5">
+                {forkedFrom ? (
+                  <div className="inline-flex min-w-0 items-center gap-2 font-medium">
+                    <GitFork className="size-4 shrink-0 text-primary" />
+                    <span className="min-w-0 truncate">
+                      Branched from <span className="font-sans italic">&ldquo;{forkedFrom.title}&rdquo;</span>
+                    </span>
+                    <span className="shrink-0 font-mono text-label text-muted-foreground">
+                      {forkedFrom.count} {forkedFrom.count === 1 ? "message" : "messages"}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-2 font-medium">
+                    {/* The private-chat toggle's own mark in its ON cut, so the
+                        header and the control that set it name one state with
+                        one drawing. It was a hand-drawn ghost on a 48 grid. */}
+                    <EyeOff weight="fill" className="size-4 text-muted-foreground" />
+                    Incognito chat
+                  </div>
+                )}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      ref={leaveIncognitoRef}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        askBeforeLeavingIncognito(() => exitPrivateMode());
+                      }}
+                      // `.pressable` carries the tonal hover's timing and the dip
+                      // on --dur-press; the stray `active:scale-95` ran the press
+                      // at the colour's 120ms, to a deeper scale than any other
+                      // control in the header.
+                      className="pressable pointer-events-auto relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:size-11 motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100"
+                      aria-label={forkedFrom ? "Discard branch" : "Leave incognito"}
+                    >
+                      <ActionIcons.dismiss className="size-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{forkedFrom ? "Discard branch" : "Leave incognito"}</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+          </div>
+
+          {/* Main column — settles into a quiet framed card in incognito. */}
+          <div
+            className={cn(
+              // The frame fades in; its inset does not travel. This used to
+              // transition `margin` and `border-radius`, which re-laid-out the
+              // whole transcript column on every frame for 360ms: the windowed
+              // transcript re-measured, the composer's width crept, and long
+              // answers re-wrapped line by line (D27: only transform, opacity,
+              // clip-path and grid rows animate). Now the inset lands in one
+              // frame and the card's fill, edge and shadow cross-fade over it.
+              // Those are Tier A, so they fade under reduced motion too.
+              "flex min-h-0 flex-1 flex-col overflow-hidden transition-[border-color,background-color,box-shadow] duration-slow ease-out-soft",
+              privateMode
+                // `bg-card`, not `bg-card/50` — half a 6.5% fill over black is
+                // ~3.3%, so the "quiet framed card" incognito settles into was a
+                // rounded border with the page inside it.
+                ? "m-2 rounded-popover border border-border/70 bg-card shadow-soft sm:m-3 sm:rounded-composer"
+                : "m-0 rounded-none border border-transparent bg-transparent shadow-none"
+            )}
+          >
+            {agent && !privateMode ? (
+              <AgentThreadHeader
+                agent={agent}
+                state={agentState ?? "idle"}
+                taskTitle={
+                  composerTask?.session?.title ??
+                  [...taskSessions].reverse().find((session) => !isTerminalStatus(session.status))?.title ??
+                  taskSessions[taskSessions.length - 1]?.title ??
+                  null
+                }
+                levelRef={voiceOpen ? realtimeVoice.levelRef : undefined}
+                activePanelTab={agentPanelTab}
+                onTogglePanel={toggleAgentTab}
+              />
+            ) : null}
+            {/* `handoff === "leaving"` holds the empty branch through its one exit
+                beat after the first message lands — see the handoff block above. */}
+            {hasMessages && handoff !== "leaving" ? (
+              // Message view
+              <div className="flex min-h-0 flex-1 flex-col relative h-full">
+                {findOpen && (
+                  <ConversationFind
+                    key={conversationId ?? "new"}
+                    messages={displayMessages}
+                    onSearch={loadWholeTranscript}
+                    onClose={() => setFindOpen(false)}
+                    loadingHistory={chat.loadingOlder}
+                    hasOlderHistory={chatHistory.hasOlder}
+                  />
+                )}
+                <AgentThreadContext.Provider value={agentThreadIdentity}>
+                <LiveUIHostProvider value={liveUIHost}>
+                {/* Below the split the thought dock covers the transcript; the
+                    wrapper hides it without unmounting so the portalled panel's
+                    owner (ActivityTimeline) and its clock keep running. */}
+                <div className={cn("flex min-h-0 flex-1 flex-col", thoughtOpenId && "hidden @[50rem]/split:flex")}>
+                <MessageList
+                  /*
+                   * KEYED ON THE ROUTE'S CONVERSATION, which does two things
+                   * that were both missing.
+                   *
+                   * App Router preserves this ChatView across /chat/A → /chat/B
+                   * (see the note on the deep-link ref above), so the transcript
+                   * used to have the next conversation's messages pushed through
+                   * the same mounted list. Two pieces of state that are only
+                   * correct per thread came along with it: `prevRef`, which the
+                   * follow reads to decide whether the reader was at the bottom
+                   * — so a chat you had scrolled up in opened the NEXT chat at
+                   * that same offset instead of at its last turn — and `seenRef`,
+                   * which exists to stop an already-written conversation
+                   * replaying its entrances, and which was seeded with the
+                   * LENGTH OF THE PREVIOUS ONE, so opening a long thread after a
+                   * short one cascaded every message past the short one's count.
+                   * A fresh mount is the fix for both, and it is also what gives
+                   * the switch something to animate.
+                   *
+                   * `conversationId`, the ROUTE's id — never `currentConversationId`.
+                   * A brand-new chat gets its id from the first reply and rewrites
+                   * its own URL with replaceState; keying on the live id would
+                   * remount the list mid-stream and drop the reply being written
+                   * into it. The route prop stays null through all of that.
+                   */
+                  key={conversationId ?? "new"}
+                  history={chatHistory}
+                  loadingOlder={chat.loadingOlder}
+                  onLoadOlder={loadOlderMessages}
+                  entrance={handoff === null}
+                  className={handoff === "entering" ? "motion-safe:animate-fade-in" : undefined}
+                  messages={displayMessages}
+                  inlineRuns={privateMode ? [] : [
+                    ...(research.run ? [{ id: research.run.id, createdAt: research.run.createdAt ?? "", node: <ResearchRunPanel runId={research.runId} run={research.run} events={research.events} busy={research.busy} notice={research.notice} post={research.post} disconnected={research.disconnected} failed={research.failed} reload={research.reload} fetchedAt={research.fetchedAt} className="mt-5" /> }] : []),
+                    ...research.history.filter(run => run.id !== research.runId).map(run => ({ ...run, node: <HistoricalResearchRunPanel runId={run.id} /> })),
+                    // Placed by its own createdAt, so it lands under the turn that
+                    // asked for it rather than at the end of a transcript the
+                    // reader has carried on adding to while it worked.
+                    // Every task, stacked by its own createdAt, newest last.
+                    // A task another crew member (or the person) owns speaks as
+                    // Juno here rather than as this thread's member.
+                    ...crossMessages.messages.map((row) => ({
+                      id: `cross-${row.id}`,
+                      createdAt: row.createdAt,
+                      node: <CrossMessageRow row={row} />,
+                    })),
+                    ...workTasks.sessions.map((session) => ({
+                      id: session.id,
+                      createdAt: session.createdAt,
+                      node: (
+                        <ConversationTaskPanel
+                          session={session}
+                          onReport={reportTask}
+                          className="mt-5"
+                          actor={
+                            agent && (session.agentId === undefined || session.agentId === agent.id)
+                              ? agent.name
+                              : undefined
+                          }
+                        />
+                      ),
+                    })),
+                  ]}
+                  busy={chat.isBusy}
+                  status={chat.status}
+                  artifacts={chat.artifacts}
+                  onOpenArtifact={openArtifactByIdentifier}
+                  onArtifactChanged={handleArtifactChanged}
+                  onRegenerate={chat.regenerate}
+                  onRegenerateAt={privateMode ? undefined : chat.regenerateAt}
+                  onSelectBranch={privateMode ? undefined : chat.selectBranch}
+                  onContinue={chat.continueResponse}
+                  onEdit={chat.editAndResend}
+                  onResend={chat.resendUnsent}
+                  onFeedback={chat.setFeedback}
+                  onFork={handleFork}
+                  onSpeak={handleSpeak}
+                  speakingId={speakingId}
+                  privateMode={privateMode}
+                  onImageEdit={chat.sendImageEdit}
+                  onOpenAttachment={privateMode ? undefined : openAttachment}
+                  currentModelId={model}
+                  conversationTitle={privateMode ? "Incognito chat" : headerTitle || undefined}
+                  // The header band above draws the visible h1 from md up,
+                  // except in incognito, where the band is dropped — and only
+                  // once it has a title. On the first send the messages exist
+                  // before the new conversation reaches the app context's list,
+                  // so `headerTitle` is "" and the band renders its spacer, not
+                  // an <h1>; keying this on the band alone left the page with no
+                  // h1 at all for that window. The list's hidden fallback stays
+                  // until the band has something to show.
+                  titleShownInHeader={topActionsSlotOwner && !privateMode && !!headerTitle}
+                  speakerFor={room.detail ? roomSpeakerFor : undefined}
+                />
+                </div>
+                </LiveUIHostProvider>
+                </AgentThreadContext.Provider>
+                <AnswerSelectionBar
+                  scopeRef={layoutRef}
+                  activeQuote={composerQuote}
+                  canSend={!chat.isBusy && !voiceSaving && !voiceSaveError && !voiceTurnSending}
+                  {...answerSelection}
+                />
+                <div
+                  ref={dockComposerRef}
+                  className={cn(
+                    "relative isolate w-full",
+                    privateMode && "px-2 sm:px-4"
+                  )}
+                >
+                  {agent && !privateMode && agentPanelTab !== "computer" ? (
+                    <div className="pointer-events-none absolute bottom-full right-4 z-10 mb-3 hidden @[50rem]/split:block">
+                      <AgentComputerPip agent={agent} onOpen={() => setAgentTab("computer")} />
+                    </div>
+                  ) : null}
+                  {voiceOpen && voiceUi && <voiceUi.VoiceCallNotices voice={realtimeVoice} />}
+                  {voiceSaveNotice}
+                  {memoryNotice && phoneWidth && !memoryNotice.write && (
+                    <div className="mb-2 flex justify-center px-2">
+                      <MemoryUpdatedNotice key={memoryNotice.key} write={null} onDismiss={dismissMemoryNotice} />
+                    </div>
+                  )}
+                  {composer}
+                </div>
+              </div>
+            ) : (
+              // Empty / greeting view (V3 home): the composer at the panel's
+              // optical centre, the greeting resting on it, at most three
+              // suggestions from real state hanging beneath (composer.css,
+              // `.chat-home`). overflow-x-clip so the composer aura can never put
+              // a horizontal scrollbar over dead space.
+              <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip">
+                {/*
+                  `isolate` bounds where the aura is allowed to fall: it paints on
+                  z-index -1, so without a floor here the bloom would drop to
+                  whatever distant ancestor establishes a stacking context.
+                */}
+                <div className="chat-home page-gutter relative isolate">
+                    {/* Headers cross-fade — opacity only; scale was causing a jump. */}
+                    <div
+                      className={cn(
+                        "chat-home__greet grid w-full grid-cols-1 grid-rows-1 justify-items-center",
+                        // The greeting's exit beat: up and out on title-out while
+                        // the composer below holds still for its travel. Forwards
+                        // fill, or the final frame would snap back before the swap
+                        // — same pattern as the memory pill above.
+                        handoff === "leaving" &&
+                          "motion-safe:animate-title-out motion-safe:[animation-fill-mode:forwards]"
+                      )}
+                    >
+                      <div
+                        aria-hidden={Boolean(privateMode || chat.pendingClarification)}
+                        inert={Boolean(privateMode || chat.pendingClarification)}
+                        className={cn(
+                          "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
+                          privateMode || chat.pendingClarification
+                            ? "pointer-events-none opacity-0"
+                            : "opacity-100"
+                        )}
+                      >
+                        {agent ? (
+                          <AgentGreeting
+                            agent={agent}
+                            onSelectSuggestion={(chip) => void sendFromComposer(chip, [])}
+                          />
+                        ) : (
+                          <EmptyGreeting />
+                        )}
+                      </div>
+                      <div
+                        aria-hidden={Boolean(!privateMode || chat.pendingClarification)}
+                        inert={Boolean(!privateMode || chat.pendingClarification)}
+                        className={cn(
+                          "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
+                          privateMode && !chat.pendingClarification
+                            ? "opacity-100"
+                            : "pointer-events-none opacity-0"
+                        )}
+                      >
+                        <PrivateGreeting />
+                      </div>
+                    </div>
+
+                    <div
+                      ref={emptyComposerRef}
+                      className="chat-home__composer relative isolate w-full"
+                    >
+                      {/* No dot field behind the home composer any more (Graphite §1:
+                          no decorative drawing in the product). Masked to stay
+                          clear of the greeting, the chips and the tray, what was
+                          left on screen was broken arcs of dots beside the
+                          composer, which read as a rendering fault, not a mark.
+                          The construction stays on the marketing site. */}
+                      {voiceOpen && voiceUi && <voiceUi.VoiceCallNotices voice={realtimeVoice} />}
+                      {voiceSaveNotice}
+                      {modelNoticeLine}
+                      {composer}
+                    </div>
+                    {/* The third track balances the first, so the composer sits
+                        at the panel's centre. It stays empty: the starter chips
+                        (Code, Write, Plan, Learn) are gone from the home (owner,
+                        7 Nov 2026); the composer's tray carries Project, Apps
+                        and Skills. The arrival focus the chips carried (New
+                        chat puts the caret in the composer) stays. */}
+                    <div className="chat-home__suggest">
+                      {!agent ? (
+                        <HomeArrivalFocus
+                          hidden={Boolean(privateMode || chat.pendingClarification || voiceOpen || handoff === "leaving")}
+                        />
+                      ) : null}
+                    </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      )}
+
+        {/* Thought dock — a real column, not an overlay. The chat narrows beside it
+            and stays fully readable, scrollable and typeable: no backdrop, no
+            dimming, no focus trap, no scroll lock. Sized like the canvas (shrink-0
+            column at the split, full-bleed below it) and, since this session,
+            resizable like it too — the handle below.
+            ActivityTimeline portals the panel in here — see thought-panel-context.
+            `duration-slow` sits on an `animate-*` element ON PURPOSE, exactly as
+            the canvas does below: tailwindcss-animate makes it the slide's
+            duration, which is the intent — so it must come off during a drag, or
+            every pointer move would re-trigger a 400ms slide. */}
+        {(thoughtOpenId ?? closingThoughtId) && (
+          <div
+            ref={setThoughtContainer}
+            style={thought.width != null ? ({ "--juno-thought-width": `${thought.width}px` } as React.CSSProperties) : undefined}
+            className={cn(
+              // Below the split: fills the space above the composer (order-first,
+              // flex-1). At the split: a full-height fixed-width column again.
+              "relative z-40 order-first min-h-0 w-full flex-1 shrink-0 bg-card @[50rem]/split:order-none @[50rem]/split:h-full @[50rem]/split:flex-none",
+              // min-w-0 replaces the old lg:min-w-[26rem]: that floor would have
+              // silently overridden any drag below 416px and made the new minimum
+              // unreachable. The real floor is enforced by thoughtWidthBounds.
+              //
+              // The left edge carries the resize affordance AT REST. The grip
+              // inside the handle stays hidden until hover, which meant nothing on
+              // screen ever said this column was draggable — and this is the one
+              // panel in the product whose default width is most often wrong for
+              // its content.
+              "@[50rem]/split:min-w-0 @[50rem]/split:border-l @[50rem]/split:border-border/70 @[50rem]/split:hover:border-border",
+              // Undragged: the default class, on the split's own step.
+              thought.width == null ? "@[50rem]/split:w-[30rem]" : "@[50rem]/split:w-[var(--juno-thought-width)]",
+              thoughtOpenId
+                ? // The entrance is a MOUNT effect, so it is dropped for good the
+                  // moment the user grabs the handle. Re-adding `animate-in` after
+                  // a drag re-triggers it — the dock would replay its slide on
+                  // every pointer-up.
+                  //
+                  // `slide-in-from-right-4` is tailwindcss-animate's hardcoded
+                  // translate and `--motion-shift` cannot reach it, so the reduced
+                  // tier needs its own fade or it gets the full 16px of travel.
+                  animateDock &&
+                  "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
+                : // Leaving: absolute, so the chat reflows underneath while the
+                  // exit plays — the same recipe the canvas beside it uses.
+                  "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out motion-safe:slide-out-to-right-4 fill-mode-forwards",
+              thought.resizing && "select-none"
+            )}
+          >
+            {/* Below the split the dock is full-bleed `w-full`, so there is nothing
+                to resize and the handle is display:none — matching the canvas. */}
+            <button
+              type="button"
+              {...thought.separatorProps}
+              aria-label="Resize thought process panel"
+              title="Drag to resize. Arrow keys adjust, Home resets."
+              /* The hairline under the pointer tints BEFORE the grip appears, so
+                 the edge itself reads as draggable rather than only the 12px the
+                 grip happens to occupy. */
+              className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
+            >
+              {/* `bg-popover`. The grip was `bg-background/90` behind a blur — the
+                  page colour, over the page, i.e. a handle whose only visible part
+                  was its 1px border. It floats above two panels, so it takes the
+                  floating rung. */}
+              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
+                <GripVertical className="size-3.5" />
+              </span>
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Canvas — settles in from the right edge it docks against: a short
           16px slide + fade, not a full-width sweep, so opening reads as the

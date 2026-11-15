@@ -139,6 +139,7 @@ function liveCopy(
  */
 export function ActivityTimeline({
   messageId,
+  dockKey: dockKeyProp,
   events,
   reasoning,
   reasoningParts,
@@ -150,9 +151,13 @@ export function ActivityTimeline({
   conversationId,
   showMemory = false,
 }: {
-  /** Identifies THIS run's panel in the chat-scoped open state, so only one
-   *  dock is open at a time across the whole thread. */
+  /** The message this run belongs to (citations scroll to it). */
   messageId: string;
+  /** Identifies THIS run's panel in the chat-scoped open state, so only one
+   *  dock is open at a time across the whole thread. The row's render key
+   *  (lib/chat/thought-dock): unlike the message id it survives the swap from
+   *  a streamed answer to its saved row. Defaults to `messageId`. */
+  dockKey?: string;
   events?: ClientActivityEvent[];
   reasoning?: string | null;
   /** The chat's title: what the live row says the model is thinking about when it streams no readable reasoning. */
@@ -181,10 +186,14 @@ export function ActivityTimeline({
   // docked column and cannot be painted from inside this scrolling row. The RUN
   // and its clock stay here, and the panel rides a portal to reach the dock.
   const panel = useThoughtPanel();
-  const open = !!panel && panel.openId === messageId;
-  const panelDomId = `thought-panel-${messageId}`;
-  const inlineDomId = `thought-inline-${messageId}`;
-  const sheetDomId = `thought-sheet-${messageId}`;
+  const dockKey = dockKeyProp ?? messageId;
+  const open = !!panel && panel.openId === dockKey;
+  // Still painted while the dock plays its exit, so the column slides out
+  // with the trace in it rather than as an empty card.
+  const closing = !!panel && !open && panel.closingId === dockKey;
+  const panelDomId = `thought-panel-${dockKey}`;
+  const inlineDomId = `thought-inline-${dockKey}`;
+  const sheetDomId = `thought-sheet-${dockKey}`;
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const fullButtonRef = React.useRef<HTMLButtonElement>(null);
   const list = React.useMemo(() => events ?? [], [events]);
@@ -251,12 +260,12 @@ export function ActivityTimeline({
    */
   const openFull = React.useCallback(() => {
     if (panel && !(panel.coversChat?.() ?? false)) {
-      panel.setOpenId(open ? null : messageId);
+      panel.setOpenId(open ? null : dockKey);
       return;
     }
     setSheetMounted(true);
     setSheetOpen(true);
-  }, [messageId, open, panel]);
+  }, [dockKey, open, panel]);
 
   // Inside the sheet, the panel's "Ask to run again" must hand the chat back
   // before it fills the composer, exactly as the dock does below the split;
@@ -538,7 +547,7 @@ export function ActivityTimeline({
       {/* The portal is the whole trick: the panel stays in THIS React subtree —
           so it keeps receiving the run built from the one clock above — while
           its DOM lands in the dock beside the chat column. */}
-      {open && panel.container
+      {(open || closing) && panel?.container
         ? createPortal(
             <ThoughtProcessPanel
               id={panelDomId}

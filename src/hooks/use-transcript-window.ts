@@ -3,7 +3,7 @@
 import * as React from "react";
 import type { ChatMessage } from "@/hooks/use-chat";
 import {
-  anchoredTranscriptTop, transcriptAnchor, transcriptLayout, transcriptWindow,
+  anchoredTranscriptTop, mountedTranscriptIndices, transcriptAnchor, transcriptLayout, transcriptWindow,
   TRANSCRIPT_FOCUS_EVENT, type TranscriptAnchor,
 } from "@/lib/chat/transcript-window";
 import { prefersReducedMotion } from "@/lib/motion-preference";
@@ -33,6 +33,8 @@ export function useTranscriptWindow(
      * it arrives.
      */
     onMissingMessage?: (messageId: string) => void;
+    /** A row key that stays mounted wherever the reader scrolls (the thought dock's row). */
+    pinnedKey?: string | null;
   } = {},
 ) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -438,14 +440,14 @@ export function useTranscriptWindow(
   const viewTop = heldAnchor ? anchoredTranscriptTop(layout, heldAnchor, viewport.top) + 24 : viewport.top;
   const top = Number.isFinite(viewTop) ? viewTop : Math.max(0, layout.total - viewport.height);
   const range = windowed ? transcriptWindow(layout, Math.max(0, top - 24), viewport.height) : { start: 0, end: messages.length };
-  const indices = Array.from({ length: range.end - range.start }, (_, i) => range.start + i);
-  // The streaming leaf stays mounted when the reader looks back through history.
-  if (last?.streaming && !indices.includes(messages.length - 1)) indices.push(messages.length - 1);
-  const targetIndex = targetRef.current ? messages.findIndex((m) => m.id === targetRef.current) : -1;
-  if (targetIndex >= 0 && !indices.includes(targetIndex)) indices.push(targetIndex);
-  const focusedIndex = focusedKey ? layout.indexByKey.get(focusedKey) : undefined;
-  if (focusedIndex !== undefined && !indices.includes(focusedIndex)) indices.push(focusedIndex);
-  indices.sort((a, b) => a - b);
+  const indices = mountedTranscriptIndices(range, [
+    // The streaming leaf stays mounted when the reader looks back through history.
+    last?.streaming ? messages.length - 1 : undefined,
+    targetRef.current ? messages.findIndex((m) => m.id === targetRef.current) : undefined,
+    focusedKey ? layout.indexByKey.get(focusedKey) : undefined,
+    // The row whose thought dock is open: it owns the dock's portal.
+    options.pinnedKey ? layout.indexByKey.get(options.pinnedKey) : undefined,
+  ]);
 
   const jumpToLatest = React.useCallback(() => {
     const el = scrollRef.current;

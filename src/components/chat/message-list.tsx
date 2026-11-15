@@ -7,6 +7,7 @@ import { contextReceiptFromActivity } from "@/lib/chat/context-tokens";
 import { ArrowDown } from "@/components/ui/icons";
 import { MessageItem } from "@/components/chat/message-item";
 import { TranscriptRail } from "@/components/chat/transcript-rail";
+import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { useTranscriptWindow, VIRTUALIZE_AFTER } from "@/hooks/use-transcript-window";
 import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { shouldLoadOlder } from "@/lib/chat/history-client";
@@ -183,8 +184,12 @@ export function MessageList(props: MessageListProps) {
   }
   const onLoadOlder = useLatestHandler(props.onLoadOlder);
   const pagedTranscript = Boolean(props.onLoadOlder);
+  // The row whose thought dock is open stays mounted: its ActivityTimeline
+  // owns the dock's portal (thought-panel-context).
+  const dockedKey = useThoughtPanel()?.openId ?? null;
   const transcript = useTranscriptWindow(messages, {
     onMissingMessage: pagedTranscript ? (messageId) => void onLoadOlder?.({ throughMessageId: messageId }) : undefined,
+    pinnedKey: dockedKey,
   });
   const { scrollRef, contentRef, atBottom, onScroll, jumpToLatest } = transcript;
   // Paged history: read the next older page while the reader still has about

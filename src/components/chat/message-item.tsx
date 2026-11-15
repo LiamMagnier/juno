@@ -39,6 +39,7 @@ import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { AttachmentTile, MessageAttachments } from "@/components/chat/attachment-tile";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
+import { dockKeyOf } from "@/lib/chat/thought-dock";
 import { MessageFeedback } from "@/components/chat/message-feedback";
 import type { FeedbackDetail } from "@/lib/feedback-reasons";
 import { codeLiveCopy } from "@/components/code/code-activity";
@@ -1241,6 +1242,7 @@ export const MessageItem = React.memo(function MessageItem({
         {surface !== "code" || view.reasoning?.trim() ? (
           <ActivityTimeline
             messageId={message.id}
+            dockKey={dockKeyOf(message)}
             showMemory={surface !== "code" && !privateMode}
             conversationId={message.conversationId}
             events={

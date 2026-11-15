@@ -6,6 +6,7 @@ import nextDynamic from "next/dynamic";
 
 import { MessageList } from "@/components/chat/message-list";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
+import { dockNamesRow } from "@/lib/chat/thought-dock";
 import { splitEngaged } from "@/components/chat/split-layout";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
@@ -821,7 +822,7 @@ export function CodeSessionView({ conversation, initialMessages, initialHistory,
   // What would be left is an empty card column covering the whole screen below the split.
   React.useEffect(() => {
     if (!thoughtOpenId) return;
-    if (!session.messages.some((m) => m.id === thoughtOpenId)) setThoughtOpenId(null);
+    if (!dockNamesRow(session.messages, thoughtOpenId)) setThoughtOpenId(null);
   }, [session.messages, thoughtOpenId]);
   // Esc closes it — a docked, non-modal panel gets none of a dialog's dismissal
   // for free. Only if a nearer layer hasn't already claimed the key: the review

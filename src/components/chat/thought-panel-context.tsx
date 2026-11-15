@@ -29,6 +29,10 @@ export interface ThoughtPanelContextValue {
   setOpenId: (id: string | null) => void;
   /** The docked column, mounted by chat-view as a sibling of the chat column. */
   container: HTMLElement | null;
+  /** The key of a dock playing its exit animation, so its row keeps painting
+   *  the panel until the column has left. Optional: surfaces without an exit
+   *  simply unmount the panel at once. */
+  closingId?: string | null;
   /**
    * Put text in the composer and focus it — THE HONEST SUBSTITUTE FOR
    * CLIENT-SIDE TOOL DISPATCH.
