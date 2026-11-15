@@ -101,3 +101,42 @@ screens; empty states have an icon, a sentence and actions.
 
 Tables and code blocks in the transcript (none seeded); hover and pressed
 states; dark and phone captures cover 19 and 16 routes, not all.
+
+## Status after the fixes (15 Nov 2026, evening)
+
+Re-measured on the dev build (Chromium, 1440×900 light and dark, iPhone 13).
+
+Fixed:
+
+- **1, 3, 4, 5, 7, 8, 10, 11, 13, 21**: one page-title style (serif 28–32/400);
+  one interface line (1.5px, non-scaling); one composer row (36px controls,
+  one chip, the tray gone); one header button; a 42rem reading column at 1.6;
+  the user bubble on `rounded-panel`; sidebar selection a flat tone; search
+  fields one pill; menus at 16/36/12 with Delete red at rest.
+- **2**: the accent is the one primary, everywhere: Chat's send disc, Code's
+  disc, switches, the effort fill, the focus ring.
+- **6**: Code's composer row fits at every width (the disc sat 14px outside the
+  640 column); its disc wears Chat's faces.
+- **12**: one segmented recipe, now also Library's filters and view toggle,
+  which an override had left as an outlined box.
+- **17**: the five contrast failures (Sources count, regenerate caret, chip
+  caret, source index, unavailable connector).
+- **19**: phone targets measured with their `hit-44` pads: Code's composer,
+  the task-mode chip and Library's Recently deleted were under 44; all 44 now.
+- **20**: `hit-24` for text links under 24px (sign-in, Memory footer, Report).
+  The minimap's ticks stay: they stack edge to edge and scrolling reaches
+  every turn.
+- **22**: Settings' close is the shared CloseButton; the Share dialog's primary
+  sits in its footer.
+- **23**: one floating material (`--shadow-float`, `--float-edge`) for menus,
+  popovers and dialogs; it was three recipes and a doubled dialog edge.
+
+Also fixed beyond the list: the Settings rail on the sidebar's type (14px,
+36px rows); Customize's tabs and Activity's filters fade at the edge that has
+more instead of cutting a word in half; a phone's composer shows the model's
+whole name before the context meter (from 25% of the window).
+
+Open: **14** (spacing off the 4px grid), **15** (type sprawl beyond the rail),
+**16** (radius sprawl), **18** (outlined buttons ~1.3:1), **24** (phone
+truncation), **25** (titles cut mid-word, mono labels), and the placeholders
+at 4.30 / 4.46:1.
