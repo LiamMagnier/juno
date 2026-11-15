@@ -56,10 +56,15 @@ export function Hero() {
   useMotionValueEvent(p, "change", (v) => {
     if (pinned && v > 0.38) setPlay(true);
   });
-  const stageInView = useInView(stageRef, { once: true, amount: 0.4 });
+  // The conversation plays as soon as a sliver of the window shows. It used
+  // to wait for 38% of the hero's scroll on a wide screen (40% in view
+  // otherwise), and the window stands at the foot of the first screen, so a
+  // visitor's first look at the product was an empty conversation pane under
+  // its title.
+  const stageInView = useInView(stageRef, { once: true, amount: 0.15 });
   React.useEffect(() => {
-    if (!pinned && stageInView) setPlay(true);
-  }, [pinned, stageInView]);
+    if (stageInView) setPlay(true);
+  }, [stageInView]);
 
   return (
     <LazyMotion features={domAnimation}>

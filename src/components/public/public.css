@@ -1,7 +1,9 @@
-/* Public V3 surfaces, plus the expressly scoped onboarding dialog below. */
+/* Public V3 surfaces, plus the expressly scoped onboarding dialog below.
+   The primary is the brand's one colour here as in the product (owner, 5 Nov
+   2026: Alevr blue is "the brand board's one colour"; 15 Nov: "the accent
+   everywhere"). The public pages pinned it to ink, so a visitor's first
+   button was black and everything after sign-in was blue: two brands. */
 .alevr-public {
-  --primary: var(--foreground);
-  --primary-foreground: var(--background);
   font-family: var(--font-sans), Inter, sans-serif;
 }
 .alevr-public h1, .alevr-public h2 { font-style: normal; text-wrap: balance; }
@@ -23,8 +25,6 @@
 /* Onboarding is owned by the shell workstream. Its unique field scopes these
    styles, preserving gating, focus trap, save, theme, accent and dismissal. */
 [role="dialog"]:has(#onboarding-name) {
-  --primary: var(--foreground);
-  --primary-foreground: var(--background);
   background: hsl(var(--background));
   border-radius: 14px;
   box-shadow: none;
@@ -76,9 +76,9 @@
 .alevr-state-footer { display:flex; justify-content:space-between; align-items:center; max-width:1408px; width:100%; margin:auto; padding:16px 48px; border-top:1px solid hsl(var(--border)); }
 .alevr-public-media { position:relative; overflow:hidden; border-radius:14px; }
 .alevr-public-media-inner { position:absolute; inset:-24px 0; }
-.alevr-public-action { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:12px 24px; border:1px solid hsl(var(--foreground)); border-radius:8px; color:hsl(var(--background)); background:hsl(var(--foreground)); text-decoration:none; white-space:nowrap; font-size:14px; font-weight:500; }
-.alevr-public-action > span { display:inline-flex; gap:16px; align-items:center; }
-.alevr-public-action:hover { background:hsl(var(--foreground) / .88); }
+.alevr-public-action { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:12px 24px; border:1px solid hsl(var(--primary)); border-radius:8px; color:hsl(var(--primary-foreground)); background:hsl(var(--primary)); text-decoration:none; white-space:nowrap; font-size:14px; font-weight:500; transition: filter var(--dur-fast) var(--ease-out-soft), background-color var(--dur-fast) var(--ease-out-soft); }
+.alevr-public-action:hover { filter: brightness(1.06); }
+.alevr-public-action:active { filter: brightness(0.96); }
 .alevr-public-action-secondary { background:transparent; color:hsl(var(--foreground)); border-color:hsl(var(--foreground) / .25); }
 .alevr-public-action-secondary:hover { background:hsl(var(--muted)); }
 @keyframes alevr-public-rise { from { opacity:.55; transform:translateY(12px); } to { opacity:1; transform:none; } }

@@ -9,7 +9,7 @@ export type CostModel = { id:string; name:string; costs:readonly number[] };
 
 /** Every sample is priced on the server by the application's estimator.
  * This is a labeled token-only example, never a bill or prediction of actual usage. */
-export function CostExplorer({ models }: { models:CostModel[] }) {
+export function CostExplorer({ models, locale = "en" }: { models:CostModel[]; locale?:string }) {
   const [modelId,setModelId] = React.useState(models[0]?.id ?? "");
   const [exampleIndex,setExampleIndex] = React.useState(0);
   const model = models.find(row => row.id === modelId) ?? models[0];
@@ -28,10 +28,10 @@ export function CostExplorer({ models }: { models:CostModel[] }) {
       </div>
       <div className="alevr-cost-result">
         <p className="text-ui text-muted-foreground">Estimated provider cost</p>
-        <div className="alevr-cost-number" aria-live="polite" aria-atomic="true"><AnimatePresence mode="wait" initial={false}><m.span key={`${model.id}-${exampleIndex}`} initial={{opacity:.5,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-8}} transition={{duration:.18}}>{formatEur(cost(model))}</m.span></AnimatePresence></div>
+        <div className="alevr-cost-number" aria-live="polite" aria-atomic="true"><AnimatePresence mode="wait" initial={false}><m.span key={`${model.id}-${exampleIndex}`} initial={{opacity:.5,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-8}} transition={{duration:.18}}>{formatEur(cost(model), locale)}</m.span></AnimatePresence></div>
         <p className="max-w-sm text-body leading-relaxed text-muted-foreground">Alevr uses the same provider-price calculation for your usage meter. Your actual cost depends on the model and work.</p>
       </div>
     </div>
-    <details className="alevr-cost-comparison"><summary>Compare these models</summary><ul>{models.map(row=><li key={row.id}><span>{row.name}</span><span className="tabular-nums">{formatEur(cost(row))}</span></li>)}</ul></details>
+    <details className="alevr-cost-comparison"><summary>Compare these models</summary><ul>{models.map(row=><li key={row.id}><span>{row.name}</span><span className="tabular-nums">{formatEur(cost(row), locale)}</span></li>)}</ul></details>
   </MotionConfig></LazyMotion>;
 }

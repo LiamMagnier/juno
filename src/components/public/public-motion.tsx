@@ -3,31 +3,19 @@
 import * as React from "react";
 import { LazyMotion, MotionConfig, domAnimation, m, useScroll, useSpring, useTransform } from "framer-motion";
 import Link from "next/link";
-import { ArrowRight } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/lib/motion-preference";
 
-const SPRING = { stiffness: 180, damping: 24, mass: 0.5 };
 
-/** A stable hit target with a small response inside it. Pointer motion never
- * updates React state, and keyboard/touch/reduced-motion users get a fixed control. */
+/** The public pages' call to action: a plain link in the button's shape. It
+ * used to lean toward the pointer (a magnetic hover) and trail an arrow, two
+ * portfolio-site gestures; a product's main button stays put and says what it
+ * does, as every button in the app does. */
 export function PublicAction({ href, children, secondary = false }: { href: string; children: React.ReactNode; secondary?: boolean }) {
-  const reduce = useReducedMotion();
-  const x = useSpring(0, SPRING);
-  const y = useSpring(0, SPRING);
-  const reset = () => { x.set(0); y.set(0); };
-  const move = (event: React.PointerEvent<HTMLAnchorElement>) => {
-    if (reduce || event.pointerType !== "mouse" || !window.matchMedia("(hover:hover) and (pointer:fine)").matches) return;
-    const box = event.currentTarget.getBoundingClientRect();
-    x.set((event.clientX - box.left - box.width / 2) * 0.045);
-    y.set((event.clientY - box.top - box.height / 2) * 0.08);
-  };
   return (
-    <LazyMotion features={domAnimation}><MotionConfig reducedMotion="user">
-      <Link href={href} className={cn("alevr-public-action", secondary && "alevr-public-action-secondary")} onPointerMove={move} onPointerLeave={reset} onBlur={reset}>
-        <m.span style={{ x: reduce ? 0 : x, y: reduce ? 0 : y }}>{children}{!secondary && <ArrowRight aria-hidden className="size-4" />}</m.span>
-      </Link>
-    </MotionConfig></LazyMotion>
+    <Link href={href} className={cn("alevr-public-action", secondary && "alevr-public-action-secondary")}>
+      {children}
+    </Link>
   );
 }
 

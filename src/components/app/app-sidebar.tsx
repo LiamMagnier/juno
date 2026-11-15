@@ -35,6 +35,7 @@ import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { UserAvatar, UserMenu } from "@/components/app/user-menu";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { ContinuumMark } from "@/components/brand/continuum-mark";
+import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { ArrowUpCircle } from "@/components/ui/icons";
 import { upgradeNudge } from "@/lib/billing/upgrade-nudge";
 import { AnimatedTitle } from "@/components/app/animated-title";
@@ -1499,12 +1500,12 @@ export function AppSidebar({
                 <ContinuumMark size={14} tight tone="current" />
               ) : (
                 <motion.span initial={revealOnMount} animate={{ opacity: 1 }} transition={transition.base} className="flex items-center">
-                  <span aria-hidden="true" className="flex items-center gap-2">
-                    <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-foreground text-background">
-                      <ContinuumMark size={14} tight tone="current" />
-                    </span>
-                    <span className="text-heading font-semibold tracking-tight">{PRODUCT_NAME}</span>
-                  </span>
+                  {/* The brand's own lockup, the drawing the public pages and
+                      the auth screens carry (Continuum and the serif
+                      wordmark). It was an app-icon tile (the mark in a black
+                      rounded square) beside the name in the UI sans: a second
+                      logo, and the generic one. */}
+                  <AlevrLockup height={22} decorative />
                 </motion.span>
               )}
             </Link>
