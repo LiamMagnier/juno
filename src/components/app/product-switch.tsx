@@ -228,7 +228,10 @@ export function ProductSwitch({
      * and the chord in the tooltip.
      */
     <nav aria-label={`${PRODUCT_NAME} products`} className="w-full shrink-0 px-3">
-      <div className="grid grid-cols-2 gap-0.5 rounded-full bg-sidebar-accent/80 p-1">
+      {/* A desktop segmented control, not a phone toggle: a quiet track with a
+          2px inset (radius 10), segments of radius 8 that nest in it exactly,
+          and a flat thumb drawn with a hairline instead of a lifted pill. */}
+      <div className="grid grid-cols-2 gap-0.5 rounded-field bg-foreground/[0.05] p-0.5">
         {PRODUCTS.map((product) => (
           <Segment
             key={product.id}
@@ -272,7 +275,7 @@ function Segment({
           // Primary navigation: a destination, so its glyph answers the pointer (icons.css).
           data-jicon-articulate={locked ? undefined : ""}
           className={cn(
-            "pressable jicon-trigger group relative flex h-8 items-center justify-center gap-2 rounded-full px-2 text-ui font-medium",
+            "pressable jicon-trigger group relative flex h-8 items-center justify-center gap-2 rounded-control px-2 text-ui font-medium",
             // `coarse:h-11`: 44px under a thumb, the drawer's own floor. The
             // track's `p-0.5` sits outside it, so nothing else grows.
             "motion-reduce:active:scale-100 coarse:h-11",
@@ -292,7 +295,7 @@ function Segment({
               aria-hidden="true"
               transition={thumbTransition}
               className="product-switch-thumb absolute inset-0"
-              style={{ borderRadius: 999 }}
+              style={{ borderRadius: 8 }}
             />
           )}
           <span className="relative flex size-4 items-center justify-center [&_svg]:size-4">

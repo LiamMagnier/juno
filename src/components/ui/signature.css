@@ -649,6 +649,11 @@ button[role="switch"][data-state="checked"] > span > span,
 .sidebar-list-row:not(.sidebar-row-selected) {
   color: hsl(var(--foreground) / 0.7);
 }
+/* The chat you are in reads at full weight as well as on its fill, so the
+   selection is legible in type and not only in a tone. */
+.sidebar-row-selected .text-nav {
+  font-weight: 500;
+}
 .sidebar-list-row:not(.sidebar-row-selected):hover {
   color: hsl(var(--foreground) / 0.9);
 }

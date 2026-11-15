@@ -453,7 +453,7 @@ function revealOffset(root: HTMLElement, row: HTMLElement, toHeading = true): nu
  * bottom edge under the scroller's clip: the ring was cut off.
  */
 const KEBAB_CLASS =
-  "group/kebab size-7 shrink-0 rounded-control opacity-0 after:absolute after:-inset-0.5 hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-offset-[-2px] group-hover:opacity-100 group-has-[a:focus-visible]:opacity-100 aria-expanded:bg-foreground/5 aria-expanded:text-foreground aria-expanded:opacity-100 coarse:size-10 coarse:opacity-100";
+  "group/kebab size-7 shrink-0 rounded-control opacity-0 after:absolute after:-inset-0.5 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-offset-[-2px] group-hover:opacity-100 group-has-[a:focus-visible]:opacity-100 aria-expanded:text-foreground aria-expanded:opacity-100 coarse:size-10 coarse:opacity-100";
 
 /**
  * A row link's own focus ring: the row's shape, drawn inside it. The link

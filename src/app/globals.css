@@ -1674,7 +1674,7 @@
   /* State is a fill, not an elevation: the selected row was a raised white
      card with a ring and a shadow, an object standing on the sidebar. */
   .sidebar-row-selected {
-    background-color: hsl(var(--sidebar-selected));
+    background-color: hsl(var(--foreground) / .065);
   }
   .dark .sidebar-row-selected {
     background-color: hsl(var(--sidebar-selected));
@@ -1683,18 +1683,16 @@
      rung, premium brief rule 3), which is what makes it read as a switch and
      not as a selected row. Dark lifts by a lighter fill and a top highlight,
      since a shadow cannot be seen on a near-black panel. */
+  /* The segment you are in: the page's own ground with a hairline, flat. It
+     was a lifted white pill under a three-layer shadow, a phone toggle in a
+     desktop sidebar. */
   .product-switch-thumb {
     background-color: hsl(var(--card));
-    box-shadow:
-      0 0 0 1px hsl(var(--shadow-ink) / .06),
-      0 1px 2px hsl(var(--shadow-ink) / .08),
-      0 2px 6px -2px hsl(var(--shadow-ink) / .10);
+    box-shadow: 0 0 0 1px hsl(var(--foreground) / .08);
   }
   .dark .product-switch-thumb {
-    background-color: hsl(var(--selected));
-    box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / .06),
-      0 1px 2px hsl(0 0% 0% / .4);
+    background-color: hsl(var(--foreground) / .10);
+    box-shadow: 0 0 0 1px hsl(var(--foreground) / .06);
   }
   /* The product switch (product-switch.tsx): Chat and Code named in the
      greeting's serif at the ends of a dot-matrix orbit. The trail layer draws
