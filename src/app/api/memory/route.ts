@@ -12,6 +12,7 @@ import {
 } from "@/lib/memory";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
 import { MEMORY_ENTRY_SELECT, loadProvenanceConversations, serializeMemoryEntry } from "@/lib/memory-view";
+import { editTouchesProject } from "./edits/ledger";
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -70,7 +71,17 @@ export async function DELETE(req: Request) {
   // else's. Account-wide facts and "never remember" notes are left alone.
   const projectId = new URL(req.url).searchParams.get("projectId")?.trim();
   if (projectId) {
+    // The edits made there go too (editTouchesProject), as a reset takes the
+    // whole ledger: each quotes the facts being cleared, and its Undo would
+    // put them back into the project.
+    const [rows, edits] = await Promise.all([
+      prisma.memoryEntry.findMany({ where: { userId: user.id, projectId, kind: "FACT" }, select: { id: true } }),
+      prisma.memoryEdit.findMany({ where: { userId: user.id }, select: { id: true, operations: true, inverse: true } }),
+    ]);
+    const scope = { projectId, rowIds: new Set(rows.map((row) => row.id)) };
+    const editIds = edits.filter((edit) => editTouchesProject(edit, scope)).map((edit) => edit.id);
     await prisma.$transaction([
+      prisma.memoryEdit.deleteMany({ where: { userId: user.id, id: { in: editIds } } }),
       prisma.memoryEntry.deleteMany({ where: { userId: user.id, projectId, kind: "FACT" } }),
       prisma.projectMemorySummary.deleteMany({ where: { userId: user.id, projectId } }),
       prisma.conversationMemory.updateMany({

@@ -33,6 +33,29 @@ export const ledgerOperationSchema = z.union([
 
 export const ledgerStatusSchema = z.enum(["pending", "applied", "rejected"]);
 
+/**
+ * Whether an edit, or its Undo, acts in one project: an op scoped to it, or
+ * one naming a row of it. Clearing a project's memory removes such edits, as
+ * a reset removes the whole ledger — they quote the cleared facts verbatim,
+ * and their Undo would write them back. Read loosely (the column is JSON a
+ * newer build may have written): anything unreadable touches nothing.
+ */
+export function editTouchesProject(
+  edit: { operations: unknown; inverse: unknown },
+  scope: { projectId: string; rowIds: ReadonlySet<string> },
+): boolean {
+  const ops = [edit.operations, edit.inverse].flatMap((list) => (Array.isArray(list) ? list : []));
+  return ops.some((op) => {
+    if (!op || typeof op !== "object") return false;
+    const { projectId, id, restoreId } = op as Record<string, unknown>;
+    return (
+      projectId === scope.projectId ||
+      (typeof id === "string" && scope.rowIds.has(id)) ||
+      (typeof restoreId === "string" && scope.rowIds.has(restoreId))
+    );
+  });
+}
+
 const EDIT_SELECT = {
   id: true,
   instruction: true,

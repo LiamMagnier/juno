@@ -60,4 +60,47 @@ if (!DB_URL) {
     const read = await prisma.conversationMemory.findUnique({ where: { conversationId: chat.id } });
     assert.ok(read, "the project's chats are marked read so background learning does not relearn them");
   });
+
+  // The edit ledger keeps each applied edit's Undo, and an Undo carries the
+  // text it would put back. A cleared project whose ledger kept them still
+  // held the cleared facts verbatim, and pressing Undo wrote them back.
+  test("clearing a project drops the edits whose Undo would put its facts back, and only those", async (t) => {
+    const { DELETE } = await import("@/app/api/memory/route");
+    const suffix = randomUUID();
+    const a = await prisma.user.create({ data: { email: `clear-ledger-${suffix}@example.invalid` } });
+    t.after(async () => {
+      await prisma.user.deleteMany({ where: { id: a.id } });
+    });
+    const p = await prisma.project.create({ data: { userId: a.id, name: "Launch" } });
+    const other = await prisma.project.create({ data: { userId: a.id, name: "Garden" } });
+    const fact = (content: string, projectId: string | null) =>
+      prisma.memoryEntry.create({ data: { userId: a.id, content, projectId, source: "MANUAL" } });
+    const kept = await fact("The launch site uses Astro.", p.id);
+    const account = await fact("The user lives in Bristol.", null);
+    const edit = (clientId: string, operations: unknown[], inverse: unknown[]) =>
+      prisma.memoryEdit.create({
+        data: { userId: a.id, clientId, instruction: clientId, status: "applied", operations: operations as never, inverse: inverse as never },
+      });
+    // Removed a project fact: the Undo re-adds it, into the project.
+    await edit("removed-in-project", [{ op: "remove", id: "gone-row", before: "The launch is on Friday." }], [
+      { op: "add", content: "The launch is on Friday.", projectId: p.id },
+    ]);
+    // Rewrote a project fact that is still there.
+    await edit("rewrote-in-project", [{ op: "update", id: kept.id, before: "The site uses Hugo.", content: "The launch site uses Astro." }], [
+      { op: "update", id: kept.id, before: "The launch site uses Astro.", content: "The site uses Hugo." },
+    ]);
+    // An account fact, and another project's: neither is this clear's business.
+    await edit("rewrote-account", [{ op: "update", id: account.id, before: "The user lives in Bath.", content: "The user lives in Bristol." }], [
+      { op: "update", id: account.id, before: "The user lives in Bristol.", content: "The user lives in Bath." },
+    ]);
+    await edit("added-elsewhere", [{ op: "add", content: "Roses need pruning in March.", projectId: other.id }], [
+      { op: "remove", id: "rose-row", before: "Roses need pruning in March." },
+    ]);
+
+    signedIn = { id: a.id };
+    const res = await DELETE(new Request(`http://x/api/memory?projectId=${p.id}`, { method: "DELETE" }));
+    assert.equal(res.status, 200);
+    const left = (await prisma.memoryEdit.findMany({ where: { userId: a.id }, select: { clientId: true } })).map((row) => row.clientId).sort();
+    assert.deepEqual(left, ["added-elsewhere", "rewrote-account"]);
+  });
 }
