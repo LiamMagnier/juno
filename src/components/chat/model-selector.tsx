@@ -538,9 +538,7 @@ export function ModelSelector({
           if (disabled) return;
           event.preventDefault();
           openedByKeyboard.current = true;
-          if (inComposer) {
-            onOpenChange(true);
-          } else if (thinking && effortOpen) {
+          if (thinking && effortOpen) {
             // Opened by pointer a moment ago, focus still on the chip: step in.
             focusEffortSlider();
           } else if (thinking) {
@@ -610,7 +608,7 @@ export function ModelSelector({
 
   return (
     <Popover open={open && !disabled} onOpenChange={onOpenChange}>
-      {thinking && !inComposer ? (
+      {thinking ? (
         // Thinking first (owner): the chip opens the effort panel; its model
         // name opens the catalogue. The catalogue's popover is anchored to the
         // span around the chip, because the chip is already the panel's
@@ -627,7 +625,10 @@ export function ModelSelector({
               <PopoverTrigger asChild>{chip}</PopoverTrigger>
               <PopoverContent
                 ref={effortContentRef}
-                align="end"
+                // In the composer the chip leads its row, so the panel lines
+                // up with the chip's start rather than hanging past the
+                // composer's edge.
+                align={inComposer ? "start" : "end"}
                 side={side}
                 sideOffset={8}
                 collisionPadding={COMPOSER_MENU_COLLISION_PADDING}
@@ -663,7 +664,6 @@ export function ModelSelector({
               autoSelected={autoSelected}
               filter={modelFilter}
               onPick={select}
-              thinking={inComposer ? thinking : undefined}
               side={inComposer ? side : undefined}
               returnFocusTo={chipRef}
             />

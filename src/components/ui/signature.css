@@ -619,41 +619,22 @@ section[data-sidebar-section]:not(:first-child) {
 }
 
 /* ── 11. Thinking effort and speed (reasoning-slider.tsx, EffortPanel) ───────
-   The fill is the tint, pale at the low rungs and full at Max (--effort-t,
-   set per rung), lighter toward its start. At Max a soft light
-   travels along the fill and the knob carries a faint tinted halo; with Fast
-   or Ultra fast on, short speed lines run past the bolt (twice as often for
-   Ultra). Seen only in the open model sheet, never on the row. Every loop
-   stops under reduced motion and leaves the colour. */
+   The fill is the tint, one solid colour at every rung: a fill that paled
+   with the rung read as disabled, and none at the first rung left a white
+   knob alone on grey, a switch turned off. The rung's name takes the tint as
+   ink. Dark mode deepens the tint, so the white knob and dots keep their
+   edge on it. With Fast or Ultra fast on, short speed lines run past the
+   bolt (twice as often for Ultra); every loop stops under reduced motion. */
 .effort-fill {
-  --effort-a: calc(0.5 + 0.5 * var(--effort-t, 1));
-  background: linear-gradient(90deg, hsl(var(--tint) / calc(var(--effort-a) * 0.45)) 0%, hsl(var(--tint) / var(--effort-a)) 100%);
+  background: hsl(var(--tint));
   overflow: hidden;
-  transition: transform var(--dur-base) var(--ease-out-soft), opacity var(--dur-base) var(--ease-out-soft), background 200ms var(--ease-out-soft);
 }
-.effort-fill[data-max]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(100deg, transparent 0%, transparent 35%, rgb(255 255 255 / 0.42) 50%, transparent 65%, transparent 100%);
-  background-size: 250% 100%;
-  background-repeat: no-repeat;
-  mix-blend-mode: soft-light;
-  animation: effort-heat 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+.dark .effort-fill {
+  background: color-mix(in oklab, hsl(var(--tint)) 82%, black);
 }
-.effort-knob[data-max] {
-  animation: effort-halo 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+.effort-rung {
+  color: hsl(var(--presence-ink));
 }
-@keyframes effort-heat {
-  from { background-position: 130% 0; }
-  to { background-position: -30% 0; }
-}
-@keyframes effort-halo {
-  0%, 100% { box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), 0 2px 8px rgb(0 0 0 / 0.12), 0 0 0 0 hsl(var(--tint) / 0); }
-  50% { box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), 0 2px 8px rgb(0 0 0 / 0.12), 0 0 0 5px hsl(var(--tint) / 0.18); }
-}
-
 .speed-on {
   position: relative;
   overflow: hidden;
@@ -695,8 +676,6 @@ section[data-sidebar-section]:not(:first-child) {
   30% { translate: 0 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .effort-fill[data-max]::after,
-  .effort-knob[data-max],
   .speed-on::before,
   .speed-on::after,
   .speed-on svg {

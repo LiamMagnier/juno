@@ -222,11 +222,17 @@ test("the client's view test mirrors the route's where", () => {
 const SELECTOR = readFileSync(new URL("../src/components/chat/model-selector.tsx", import.meta.url), "utf8");
 const CATALOGUE = readFileSync(new URL("../src/components/chat/model-catalogue.tsx", import.meta.url), "utf8");
 
-test("the composer opens straight to the searchable model catalogue and includes the selected effort control", () => {
-  assert.match(SELECTOR, /\{thinking && !inComposer \? \(/, "only a non-composer effort trigger opens the slider first");
-  assert.match(SELECTOR, /<EffortPanelContext\.Provider value=\{\{ modelName: [^}]*onOpenModels: openCatalogue \}\}>/, "the panel's model name opens the catalogue");
+test("the model chip opens the thinking panel first, and the panel's model name opens the catalogue", () => {
+  // Owner (14 Nov 2026): in the composer too, the model name opens the
+  // current model's thinking panel; its model name opens the searchable
+  // catalogue. A model with one effort (Auto, fixed effort) has no panel, so
+  // its chip opens the catalogue directly.
+  assert.match(SELECTOR, /\{thinking \? \(/, "a model with effort levels opens its thinking panel first");
+  assert.doesNotMatch(SELECTOR, /thinking && !inComposer/, "the composer is not an exception");
+  assert.match(SELECTOR, /<EffortPanelContext\.Provider value=\{\{ modelName: [^}]*onOpenModels: openCatalogue[,\s]/, "the panel's model name opens the catalogue");
   assert.match(SELECTOR, /:\s*\(\s*<PopoverTrigger asChild>\{chip\}<\/PopoverTrigger>\s*\)\}/, "without thinking, the chip is the catalogue's trigger");
-  assert.match(SELECTOR, /<ModelCatalogue[\s\S]*thinking=\{inComposer \? thinking : undefined\}/);
+  // One effort control, in the panel: the catalogue does not repeat it.
+  assert.doesNotMatch(SELECTOR, /<ModelCatalogue[\s\S]*thinking=\{/);
   // The favourites menu stays gone.
   assert.doesNotMatch(SELECTOR, /<ModelQuickMenu|quickListModels\(|>All models</);
   assert.doesNotMatch(readFileSync(new URL("../src/lib/model-picker.ts", import.meta.url), "utf8"), /quickListModels/);

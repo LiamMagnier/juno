@@ -174,6 +174,8 @@ const atStop = (i: number, count: number) => {
  */
 export const EffortPanelContext = React.createContext<{ modelName: string; onOpenModels: () => void } | null>(null);
 
+/* The panel's track: a 36px pill holding a 28px knob with a 4px inset on
+   every side, so the fill and the knob nest concentrically. */
 const PANEL_THUMB = 28;
 /** Where stop `i` of `count` sits on the panel track (4px inset at each end). */
 const panelStop = (i: number, count: number) => {
@@ -246,7 +248,6 @@ export function ReasoningSlider({
     );
   }
 
-  const head = atStop(index, count);
   return (
     <div className={cn("select-none", className)}>
       {/*
@@ -269,78 +270,7 @@ export function ReasoningSlider({
           {current?.label ?? ""}
         </span>
       </div>
-      <div className={cn("relative h-6 w-full coarse:h-11", disabled && "opacity-55")}>
-        {/* Track. The fill is a full-width bar slid in from the left, so only
-            transform travels (ICONS_AND_MOTION.md §2.2.8). */}
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-foreground/10">
-          <div
-            className="absolute inset-0 rounded-full bg-foreground/85 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
-            style={{ transform: `translateX(calc(-100% + ${head}))` }}
-          />
-        </div>
-        {/* Stops, one per rung, sitting on the track. */}
-        {options.map((option, i) => (
-          <span
-            key={`stop-${option.value}-${option.label}`}
-            aria-hidden
-            className={cn(
-              "pointer-events-none absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast ease-out-soft",
-              i < index ? "bg-background/70" : i === index ? "bg-transparent" : "bg-foreground/25",
-            )}
-            style={{ left: atStop(i, count) }}
-          />
-        ))}
-        {/* The thumb rides a carriage that translates (never `left`), inside a
-            frame of the track's size so the carriage cannot widen the page. */}
-        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div
-            className="absolute inset-0 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
-            style={{ transform: `translateX(${head})` }}
-          >
-            <div className="effort-thumb absolute left-0 top-1/2 size-[18px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/[0.06] bg-knob shadow-[0_1px_2px_rgb(0_0_0/0.12),0_2px_8px_rgb(0_0_0/0.08)] dark:border-white/10" />
-          </div>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={count - 1}
-          step={1}
-          value={index}
-          disabled={disabled}
-          aria-label="Thinking effort"
-          aria-valuetext={current?.label ?? String(index)}
-          onChange={(event) => {
-            const next = options[Number(event.target.value)];
-            if (next) onChange(next.value);
-          }}
-          className="effort-range peer absolute inset-0 m-0 h-full w-full cursor-pointer appearance-none bg-transparent opacity-0 focus-visible:outline-none disabled:cursor-not-allowed"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-1/2 h-3 -translate-y-1/2 rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100"
-        />
-      </div>
-      {/* The rung names, each under its stop and each a target of its own:
-          the ends hug the edges, the middle ones centre on their stop. */}
-      <div className="relative mt-1 h-4">
-        {options.map((option, i) => (
-          <button
-            key={`label-${option.value}-${option.label}`}
-            type="button"
-            tabIndex={-1}
-            disabled={disabled}
-            onClick={() => onChange(option.value)}
-            className={cn(
-              "absolute top-0 whitespace-nowrap text-caption transition-colors duration-fast ease-out-soft",
-              i === index ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
-              i === 0 ? "left-0" : i === count - 1 ? "right-0" : "-translate-x-1/2",
-            )}
-            style={i === 0 || i === count - 1 ? undefined : { left: atStop(i, count) }}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+      <EffortTrack options={options} index={index} onChange={onChange} disabled={disabled} />
       {(onFastModeChange || onProModeChange || onUltraFastChange) && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {(onFastModeChange || onUltraFastChange) && (() => {
@@ -374,6 +304,107 @@ export function ReasoningSlider({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The effort dial itself: a hairline track, one stop per rung, a small raised
+ * thumb and every rung named under its stop, so the choices are legible before
+ * anything is moved. A native range input underneath gives the keyboard its
+ * arrows, Home and End. Shared by the inline control and the chip's panel, so
+ * the product has one effort control, drawn one way.
+ */
+function EffortTrack({
+  options,
+  index,
+  onChange,
+  disabled,
+  className,
+}: {
+  options: ReasoningOption[];
+  index: number;
+  onChange: (value: ReasoningOption["value"]) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const count = options.length;
+  const current = options[index];
+  const head = atStop(index, count);
+  return (
+    <div className={className}>
+        <div className={cn("relative h-6 w-full coarse:h-11", disabled && "opacity-55")}>
+          {/* Track. The fill is a full-width bar slid in from the left, so only
+              transform travels (ICONS_AND_MOTION.md §2.2.8). */}
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-foreground/10">
+            <div
+              className="absolute inset-0 rounded-full bg-foreground/85 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
+              style={{ transform: `translateX(calc(-100% + ${head}))` }}
+            />
+          </div>
+          {/* Stops, one per rung, sitting on the track. */}
+          {options.map((option, i) => (
+            <span
+              key={`stop-${option.value}-${option.label}`}
+              aria-hidden
+              className={cn(
+                "pointer-events-none absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast ease-out-soft",
+                i < index ? "bg-background/70" : i === index ? "bg-transparent" : "bg-foreground/25",
+              )}
+              style={{ left: atStop(i, count) }}
+            />
+          ))}
+          {/* The thumb rides a carriage that translates (never `left`), inside a
+              frame of the track's size so the carriage cannot widen the page. */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div
+              className="absolute inset-0 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
+              style={{ transform: `translateX(${head})` }}
+            >
+              <div className="effort-thumb absolute left-0 top-1/2 size-[18px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/[0.06] bg-knob shadow-[0_1px_2px_rgb(0_0_0/0.12),0_2px_8px_rgb(0_0_0/0.08)] dark:border-white/10" />
+            </div>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={count - 1}
+            step={1}
+            value={index}
+            disabled={disabled}
+            aria-label="Thinking effort"
+            aria-valuetext={current?.label ?? String(index)}
+            onChange={(event) => {
+              const next = options[Number(event.target.value)];
+              if (next) onChange(next.value);
+            }}
+            className="effort-range peer absolute inset-0 m-0 h-full w-full cursor-pointer appearance-none bg-transparent opacity-0 focus-visible:outline-none disabled:cursor-not-allowed"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-1/2 h-3 -translate-y-1/2 rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100"
+          />
+        </div>
+        {/* The rung names, each under its stop and each a target of its own:
+            the ends hug the edges, the middle ones centre on their stop. */}
+        <div className="relative mt-1 h-4">
+          {options.map((option, i) => (
+            <button
+              key={`label-${option.value}-${option.label}`}
+              type="button"
+              tabIndex={-1}
+              disabled={disabled}
+              onClick={() => onChange(option.value)}
+              className={cn(
+                "absolute top-0 whitespace-nowrap text-caption transition-colors duration-fast ease-out-soft",
+                i === index ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+                i === 0 ? "left-0" : i === count - 1 ? "right-0" : "-translate-x-1/2",
+              )}
+              style={i === 0 || i === count - 1 ? undefined : { left: atStop(i, count) }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
     </div>
   );
 }
@@ -419,10 +450,15 @@ function ModeChip({
 
 
 /**
- * OpenAI's thinking-time panel, in Alevr's materials: the rung named large in
- * the middle with the model under it (press it to change model), Flash on the
- * left, reset on the right, and a thick pill track with one stop per rung and
- * a 40px thumb that travels on the compositor.
+ * The model chip's first panel, after the owner's reference (ChatGPT's
+ * thinking-effort popover): the model and its rung named on one line in the
+ * middle (press it for every other model), reset on the right, the paid modes
+ * on the left, and under them a bold track — the tint fills from the start to
+ * a white knob, one dot per rung.
+ *
+ * The fill is drawn at every rung, the first included. Hidden there, a white
+ * knob alone on a grey pill read as a switch turned off, and a fill that paled
+ * with the rung read as disabled; it is the full tint now, one colour.
  */
 function EffortPanel({
   options,
@@ -481,9 +517,9 @@ function EffortPanel({
     "pressable grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35 motion-reduce:active:scale-100 coarse:size-11";
   return (
     <div className={cn("select-none", className)}>
-      {/* One line: the speed control and Pro on the left, the rung and its
-          model in the middle, reset on the right. The side columns share a
-          width so the rung stays centred whichever controls the model has. */}
+      {/* One line: the paid modes on the left, the model and its rung in the
+          middle, reset on the right. The side columns share a width so the
+          middle stays centred whichever controls the model has. */}
       <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
         <div className="flex items-center gap-1">
           {showsSpeed ? (
@@ -493,19 +529,14 @@ function EffortPanel({
                   type="button"
                   // A toggle's name is the setting, and aria-pressed says
                   // whether it is on: "Fast mode, toggle button, not
-                  // pressed". It used to be the current state ("Standard
-                  // speed, not pressed"), which read backwards. The step a
-                  // press takes, and its price, is the tooltip (its
-                  // description).
+                  // pressed". The step a press takes, and its price, is the
+                  // tooltip (its description).
                   aria-label={speedTier === "ultra" ? "Ultra fast mode" : "Fast mode"}
                   aria-pressed={speedTier !== "off"}
                   disabled={disabled}
                   onClick={cycleSpeed}
                   className={cn(
                     iconButton,
-                    // On (Fast or Ultra fast): the same filled ink circle as
-                    // the Pro capsule, glyph inverted; the bolt count tells
-                    // the two apart. Off stays a quiet unfilled glyph.
                     speedTier !== "off" && "speed-on bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
                   )}
                   data-tier={speedTier}
@@ -521,17 +552,12 @@ function EffortPanel({
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  // The setting's name; aria-pressed says whether it is on
-                  // ("Pro mode, toggle button, pressed"). "Pro on: …" said the
-                  // state twice. The press and its cost are the tooltip.
                   aria-pressed={proMode}
                   aria-label="Pro mode"
                   disabled={disabled}
                   onClick={() => onProModeChange(!proMode)}
                   className={cn(
-                    // A capsule beside the bolt, in the same group: filled ink
-                    // when on, a hairline when off.
-                    "pressable inline-flex h-8 shrink-0 items-center rounded-full border px-2.5 text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35 coarse:h-9 motion-reduce:active:scale-100",
+                    "pressable inline-flex h-8 shrink-0 items-center rounded-full border px-2.5 text-label font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35 coarse:h-9 motion-reduce:active:scale-100",
                     proMode
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -544,34 +570,32 @@ function EffortPanel({
             </Tooltip>
           ) : null}
         </div>
-        <div className="flex min-w-0 flex-col items-center">
-          <span key={current?.label} className="text-body font-medium text-foreground motion-safe:animate-fade-in">
+        {panel ? (
+          <button
+            type="button"
+            onClick={panel.onOpenModels}
+            // The name alone ("Claude Opus 5.5") did not say this is how
+            // the model is changed.
+            aria-label={`Change model, currently ${panel.modelName}`}
+            aria-haspopup="dialog"
+            className="group inline-flex h-8 min-w-0 max-w-full items-center gap-1 rounded-full px-2.5 text-ui transition-colors duration-fast ease-out-soft hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-11"
+          >
+            <span className="min-w-0 truncate font-semibold text-foreground" translate="no">{panel.modelName}</span>
+            <span key={current?.label} className="effort-rung shrink-0 font-medium motion-safe:animate-fade-in">
+              {current?.label}
+            </span>
+            <ChevronRight
+              className="size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 motion-reduce:transition-none"
+              aria-hidden="true"
+            />
+          </button>
+        ) : (
+          <span key={current?.label} className="effort-rung text-ui font-medium motion-safe:animate-fade-in">
             {current?.label}
           </span>
-          {panel ? (
-            // 24px to the eye on every screen, so the rung and its model stay
-            // one tight pair; under a coarse pointer the hit area reaches 10px
-            // past it above and below (44px), the way FilterChip's does.
-            // Growing the button itself to 44px pushed the name 34px under
-            // the rung and left reset floating between the two lines.
-            <button
-              type="button"
-              onClick={panel.onOpenModels}
-              // The name alone ("Claude Opus 5.5") did not say this is how
-              // the model is changed.
-              aria-label={`Change model, currently ${panel.modelName}`}
-              aria-haspopup="dialog"
-              className="group relative inline-flex min-h-6 max-w-full items-center gap-0.5 rounded-control px-1.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft after:absolute after:inset-x-0 hover:text-foreground coarse:after:-inset-y-2.5"
-            >
-              <span className="truncate" translate="no">{panel.modelName}</span>
-              <ChevronRight className="size-3.5 shrink-0 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" aria-hidden="true" />
-            </button>
-          ) : null}
-        </div>
+        )}
         <div className="flex justify-end">
-          {/* The product's tooltip, like the bolt's beside it (a native
-              title= drew a second tooltip style), naming the rung it goes
-              back to. */}
+          {/* The product's tooltip names the rung it goes back to. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -590,39 +614,24 @@ function EffortPanel({
       </div>
 
       <div className={cn("relative mt-3 h-9 w-full", disabled && "opacity-55")}>
-        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full bg-foreground/[0.07] dark:bg-white/[0.08]">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full bg-foreground/[0.08] dark:bg-white/[0.08]">
+          {/* The fill holds the knob with the track's own 4px inset, so it
+              ends 4px past the knob and meets the track's end at the last
+              rung. It slides (transform only), never resizes. */}
           <div
-            className={cn(
-              // A mid-tone in both themes, the white knob marking the place.
-              // Light used to be near-black (foreground/85): at Max a solid
-              // black slab, the heaviest object in the composer, where dark
-              // mode drew the same control in a calm grey.
-              // The tint, deepening with the rung (owner, 7 Nov 2026: the grey
-              // fill read as disabled).
-              "effort-fill absolute inset-0 rounded-full transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-opacity",
-              index === 0 && "opacity-0",
-            )}
-            data-max={count > 1 && index === count - 1 ? "" : undefined}
-            // The fill is a pill that holds the knob with the track's own 4px
-            // inset on every side (36px track, 28px knob): it ends 4px past the
-            // knob, so at the last rung it meets the track's end with no sliver
-            // of the empty track showing, and the radii stay concentric.
-            style={{
-              transform: `translateX(calc(-100% + ${head} + ${PANEL_THUMB / 2 + 4}px))`,
-              // The fill slides, so its own right end is what shows: the
-              // colour is set per rung instead, pale at the first and full
-              // at Max.
-              ["--effort-t" as string]: count > 1 ? (index / (count - 1)).toFixed(3) : "1",
-            }}
+            className="effort-fill absolute inset-0 rounded-full transition-transform duration-base ease-out-soft motion-reduce:transition-none"
+            style={{ transform: `translateX(calc(-100% + ${head} + ${PANEL_THUMB / 2 + 4}px))` }}
           />
         </div>
+        {/* One dot per rung: light on the fill, quiet past it. The rung under
+            the knob draws none. */}
         {options.map((option, i) => (
           <span
             key={`panel-stop-${option.value}-${option.label}`}
             aria-hidden
             className={cn(
               "pointer-events-none absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast ease-out-soft",
-              i < index ? "bg-white/70" : i === index ? "bg-transparent" : "bg-foreground/25"
+              i < index ? "bg-white/75" : i === index ? "bg-transparent" : "bg-foreground/30",
             )}
             style={{ left: panelStop(i, count) }}
           />
@@ -632,10 +641,7 @@ function EffortPanel({
             className="absolute inset-0 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
             style={{ transform: `translateX(${head})` }}
           >
-            <div
-              className="effort-knob absolute left-0 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.18),0_2px_8px_rgb(0_0_0/0.12)]"
-              data-max={count > 1 && index === count - 1 ? "" : undefined}
-            />
+            <div className="absolute left-0 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.18),0_2px_8px_rgb(0_0_0/0.12)]" />
           </div>
         </div>
         <input
@@ -658,10 +664,6 @@ function EffortPanel({
           className="pointer-events-none absolute -inset-[3px] rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100"
         />
       </div>
-
-      {/* Pro: a separate axis from the rung (the GPT-5.6 line reasons in a
-          deeper mode on the same model), so a switch under the track rather
-          than another stop on it. Only drawn where the model has the mode. */}
     </div>
   );
 }
