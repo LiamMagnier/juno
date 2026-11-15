@@ -93,9 +93,17 @@ export function usageLine(instance: ProviderInstance | undefined): string | unde
 }
 
 /** The composer's model trigger words: "Opus 5.5" and "High". */
-export function triggerWords(instances: readonly ProviderInstance[], sel: ModelSelection): { model: string; effort?: string } {
+/**
+ * The model chip's words. The effort word prints only when it is not the
+ * model's default, as on Chat's chip (lib/model-chip-label.ts): "Opus 5.5" at
+ * its default, "Opus 5.5 High" once raised. `effortName` always names the
+ * effort, for the chip's accessible name.
+ */
+export function triggerWords(instances: readonly ProviderInstance[], sel: ModelSelection): { model: string; effort?: string; effortName?: string } {
   const e = effectiveEffort(instances, sel);
-  return { model: shortLabel(instances, sel), effort: e && e !== "none" ? EFFORT_LABELS[e] : undefined };
+  const effortName = e && e !== "none" ? EFFORT_LABELS[e] : undefined;
+  const atDefault = !sel.effort || sel.effort === findModel(instances, sel)?.defaultEffort;
+  return { model: shortLabel(instances, sel), effort: atDefault ? undefined : effortName, effortName };
 }
 
 /** Kept for callers of the old traits control. */

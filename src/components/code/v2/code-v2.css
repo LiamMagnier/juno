@@ -771,18 +771,35 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
 
 /* The Team orchestrator (team lane): the composer chip and the role editor. */
 .cv2-team-chip .v { max-width: 340px; }
-/* On a narrow row the team summary gives way first, so the model and the mode keep their words. */
-.cv2-cfoot > .cv2-ctl { flex-shrink: 0; }
-.cv2-cfoot > .cv2-team-chip { flex-shrink: 1; min-width: 96px; }
-/* A narrow composer (a docked pane, a small window): the team and the mode
-   keep their glyphs (their names stay in the labels and tooltips), the effort
-   word goes, and the model keeps its name. */
+/* The row fits its composer at every width (design audit 2026-11 #6: on the
+   640px landing column the send disc stood 14px outside the edge, because
+   every chip refused to shrink and the first step began at 520px; on a phone
+   the steps let Add, More and Dictate shrink to 24px). The icon controls, the
+   context ring and the disc keep their size; the labelled chips give way, in
+   this order, as the row narrows:
+     640  the team's word (its glyph stays; "Team…" is also in More)
+     520  the effort word and the mode's name (the glyph says the mode)
+     420  the Team chip, and the Skills chip while no skill is on: both are
+          in More, so a phone row is Chat's: +, model, mode, More, mic, disc;
+          and the model's lab mark, before its name is cut
+   Past the last step a chip's name ends in an ellipsis rather than pushing
+   the disc out; the team chip's word goes first. */
 .cv2-cfoot { container: cv2foot / inline-size; }
+.cv2-cfoot > .cv2-ctl:not(.icon) { flex-shrink: 1; min-width: 3rem; }
+.cv2-cfoot > .cv2-team-chip { flex-shrink: 4; }
+.cv2-cfoot > :is(.cv2-ctl.icon, .cv2-ring, .cv2-send) { flex-shrink: 0; }
+@container cv2foot (max-width: 640px) {
+  .cv2-cfoot .cv2-team-chip .v { display: none; }
+}
 @container cv2foot (max-width: 520px) {
-  .cv2-cfoot .cv2-ctl .eff { display: none; }
-  .cv2-cfoot > .cv2-ctl { flex-shrink: 1; }
-  .cv2-cfoot > .cv2-team-chip { min-width: 0; }
-  .cv2-cfoot .cv2-team-chip .v, .cv2-cfoot .cv2-ctl[data-mode] .v { display: none; }
+  .cv2-cfoot .cv2-ctl .eff, .cv2-cfoot .cv2-ctl[data-mode] .v { display: none; }
+}
+@container cv2foot (max-width: 420px) {
+  .cv2-cfoot > .cv2-team-chip, .cv2-cfoot > .cv2-skills-chip:not([data-active]) { display: none; }
+  .cv2-cfoot > .cv2-skills-chip .v { display: none; }
+  /* Chat's phone rung (lib/model-chip-label.ts, rung 3): the lab mark goes
+     before the name is cut, "Opus 5.5" rather than the mark and "Opu…". */
+  .cv2-cfoot > .cv2-model-chip > .mark { display: none; }
 }
 @media (max-width: 720px) { .cv2-team-chip .v { max-width: 150px; } }
 .cv2-team-chip[data-team="solo"] .v { color: hsl(var(--muted-foreground)); }

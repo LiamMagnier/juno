@@ -47,7 +47,7 @@ import { EFFORT_LABELS, currentTier, effectiveEffort, effortLevelsOf, findInstan
 import { ContextRing, ModelPicker, triggerWords, type RoleTab } from "./pickers";
 import { ComposerTeam } from "./team";
 import { SkillsChip, SkillsPicker } from "./skills";
-import { matchSkills, readCodeSkillInvocation, type CodeSkillChoice } from "@/lib/code-v2/skills";
+import { matchSkills, readCodeSkillInvocation, skillsChipLabel, type CodeSkillChoice } from "@/lib/code-v2/skills";
 import { ComposerPopover, Glyph, MenuList, ModelMark, useIsMac, type MenuEntry } from "./primitives";
 import type { WorkspaceModel } from "./types";
 import { cn } from "@/lib/utils";
@@ -747,10 +747,18 @@ export const Composer = React.forwardRef<
         ]
       : []),
     ...(tier ? [{ id: "context", label: "Context window", icon: <Glyph name="layers" size={16} />, trail: formatTokens(tier.tokens), onSelect: () => setTimeout(() => setPopover("context"), 0) }] : []),
-    ...(team
+    ...(team || skills ? ([{ kind: "sep", id: "s1" }] satisfies MenuEntry[]) : []),
+    ...(team ? ([{ id: "team", label: "Team…", icon: <Glyph name="agents" size={16} />, trail: orchestrateLabel(routing), onSelect: () => setTimeout(() => setPopover("team"), 0) }] satisfies MenuEntry[]) : []),
+    // A narrow row folds the Team and Skills chips into this menu (code-v2.css, cv2foot), so both live here too.
+    ...(skills
       ? ([
-          { kind: "sep", id: "s1" },
-          { id: "team", label: "Team…", icon: <Glyph name="agents" size={16} />, trail: orchestrateLabel(routing), onSelect: () => setTimeout(() => setPopover("team"), 0) },
+          {
+            id: "skills",
+            label: "Skills…",
+            icon: <Glyph name="skills" size={16} />,
+            trail: skills.selected.length > 0 || skills.once ? skillsChipLabel(skills.selected, skills.once) : undefined,
+            onSelect: () => (skills.load(), setTimeout(() => setPopover("skills"), 0)),
+          },
         ] satisfies MenuEntry[])
       : []),
   ];
@@ -926,8 +934,8 @@ export const Composer = React.forwardRef<
                 <button type="button" className="cv2-ctl icon" aria-label="Add" title="Attach, mention or run a command" aria-haspopup="menu" aria-expanded={popover === "attach"} onClick={() => toggle("attach")}>
                   <Glyph name="plus" size={16} />
                 </button>
-                <button type="button" className="cv2-ctl" aria-expanded={popover === "model" || popover === "catalog"} aria-haspopup="dialog" aria-label={`Model: ${words.model}${words.effort ? `, ${words.effort}` : ""}`} onClick={() => (setRoleTab("lead"), toggle("model"))}>
-                  {instance && <ModelMark modelId={selection.model} instance={instance} />}
+                <button type="button" className="cv2-ctl cv2-model-chip" aria-expanded={popover === "model" || popover === "catalog"} aria-haspopup="dialog" aria-label={`Model: ${words.model}${words.effortName ? `, ${words.effortName}` : ""}`} onClick={() => (setRoleTab("lead"), toggle("model"))}>
+                  {instance && <ModelMark modelId={selection.model} instance={instance} className="mark" />}
                   <span className="v cv2-trunc">{words.model}</span>
                   {words.effort && <span className="eff">{words.effort}</span>}
                   <Glyph name="chevron-down" size={12} className="chev" />

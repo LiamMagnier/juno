@@ -940,25 +940,49 @@ section[data-sidebar-section]:not(:first-child) {
   height: 36px;
   margin-left: 6px;
 }
-.cv2-composer .cv2-send:not([data-mode="voice"]):not(:disabled) {
+/* The disc wears Chat's four faces (composer-shell.tsx, the primary action),
+   so the two modes read as one product: Send in the accent, flat, like every
+   primary; Stop the ink disc; empty, the quiet voice entry; disabled, a tone
+   step with the third ink rather than a faded accent. Code's disc was graphite
+   with a drop shadow while Chat's took the accent (owner, 15 Nov 2026: the
+   accent everywhere). */
+.cv2-composer .cv2-send:not([data-mode="voice"]):not([data-mode="stop"]):not(:disabled) {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.cv2-composer .cv2-send[data-mode="stop"] {
   background: hsl(var(--foreground));
   color: hsl(var(--background));
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.16),
-    0 1px 2px hsl(220 10% 10% / 0.16),
-    0 4px 10px -4px hsl(30 10% 10% / 0.3);
+}
+.cv2-composer .cv2-send:disabled {
+  opacity: 1;
+  background: hsl(var(--secondary));
+  color: hsl(var(--ink-tertiary));
 }
 .cv2-composer .cv2-send[data-mode="voice"] {
-  background: hsl(var(--foreground) / 0.06);
-  color: hsl(var(--foreground) / 0.8);
+  background: hsl(var(--secondary));
+  color: hsl(var(--muted-foreground));
+}
+@media (hover: hover) and (pointer: fine) {
+  .cv2-composer .cv2-send:not([data-mode="voice"]):not([data-mode="stop"]):not(:disabled):hover {
+    filter: brightness(1.06);
+  }
+  .cv2-composer .cv2-send[data-mode="voice"]:hover {
+    background: hsl(var(--selected));
+    color: hsl(var(--foreground));
+  }
+}
+.cv2-composer .cv2-send .ag {
+  stroke-width: 1.75px;
 }
 .cv2-composer .cv2-send:active {
   transform: scale(0.95);
 }
+/* 44px under a coarse pointer, the touch minimum, as on Chat's row. */
 @media (pointer: coarse) {
-  .cv2-composer .cv2-ctl { height: 40px; }
-  .cv2-composer .cv2-ctl.icon { width: 40px; }
-  .cv2-composer .cv2-send { width: 40px; height: 40px; }
+  .cv2-composer .cv2-ctl { height: 44px; }
+  .cv2-composer .cv2-ctl.icon { width: 44px; }
+  .cv2-composer .cv2-send { width: 44px; height: 44px; }
 }
 @media (max-width: 640px) {
   .cv2-composer.cv2-composer { padding: 14px 8px 8px 16px; }
