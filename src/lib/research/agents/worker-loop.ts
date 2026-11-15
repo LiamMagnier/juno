@@ -131,6 +131,24 @@ export function nextElidedCount(total: number, keep: number, elided: number): nu
   return Math.max(elided, Math.min(Math.max(0, total - 1), Math.ceil(required / ELIDE_STEP) * ELIDE_STEP));
 }
 
+/**
+ * One model call's usage, shaped as a `GenerationCostOpts` receipt.
+ *
+ * The provider prices each call on its own, so a long-context surcharge
+ * applies only to a call whose own prompt crosses the threshold. The totals
+ * cannot say that: priced as one request, a worker's cumulative input crossed
+ * Haiku 5.5's 100K step and every token of every call billed at 5x
+ * (metering-findings.md, M2). Same provider convention as `WorkerCacheUsage`.
+ */
+export interface WorkerRequestUsage {
+  promptTokens: number;
+  completionTokens: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cacheWrite5m: number;
+  cacheWrite1h: number;
+}
+
 /** What the loop established, before the caller prices it. */
 export interface WorkerLoopOutcome {
   summary: string;
@@ -142,6 +160,8 @@ export interface WorkerLoopOutcome {
   inputTokens: number;
   outputTokens: number;
   cache: WorkerCacheUsage;
+  /** Every model call's own usage, in call order; they add up to the totals above. */
+  requests: WorkerRequestUsage[];
   /** Characters of tool output shown to the model, for pricing a worker whose provider reported no usage. */
   resultChars: number;
 }
@@ -157,12 +177,25 @@ export async function runWorkerLoop(
   let inputTokens = 0;
   let outputTokens = 0;
   const cache: WorkerCacheUsage = { read: 0, write: 0, write5m: 0, write1h: 0 };
-  const addCache = (turn: Turn) => {
-    if (!turn.cache) return;
-    cache.read += turn.cache.read;
-    cache.write += turn.cache.write;
-    cache.write5m += turn.cache.write5m;
-    cache.write1h += turn.cache.write1h;
+  const requests: WorkerRequestUsage[] = [];
+  // Every answered call adds to the totals and leaves its own receipt in the
+  // same step, so the two can never disagree about which calls were made.
+  const account = (turn: Turn) => {
+    const used = turn.cache ?? { read: 0, write: 0, write5m: 0, write1h: 0 };
+    inputTokens += turn.inputTokens;
+    outputTokens += turn.outputTokens;
+    cache.read += used.read;
+    cache.write += used.write;
+    cache.write5m += used.write5m;
+    cache.write1h += used.write1h;
+    requests.push({
+      promptTokens: turn.inputTokens,
+      completionTokens: turn.outputTokens,
+      cacheRead: used.read,
+      cacheWrite: used.write,
+      cacheWrite5m: used.write5m,
+      cacheWrite1h: used.write1h,
+    });
   };
   let elidedCount = 0;
   let idleTurns = 0;
@@ -195,9 +228,7 @@ export async function runWorkerLoop(
         }
         break;
       }
-      inputTokens += turn.inputTokens;
-      outputTokens += turn.outputTokens;
-      addCache(turn);
+      account(turn);
 
       if (turn.calls.length === 0) {
         /*
@@ -315,9 +346,7 @@ export async function runWorkerLoop(
           last = null;
         }
         if (last) {
-          inputTokens += last.inputTokens;
-          outputTokens += last.outputTokens;
-          addCache(last);
+          account(last);
           const done = last.calls.find((call) => call.name === "done");
           const parsed = done ? parseToolArgs("done", done.args) : null;
           if (parsed?.ok && parsed.parsed.name === "done") {
@@ -346,6 +375,7 @@ export async function runWorkerLoop(
     inputTokens,
     outputTokens,
     cache,
+    requests,
     resultChars: resultLog.reduce((n, r) => n + r.text.length, 0),
   };
 }

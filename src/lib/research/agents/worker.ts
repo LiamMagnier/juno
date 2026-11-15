@@ -9,10 +9,11 @@ import { researchLeadCandidates, type ResearchLeadCandidate } from "@/lib/resear
 import { getModelMetrics } from "@/lib/model-metrics";
 import { canUseModel } from "@/lib/plans";
 import type { ResearchChosenRefusal, ResearchWorkerNote } from "@/types/research";
-import { compatPromptCacheTokens, estimateGenerationCostUsd, type CompatPromptCacheFields } from "@/lib/pricing";
+import { compatPromptCacheTokens, type CompatPromptCacheFields } from "@/lib/pricing";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { isProviderConfigured, providerApiKey, providerBaseUrl } from "@/lib/providers";
 import { recordSpend } from "@/lib/spend";
+import { estimateTurnCostUsd } from "@/lib/turn-pricing";
 import { truncate } from "@/lib/utils";
 import {
   WORKER_TOOLS,
@@ -389,13 +390,20 @@ async function runLoop(input: RunWorkerInput, adapter: Adapter, model: ModelInfo
     cacheWrite5m: loop.cache.write5m || undefined,
     cacheWrite1h: loop.cache.write1h || undefined,
   };
-  const billed = estimateGenerationCostUsd(model, {
+  const total = {
     promptTokens: loop.inputTokens || undefined,
     completionTokens: loop.outputTokens || undefined,
     promptChars: loop.inputTokens ? undefined : loop.resultChars + WORKER_SYSTEM.length,
     completionChars: loop.outputTokens ? undefined : loop.summary.length,
     ...cache,
-  });
+  };
+  // Each call priced on its own, as the provider bills it: the loop's
+  // cumulative input is far past Haiku 5.5's 100K step even though no single
+  // call is, and pricing the sum as one request billed every token at 5x.
+  // When the receipts do not reconcile with the totals (a provider that
+  // reported no usage, so the char floor stands in), `estimateTurnCostUsd`
+  // falls back to the aggregate, which never bills less than before.
+  const billed = estimateTurnCostUsd(model, total, loop.requests);
   await recordSpend({
     userId: input.userId,
     model: model.id,
@@ -404,6 +412,7 @@ async function runLoop(input: RunWorkerInput, adapter: Adapter, model: ModelInfo
     promptTokens: billed.promptTokens,
     completionTokens: billed.completionTokens,
     ...cache,
+    requestUsages: loop.requests,
     costUsd: billed.costUsd || undefined,
   }).catch(() => {});
 
