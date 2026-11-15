@@ -34,6 +34,27 @@
   --glass-alpha: 0.72;
 }
 
+/*
+ * THE ACCENT IS THE PRODUCT'S ONE COLOUR (owner, 15 Nov 2026: "when the accent
+ * colour is selected in Settings it should be everywhere"). The tint, the
+ * live/working colour (--presence) and keyboard focus (--ring) used to be a
+ * fixed Alevr Blue and a fixed graphite, so an account on Amber still saw
+ * blue thinking states, a blue effort slider and black focus rings. They now
+ * follow the accent's own values, which globals.css tunes per accent and per
+ * theme: fills take --primary (its label colour is --primary-foreground),
+ * marks, text and focus take --primary-ink, which every accent holds at
+ * 4.5:1 or more on the page, so a live dot or a focus ring keeps the 3:1 a
+ * non-text indicator needs on every accent. Unlayered, so it wins over the
+ * @layer base tokens; scoped to [data-accent] so a page without one keeps the
+ * brand blue.
+ */
+:root[data-accent] {
+  --tint: var(--primary);
+  --presence: var(--primary-ink);
+  --presence-ink: var(--primary-ink);
+  --ring: var(--primary-ink);
+}
+
 /* ── 1. The tint ─────────────────────────────────────────────────────────── */
 
 /* The coral (default) accent values live in globals.css, so the token
@@ -633,7 +654,7 @@ section[data-sidebar-section]:not(:first-child) {
   background: color-mix(in oklab, hsl(var(--tint)) 82%, black);
 }
 .effort-rung {
-  color: hsl(var(--presence-ink));
+  color: hsl(var(--primary-ink));
 }
 .speed-on {
   position: relative;

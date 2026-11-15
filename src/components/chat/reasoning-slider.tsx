@@ -661,7 +661,7 @@ function EffortPanel({
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -inset-[3px] rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100"
+          className="pointer-events-none absolute -inset-0.5 rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100"
         />
       </div>
     </div>

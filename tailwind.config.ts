@@ -55,7 +55,11 @@ const config: Config = {
       colors: {
         border: "hsl(var(--border) / <alpha-value>)",
         input: "hsl(var(--input) / <alpha-value>)",
-        ring: "hsl(var(--ring) / <alpha-value>)",
+        // `--ring-visible` is 0 unless the person is moving focus with the
+        // keyboard (globals.css, input modality), so a `focus-visible:ring-*`
+        // never draws for a click or a tap, as the global outline already
+        // does not.
+        ring: "hsl(var(--ring) / calc(<alpha-value> * var(--ring-visible, 1)))",
         // Shared form material, also generated as JunoGeneratedColors.field*.
         // Hover/focus roles already carry alpha; a second opacity would erase
         // the measured boundary contrast.

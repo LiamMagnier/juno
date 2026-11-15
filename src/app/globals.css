@@ -1257,6 +1257,11 @@
      on the first frame for a keyboard user. Not under forced colours, where
      the outline is the system's focus mark and stays. */
   @media (forced-colors: none) {
+    /* The same rule for every `focus-visible:ring-*` utility, whose colour
+       reads --ring-visible (tailwind.config.ts): a ring is a keyboard mark. */
+    :root:is([data-modality="pointer"], [data-modality="none"]) {
+      --ring-visible: 0;
+    }
     :root:is([data-modality="pointer"], [data-modality="none"]) :focus-visible,
     :root:not([data-modality="keyboard"]) :is(textarea, input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="color"], [type="image"]), [contenteditable]:not([contenteditable="false"])):focus-visible {
       outline-color: transparent;
