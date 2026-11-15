@@ -302,7 +302,7 @@ export function LibraryHome() {
             <>
               {/* bg-background: the header's drawing (backdrop) runs behind this
                   corner, and a transparent button let it show through its words. */}
-              <Button variant="ghost" asChild className="gap-2 border-foreground/10 bg-background px-3 font-normal text-muted-foreground hover:border-foreground/[0.16] hover:text-foreground active:scale-[0.97] dark:border-white/10 dark:hover:border-white/[0.16]">
+              <Button variant="ghost" asChild className="gap-2 border-foreground/10 bg-background px-3 font-normal coarse:min-w-11 text-muted-foreground hover:border-foreground/[0.16] hover:text-foreground active:scale-[0.97] dark:border-white/10 dark:hover:border-white/[0.16]">
                 <Link href="/library?view=trash">
                   <Trash2 className="size-4" aria-hidden="true" />
                   {/* A glyph and its count on a phone (G54), so both actions

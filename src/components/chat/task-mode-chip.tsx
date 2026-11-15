@@ -84,7 +84,14 @@ export function TaskModeChip({
               type="button"
               disabled={disabled}
               data-task-mode={effective}
-              className={cn(composerChipClass, "max-w-[12rem]", !offDefault && "px-2")}
+              className={cn(
+                composerChipClass,
+                "max-w-[12rem]",
+                // At the default, a phone shows the glyph alone: a round control
+                // like the + and the mic, 44px under touch, and it never shrinks
+                // (it was squeezed to a 32px sliver beside a long model name).
+                !offDefault && "px-2 max-sm:w-9 max-sm:shrink-0 max-sm:justify-center max-sm:px-0 max-sm:coarse:w-11"
+              )}
             >
               {/* The name, said whole: a static phrase and the mode's own
                   label, each a text node the catalog can translate. */}

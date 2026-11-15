@@ -90,6 +90,10 @@ function ContextBar({ split }: { split: ContextSplit }) {
   );
 }
 
+/** On a phone: the share of the window at which the meter appears, and at which its number joins the ring. */
+export const PHONE_METER_FROM = 0.25;
+export const PHONE_SHARE_FROM = 0.5;
+
 export function ContextUsageMeter({ usage }: { usage: ContextUsage }) {
   const locale = useUiLocale();
   const reduceMotion = useReducedMotion();
@@ -98,6 +102,13 @@ export function ContextUsageMeter({ usage }: { usage: ContextUsage }) {
   const split = contextSplit(usage);
   const exact = (value: number) => formatNumber(value, locale);
   const share = formatNumber(split.used, locale, { style: "percent", maximumFractionDigits: split.used < 0.1 ? 1 : 0 });
+  // A phone's row holds six 44px controls in about 340px, and the model's
+  // name is the one that says something there: at "0.2%" the meter took the
+  // room the name needed ("Qwen3.…", cut mid-word). So on a phone the meter
+  // waits until a quarter of the window is used, then shows its ring, and its
+  // number from half; a tap opens the sheet. Desktop always shows both.
+  if (narrow && split.used < PHONE_METER_FROM) return null;
+  const showShare = !narrow || split.used >= PHONE_SHARE_FROM;
 
   const button = (
     <button
@@ -106,10 +117,13 @@ export function ContextUsageMeter({ usage }: { usage: ContextUsage }) {
       aria-expanded={open}
       aria-label={`Context: ${share} of the model's window used`}
       onClick={narrow ? () => setOpen((previous) => !previous) : undefined}
-      className="pressable inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-ui font-medium tabular-nums text-muted-foreground hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground motion-reduce:active:scale-100 coarse:h-11 coarse:px-2.5"
+      className={cn(
+        "pressable inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-ui font-medium tabular-nums text-muted-foreground hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground motion-reduce:active:scale-100 coarse:h-11 coarse:px-2.5",
+        !showShare && "w-9 justify-center px-0 coarse:w-11 coarse:px-0"
+      )}
     >
       <ContextRing split={split} />
-      <span translate="no">{share}</span>
+      {showShare && <span translate="no">{share}</span>}
     </button>
   );
 

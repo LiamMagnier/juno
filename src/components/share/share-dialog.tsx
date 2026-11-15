@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -171,10 +172,14 @@ function ChatLinkPanel({ conversationId, open, transcript }: { conversationId: s
             <span className="min-w-0">The link was revoked. Anyone opening it now sees nothing.</span>
           </p>
         )}
-        <Button size="sm" onClick={() => void create()} disabled={status === "creating"} aria-busy={status === "creating"}>
-          <Link2 className="size-4" aria-hidden />{" "}
-          {status === "creating" ? "Creating…" : status === "revoked" ? "Create a new link" : "Create link"}
-        </Button>
+        {/* The primary sits in the footer, at the end of the row, as in every
+            dialog (design audit 2026-11 #22: it stood at the body's left edge). */}
+        <DialogFooter>
+          <Button onClick={() => void create()} disabled={status === "creating"} aria-busy={status === "creating"}>
+            <Link2 className="size-4" aria-hidden />{" "}
+            {status === "creating" ? "Creating…" : status === "revoked" ? "Create a new link" : "Create link"}
+          </Button>
+        </DialogFooter>
       </div>
     );
   }
