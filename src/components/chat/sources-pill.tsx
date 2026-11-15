@@ -272,7 +272,8 @@ export function SourcesPill({
           ))}
         </span>
         <span>Sources</span>
-        <span className="tabular-nums opacity-70">{sources.length}</span>
+        {/* The pill's own ink: at 70% opacity the count measured 2.76:1. */}
+        <span className="tabular-nums">{sources.length}</span>
         <ChevronDown
           aria-hidden="true"
           className={cn(

@@ -259,8 +259,10 @@ function ConnectorTile({
     </>
   );
 
+  // Unavailable: the mark dims, the words do not. Dimming the whole tile took
+  // its "Not set up on this server" to 2.91:1.
   return (
-    <article id={tileAnchor(item.id)} className={cn("relative isolate", unavailable && "opacity-70")}>
+    <article id={tileAnchor(item.id)} className={cn("relative isolate", unavailable && "[&_img]:opacity-60 [&_svg]:opacity-60")}>
       {landed ? (
         <motion.span
           aria-hidden="true"

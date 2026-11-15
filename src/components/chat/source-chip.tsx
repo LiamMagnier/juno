@@ -327,7 +327,7 @@ export function SourceCard({ source, index }: { source: ClientSource; index?: nu
       <span className="flex items-center gap-2 text-caption text-muted-foreground">
         <SourceFavicon url={source.url} variant="list" />
         <span className="min-w-0 flex-1 truncate">{hostOf(source.url)}</span>
-        {index !== undefined ? <span className="tabular-nums opacity-70">{index}</span> : null}
+        {index !== undefined ? <span className="tabular-nums">{index}</span> : null}
       </span>
       <span className="line-clamp-2 text-ui font-semibold leading-snug text-popover-foreground">{titleOf(source)}</span>
       {snippet ? <span className="line-clamp-3 text-caption leading-relaxed text-muted-foreground">{snippet}</span> : null}

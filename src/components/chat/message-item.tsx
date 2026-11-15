@@ -459,7 +459,8 @@ function RegenerateMenu({ onRegenerate, currentModelId }: { onRegenerate: (o?: R
 /** The set's caret at its smallest rung, riding beside a glyph inside a
  *  circular action to say the press opens a menu rather than acting. */
 function ChevronDownMini() {
-  return <ChevronDown className="-mr-1 size-3 opacity-60" />;
+  // The action's own ink, no opacity: at 60% it measured 2.43:1, under 3:1.
+  return <ChevronDown className="-mr-1 size-3" />;
 }
 
 /** Copy ⇄ check, cross-faded in one box (see IconSwap). */

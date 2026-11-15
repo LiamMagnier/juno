@@ -504,8 +504,10 @@ export function ComposerFieldLead({
 }
 
 /** The chevron that closes a chip: quiet, and it turns while the chip is open. */
+// No opacity: at 70% of the muted ink the caret measured 2.91:1, under the
+// 3:1 a control's graphic needs (WCAG 1.4.11). It takes the chip's ink.
 export const composerChevronClass =
-  "size-3 shrink-0 opacity-70 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none";
+  "size-3 shrink-0 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none";
 
 /**
  * A 32px flat icon button (`+`, mic, voice), 44px under a coarse pointer — the
