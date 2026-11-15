@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type WebSocket from "ws";
 import { resamplePcm16 } from "./audio.js";
 import type { ClientMessage, ServerMessage, VoiceHistoryEntry, VoiceProviderId } from "./protocol.js";
@@ -51,6 +51,12 @@ const MEMORY_FETCH_TIMEOUT_MS = 2_500;
  * turn may decline a card but never approve one (relay/src/tools.ts).
  */
 const ECHO_GUARD_MS = 600;
+/**
+ * The least time between two camera/screen frames forwarded to a provider.
+ * The protocol asks clients for at most 1 fps and nothing enforced it; this is
+ * that rate, less the jitter a 1 fps client's frames arrive with.
+ */
+const VIDEO_FRAME_MIN_INTERVAL_MS = 900;
 
 /**
  * Ask Juno what this call should know about its caller. Server to server,
@@ -225,6 +231,16 @@ export class RelaySession {
    * before this (plus `ECHO_GUARD_MS`) may be the call hearing itself.
    */
   private assistantAudioEndsAtMs = 0;
+  /*
+   * Camera/screen frames as forwarded to the provider. Clients send one a
+   * second whether or not the picture changed, and every frame forwarded is
+   * paid for as context — Gemini re-bills it on each turn, OpenAI keeps it as
+   * a conversation item — so a frame goes on only when it shows something new.
+   */
+  private lastFrameHash: string | null = null;
+  private lastFrameAtMs = -Infinity;
+  /** The newest frame the rate cap held back; sent when the caller next speaks or types. */
+  private pendingFrame: { jpeg: Buffer; hash: string } | null = null;
 
   constructor(
     private ws: WebSocket,
@@ -290,6 +306,8 @@ export class RelaySession {
         // A typed turn is the person's own words too, and may answer a card.
         this.toolBridge?.userTurnOpened();
         this.toolBridge?.userTurnFinal(text);
+        // Before the words, so the answer to them sees the newest picture.
+        this.flushPendingFrame();
         this.provider?.sendText(providerText(text, context));
         return;
       }
@@ -298,7 +316,7 @@ export class RelaySession {
         return;
       case "video.frame": {
         const jpeg = Buffer.from(String(msg.jpegBase64 ?? ""), "base64");
-        if (jpeg.length > 0 && jpeg.length < 2_000_000) this.provider?.sendVideoFrame(jpeg);
+        if (jpeg.length > 0 && jpeg.length < 2_000_000) this.offerVideoFrame(jpeg);
         return;
       }
       case "ping":
@@ -358,6 +376,39 @@ export class RelaySession {
 
   handleAudio(pcm16k: Buffer): void {
     this.provider?.sendAudio(pcm16k);
+  }
+
+  /**
+   * Forward a frame only if it differs from the last one forwarded, and no
+   * sooner than `VIDEO_FRAME_MIN_INTERVAL_MS` after it. A changed frame that
+   * comes too soon is held, replaced by any newer one, and sent when the
+   * caller next speaks or types — the moment the model is asked about it.
+   */
+  private offerVideoFrame(jpeg: Buffer): void {
+    if (!this.provider) return;
+    const hash = createHash("sha256").update(jpeg).digest("base64");
+    if (hash === this.lastFrameHash) {
+      // The newest picture is the one the model already has.
+      this.pendingFrame = null;
+      return;
+    }
+    if (Date.now() - this.lastFrameAtMs < VIDEO_FRAME_MIN_INTERVAL_MS) {
+      this.pendingFrame = { jpeg, hash };
+      return;
+    }
+    this.forwardFrame(jpeg, hash);
+  }
+
+  /** The caller began a turn: whatever the rate cap held goes now. */
+  private flushPendingFrame(): void {
+    if (this.pendingFrame && this.provider) this.forwardFrame(this.pendingFrame.jpeg, this.pendingFrame.hash);
+  }
+
+  private forwardFrame(jpeg: Buffer, hash: string): void {
+    this.pendingFrame = null;
+    this.lastFrameHash = hash;
+    this.lastFrameAtMs = Date.now();
+    this.provider?.sendVideoFrame(jpeg);
   }
 
   private async startProvider(id: VoiceProviderId, thinking: boolean, requestedEffort?: unknown): Promise<void> {
@@ -430,6 +481,10 @@ export class RelaySession {
       }
       this.provider = session;
       this.providerId = id;
+      // A provider switched to has seen no picture yet, so the next frame is
+      // its first, however like the last one the previous provider was sent.
+      this.lastFrameHash = null;
+      this.lastFrameAtMs = -Infinity;
       if (this.sessionTimer) clearTimeout(this.sessionTimer);
       const sessionLimitSec = effectiveRelaySessionLimitSec(factory.capabilities.maxSessionSec);
       const elapsedSec = (Date.now() - (this.sessionStartedAtMs ?? Date.now())) / 1000;
@@ -519,6 +574,7 @@ export class RelaySession {
         if (!isCurrent()) return;
         if (this.userTurnAnchor < 0) this.userTurnAnchor = this.transcript.length;
         this.openUserTurn();
+        this.flushPendingFrame();
         this.send({ type: "turn", speaker: "user", phase: "start" });
       },
       ...(this.toolBridge && this.toolBridge.declarations.length
