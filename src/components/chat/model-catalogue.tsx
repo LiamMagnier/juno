@@ -43,6 +43,7 @@ import {
   ChevronDown,
   ChevronLeft,
   Info,
+  LayoutGrid,
   Lock,
   Search,
   SearchX,
@@ -64,8 +65,6 @@ import { PLANS, modelRequiredPlan } from "@/lib/plans";
 import { useApp } from "@/components/app/app-provider";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import {
-  contextScore,
-  expensivenessScore,
   formatContext,
   formatPrice,
   getModelMetrics,
@@ -227,7 +226,6 @@ function Stat({
   value,
   unit,
   caption,
-  score,
 }: {
   label: string;
   value: string;
@@ -235,34 +233,21 @@ function Stat({
   /**
    * What the value is measured in, when the unit does not fit beside it
    * ("per 1M tokens, in · out"). Its comma-separated phrases each hold
-   * together and the line breaks only between them: in a 112px column the
-   * whole caption ran 12px past its rule on one line.
+   * together and the line breaks only between them.
    */
   caption?: string;
-  score: number;
 }) {
+  // The number, said once. Four meter bars under four numbers repeated each
+  // figure as a shape and made the quietest pane the busiest one.
   return (
     <div>
-      <div className="text-caption text-muted-foreground">{label}</div>
+      <div className="text-label text-muted-foreground">{label}</div>
       <div className="mt-0.5 flex items-baseline gap-1">
-        <span className="text-body font-medium tabular-nums text-foreground">{value}</span>
-        {unit && <span className="text-caption text-muted-foreground">{unit}</span>}
+        <span className="text-ui font-medium tabular-nums text-foreground">{value}</span>
+        {unit && <span className="text-label text-muted-foreground">{unit}</span>}
       </div>
-      <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-foreground/[0.08]">
-        {/* An inline scale: this is DATA, not a colour — the same precedent as
-            the popover's own inline size below. It travels on `scaleX` from
-            the left edge rather than on `width`, because only transform and
-            opacity may move (ICONS_AND_MOTION.md §2.2.8): a width transition
-            relaid the bar on every frame of every arrow keypress. */}
-        <div
-          aria-hidden
-          className="h-full w-full origin-left rounded-full bg-foreground/70 transition-transform duration-slow ease-out-soft motion-reduce:transition-none"
-          style={{ transform: `scaleX(${Math.max(0, Math.min(10, score)) / 10})` }}
-        />
-      </div>
-      {/* Under the rule, so the rules of a row stay level with each other. */}
       {caption && (
-        <div className="mt-1.5 text-micro text-muted-foreground">
+        <div className="mt-0.5 text-label text-muted-foreground">
           {caption.split(", ").map((phrase, i, all) => (
             <React.Fragment key={phrase}>
               <span className="whitespace-nowrap">{i < all.length - 1 ? `${phrase},` : phrase}</span>
@@ -410,14 +395,10 @@ function DetailPanel({
         {!auto && (
           <>
             <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3.5">
-              <Stat label="Intelligence" value={String(metrics.intelligence)} unit="/10" score={metrics.intelligence} />
-              <Stat label="Speed" value={String(metrics.speed)} unit="/10" score={metrics.speed} />
+              <Stat label="Intelligence" value={String(metrics.intelligence)} unit="/10" />
+              <Stat label="Speed" value={String(metrics.speed)} unit="/10" />
               {model.modality === "chat" && metrics.contextTokens > 0 && (
-                <Stat
-                  label="Context"
-                  value={formatContext(metrics.contextTokens)}
-                  score={contextScore(metrics.contextTokens)}
-                />
+                <Stat label="Context" value={formatContext(metrics.contextTokens)} />
               )}
               {/* Inverted: the rule reads "how cheap", so a long bar is good news
                       on every row in the panel rather than on some of them. The
@@ -427,7 +408,6 @@ function DetailPanel({
                 label="Cost"
                 value={priceLabel(model)}
                 caption={priced ? "per 1M tokens, in · out" : undefined}
-                score={11 - expensivenessScore(metrics)}
               />
             </div>
 
@@ -493,21 +473,54 @@ function DetailPanel({
 }
 
 /**
- * One tile on the lab rail: the mark, and the name on hover.
+ * One lab on the rail: its mark, its name and how many models it has.
  *
- * Named rows were tried and taken back out. They cost 168px of a 680px box —
- * a quarter of the surface spent on sixteen words a person reads once — and
- * the list is where the choosing happens. The objection to an icon rail is
- * real (a logo with no name is a memory test, and a tooltip delay on the
- * primary navigation of a surface is a bad trade), so the tooltip carries
- * MORE than the name did: the lab and how many models it has, which is the
- * count the named row printed at its right edge.
+ * Named, not a bare mark (owner, 15 Nov 2026: "lab names instead of bare
+ * icons"). An icon-only rail of sixteen logos was a memory test, and its
+ * tooltip put a delay on the surface's primary navigation; named rows were
+ * once judged too wide at 168px, so the rail is 144px and the window grew
+ * to hold it rather than squeezing the list.
  *
- * Active is the on tone, `bg-selected`, one rung past the hover fill
- * (FLAT_UI.md §3.1); it was `bg-secondary`, which is paler than hover in the
- * light theme, so the lab you were in read weaker than one the pointer
- * crossed. The accent stays reserved for the selected MODEL, never for which
- * lab you are browsing.
+ * Selected is a soft fill and the name at full weight, the same state as a
+ * sidebar row; the accent stays reserved for the selected MODEL.
+ */
+function RailTile({
+  active,
+  label,
+  count,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  label: string;
+  count?: number;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        // `.pressable` carries the colour cross-fade and the press dip.
+        "pressable flex h-8 w-full shrink-0 items-center gap-2 rounded-control px-2 text-left text-ui outline-none coarse:h-11",
+        "motion-reduce:active:scale-100",
+        "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        active ? "bg-foreground/[0.065] font-medium text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+    >
+      <span aria-hidden className="grid size-4 shrink-0 place-items-center">{children}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {count != null && <span className="shrink-0 text-label tabular-nums text-muted-foreground">{count}</span>}
+    </button>
+  );
+}
+
+/**
+ * One filter on the phone's chip row: the rail's tiles, named, for the width
+ * at which the rail folds away. On is the same on tone the rail uses
+ * (`bg-selected`, FLAT_UI.md §3.1), never the accent.
  */
 function FilterChip({
   active,
@@ -566,7 +579,7 @@ function rowDomId(key: string) {
 
 export function ModelCatalogue({
   value,
-  current: _current,
+  current,
   autoSelected,
   filter: modelFilter,
   onPick,
@@ -783,23 +796,10 @@ export function ModelCatalogue({
 
   /** ↑/↓ walk the list, Home/End jump to its ends, Enter picks. */
   const onNavKeyDown = (e: React.KeyboardEvent) => {
-    if (!["ArrowDown", "ArrowUp", "Home", "End", "Enter", "ArrowRight"].includes(e.key)) return;
+    if (!["ArrowDown", "ArrowUp", "Home", "End", "Enter"].includes(e.key)) return;
     // The thinking slider at the foot drives itself with the same keys.
     if (e.target instanceof Element && e.target.closest("[data-model-thinking]")) return;
     if (order.length === 0) return;
-    // Details on demand: → opens the lit row's details over the list (← or
-    // Esc goes back). From the search field only once the caret is at the end
-    // of what was typed, so → still moves the caret through a query.
-    if (e.key === "ArrowRight") {
-      const field = e.target instanceof HTMLInputElement ? e.target : null;
-      if (field && (field.selectionStart ?? 0) < field.value.length) return;
-      const at = cursor ?? selectedKey;
-      const m = at ? byKey.get(at) : null;
-      if (!at || !m || isAutoModelId(m.id)) return;
-      e.preventDefault();
-      openInfo(at);
-      return;
-    }
     if (e.key === "Enter") {
       // A row is a button: its own click handles Enter.
       if (e.target instanceof HTMLButtonElement) return;
@@ -818,6 +818,7 @@ export function ModelCatalogue({
     moveCursorTo(e.key === "ArrowDown" ? order[(at + 1) % order.length] : order[(at - 1 + order.length) % order.length]);
   };
 
+  const detailModel: ModelInfo | null = (cursor ? byKey.get(cursor) : null) ?? current ?? null;
 
   /**
    * The selected model's row: its copy under its own lab (where the Text /
@@ -926,7 +927,7 @@ export function ModelCatalogue({
         key={key}
         data-model-row=""
         className={cn(
-          "group/row flex items-center rounded-control",
+          "flex items-center rounded-control",
           // Colour only, so it keeps its timing under reduced motion (fades
           // are not travel; ICONS_AND_MOTION.md §2.2, rule 10).
           "transition-colors duration-fast ease-out-soft",
@@ -975,10 +976,10 @@ export function ModelCatalogue({
           <span className="flex min-w-0 flex-1 flex-col">
             <span className={cn("truncate text-ui text-foreground", active && "font-medium")}>{m.name}</span>
             {/* What Auto does, where the panel that says so is folded away. */}
-            {auto && <span className="truncate text-caption text-muted-foreground">{AUTO_SUMMARY}</span>}
+            {auto && <span className="truncate text-caption text-muted-foreground sm:hidden">{AUTO_SUMMARY}</span>}
             {/* The one fact a phone row cannot leave to the ⓘ: that the model
                 is going away. Short ("Retires 3 Dec 2026"), so it is never cut. */}
-            {retiring && <span className="text-caption text-warning">{retiring}</span>}
+            {retiring && <span className="text-caption text-warning sm:hidden">{retiring}</span>}
           </span>
           {starred && (
             <span aria-hidden className="inline-flex shrink-0">
@@ -995,7 +996,7 @@ export function ModelCatalogue({
         </button>
         {auto ? (
           // Keeps Auto's check on the same x as the rows' checks below it.
-          <span aria-hidden className="size-8 shrink-0 coarse:size-11" />
+          <span aria-hidden className="size-9 shrink-0 sm:hidden coarse:size-11" />
         ) : (
           // The detail panel's facts, for the width that folds the panel
           // away: what it is, how capable, fast and costly, what it can do,
@@ -1010,8 +1011,7 @@ export function ModelCatalogue({
             className={cn(
               // The third ink at rest: a row of these must read quieter than
               // the names beside them.
-              "pressable grid size-8 shrink-0 place-items-center rounded-control text-ink-tertiary opacity-0 outline-none hover:text-foreground active:text-foreground group-hover/row:opacity-100 coarse:size-11 coarse:opacity-100",
-              lit && "opacity-100",
+              "pressable grid size-9 shrink-0 place-items-center rounded-control text-ink-tertiary outline-none hover:text-foreground active:text-foreground sm:hidden coarse:size-11",
               "motion-reduce:active:scale-100",
             )}
           >
@@ -1109,15 +1109,8 @@ export function ModelCatalogue({
         collisionPadding={16}
         avoidCollisions
         onKeyDown={(event) => {
-          // The detail sheet is a step into one row: the list's keys wait,
-          // and ← steps back out (as Esc does).
-          if (infoKey) {
-            if (event.key === "ArrowLeft") {
-              event.preventDefault();
-              closeInfo();
-            }
-            return;
-          }
+          // The detail sheet is a step into one row: the list's keys wait.
+          if (infoKey) return;
           onNavKeyDown(event);
         }}
         // Escape in the detail sheet goes back to the list, not out of the
@@ -1150,10 +1143,9 @@ export function ModelCatalogue({
           }
           catalogueCloseFocus(event, { returnFocusTo, interactedOutside: interactedOutside.current });
         }}
-        // ONE COLUMN, 26rem (owner, 15 Nov 2026: fast to scan, details on
-        // demand). The lab rail became the filter chips over the list, and
-        // the always-open detail panel a sheet over the list that a row's ⓘ
-        // or → opens, so the eye runs down names, not across three panes.
+        // 600 wide: a 48px rail, a ~284px names column and a 268px panel.
+        // Names at one line each mean a lab's whole current range is visible
+        // at once, so the list no longer needs the width it used to.
         //
         // ONE HEIGHT, clamped to the viewport. The box is anchored at its
         // bottom edge (it opens above the chip), so any change in its height
@@ -1165,12 +1157,65 @@ export function ModelCatalogue({
         // short lab leaves room under its last row, and that is the cheaper
         // trade: the panel beside it fills the height either way.
         style={{
-          width: "min(26rem, calc(100vw - 2rem))",
+          width: "min(46rem, calc(100vw - 2rem))",
           height: "min(32rem, var(--radix-popover-content-available-height))",
         }}
         className="flex max-w-none flex-col overflow-hidden rounded-panel p-0"
       >
         <div className="relative flex min-h-0 flex-1">
+          {/* Lab rail — 48px of marks, folds under `sm`. Only labs with
+              something in them; a tile can never lead to an empty list. */}
+          <div className="hidden w-36 shrink-0 flex-col border-r border-border/60 sm:flex">
+            {/* ScrollFade, not a bare `overflow-y-auto`: sixteen marks need
+                more than a short column has, and the strip used to scroll
+                with no affordance saying so. */}
+            <ScrollFade className="min-h-0 flex-1" viewportClassName="flex flex-col gap-0.5 p-1.5">
+              {/* While a query is running the list shows every lab, so the rail
+                  has to read as "All models" — it used to claim a lab that was
+                  not the one on screen. `filter` itself is untouched, so
+                  clearing the query restores it. */}
+              <RailTile
+                active={q ? true : filter === "all"}
+                label="All models"
+                count={searchable.length}
+                onClick={() => {
+                  setFilter("all");
+                  setQuery("");
+                }}
+              >
+                <LayoutGrid className="size-4" />
+              </RailTile>
+              <RailTile
+                active={q ? false : filter === "favorites"}
+                label="Favorites"
+                count={favorites.size || undefined}
+                onClick={() => {
+                  setFilter("favorites");
+                  setQuery("");
+                }}
+              >
+                <Star className={cn("size-4", !q && filter === "favorites" && "fill-current")} />
+              </RailTile>
+              <div aria-hidden className="mx-2 my-1.5 h-px shrink-0 bg-border/70" />
+              {railProviders.map((p) => (
+                <RailTile
+                  key={p}
+                  active={q ? false : filter === p}
+                  label={providerName(p)}
+                  count={countsByProvider.get(p)}
+                  onClick={() => {
+                    // A lab click means "show me this lab", so it clears the
+                    // query that would otherwise keep showing all of them.
+                    setFilter(p);
+                    setQuery("");
+                  }}
+                >
+                  <ProviderLogo provider={p} className="size-4" />
+                </RailTile>
+              ))}
+            </ScrollFade>
+          </div>
+
           {/* List */}
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="shrink-0 border-b border-border/60 px-2.5 py-2">
@@ -1225,7 +1270,7 @@ export function ModelCatalogue({
               <div
                 role="group"
                 aria-label="Filter models"
-                className="no-scrollbar -mx-2 flex gap-1.5 overflow-x-auto py-1.5 pl-2 pr-6 [mask-image:linear-gradient(to_right,transparent,#000_8px,#000_calc(100%-24px),transparent)]"
+                className="no-scrollbar -mx-2 flex gap-1.5 overflow-x-auto py-1.5 pl-2 pr-6 [mask-image:linear-gradient(to_right,transparent,#000_8px,#000_calc(100%-24px),transparent)] sm:hidden"
               >
                 <FilterChip
                   active={q ? true : filter === "all"}
@@ -1366,9 +1411,21 @@ export function ModelCatalogue({
             ) : null}
           </div>
 
-          {/* Details on demand, over the list: a row's ⓘ, or → on the lit row. */}
+          {/* Everything the names column does not say. Effort is not here:
+              it is under the list, for the selected model only, and a second
+              copy would be two controls for one setting. */}
+          <DetailPanel
+            model={detailModel}
+            selected={!!detailModel && (isAutoModelId(detailModel.id) ? autoSelected : value === detailModel.id)}
+            locked={!!detailModel && isLocked(detailModel)}
+            starred={!!detailModel && favorites.has(detailModel.id)}
+            onUse={() => detailModel && select(detailModel)}
+            onToggleStar={() => detailModel && toggleFavorite(detailModel.id)}
+          />
+
+          {/* Under `sm`: the same panel over the list, from a row's ⓘ. */}
           {infoModel && (
-            <div>
+            <div className="sm:hidden">
               <DetailPanel
                 model={infoModel}
                 selected={isAutoModelId(infoModel.id) ? autoSelected : value === infoModel.id}

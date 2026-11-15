@@ -131,10 +131,9 @@ test("the catalogue opens past models that hold the selection, and lights the fi
   assert.match(catalogue, /if \(legacyOpen\(g\)\) for \(const m of g\.legacy\) push\(`\$\{g\.key\}legacy:`, m\);/);
   // The cursor may rest on a "Past models" switch too (an option row of its own).
   assert.match(catalogue, /const cursor = cursorKey && \(byKey\.has\(cursorKey\) \|\| toggles\.has\(cursorKey\)\) \? cursorKey : q \? \(order\[0\] \?\? null\) : null;/);
-  // Every size: the facts behind an ⓘ (or →), a retiring model's warning on the row.
+  // Phone rows: the facts behind an ⓘ, a retiring model's warning on the row.
   assert.match(catalogue, /sheet=\{\{ onBack: closeInfo, backRef: infoBackRef \}\}/);
-  assert.match(catalogue, /retiring && <span className="text-caption text-warning">/);
-  assert.match(catalogue, /e\.key === "ArrowRight"/, "→ opens the lit row's details");
+  assert.match(catalogue, /retiring && <span className="text-caption text-warning sm:hidden">/);
   assert.doesNotMatch(catalogue, /<dt>In \/ MTok<\/dt>/, "the cost is said once");
   assert.doesNotMatch(catalogue, /caps\.join\(" · "\)/);
 });
