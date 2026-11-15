@@ -58,7 +58,7 @@ test("the projection carries the status roles, timing, springs, shell and gestur
   assert.equal(TIMING_TOKENS.stagger.max, 4);
   assert.deepEqual(Object.keys(SPRING).sort(), ["articulate", "emphasized", "layout", "reward", "snap", "standard"]);
   assert.equal(SHELL.sidebarDefault, 260);
-  assert.deepEqual(SHELL.transcriptMax, { narrow: 640, medium: 768, wide: 992 });
+  assert.deepEqual(SHELL.transcriptMax, { narrow: 576, medium: 672, wide: 992 });
   assert.deepEqual(SHELL.drawerDim, { light: 0.12, dark: 0.3 });
   assert.equal(SHELL.edgeStripNative, 16);
   assert.equal(RADIUS.bubble, 12);

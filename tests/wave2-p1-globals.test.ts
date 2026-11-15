@@ -167,9 +167,9 @@ test("shell, gesture and timing tokens are declared with the spec's values (§3.
   };
   for (const [name, value] of Object.entries(expect)) assert.equal(root.get(name), value, `--${name}`);
   assert.equal(dark.get("drawer-dim"), "0.30");
-  // Transcript widths are unchanged (D13).
-  assert.equal(root.get("transcript-max"), "48rem");
-  assert.equal(declsFor(blocks, 'html[data-transcript-width="narrow"]').get("transcript-max"), "40rem");
+  // Transcript widths (owner, 15 Nov 2026: a narrower reading column).
+  assert.equal(root.get("transcript-max"), "42rem");
+  assert.equal(declsFor(blocks, 'html[data-transcript-width="narrow"]').get("transcript-max"), "36rem");
   assert.equal(declsFor(blocks, 'html[data-transcript-width="wide"]').get("transcript-max"), "62rem");
 });
 

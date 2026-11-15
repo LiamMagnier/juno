@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: b8b6d5849bc38364
+// tokens-digest: a6d6d79feb40e6d1
 //
 
 import CoreGraphics
@@ -1029,8 +1029,8 @@ public enum JunoGeneratedShell {
     public static let drawerDimLight: Double = 0.12
     public static let drawerDimDark: Double = 0.3
     /// `--transcript-max` for the stored widths narrow, medium and wide.
-    public static let transcriptNarrow: CGFloat = 640.0
-    public static let transcriptMedium: CGFloat = 768.0
+    public static let transcriptNarrow: CGFloat = 576.0
+    public static let transcriptMedium: CGFloat = 672.0
     public static let transcriptWide: CGFloat = 992.0
 }
 
@@ -1108,7 +1108,7 @@ public enum JunoGeneratedType {
     /// `text-body-lg`
     public static let bodyLg = JunoGeneratedTypeRung(minSize: 17.0, maxSize: 17.0, fluidIntercept: 17.0, fluidSlope: 0.0, lineHeight: 1.6, tracking: 0.0, weight: nil)
     /// `text-reading`
-    public static let reading = JunoGeneratedTypeRung(minSize: 16.0, maxSize: 16.0, fluidIntercept: 16.0, fluidSlope: 0.0, lineHeight: 1.7, tracking: 0.0, weight: nil)
+    public static let reading = JunoGeneratedTypeRung(minSize: 16.0, maxSize: 16.0, fluidIntercept: 16.0, fluidSlope: 0.0, lineHeight: 1.6, tracking: 0.0, weight: nil)
     /// `text-body`
     public static let body = JunoGeneratedTypeRung(minSize: 15.0, maxSize: 15.0, fluidIntercept: 15.0, fluidSlope: 0.0, lineHeight: 1.6, tracking: 0.0, weight: nil)
     /// `text-nav`

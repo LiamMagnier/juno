@@ -529,7 +529,7 @@ const config: Config = {
          * rather than body's 1.6: this rung is for paragraphs read in flow,
          * where the extra leading is what keeps a 75ch line easy to track back.
          */
-        reading: ["1rem", { lineHeight: "1.7" }],
+        reading: ["1rem", { lineHeight: "1.6" }],
         body: ["0.9375rem", { lineHeight: "1.6" }],
         /*
          * The navigation rung: sidebar rows, conversation and project titles,

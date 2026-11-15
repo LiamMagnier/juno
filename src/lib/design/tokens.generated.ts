@@ -5,7 +5,7 @@
 // `npm run design:tokens`; `npm run design:tokens:check` fails CI when this
 // file no longer matches its sources.
 //
-// tokens-digest: b8b6d5849bc38364
+// tokens-digest: a6d6d79feb40e6d1
 //
 
 /** The accent ids, in the order the web lists them (src/lib/accents.ts). */
@@ -129,7 +129,7 @@ export const SHELL = {
   dockPaneEvictMs: 600000,
   drawerWidth: { viewportFraction: 0.8, maxPx: 380 },
   drawerDim: { light: 0.12, dark: 0.3 },
-  transcriptMax: { narrow: 640, medium: 768, wide: 992 },
+  transcriptMax: { narrow: 576, medium: 672, wide: 992 },
 } as const;
 
 /** The sheet and drawer gesture (spec D18): px, px/ms, fractions of travel and ms. src/lib/sheet-gesture.ts reads these. */

@@ -3360,7 +3360,7 @@
        card's markdown runtime, the canvas panel's preview, the work site
        preview, the shared artifact viewer and the shared chat transcript. */
     font-size: 1rem;
-    line-height: 1.7;
+    line-height: 1.6;
     word-break: break-word;
     /* THE MEASURE (spec D13, sign-off S4). Prose fills the column at the
        narrow (640) and medium (768) widths, which are already inside the
@@ -4895,8 +4895,11 @@ html[data-vt="canvas"][data-vt-dir="close"]::view-transition-new(canvas-panel) {
  * runs for a reader who never changed a thing.
  */
 @layer base {
-  :root { --transcript-max: 48rem; }
-  html[data-transcript-width="narrow"] { --transcript-max: 40rem; }
+  /* The reading column (owner, 15 Nov 2026: narrower). 42rem less the page
+     gutters is about 82 characters of 16px Inter (it was 48rem, ~95); narrow
+     is 36rem (~70). Wide stays the escape hatch, its prose capped at 75ch. */
+  :root { --transcript-max: 42rem; }
+  html[data-transcript-width="narrow"] { --transcript-max: 36rem; }
   html[data-transcript-width="wide"] { --transcript-max: 62rem; }
 
   html[data-chat-font="system"] .prose-juno,
