@@ -76,13 +76,16 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
           {blocked && (
             <p
               style={staggerDelay(3, "loose")}
-              className={`mt-6 flex max-w-lg gap-2 rounded-field bg-warning/10 px-4 py-3 text-left text-ui leading-relaxed text-warning ${ENTER}`}
+              // First-launch help, in the explanation's neutral ink and glyph
+              // (StatusIcons.info), not a warning: nothing is wrong, and an
+              // amber box under the download button read as a beta.
+              className={`mt-6 flex max-w-lg gap-2 text-left text-ui leading-relaxed text-muted-foreground ${ENTER}`}
             >
-              <StatusIcons.warning className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <StatusIcons.info className="mt-0.5 size-4 shrink-0" aria-hidden />
               <span>
-                This build is not notarized by Apple yet, so macOS blocks it the first time. Open it once from System
-                Settings › Privacy &amp; Security, where it appears with an Open Anyway button. Updates after that
-                install silently.
+                <span className="font-medium text-foreground">The first time you open it.</span> Alevr for Mac isn’t
+                notarized by Apple yet, so macOS asks you to confirm: open System Settings › Privacy &amp; Security and
+                choose Open Anyway. Updates after that install on their own.
               </span>
             </p>
           )}

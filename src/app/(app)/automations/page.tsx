@@ -110,7 +110,9 @@ export default function AutomationsPage() {
         backdrop
         heading={FEATURE_NAMES.routines.label}
         lede="Tasks that start themselves, on a schedule or when something changes."
-        actions={action}
+        // One "New routine" on screen: while there are none, the empty state
+        // below carries it (as Projects does), not the header as well.
+        actions={schedules?.length === 0 || failed ? undefined : action}
         className={customizeHeaderClass}
       />
       {failed ? (
