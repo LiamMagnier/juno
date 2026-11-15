@@ -62,14 +62,6 @@ function mediaKindOf(mimeType: string): Exclude<MediaKind, "all"> | null {
 }
 
 /**
- * The toolbar's segmented shells: the primitive's 36px rung (44 on touch) on
- * the search field's hairline. Height, padding and radii are the primitive's
- * own — this used to force `h-9` on a track holding 28px keys, which left 26px
- * inside the padding, so every key overhung the track's bottom by 2px and its
- * hairline ran into the track's.
- */
-const SHELL = "border-foreground/10 bg-transparent dark:border-white/10";
-/**
  * Same-size tiles on fixed container steps, not auto-fill, so the count is
  * deliberate: 2 on a phone, 3 from 40rem (a 1024 window), 4 from 56rem (the
  * wide measure at 1280 and up). One gutter: 12px on a phone, 16px above.
@@ -344,7 +336,6 @@ export function LibraryHome() {
             onChange={setShow}
             ariaLabel="Show"
             columns="content"
-            className={SHELL}
             options={[
               { value: "all", label: "All" },
               { value: "made", label: FEATURE_NAMES.artifacts.label },
@@ -370,7 +361,7 @@ export function LibraryHome() {
               onChange={changeView}
               ariaLabel="View"
               labelHidden
-              className={`${SHELL} shrink-0`}
+              className="shrink-0"
               options={[
                 { value: "grid", label: "Grid", icon: <LayoutGrid className="size-4" /> },
                 { value: "list", label: "List", icon: <List className="size-4" /> },
