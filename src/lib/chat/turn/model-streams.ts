@@ -101,6 +101,25 @@ export const SMOKE_SOURCES: ReadonlyArray<{ title: string; url: string; snippet:
   { title: "IANA example domains", url: "https://www.iana.org/help/example-domains", snippet: "Reserved for use in documentation." },
 ];
 
+/**
+ * JUNO_E2E_THOUGHT: a run the thought process can be tested against — readable
+ * reasoning in two stretches around one provider web search, then the answer.
+ */
+export const SMOKE_THOUGHT_DIRECTIVE = "JUNO_E2E_THOUGHT";
+export const SMOKE_THOUGHT_TOKEN = "JUNO_E2E_THOUGHT_OK";
+export const SMOKE_THOUGHT_QUERY = "reserved example domains";
+export const SMOKE_THOUGHT_INTERVAL_MS = 400;
+export const SMOKE_THOUGHT_CACHE_READ = 1800;
+export const SMOKE_THOUGHT_REASONING_A: readonly string[] = [
+  "The person is asking which domains are reserved for documentation. ",
+  "I should check a primary source rather than answer from memory, ",
+  "so I will search for the reserved example domains.",
+];
+export const SMOKE_THOUGHT_REASONING_B: readonly string[] = [
+  "\n\nBoth results agree: example.com is reserved by IANA for documentation. ",
+  "That answers the question directly.",
+];
+
 function smokeAbortError(): Error {
   const error = new Error("The smoke stream was stopped (aborted).");
   error.name = "AbortError";
@@ -158,6 +177,41 @@ export async function* streamDeterministicSmokeResponse(
     await Promise.resolve();
     yield { type: "text", text: answer.slice(midpoint) };
     yield { type: "usage", input: Math.max(1, Math.ceil(prompt.length / 4)), output: answer.length };
+    yield { type: "finish", reason: "stop" };
+    return;
+  }
+
+  if (prompt.includes(SMOKE_THOUGHT_DIRECTIVE)) {
+    // Reasoning first, slowly enough that the thought process can be opened
+    // while it streams, then one provider web search (call, then result) and
+    // its sources, a second reasoning stretch, and the answer. Usage carries
+    // a cache read so the context meter has both kinds of input to draw.
+    const interval = timing.intervalMs ?? SMOKE_THOUGHT_INTERVAL_MS;
+    for (const text of SMOKE_THOUGHT_REASONING_A) {
+      await smokePause(interval, signal);
+      yield { type: "reasoning", text, round: 0 };
+    }
+    yield { type: "server_tool", phase: "call", tool: "provider_web_search", callId: "ps_0_0", round: 0, query: SMOKE_THOUGHT_QUERY };
+    await smokePause(interval * 2, signal);
+    yield { type: "server_tool", phase: "result", tool: "provider_web_search", callId: "ps_0_0", round: 0, results: SMOKE_SOURCES.length, ok: true };
+    yield { type: "sources", sources: SMOKE_SOURCES.map((source) => ({ ...source })), origin: "provider_search" };
+    for (const text of SMOKE_THOUGHT_REASONING_B) {
+      await smokePause(interval, signal);
+      yield { type: "reasoning", text, round: 0 };
+    }
+    const answer = `Both pages say the same thing: example.com is reserved for documentation. ${SMOKE_THOUGHT_TOKEN}`;
+    for (const word of answer.split(/(?<= )/)) {
+      await smokePause(Math.round(interval / 4), signal);
+      yield { type: "text", text: word, round: 0 };
+    }
+    const input = Math.max(1, Math.ceil(prompt.length / 4));
+    yield {
+      type: "usage",
+      input: input + SMOKE_THOUGHT_CACHE_READ,
+      output: answer.length,
+      reasoning: SMOKE_THOUGHT_REASONING_A.join("").length + SMOKE_THOUGHT_REASONING_B.join("").length,
+      cacheRead: SMOKE_THOUGHT_CACHE_READ,
+    };
     yield { type: "finish", reason: "stop" };
     return;
   }

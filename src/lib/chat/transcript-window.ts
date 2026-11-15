@@ -36,6 +36,19 @@ export function transcriptWindow(layout: TranscriptLayout, top: number, viewport
   return { start, end };
 }
 
+/**
+ * The rows to mount: the window's range plus rows that must stay mounted
+ * wherever the reader is (the streaming leaf, a jump target, the focused row,
+ * the row whose thought dock is open — its ActivityTimeline owns the dock's
+ * portal, so unmounting it empties the dock).
+ */
+export function mountedTranscriptIndices(range: { start: number; end: number }, pinned: readonly (number | undefined)[]): number[] {
+  const indices = new Set<number>();
+  for (let i = range.start; i < range.end; i++) indices.add(i);
+  for (const index of pinned) if (index !== undefined && index >= 0) indices.add(index);
+  return [...indices].sort((a, b) => a - b);
+}
+
 export interface TranscriptAnchor { key: string; offset: number }
 export function transcriptAnchor(layout: TranscriptLayout, top: number): TranscriptAnchor | null {
   if (!layout.keys.length) return null;

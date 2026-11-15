@@ -969,9 +969,11 @@ export async function runTurn(turn: SavedTurnPlan): Promise<{
             generationController.signal
           )
         );
-        const smokeInput = acc.rawUsage({ promptChars: 0 }).input;
-        if (smokeInput && modelInfo.contextWindow) {
-          contextUsage = { key: "context_usage", inputTokens: smokeInput, cachedTokens: null, windowTokens: modelInfo.contextWindow };
+        const smokeUsage = acc.rawUsage({ promptChars: 0 });
+        if (smokeUsage.input && modelInfo.contextWindow) {
+          // Same rule as requestContextUsage: a cache read only when one was reported.
+          const cachedTokens = smokeUsage.cacheRead ? Math.min(smokeUsage.input, smokeUsage.cacheRead) : null;
+          contextUsage = { key: "context_usage", inputTokens: smokeUsage.input, cachedTokens, windowTokens: modelInfo.contextWindow };
         }
       } else {
         // The model call, and at most one more if the provider rejected the
