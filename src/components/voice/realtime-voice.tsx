@@ -405,6 +405,17 @@ function VoiceCallNotice({ voice }: { voice: VoiceController }) {
       </p>
     );
   }
+  // Why the call ended, when the person did not end it (a provider's time cap,
+  // the budget), and the last minute before a cap: said, never silent.
+  const quiet = voice.endedNote ?? voice.limitWarning;
+  if (quiet) {
+    return (
+      <p role="status" className={cn(NOTICE_LINE, "text-muted-foreground")}>
+        <StatusIcons.info className={NOTICE_GLYPH} aria-hidden="true" />
+        <span className="min-w-0 text-balance">{quiet}</span>
+      </p>
+    );
+  }
   if (voice.notice) {
     return (
       <p role="status" className={cn(NOTICE_LINE, "text-muted-foreground")}>

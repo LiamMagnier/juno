@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { voiceEndedCopy, voiceErrorCopy, voiceLimitWarning, voiceStartErrorCopy } from "@/lib/voice-copy";
 import { getAudioContext } from "@/lib/audio-context";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import {
@@ -415,6 +416,21 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const reconnectTimerRef = React.useRef<number | null>(null);
   const echoCancellationRef = React.useRef<boolean | null>(null);
   const bargeDetectorRef = React.useRef(new RealtimeVoiceActivityDetector());
+  /*
+   * The caller's own turn, heard locally while the model is quiet. Gemini Live
+   * and GPT-Live send the caller's final transcript only once the answer
+   * starts, so the silence after someone stops talking read "Listening" right
+   * up to the reply, through multi-second delegate calls: "Thinking" almost
+   * never showed. When local speech that began goes quiet for 700ms, the call
+   * says Thinking at once. A slower release than barge-in's, so a pause
+   * between words does not flip it.
+   */
+  const turnDetectorRef = React.useRef(new RealtimeVoiceActivityDetector(0.34, 0.2, 120, 700));
+  const localTurnRef = React.useRef(false);
+  /** When a locally heard end of turn set Thinking; cleared by any reply. */
+  const localAwaitTimerRef = React.useRef<number | null>(null);
+  /** When the first session of this call came up, for the provider's hard cap. */
+  const callStartedAtRef = React.useRef<number | null>(null);
   const bargeFramesRef = React.useRef<Float32Array[]>([]);
   const bargeSamplesRef = React.useRef(0);
   const interruptRef = React.useRef<() => void>(() => {});
@@ -871,6 +887,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       micLevelRef.current = normalizedSpeechLoudness(rms);
       if (mutedRef.current) {
         bargeDetectorRef.current.reset();
+        turnDetectorRef.current.reset();
+        localTurnRef.current = false;
         bargeFramesRef.current = [];
         bargeSamplesRef.current = 0;
         return;
@@ -917,6 +935,20 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
         bargeDetectorRef.current.reset();
         bargeFramesRef.current = [];
         bargeSamplesRef.current = 0;
+        const turn = turnDetectorRef.current.observe(normalizedSpeechLoudness(rms), (chunk.length / inRate) * 1_000);
+        if (turn === "began") localTurnRef.current = true;
+        else if (turn === "ended" && localTurnRef.current) {
+          localTurnRef.current = false;
+          setUserSpeaking(false);
+          setAwaitingResponse(true);
+          // A cough is speech to the detector and no turn to the provider: if
+          // no reply starts, go back to Listening rather than think forever.
+          if (localAwaitTimerRef.current != null) window.clearTimeout(localAwaitTimerRef.current);
+          localAwaitTimerRef.current = window.setTimeout(() => {
+            localAwaitTimerRef.current = null;
+            if (!speakingRef.current) setAwaitingResponse(false);
+          }, 12_000);
+        }
       }
       // Downsample inRate -> 16k with simple decimation-by-average.
       const merged = new Float32Array(carry.length + upload.length);
@@ -943,6 +975,9 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     (msg: VoiceServerMessage) => {
       switch (msg.type) {
         case "session.ready":
+          // The provider's cap runs from the first session of the call; a
+          // switch keeps the relay's clock, so it keeps this one too.
+          if (callStartedAtRef.current == null) callStartedAtRef.current = Date.now();
           capsRef.current = msg.capabilities;
           liveProviderRef.current = msg.provider;
           thinkingRef.current = msg.thinking;
@@ -992,6 +1027,10 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
             return;
           }
           providerTurnActiveRef.current = msg.phase === "start";
+          if (msg.phase === "start" && localAwaitTimerRef.current != null) {
+            window.clearTimeout(localAwaitTimerRef.current);
+            localAwaitTimerRef.current = null;
+          }
           if (msg.phase === "start") {
             speakingRef.current = true;
             setAssistantSpeaking(true);
@@ -1038,7 +1077,17 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           // arriving mid-call used to set a message that nothing rendered,
           // because the dock's alert was gated on the status — so the user sat
           // in a call that had already failed and was told nothing.
-          setError(msg.message);
+          // Raw provider text to the console; a sentence to the screen.
+          console.warn("[voice] relay error:", msg.message);
+          setError(voiceErrorCopy(msg.message, null));
+          // The screen says the call stopped, so it stops: the microphone,
+          // the socket and playback used to stay live behind "Call stopped",
+          // the browser's mic light on and audio streaming into nothing.
+          sealTranscript();
+          releaseResources();
+          setAssistantSpeaking(false);
+          setUserSpeaking(false);
+          setAwaitingResponse(false);
           // Roll the optimistic switch back. Turning thinking on and having
           // that session fail used to leave the menu reading "Thinking on"
           // with nothing running, so the only way out — toggling it off —
@@ -1156,9 +1205,12 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           token?: string;
           url?: string;
           error?: string;
+          message?: string;
           providers?: VoiceProviderAvailability;
         };
-        if (!res.ok || !data.token || !data.url) throw new Error(data.error || "Realtime voice is not available.");
+        // The route's own sentence ("…resets on 1 December"), never its code:
+        // "budget_exceeded" used to be what the call said.
+        if (!res.ok || !data.token || !data.url) throw new Error(voiceStartErrorCopy(data.error, data.message));
         if (generationRef.current !== generation) return;
 
         const avail = data.providers && typeof data.providers === "object" ? { ...data.providers } : null;
@@ -1579,6 +1631,12 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     generationRef.current += 1;
     clearReconnectTimer();
     reconnectAttemptsRef.current = 0;
+    // The next call's cap and its local turn start from nothing.
+    callStartedAtRef.current = null;
+    localTurnRef.current = false;
+    turnDetectorRef.current.reset();
+    if (localAwaitTimerRef.current != null) window.clearTimeout(localAwaitTimerRef.current);
+    localAwaitTimerRef.current = null;
     sealTranscript();
     releaseResources();
     statusRef.current = "idle";
@@ -1599,6 +1657,23 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     setMuted(false);
     mutedRef.current = false;
   }, [clearReconnectTimer, cues, releaseResources, sealTranscript]);
+
+  /*
+   * The last minute of a capped call (Gemini Live ends at 15 minutes), said
+   * before the cap ends it; it used to end with no warning and no reason.
+   */
+  const [limitWarning, setLimitWarning] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (status !== "live") {
+      setLimitWarning(null);
+      return;
+    }
+    const tick = () =>
+      setLimitWarning(voiceLimitWarning(callStartedAtRef.current, capsRef.current?.maxSessionSec ?? null, Date.now()));
+    tick();
+    const timer = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(timer);
+  }, [status]);
 
   // Teardown on unmount.
   React.useEffect(() => () => end(), [end]);
@@ -1636,6 +1711,10 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     /** The call's tool chips, newest last; a waiting one carries the chat's approval card. */
     toolActivity,
     closedReason,
+    /** Why the call ended, when the person did not end it ("Ended: calls with … last up to 15 minutes."). */
+    endedNote: status === "ended" ? voiceEndedCopy(closedReason, null, capabilities?.maxSessionSec ?? null) : null,
+    /** "1 min left in this call" in the last minute of a capped call. */
+    limitWarning,
     levelRef,
     /**
      * The microphone and Juno's audible output as streams, for the glow to
