@@ -1562,6 +1562,8 @@ export async function extractConversationMemory(opts: {
   };
 
   let storedDigest: string | null = convo.memory?.digest ?? null;
+  // The read mark as this reader last saw or wrote it (`mayStillLearn`).
+  let expectedMark: number | null = convo.memory?.processedAt?.getTime() ?? null;
   const markProcessed = async (upTo: Date, digest: string | null, createdDelta: number) => {
     const merged = mergeDigest(storedDigest, digest);
     storedDigest = merged ?? null;
@@ -1586,6 +1588,34 @@ export async function extractConversationMemory(opts: {
         factCount: { increment: createdDelta },
       },
     });
+    expectedMark = upTo.getTime();
+  };
+
+  /*
+   * Whether this chat may still be learned from, asked again after each model
+   * call and before anything it heard is written.
+   *
+   * The call takes seconds, and that is when someone who regrets what they
+   * said acts: deletes the chat, turns memory off for it, pauses memory,
+   * clears its project's memory or resets everything — each a promise that
+   * this chat is not learned from, which a reader that started before the
+   * promise used to break by saving afterwards (and, after a reset, by
+   * rewinding the read mark the reset had just set). The read mark is the
+   * witness for the resets: they move it, and nothing else may but this
+   * reader's own `markProcessed`. A chat moved to another scope is left for
+   * the next reading, so nothing lands in the scope it left.
+   */
+  const mayStillLearn = async (): Promise<boolean> => {
+    const [current, settings] = await Promise.all([
+      prisma.conversation.findFirst({
+        where: { id: convo.id, userId: opts.userId },
+        select: { memoryOff: true, projectId: true, memory: { select: { processedAt: true } } },
+      }),
+      prisma.settings.findUnique({ where: { userId: opts.userId }, select: { memoryEnabled: true } }),
+    ]);
+    if (!current || current.memoryOff || settings?.memoryEnabled === false) return false;
+    if ((current.projectId ?? null) !== (convo.projectId ?? null)) return false;
+    return (current.memory?.processedAt?.getTime() ?? null) === expectedMark;
   };
 
   if (messages.length === 0) {
@@ -1685,6 +1715,7 @@ export async function extractConversationMemory(opts: {
       llm: opts.llm,
     });
     if (!result) break; // model unavailable — keep the mark, retry later
+    if (!(await mayStillLearn())) break;
 
     // A chat that belongs to a project teaches project-scoped memory: course
     // notes learned in "Japanese" must not surface in an unrelated work chat.
