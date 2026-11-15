@@ -138,8 +138,8 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
             its glyphs stay still under the pointer (I-7). `data-composer-row`
             is how the model chip finds the row's slack when it picks the
             label it has room for (model-selector.tsx, `useChipFit`). */}
-        <div data-composer-row="" className="flex flex-nowrap items-center gap-0.5 px-2.5 pb-2.5 pt-1.5 shrink-0">
-          <div data-composer-leading="" className={cn("flex min-w-0 shrink-0 items-center gap-0.5", dim)}>
+        <div data-composer-row="" className="flex flex-nowrap items-center gap-1 px-2 pb-2 pt-1 shrink-0">
+          <div data-composer-leading="" className={cn("flex min-w-0 shrink-0 items-center gap-1", dim)}>
             {leading}
           </div>
           {/* 8px between the last control and the disc (owner, 7 Nov 2026:
@@ -188,10 +188,10 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
  * file's source, so changing the field or the row without changing this fails
  * there rather than on screen.
  */
-export const COMPOSER_REST_HEIGHT = { pointer: 100, coarse: 114 } as const;
+export const COMPOSER_REST_HEIGHT = { pointer: 96, coarse: 110 } as const;
 
 /** The same two heights as classes. Tailwind reads classes from source text, so they are written out. */
-export const composerRestHeightClass = "h-[100px] coarse:h-[114px]";
+export const composerRestHeightClass = "h-[96px] coarse:h-[110px]";
 
 /**
  * The HOME's composer at rest: the same row and edge over the home's taller
@@ -199,8 +199,8 @@ export const composerRestHeightClass = "h-[100px] coarse:h-[114px]";
  * field is the dock's 52px), so the new-chat skeleton stands exactly where
  * the composer lands.
  */
-export const COMPOSER_HOME_REST_HEIGHT = { pointer: 110, coarse: 114 } as const;
-export const composerHomeRestHeightClass = "h-[110px] coarse:h-[114px]";
+export const COMPOSER_HOME_REST_HEIGHT = { pointer: 106, coarse: 110 } as const;
+export const composerHomeRestHeightClass = "h-[106px] coarse:h-[110px]";
 
 /* ————————————————————————————————————————————————————————————————————————
  * Shared recipes
@@ -282,7 +282,7 @@ export const composerFieldClass = cn(
  * (0.97 over the press rung) like every other control that answers a press.
  */
 export const composerChipClass =
-  "group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-full pl-2.5 pr-2 font-sans text-label text-muted-foreground transition-[background-color,color,opacity,transform] duration-fast ease-out-soft [transition-duration:var(--dur-fast),var(--dur-fast),var(--dur-fast),var(--dur-press)] active:scale-[0.97] motion-reduce:active:scale-100 hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 coarse:h-10";
+  "group inline-flex h-9 min-w-0 items-center gap-1.5 rounded-full pl-3 pr-2.5 font-sans text-ui text-muted-foreground transition-[background-color,color,opacity,transform] duration-fast ease-out-soft [transition-duration:var(--dur-fast),var(--dur-fast),var(--dur-fast),var(--dur-press)] active:scale-[0.97] motion-reduce:active:scale-100 hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 coarse:h-11";
 
 /* ————————————————————————————————————————————————————————————————————————
  * The field tier: armed marks and connector mentions, inside the draft
@@ -525,7 +525,7 @@ export const composerChevronClass =
  * It was a circle (16), rounder than the corner around it allows.
  */
 export const composerIconButtonClass =
-  "size-8 shrink-0 rounded-full border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-selected active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
+  "size-9 shrink-0 rounded-full border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-selected active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
 
 /**
  * @deprecated The rule between the chips and the send pair is gone: the row

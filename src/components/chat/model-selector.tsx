@@ -565,7 +565,9 @@ export function ModelSelector({
         inComposer ? "max-w-[16rem]" : "max-w-[11.5rem] sm:max-w-[16rem]",
         // A phone row's chip is short of room by a few pixels, so its own
         // padding and gaps give some back before the label has to.
-        inComposer && "composer-model-chip rounded-full border border-border/70 bg-secondary/60 text-foreground hover:bg-accent data-[state=open]:bg-selected coarse:h-11 max-sm:gap-1 max-sm:px-2",
+        // One chip style in the row (owner, 15 Nov 2026): bare like the others,
+        // the model name in the full ink so it still leads them.
+        inComposer && "composer-model-chip rounded-full text-foreground hover:bg-accent data-[state=open]:bg-accent coarse:h-11 max-sm:gap-1 max-sm:px-2",
       )}
     >
       {current && (!fit || fit.mark) ? <ModelMark model={current} className="size-3.5" /> : null}

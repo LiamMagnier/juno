@@ -106,7 +106,7 @@ export function ContextUsageMeter({ usage }: { usage: ContextUsage }) {
       aria-expanded={open}
       aria-label={`Context: ${share} of the model's window used`}
       onClick={narrow ? () => setOpen((previous) => !previous) : undefined}
-      className="pressable inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-label font-medium tabular-nums text-muted-foreground hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground motion-reduce:active:scale-100 coarse:h-11 coarse:px-2.5"
+      className="pressable inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-ui font-medium tabular-nums text-muted-foreground hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground motion-reduce:active:scale-100 coarse:h-11 coarse:px-2.5"
     >
       <ContextRing split={split} />
       <span translate="no">{share}</span>

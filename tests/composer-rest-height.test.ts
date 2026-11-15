@@ -47,19 +47,19 @@ test("the field's rest height is the min-height in its metrics", () => {
 });
 
 test("the constant is the field, the controls row and the hairline, added up", () => {
-  // The row: `flex flex-nowrap items-center gap-0.5 px-2.5 pb-2.5 pt-1.5`.
-  const row = /className="flex flex-nowrap items-center gap-0\.5 px-2\.5 pb-([\d.]+) pt-([\d.]+)(?: shrink-0)?"/.exec(SHELL);
+  // The row: `flex flex-nowrap items-center gap-1 px-2 pb-2 pt-1`.
+  const row = /className="flex flex-nowrap items-center gap-1 px-2 pb-([\d.]+) pt-([\d.]+)(?: shrink-0)?"/.exec(SHELL);
   assert.ok(row, "the controls row keeps its padding in one className");
   const rowPad = spacing(row![1]) + spacing(row![2]);
 
-  // The row's controls: the 32px icon button, the 36px disc and the chip;
-  // every one of them 44px under a coarse pointer.
+  // The row's controls: one height, 36px — the icon button, the chip and the
+  // disc; every one of them 44px under a coarse pointer.
   const icon = /export const composerIconButtonClass =\s*"([^"]+)"/.exec(SHELL)![1];
   const chip = /export const composerChipClass =\s*"([^"]+)"/.exec(SHELL)![1];
-  assert.match(icon, /(^|\s)size-8(\s|$)/);
+  assert.match(icon, /(^|\s)size-9(\s|$)/);
   assert.match(icon, /coarse:size-11/);
-  assert.match(chip, /(^|\s)h-8(\s|$)/);
-  assert.match(chip, /coarse:h-10/);
+  assert.match(chip, /(^|\s)h-9(\s|$)/);
+  assert.match(chip, /coarse:h-11/);
   assert.match(SHELL, /composer-primary-action pressable relative grid size-9/);
   assert.match(SHELL, /coarse:size-11",\n\s+className/);
   const tallest = { pointer: 9 * TW, coarse: 11 * TW };

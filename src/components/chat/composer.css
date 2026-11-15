@@ -368,13 +368,16 @@
    the third only when it is not the usual one, one chevron. No logo, no pill
    edge, no border; a tone under the pointer and while open. */
 .composer-model-chip {
-  height: 32px;
-  gap: 5px;
-  padding: 0 8px 0 11px;
+  /* The row's one height and one chip (owner, 15 Nov 2026): 36px like the
+     +, the mic and the disc, on the 4px grid; the name in the full ink so
+     it leads the quieter chips beside it. */
+  height: 36px;
+  gap: 6px;
+  padding: 0 10px 0 12px;
   border-radius: 999px;
   font-size: 14px;
   font-weight: 400;
-  color: hsl(var(--cmp-ink-2));
+  color: hsl(var(--foreground));
 }
 .composer-model-chip > svg,
 .composer-model-chip__effort {
