@@ -8,6 +8,7 @@ import { CalendarClock, FileText, LayoutGrid, NotebookPen, ScrollText, type Icon
 import { AppPage } from "@/components/app/app-page";
 import { cn } from "@/lib/utils";
 import { FEATURE_NAMES } from "@/lib/brand/names";
+import { useScrollFadeX } from "@/hooks/use-scroll-fade-x";
 
 /*
  * Customize: one home for the apps Alevr can work in, its skills, routines,
@@ -46,6 +47,8 @@ export function CustomizeNav({ current, className }: { current: CustomizeTab; cl
   const [pressed, setPressed] = React.useState<CustomizeTab | null>(null);
   React.useEffect(() => setPressed(null), [pathname]);
   const shown = pressed ?? current;
+  const rowRef = React.useRef<HTMLDivElement>(null);
+  useScrollFadeX(rowRef);
   return (
     // Raised over the page header, whose orbit backdrop reaches up behind it,
     // and on an opaque shell so no line crosses the tabs.
@@ -53,7 +56,9 @@ export function CustomizeNav({ current, className }: { current: CustomizeTab; cl
       {/* A rounded-menu shell on a hairline, its thumb concentric inside it
           (14 outer, 4 inset, 10 thumb; the hairline is an inset shadow so it
           takes no room from the inset), the homepage's quiet chrome. */}
-      <div className="flex max-w-full scroll-px-2 gap-0.5 overflow-x-auto rounded-menu bg-muted p-1 shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.07)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* On a phone the five tabs outrun the screen: the row scrolls, and
+          fades at the edge that has more (scroll-fade-x, signature.css §14). */}
+      <div ref={rowRef} className="scroll-fade-x flex max-w-full gap-0.5 overflow-x-auto rounded-menu bg-muted p-1 shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.07)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {destinations.map((item) => {
           const selected = shown === item.id;
           return (

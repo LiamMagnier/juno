@@ -988,3 +988,70 @@ svg.ag:is([width="12"], [width="14"], [width="15"], [width="16"], [width="18"], 
 svg.ag:is([width="12"], [width="14"], [width="15"], [width="16"], [width="18"], [width="20"], [width="22"], [width="24"]) :is(path, circle, ellipse, line, polyline, polygon, rect) {
   vector-effect: non-scaling-stroke;
 }
+
+/* ── 14. Horizontal scroll fades (.scroll-fade-x) ─────────────────────────────
+   A row that scrolls sideways with its scrollbar hidden (Customize's tabs,
+   Activity's filters on a phone) used to stop at a hard cut: "Instruc",
+   "Blocke", and nothing said there was more. The row's own content now fades
+   out at an edge only while there is more to scroll that way: a mask on the
+   scroller (an opaque layer minus a band at each end), each band's width
+   driven by the scroller's own scroll position, so the first and last items
+   are crisp at the extremes and a row that fits never fades. Browsers without
+   scroll-driven animations (Safari before 26, Firefox before 159) get the same
+   bands from data attributes that use-scroll-fade-x.ts sets. Focused items
+   stop clear of the fade (scroll-padding). */
+@property --fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+.scroll-fade-x {
+  --fade-size: 2rem;
+  /* Gradient directions and mask positions are physical: flipped for RTL. */
+  --fade-dir: right;
+  --fade-start-pos: 0;
+  --fade-end-pos: 100%;
+  mask:
+    linear-gradient(black, black) no-clip subtract,
+    linear-gradient(to var(--fade-dir), black, transparent) var(--fade-start-pos) 0 / var(--fade-start) 100% no-repeat no-clip,
+    linear-gradient(to var(--fade-dir), transparent, black) var(--fade-end-pos) 0 / var(--fade-end) 100% no-repeat no-clip;
+  scroll-padding-inline: var(--fade-size);
+}
+.scroll-fade-x:dir(rtl) {
+  --fade-dir: left;
+  --fade-start-pos: 100%;
+  --fade-end-pos: 0;
+}
+@supports (animation-timeline: scroll()) {
+  .scroll-fade-x {
+    animation: scroll-fade-x-start linear both, scroll-fade-x-end linear both;
+    animation-timeline: scroll(self inline);
+    animation-range: 0 var(--fade-size), calc(100% - var(--fade-size)) 100%;
+  }
+}
+@supports not (animation-timeline: scroll()) {
+  .scroll-fade-x {
+    transition: --fade-start var(--dur-base, 200ms), --fade-end var(--dur-base, 200ms);
+  }
+  .scroll-fade-x[data-more-start] {
+    --fade-start: var(--fade-size);
+  }
+  .scroll-fade-x[data-more-end] {
+    --fade-end: var(--fade-size);
+  }
+}
+@keyframes scroll-fade-x-start {
+  to {
+    --fade-start: var(--fade-size);
+  }
+}
+@keyframes scroll-fade-x-end {
+  from {
+    --fade-end: var(--fade-size);
+  }
+}

@@ -26,6 +26,7 @@ import {
 import { ACTIVITY_COPY } from "@/components/activity/activity-copy";
 import { ActivityStatusMark, STATUS_INK } from "@/components/activity/activity-status-mark";
 import { stopActivityItem, useActivity } from "@/components/activity/use-activity";
+import { useScrollFadeX } from "@/hooks/use-scroll-fade-x";
 
 /*
  * THE ACTIVITY PAGE (G70): one column of everything live, in four groups.
@@ -114,6 +115,8 @@ export function ActivityBody({
 }) {
   const groups = groupActivity(items, filter === "all" ? null : filter);
   const listRef = React.useRef<HTMLDivElement>(null);
+  const filterRowRef = React.useRef<HTMLDivElement>(null);
+  useScrollFadeX(filterRowRef, [items.length > 0]);
   const filterLabel = usePhrase(ACTIVITY_COPY.filterLabel);
 
   if (items.length === 0 && !hasMore) {
@@ -158,7 +161,9 @@ export function ActivityBody({
 
   return (
     <div className="mt-2 space-y-6">
-      <div className="-mx-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+      {/* On a phone the five filters outrun the column: the row scrolls, and
+          fades at the edge that has more (scroll-fade-x, signature.css §14). */}
+      <div ref={filterRowRef} className="scroll-fade-x -mx-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
         <SegmentedControl<Filter>
           value={filter}
           onChange={onFilter}
