@@ -269,7 +269,7 @@ export function SessionOutputs({
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <Pressable
-              kind="chip"
+              kind="icon"
               size="lg"
               aria-label={outputs.length > 0 ? `Outputs — ${outputs.length} in this chat` : "What this chat used"}
               /* `h-9`, which is a chip's size `lg` (32) overridden to the
@@ -278,9 +278,9 @@ export function SessionOutputs({
                  this is the only one of the three carrying a number — the
                  chip's border is what says so, and it should not also be
                  saying "shorter". */
-              className={cn("h-9 gap-1.5 text-muted-foreground coarse:h-11", className)}
+              className={cn("h-9 w-auto gap-1.5 px-2.5 text-ui text-muted-foreground coarse:h-11", className)}
             >
-              <CodeIcons.file className="size-4" />
+              <CodeIcons.file className="size-4.5" />
               {/* It rolls because it CHANGES WHILE YOU WATCH: an artifact
                   finishing mid-answer is the one moment this chip has to
                   announce itself, and a digit that cuts is indistinguishable

@@ -2631,13 +2631,17 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       {!privateMode && currentConversationId && hasMessages && (
         <Tooltip>
           <TooltipTrigger asChild>
+            {/* The header's one family (owner, 15 Nov 2026): every control a
+                bare 36px target with an 18px glyph and a fill under the
+                pointer. Share was a grey 32px pill beside them. */}
             <Pressable
-              kind="chip"
+              kind="icon"
+              size="lg"
               aria-label="Share chat"
               onClick={() => setShareOpen(true)}
-              className="min-h-8 gap-1.5 rounded-full bg-secondary px-3 text-ui text-foreground hover:bg-accent"
+              className="h-9 w-auto gap-1.5 px-3 text-ui text-foreground"
             >
-              <ActionIcons.share className="size-4" />
+              <ActionIcons.share className="size-4.5" />
               <span>Share</span>
             </Pressable>
           </TooltipTrigger>

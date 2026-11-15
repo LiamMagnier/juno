@@ -74,7 +74,7 @@ export function PrivateChatToggle({
               : "w-9 text-muted-foreground hover:bg-accent hover:text-foreground coarse:w-11"
           )}
         >
-          <IncognitoGlyph className="size-5" strokeWidth={1.5} look={look} />
+          <IncognitoGlyph className="size-4.5" strokeWidth={1.5} look={look} />
           {active ? <span className="tracking-[-0.005em] animate-fade-in">Incognito</span> : null}
         </button>
       </TooltipTrigger>

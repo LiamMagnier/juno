@@ -123,9 +123,9 @@ export function ConversationMoreMenu({
               kind="icon"
               size="lg"
               aria-label={CHAT_EXPORT_COPY.menuLabel}
-              className="text-muted-foreground hover:text-foreground data-[state=open]:control-neu data-[state=open]:text-foreground"
+              className="text-muted-foreground hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
             >
-              <ActionIcons.more className="size-5" />
+              <ActionIcons.more className="size-4.5" />
             </Pressable>
           </DropdownMenuTrigger>
         </TooltipTrigger>

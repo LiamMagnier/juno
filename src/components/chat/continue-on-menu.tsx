@@ -28,7 +28,7 @@ export function ContinueOnMenu({ conversationId, title }: { conversationId: stri
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Pressable kind="icon" size="lg" aria-label="Continue on another device" disabled={busy} className="text-muted-foreground">
-              <CodeIcons.device className="size-5" />
+              <CodeIcons.device className="size-4.5" />
             </Pressable>
           </DropdownMenuTrigger>
         </TooltipTrigger>
