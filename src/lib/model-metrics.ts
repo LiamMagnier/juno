@@ -479,9 +479,24 @@ export function modelGeneration(name: string): number | null {
  *
  * Returns a new array; the input is not mutated.
  */
-/** Anthropic's product-line order, most capable first. Used only to keep Opus
- *  above Sonnet when their version numbers disagree (Opus 4.8 vs Sonnet 5). */
-const ANTHROPIC_FAMILY_RANK: Record<string, number> = { fable: 0, opus: 1, sonnet: 2, haiku: 3 };
+/** A lab's product-line order, most capable first, for lines that share a
+ *  version number or ship out of order, keyed `provider:family`:
+ *  - Anthropic: Fable, Opus, Sonnet, Haiku, whatever the numbers say (Opus 4.8
+ *    against Sonnet 5).
+ *  - Google's Gemini 4 lines: Carbon, Argon, Hydrogen (owner, 16 Nov 2026).
+ *    All three are generation 4; Hydrogen shipped a month after the others,
+ *    so the release date put it first, and the graded intelligence then put
+ *    Argon above Carbon: the picker read Hydrogen, Argon, Carbon.
+ *  A line absent from the map keeps the generation, date and power order. */
+const LINE_RANK: Record<string, number> = {
+  "anthropic:fable": 0,
+  "anthropic:opus": 1,
+  "anthropic:sonnet": 2,
+  "anthropic:haiku": 3,
+  "google:carbon": 0,
+  "google:argon": 1,
+  "google:hydrogen": 2,
+};
 
 export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
   return [...models].sort((a, b) => {
@@ -496,8 +511,8 @@ export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
     // → Haiku whatever the numbers say. Only Anthropic's families are ranked;
     // every other lab's families are absent from the map, so their order is
     // untouched — and generation still orders siblings *within* a family below.
-    const famA = ANTHROPIC_FAMILY_RANK[a.family ?? ""];
-    const famB = ANTHROPIC_FAMILY_RANK[b.family ?? ""];
+    const famA = LINE_RANK[`${a.provider}:${a.family ?? ""}`];
+    const famB = LINE_RANK[`${b.provider}:${b.family ?? ""}`];
     if (famA !== undefined && famB !== undefined && famA !== famB) return famA - famB;
     // Only decisive when BOTH names carry a version; otherwise the release date
     // below still places an unversioned model sensibly against its siblings.
