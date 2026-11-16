@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, JunoOrbit, Plus, Search, X } from "@/components/ui/icons";
+import { ArrowRight, Plus, Search, X } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -144,10 +144,12 @@ export function AgentsHome({
 
   return (
     <AppPage measure="wide" className="orbit-workspace">
-      <div className="orbit-masthead"><JunoOrbit className="size-4" aria-hidden="true" /><span>Your autonomous workspace</span></div>
+      {/* A title and what the page holds, like every other page. It had a
+          masthead label over the title ("Your autonomous workspace") and a
+          slogan for a lede ("A capable crew. A clearer day."). */}
       <AppPageHeader
         heading={BRAND.orbit.label}
-        lede="A capable crew. A clearer day."
+        lede={`Your ${AGENT_NOUN.plural}: what each is doing, and what needs you.`}
         className={cn(TITLE_FINISH, "orbit-heading")}
         actions={<>{canHire ? <Button type="button" onClick={focusNewAgent}><Plus className="size-4" aria-hidden="true" />New agent</Button> : null}<Button variant="outline" asChild><Link href="/connections">Connections<ArrowRight className="size-3.5" aria-hidden="true" /></Link></Button></>}
       />
@@ -298,13 +300,16 @@ function FirstAgent() {
   return (
     <div className="orbit-workspace orbit-first flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-5 pb-12 pt-12">
       <div className="flex w-full max-w-2xl shrink-0 flex-col items-center">
-        <div className="orbit-masthead mb-7"><JunoOrbit className="size-4" aria-hidden="true" /><span>Meet your next advantage</span></div>
+        {/* A question in the chat greeting's voice ("What's next, Liam?"),
+            as this component's note says. It was a marketing masthead ("Meet
+            your next advantage") over a two-tone slogan ("A little more
+            space. A lot more possible."): a landing page inside the app. */}
         <HeroComposer
           team={[]}
           starter={starter}
           heading={
             <h1 className="text-balance text-center font-serif text-display font-normal tracking-[-0.03em] text-foreground [font-optical-sizing:auto]">
-              {`A little more space${firstName ? `, ${firstName}` : ""}.`}<br /><span className="text-muted-foreground">A lot more possible.</span>
+              {`What should your first ${AGENT_NOUN.singular} take on${firstName ? `, ${firstName}` : ""}?`}
             </h1>
           }
         />
