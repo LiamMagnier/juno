@@ -561,26 +561,29 @@ button[role="switch"][data-state="checked"] > span > span,
 }
 
 /* ── 9. Armed pills (composer-shell.tsx, ComposerArmedMark) ──────────────────
-   A tool in force reads as a small, solid object: a faint ink fill with a
-   hairline ring and a lit top edge, not a flat grey slab. */
+   A tool armed for the next message (Create image, Research, a skill, an
+   app) is a pill in the accent, the way the reference composers mark it: a
+   10% tint of --primary with its ink, no ring, regular weight, on the row's
+   36px line. Owner, 16 Nov 2026, of the warm-grey pill with a hairline ring,
+   a lit top edge and medium weight: "this look horrible". It was neutral so a
+   coral accent would not read as a warning; the default accent is Alevr blue
+   now, and the owner asked for the accent everywhere. */
 .armed-pill {
-  background-color: hsl(30 8% 14% / 0.05);
-  box-shadow:
-    inset 0 0 0 1px hsl(30 8% 14% / 0.08),
-    inset 0 1px 0 hsl(0 0% 100% / 0.6);
-  transition: background-color 140ms var(--ease-out-soft);
+  background-color: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary-ink));
+  transition: background-color var(--dur-fast) var(--ease-out-soft);
 }
 .armed-pill:hover {
-  background-color: hsl(30 8% 14% / 0.08);
+  background-color: hsl(var(--primary) / 0.15);
 }
 .dark .armed-pill {
-  background-color: hsl(40 10% 96% / 0.07);
-  box-shadow:
-    inset 0 0 0 1px hsl(40 10% 96% / 0.09),
-    inset 0 1px 0 hsl(0 0% 100% / 0.05);
+  background-color: hsl(var(--primary) / 0.2);
 }
 .dark .armed-pill:hover {
-  background-color: hsl(40 10% 96% / 0.1);
+  background-color: hsl(var(--primary) / 0.26);
+}
+.armed-pill :is(button, svg) {
+  color: inherit;
 }
 .armed-pill > button:first-child {
   margin-left: 4px;

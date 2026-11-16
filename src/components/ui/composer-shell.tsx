@@ -387,8 +387,8 @@ export function ComposerArmedMark({
       <span className={cn("truncate", labelClassName)}>{label}</span>
       {detail && (
         <>
-          <span aria-hidden className={cn("shrink-0 text-muted-foreground", ARMED_DETAIL_CLASS)}>·</span>
-          <span aria-hidden className={cn("shrink-0 truncate text-muted-foreground", ARMED_DETAIL_CLASS)}>
+          <span aria-hidden className={cn("shrink-0", ARMED_DETAIL_CLASS)}>·</span>
+          <span aria-hidden className={cn("shrink-0 truncate", ARMED_DETAIL_CLASS)}>
             {detail}
           </span>
         </>
@@ -403,7 +403,7 @@ export function ComposerArmedMark({
         // margin, the glyph's 2px inset in its 20px box) and 10px after the
         // label, where round ends read tighter. The label is the button
         // filling the rest, so the whole right of the pill opens it.
-        "armed-pill group/armed inline-flex h-8 min-w-0 shrink items-center gap-1 rounded-full pl-1 text-ui font-medium leading-none text-foreground coarse:h-10",
+        "armed-pill group/armed inline-flex h-9 min-w-0 shrink items-center gap-1 rounded-full pl-1 text-ui font-normal leading-none coarse:h-11",
         "motion-safe:animate-pop-in",
       )}
     >
@@ -412,7 +412,7 @@ export function ComposerArmedMark({
         onClick={onRemove}
         disabled={disabled}
         aria-label={removeLabel}
-        className="relative grid size-5 shrink-0 place-items-center rounded-full text-foreground transition-colors duration-fast ease-out-soft hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+        className="relative grid size-5 shrink-0 place-items-center rounded-full transition-colors duration-fast ease-out-soft hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
       >
         <span
           aria-hidden

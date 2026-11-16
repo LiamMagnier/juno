@@ -2560,39 +2560,12 @@ function ComposerImpl({
       ? [{
           id: "image",
           icon: <ComposerIcons.image className="size-4" />,
+          // No model name beside it: the model chip in the same row says it.
           label: "Create image",
-          detail: resolved?.name,
           tooltip: <>{`Images made with ${resolved?.name ?? "an image model"}. Pick another one in the model menu.`}</>,
           openLabel: "Creating images. Opens the add menu.",
           removeLabel: "Stop creating images",
           remove: exitImageMode,
-        }]
-      : []),
-    /* Where a new chat starts, and what it can reach: the home tray used to
-       say these in a row of its own under the composer, beside the + menu
-       that does the same job (owner, 15 Nov 2026: one way in). They are marks
-       here now, on the landing frame only; in a thread the header names the
-       project and the + menu shows the apps checked. */
-    ...(showTray && selectedProject
-      ? [{
-          id: "project",
-          icon: <AppIcons.projects className="size-4" />,
-          label: selectedProject.name,
-          tooltip: <>{`This chat starts in ${selectedProject.name}, with its files and instructions.`}</>,
-          openLabel: `This chat starts in ${selectedProject.name}. Opens the add menu.`,
-          removeLabel: "Remove from project",
-          remove: () => onPickProject?.(null),
-        }]
-      : []),
-    ...(showTray && attachedConnectors.length > 0 && onToggleConnector
-      ? [{
-          id: "apps",
-          icon: <AppIcons.connections className="size-4" />,
-          label: attachedConnectors.length === 1 ? attachedConnectors[0].label : `${attachedConnectors.length} apps`,
-          tooltip: <>{`Can use ${attachedConnectors.map((connector) => connector.label).join(", ")}.`}</>,
-          openLabel: `Apps on for this chat: ${attachedConnectors.map((connector) => connector.label).join(", ")}. Opens the add menu.`,
-          removeLabel: attachedConnectors.length === 1 ? `Turn off ${attachedConnectors[0].label}` : "Turn off these apps",
-          remove: () => attachedConnectors.forEach((connector) => onToggleConnector(connector.id)),
         }]
       : []),
     ...(researchArmed
@@ -3709,10 +3682,13 @@ function ComposerImpl({
             {sketch.dialog}
         </div>
       </DictationSwap>
-      {/* Only an image, video or music model's generation row: the Project,
-          Apps and Skills tray repeated the + menu and is gone (owner, 15 Nov
-          2026); what it said is marks in the composer row now. */}
-      {showTray && mediaParams.caps && (
+      {/* The tray under a new chat's composer: the project it starts in, the
+          apps it can use, skills, and the Mac app (owner, 16 Nov 2026: "bring
+          back under the composer the ability to select a project, app, open
+          the Mac app like it was before"; it was removed on 15 Nov for
+          repeating the + menu). An image, video or music model's generation
+          row draws here too. */}
+      {showTray && (
         <ComposerTray
           projectName={selectedProject?.name ?? null}
           connectors={attachedConnectors}
