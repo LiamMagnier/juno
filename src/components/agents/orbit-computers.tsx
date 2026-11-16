@@ -17,6 +17,7 @@ import type { AgentExecutionTarget } from "@/lib/agents/domain";
 import type { ClientWorkHost } from "@/lib/work/serializers";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { cn } from "@/lib/utils";
+import { composerChevronClass, composerChipClass } from "@/components/ui/composer-shell";
 import { AgentFace } from "./agent-face";
 import { announceAgentsChanged, updateAgent } from "./agents-transport";
 import type { WorkHostsState } from "./use-work-hosts";
@@ -360,13 +361,16 @@ export function RunsOnChip({
       <DropdownMenuTrigger
         disabled={disabled}
         aria-label={`Runs on: ${label}`}
-        className="pressable inline-flex h-8 max-w-[12rem] shrink-0 items-center gap-1.5 rounded-full border border-foreground/[0.1] pl-2.5 pr-2 text-ui text-foreground hover:bg-foreground/[0.04] data-[state=open]:bg-foreground/[0.04] disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+        // Chat's composer chip (composer-shell.tsx): a borderless pill on the
+        // row's 36px line, 44 under touch. It was an outlined 32px pill, the
+        // one bordered control on a composer row.
+        className={cn(composerChipClass, "max-w-[12rem] shrink-0")}
       >
-        <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <Icon className="size-4 shrink-0" aria-hidden="true" />
         <span className="truncate" translate={chosen ? "no" : undefined}>
           {label}
         </span>
-        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <ChevronDown className={composerChevronClass} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72">
         <DropdownMenuLabel>Works on</DropdownMenuLabel>
