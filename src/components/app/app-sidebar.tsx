@@ -1734,61 +1734,10 @@ export function AppSidebar({
                       />
                     )}
 
-                    {/* ONE LIST, ONE HEADING: "Recent", drawn by the same
-                        `Section` as Pinned projects above it, so the two read
-                        as one family and fold the same way. It was four date
-                        folds — Today, Yesterday, Previous 7 days, Older —
-                        which put up to four headings into the busiest part of
-                        the column to say what the order of the rows already
-                        says: the newest is at the top.
-
-                        THE PINNED CHATS ARE ITS FIRST ROWS, each with its pin
-                        mark (ConversationRow's trailing pin), and not a
-                        "Pinned chats" section of their own (owner decision,
-                        2026-10-26): the extra heading kept Recent's first row
-                        off the first screen of a laptop-height window. Folding
-                        Recent folds them with it. */}
-                    {needsYouOnly ? null : recents.length > 0 ? (
-                      <Section
-                        label="Recent"
-                        isCollapsed={sectionCollapsed.recents}
-                        onToggleCollapse={() => toggleSection("recents")}
-                      >
-                        {visibleRecents.map((c) => (
-                          <ConversationRow
-                            key={c.id}
-                            conversation={c}
-                            active={c.id === activeConversationId}
-                            signal={rowSignals.get(c.id)}
-                            unread={crossUnread.has(c.id) && c.id !== activeConversationId}
-                            {...rowProps}
-                          />
-                        ))}
-                        {recents.length > recentsLimit && (
-                          <div ref={setSentinel} className="flex justify-center py-2" aria-hidden>
-                            <span className="skeleton h-2 w-16 rounded-full" />
-                          </div>
-                        )}
-                      </Section>
-                    ) : (
-                      live.length === 0 &&
-                      sidebarProjects.length === 0 && (
-                        /* LEFT, on the column's own text edge, and not
-                           centred. It was the only centred text in this
-                           panel — every heading, fold and title above it
-                           starts at the same vertical — so it floated in the
-                           middle of a left-aligned column and read as
-                           belonging to nothing. `py-8` went with it: eight
-                           above and eight below put it a third of the way
-                           down an empty list rather than under the thing it
-                           is about. */
-                        <p className="px-2 pb-2 pt-3 text-ui text-muted-foreground" aria-live="polite">
-                          Your recent chats will
-                          <br />
-                          appear here.
-                        </p>
-                      )
-                    )}
+                    {/* ORBIT ABOVE RECENT (owner, 16 Nov 2026): the agents
+                        at work, and the way to Orbit, come before the list of
+                        past chats, which is the longest thing in the column
+                        and would otherwise push them below the fold. */}
                     {/* AGENTS — the roster at a glance, above the filing. Each
                         row is a live face, so the column says which teammate
                         is working and which is waiting before a name is read
@@ -1875,6 +1824,62 @@ export function AppSidebar({
                           </div>
                         )}
                       </section>
+                    )}
+
+                    {/* ONE LIST, ONE HEADING: "Recent", drawn by the same
+                        `Section` as Pinned projects above it, so the two read
+                        as one family and fold the same way. It was four date
+                        folds — Today, Yesterday, Previous 7 days, Older —
+                        which put up to four headings into the busiest part of
+                        the column to say what the order of the rows already
+                        says: the newest is at the top.
+
+                        THE PINNED CHATS ARE ITS FIRST ROWS, each with its pin
+                        mark (ConversationRow's trailing pin), and not a
+                        "Pinned chats" section of their own (owner decision,
+                        2026-10-26): the extra heading kept Recent's first row
+                        off the first screen of a laptop-height window. Folding
+                        Recent folds them with it. */}
+                    {needsYouOnly ? null : recents.length > 0 ? (
+                      <Section
+                        label="Recent"
+                        isCollapsed={sectionCollapsed.recents}
+                        onToggleCollapse={() => toggleSection("recents")}
+                      >
+                        {visibleRecents.map((c) => (
+                          <ConversationRow
+                            key={c.id}
+                            conversation={c}
+                            active={c.id === activeConversationId}
+                            signal={rowSignals.get(c.id)}
+                            unread={crossUnread.has(c.id) && c.id !== activeConversationId}
+                            {...rowProps}
+                          />
+                        ))}
+                        {recents.length > recentsLimit && (
+                          <div ref={setSentinel} className="flex justify-center py-2" aria-hidden>
+                            <span className="skeleton h-2 w-16 rounded-full" />
+                          </div>
+                        )}
+                      </Section>
+                    ) : (
+                      live.length === 0 &&
+                      sidebarProjects.length === 0 && (
+                        /* LEFT, on the column's own text edge, and not
+                           centred. It was the only centred text in this
+                           panel — every heading, fold and title above it
+                           starts at the same vertical — so it floated in the
+                           middle of a left-aligned column and read as
+                           belonging to nothing. `py-8` went with it: eight
+                           above and eight below put it a third of the way
+                           down an empty list rather than under the thing it
+                           is about. */
+                        <p className="px-2 pb-2 pt-3 text-ui text-muted-foreground" aria-live="polite">
+                          Your recent chats will
+                          <br />
+                          appear here.
+                        </p>
+                      )
                     )}
 
                     {projectsError && !needsYouOnly && (

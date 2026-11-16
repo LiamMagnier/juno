@@ -216,34 +216,37 @@ export function ProductSwitch({
 
   return (
     /*
-     * ONE TRACK, ONE THUMB (2026-10-14). The expanded switch is the rail's
-     * control laid flat: a recessed track the width of the column, two
-     * segments that abut, each with its product glyph and name, and a raised
-     * thumb that slides to the product you are in. It replaces the orbit
-     * between the two names (2026-10-04), whose 84px dot ring read as a smudge
-     * at sidebar size rather than as an orbit. The glyph articulates on hover
-     * like every other row; the thumb travels on `spring.standard`.
+     * TWO ROWS (owner, 16 Nov 2026: "rework the Chat/Code switch"). The
+     * products are the column's first two rows, drawn with the nav rows' own
+     * recipe (navRowClass in app-sidebar.tsx: 32px, a 20px glyph slot, the
+     * 14px `nav` label on the column's text edge), the way Claude and ChatGPT
+     * list Code: a place in the column, not a toggle above it. The recessed
+     * track with a sliding thumb (2026-10-14) read as a phone toggle bolted
+     * to the top of the sidebar.
+     *
+     * The product you are in is FULL INK AND MEDIUM WEIGHT, not a fill: the
+     * rows below already draw the selected fill for the page you are on
+     * (Projects, a chat), and a filled product row above them would show two
+     * selected rows at once. A hairline under the pair separates where you
+     * are from what you can do there.
      *
      * Still LINKS (see the note at the top of the file), still the plan gate
-     * and the chord in the tooltip.
+     * and the chord in the tooltip. The rail keeps the track, where two
+     * glyphs need a shape around them to read as one choice.
      */
-    <nav aria-label={`${PRODUCT_NAME} products`} className="w-full shrink-0 px-3">
-      {/* A desktop segmented control, not a phone toggle: a quiet track with a
-          2px inset (radius 10), segments of radius 8 that nest in it exactly,
-          and a flat thumb drawn with a hairline instead of a lifted pill. */}
-      <div className="grid grid-cols-2 gap-0.5 rounded-field bg-foreground/[0.05] p-0.5">
+    <nav aria-label={`${PRODUCT_NAME} products`} className="w-full shrink-0">
+      <div className="flex flex-col">
         {PRODUCTS.map((product) => (
           <Segment
             key={product.id}
             product={product}
             active={product.id === active}
             locked={isLocked(product, plan, codeOpen)}
-            thumbId={thumbId}
-            thumbTransition={thumbTransition}
             onNavigate={onNavigate}
           />
         ))}
       </div>
+      <div className="mx-2 mt-2 h-px bg-sidebar-border" aria-hidden="true" />
     </nav>
   );
 }
@@ -252,15 +255,11 @@ function Segment({
   product,
   active,
   locked,
-  thumbId,
-  thumbTransition,
   onNavigate,
 }: {
   product: Product;
   active: boolean;
   locked: boolean;
-  thumbId: string;
-  thumbTransition: object;
   onNavigate?: () => void;
 }) {
   const chord = useChordLabel(product.chord);
@@ -275,36 +274,34 @@ function Segment({
           // Primary navigation: a destination, so its glyph answers the pointer (icons.css).
           data-jicon-articulate={locked ? undefined : ""}
           className={cn(
-            "pressable jicon-trigger group relative flex h-8 items-center justify-center gap-2 rounded-control px-2 text-ui font-medium",
-            // `coarse:h-11`: 44px under a thumb, the drawer's own floor. The
-            // track's `p-0.5` sits outside it, so nothing else grows.
+            // navRowClass's expanded recipe (app-sidebar.tsx), so these two
+            // rows and the nav rows under them are one list to the eye.
+            // No transition utility: `.pressable` owns the transition list.
+            "pressable jicon-trigger sidebar-nav-row group relative flex h-8 w-full items-center gap-2.5 rounded-control px-2",
             "motion-reduce:active:scale-100 coarse:h-11",
             /*
-             * One ink for every segment you are not in, locked or not: the
-             * column's own row ink, about 7:1 on the track. The locked one
-             * used to be muted at 70%, under AA, so a Free reader could not
-             * read the name of the thing being offered. The lock glyph in
-             * place of the product mark already says it is locked.
+             * One ink for a product you are not in, locked or not: the
+             * column's own row ink. The lock glyph in place of the product
+             * mark says it is locked; the name stays readable (AA).
              */
-            active && !locked ? "text-foreground" : "text-sidebar-foreground hover:text-foreground",
+            // The other product steps back to the muted ink: in the column's
+            // row ink the two read alike, and which one you are in was a
+            // weight difference alone.
+            active && !locked ? "font-medium text-foreground" : "font-normal text-muted-foreground hover:bg-sidebar-hover hover:text-foreground",
           )}
         >
-          {active && (
-            <motion.span
-              layoutId={thumbId}
-              aria-hidden="true"
-              transition={thumbTransition}
-              className="product-switch-thumb absolute inset-0"
-              style={{ borderRadius: 8 }}
-            />
-          )}
-          <span className="relative flex size-4 items-center justify-center [&_svg]:size-4">
+          <span
+            className={cn(
+              "relative flex size-5 shrink-0 items-center justify-center transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground [&_svg]:size-[18px]",
+              active && !locked ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
             {locked ? <Lock aria-hidden="true" /> : <SidebarMotionIcon kind={product.kind} />}
           </span>
-          <span className="relative">{product.label}</span>
+          <span className="min-w-0 flex-1 truncate text-nav">{product.label}</span>
         </Link>
       </TooltipTrigger>
-      <TooltipContent side="bottom">
+      <TooltipContent side="right">
         {locked ? `Upgrade to ${PLANS[product.minPlan].name}` : `Switch to ${product.label}`}
         {!locked && <Kbd className="ml-1.5">{chord}</Kbd>}
       </TooltipContent>
