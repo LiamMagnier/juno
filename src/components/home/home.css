@@ -267,12 +267,15 @@
 .alv-cell-e { grid-column: span 2; }
 .alv-cell-ink { background: #18191b; color: #e8e9eb; outline-color: rgb(255 255 255 / .06); }
 .alv-cell-ink .alv-body { color: #95979c; }
-.alv-cell-plate { background: #0f1011; color: #e8e9eb; }
-.alv-cell-plate .alv-body { color: #b4b6ba; }
-.alv-cell-plate img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1; opacity: .9; transition: transform var(--dur-emphasis) var(--alv-ease); }
-.alv-cell-plate:hover img { transform: scale(1.03); }
-.alv-cell-plate::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(to bottom, rgb(15 16 17 / .78), rgb(15 16 17 / .1) 55%, rgb(15 16 17 / .5)); }
 .alv-memory { display: grid; gap: 8px; }
+/* A project as the product draws it: its name and chats, then its files. */
+.alv-project { display: grid; gap: 12px; }
+.alv-project-head { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.alv-project-head > svg { width: 18px; height: 18px; color: var(--alv-ink); flex: none; }
+.alv-project-head b { font-weight: 500; color: var(--alv-ink); }
+.alv-project-head small { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--alv-sub); font-size: 12px; }
+.alv-project-head small svg { width: 14px; height: 14px; }
+.alv-project-files { display: grid; gap: 8px; }
 .alv-memory-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--alv-surface); outline: 1px solid var(--alv-hair); font-size: 13px; }
 .alv-memory-row small { margin-left: auto; color: var(--alv-sub); font-size: 12px; white-space: nowrap; }
 .alv-memory-row svg { width: 16px; height: 16px; color: var(--alv-sub); flex: none; }
@@ -299,9 +302,8 @@
 /* ───────────────────── Aleph ───────────────────── */
 .alv-aleph { padding: 40px 0 160px; }
 .alv-aleph-grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr); gap: 96px; align-items: center; }
-.alv-aleph-glyph { position: relative; aspect-ratio: 1; border-radius: 28px; overflow: hidden; background: #0f1011; isolation: isolate; }
-.alv-aleph-glyph img { position: absolute; inset: -8% 0; width: 100%; height: 116%; object-fit: cover; z-index: -1; }
-.alv-aleph-glyph::after { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(80% 60% at 50% 30%, rgb(15 16 17 / .15), rgb(15 16 17 / .7)); }
+/* The ink panel of the voice cell (.alv-cell-ink), at the bento's corner: type alone, no photograph. */
+.alv-aleph-glyph { position: relative; aspect-ratio: 1; border-radius: 20px; overflow: hidden; background: #18191b; outline: 1px solid rgb(255 255 255 / .06); isolation: isolate; }
 .alv-aleph-mark { position: absolute; left: 50%; top: 40%; translate: -50% -50%; font-family: "STIX Two Math", "STIX Two Text", "Times New Roman", "Cambria Math", serif; font-weight: 400; font-size: clamp(120px, 16vw, 240px); line-height: 1; color: #e8e9eb; letter-spacing: 0; }
 .alv-aleph-mark sub { font-size: .26em; vertical-align: -.05em; margin-left: .06em; color: #95979c; font-family: var(--font-serif), Newsreader, serif; }
 .alv-aleph-series { position: absolute; left: 0; right: 0; bottom: 32px; display: flex; justify-content: center; gap: 32px; color: #95979c; font-family: "STIX Two Math", "Times New Roman", serif; font-size: 17px; letter-spacing: 0; }

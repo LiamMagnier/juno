@@ -1,17 +1,16 @@
 import { InView } from "./in-view";
 
 /**
- * Where the name comes from. The photograph is the brand's own plate (a path
- * running to the horizon); the aleph is set in Newsreader over it. The series
- * under it lights one step at a time when the panel arrives, then rests.
+ * Where the name comes from, set in type alone: the aleph on the ink panel
+ * the voice cell uses, and the series under it, which lights one step at a
+ * time when the panel arrives, then rests. It stood on a photograph (a path to
+ * the horizon under a dark gradient), the render the owner asked to rework.
  */
 export function Aleph() {
   return (
     <section className="alv-aleph" aria-labelledby="alv-aleph-title">
       <div className="alv-col alv-aleph-grid">
         <InView className="alv-aleph-glyph alv-seq" amount={0.4}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- static brand plate */}
-          <img src="/brand/home-horizon-dark.webp" alt="" loading="lazy" decoding="async" />
           <span className="alv-aleph-mark" aria-hidden>ℵ<sub>0</sub></span>
           <span className="alv-aleph-series alv-annot" aria-hidden>
             {["ℵ₀", "ℵ₁", "ℵ₂", "ℵ₃", "…"].map((s, i) => <span key={s} className="alv-pop" style={{ transitionDelay: `${300 + i * 180}ms` }}>{s}</span>)}

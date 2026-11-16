@@ -1,10 +1,12 @@
-import { BookOpen, EyeOff, MessageSquareText, Plug, Sparkles, UserPen } from "@/components/ui/icons";
+import { BookOpen, EyeOff, FileSpreadsheet, FileText, FolderOpen, MessageSquareText, MessagesSquare, Plug, Presentation, Sparkles, UserPen } from "@/components/ui/icons";
 import { InView } from "./in-view";
 
 /**
  * Everything around the work, in five cells of different weight: memory is the
  * wide one because it changes every answer; voice is the dark one because it
- * is the one you hear; Library carries the material photograph.
+ * is the one you hear; Library and Projects show a project as the product
+ * draws it (its files and its chats). It carried a metallic render, the one
+ * cell whose picture was not the product (owner, 16 Nov 2026: rework it).
  */
 
 const WAVE = [14, 26, 40, 58, 72, 52, 34, 62, 84, 66, 44, 30, 50, 70, 46, 28, 18, 36, 24, 12];
@@ -45,11 +47,21 @@ export function Bento() {
               {WAVE.map((h, i) => <i key={i} style={{ ["--h" as string]: h, ["--i" as string]: i }} />)}
             </InView>
           </article>
-          <article className="alv-cell alv-cell-c alv-cell-plate">
-            {/* eslint-disable-next-line @next/next/no-img-element -- static brand plate, sized by its cell */}
-            <img src="/brand/public-aperture.webp" alt="" loading="lazy" decoding="async" />
+          <article className="alv-cell alv-cell-c">
             <h3>One place for what you know.</h3>
             <p className="alv-body">Library and Projects keep your files, chats and finished work together.</p>
+            <div className="alv-cell-art alv-project" aria-hidden>
+              <div className="alv-project-head">
+                <FolderOpen />
+                <b>Field Notes 2.0</b>
+                <small><MessagesSquare />12 chats</small>
+              </div>
+              <div className="alv-project-files">
+                <div className="alv-memory-row"><FileText />Launch plan<small>PDF</small></div>
+                <div className="alv-memory-row"><FileSpreadsheet />Pricing model<small>Sheet</small></div>
+                <div className="alv-memory-row"><Presentation />Board update<small>Slides</small></div>
+              </div>
+            </div>
           </article>
           <article className="alv-cell alv-cell-d">
             <h3>Connect your tools.</h3>

@@ -620,8 +620,13 @@ const ITEMS_REVIEWED: Record<string, string> = {
     [
       "bento.tsx#BookOpen",
       "bento.tsx#EyeOff",
+      "bento.tsx#FileSpreadsheet",
+      "bento.tsx#FileText",
+      "bento.tsx#FolderOpen",
       "bento.tsx#MessageSquareText",
+      "bento.tsx#MessagesSquare",
       "bento.tsx#Plug",
+      "bento.tsx#Presentation",
       "bento.tsx#Sparkles",
       "bento.tsx#UserPen",
       "code-scene.tsx#Check",

@@ -22,7 +22,10 @@ import { ConstructionScene, RingsScene, type ArcSpec, type LineSpec, type RingSp
  * frame once and never schedule another; `hold` draws on and then stops.
  */
 export function DotConstruction({
-  ticks = true,
+  // Off by default (owner, 16 Nov 2026: rework the ℵ sections): the aleph
+  // marks along the number line read as a mathematics diagram, an experiment
+  // rather than a product. The orbits stay; a surface may still ask for them.
+  ticks = false,
   trajectory = true,
   axis = true,
   animate = true,
