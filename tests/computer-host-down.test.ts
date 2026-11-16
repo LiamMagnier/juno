@@ -449,7 +449,10 @@ describe("finishing a held sleep is a claim", () => {
     await store.sleepComputer(USER, AGENT, { actor: "web" });
     await holdASleep();
     // A held sleep whose interval is still open (a ledger write that failed after the stop).
-    const end = new Date(Date.now() - MINUTE);
+    // Its five minutes sit inside one UTC week: the meter splits an interval at
+    // Monday 00:00, so run just after midnight on a Monday (CI, 00:02) the row
+    // starting at `resumed` held only the Sunday part (251 of 300 seconds).
+    const end = new Date(weekSafeNow(Date.now() - MINUTE, 5 * MINUTE, 0));
     const resumed = new Date(end.getTime() - 5 * MINUTE);
     await memDb.updateByAgent(USER, AGENT, { billingStoppedAt: end, lastResumedAt: resumed });
     const meteredFrom = () => memDb.usage.filter((u) => u.agentId === AGENT && u.startedAt.getTime() === resumed.getTime());

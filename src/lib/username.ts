@@ -131,6 +131,7 @@ export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
   "memory",
   "offline",
   "permissions",
+  "pricing",
   "projects",
   "research",
   "reset-password",

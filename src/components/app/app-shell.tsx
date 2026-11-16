@@ -23,6 +23,8 @@ import { VerifyEmailBanner } from "@/components/auth/verify-email-banner";
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
 import { duration, transition } from "@/lib/motion";
 import { titleForPath } from "@/lib/route-title";
+import { AlevrLockup } from "@/components/brand/alevr-lockup";
+import { PRODUCT_NAME } from "@/lib/brand/names";
 import { cn } from "@/lib/utils";
 
 /**
@@ -691,12 +693,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu className="size-5" />
             </Button>
-            <AnimatedTitle
-              title={mobileTitle}
-              animate={inConversation && activeConversation?.titleSource === "ai"}
-              className="min-w-0 flex-1 px-1"
-              textClassName="text-body font-medium text-foreground"
-            />
+            {/* Where the page has no title of its own (a new chat), the bar
+                names the product with its lockup, as the sidebar and the
+                public pages do, not the word in the UI sans. */}
+            {mobileTitle === PRODUCT_NAME ? (
+              <div className="flex min-w-0 flex-1 items-center px-1">
+                <AlevrLockup height={20} title={PRODUCT_NAME} />
+              </div>
+            ) : (
+              <AnimatedTitle
+                title={mobileTitle}
+                animate={inConversation && activeConversation?.titleSource === "ai"}
+                className="min-w-0 flex-1 px-1"
+                textClassName="text-body font-medium text-foreground"
+              />
+            )}
             <Button
               variant="ghost"
               size="icon"
