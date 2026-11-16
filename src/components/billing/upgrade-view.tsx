@@ -170,9 +170,15 @@ export function UpgradeView({
   const action = (() => {
     const wide = "h-12 w-full text-body font-medium sm:w-80";
     if (selected === currentPlan) {
+      // You are on it, and the headline says so ("You're on Pro"). The useful
+      // action is the billing portal (invoices, card, cancelling), named as
+      // Settings names it. It was a disabled "Your current plan" button that
+      // repeated the headline and read as an empty field. Free has nothing
+      // to manage.
+      if (currentPlan === "FREE" || !features.billing) return null;
       return (
-        <Button variant="secondary" size="lg" className={wide} disabled>
-          Your current plan
+        <Button variant="secondary" size="lg" className={wide} onClick={manage}>
+          Manage billing
         </Button>
       );
     }
@@ -231,9 +237,11 @@ export function UpgradeView({
           {selected === "FREE" ? "a month" : interval === "year" ? "a month, billed yearly" : "a month"}
           {selected !== "FREE" && <span className="text-muted-foreground">. Cancel any time.</span>}
         </p>
-        <div className="ed-rise mt-7 flex w-full justify-center" style={{ ["--i" as string]: 2 }}>
-          {action}
-        </div>
+        {action && (
+          <div className="ed-rise mt-7 flex w-full justify-center" style={{ ["--i" as string]: 2 }}>
+            {action}
+          </div>
+        )}
         {rank > 0 && reasons.length > 0 && (
           // Plain words, no marks: a reason is a fact, not a status.
           <p key={selected} className="plans-roll mt-5 text-ui text-muted-foreground">
@@ -315,9 +323,11 @@ export function UpgradeView({
         <div className="mt-8">
           <PlanCompare plans={plans} selected={selected} current={currentPlan} priceOf={priceLabel} onSelect={setPicked} />
         </div>
-        <div className="mt-8 flex justify-center">
-          <div className="w-full sm:w-80">{action}</div>
-        </div>
+        {action && (
+          <div className="mt-8 flex justify-center">
+            <div className="w-full sm:w-80">{action}</div>
+          </div>
+        )}
       </section>
 
       <div className="plans-rule mt-12" aria-hidden />
