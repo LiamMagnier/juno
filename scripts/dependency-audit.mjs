@@ -12,7 +12,15 @@ import path from "node:path";
 // Shape: { package: "name", advisories: ["GHSA-xxxx-xxxx-xxxx"],
 //          reason: "why it is unreachable or unpatchable", expires: "YYYY-MM-DD" }
 /** @type {{ package: string, advisories: string[], reason: string, expires: string }[]} */
-export const ACCEPTED_ADVISORIES = [];
+export const ACCEPTED_ADVISORIES = [
+  {
+    package: "picomatch",
+    advisories: ["GHSA-fc5q-39xc-vjpf"],
+    reason:
+      "Accepted by the owner on 17 Nov 2026 for 30 days. ReDoS from a crafted extglob PATTERN. picomatch is reached only through tailwindcss (a production dependency via tailwindcss-animate), at CSS build time, matching the one content glob in tailwind.config.ts (\"./src/**/*.{ts,tsx}\", a brace set, no extglob); no request, user input or runtime code builds a pattern. No patched release exists (the advisory covers every version through 4.0.7, the latest); the only fix npm offers is tailwindcss 4, a major migration. Re-check for a picomatch release or the v4 move.",
+    expires: "2026-12-17",
+  },
+];
 
 // An exception may not be dated further out than this, so "accepted" always
 // means "looked at this quarter".
