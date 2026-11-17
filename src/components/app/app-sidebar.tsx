@@ -35,7 +35,6 @@ import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { UserAvatar, UserMenu } from "@/components/app/user-menu";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { ContinuumMark } from "@/components/brand/continuum-mark";
-import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { ArrowUpCircle } from "@/components/ui/icons";
 import { upgradeNudge } from "@/lib/billing/upgrade-nudge";
 import { AnimatedTitle } from "@/components/app/animated-title";
@@ -69,7 +68,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { PopoverTrigger } from "@/components/ui/popover";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { useApp } from "@/components/app/app-provider";
-import { ProductMenu, ProductSwitch, type ProductSurface } from "@/components/app/product-switch";
+import { ProductSwitch, type ProductSurface } from "@/components/app/product-switch";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { CodeShellList } from "@/components/app/code-work-list";
 import { LIST_ROW_TRANSITION, Section, Disclosure, listRowClass } from "@/components/app/sidebar-section";
@@ -1453,9 +1452,9 @@ export function AppSidebar({
         <motion.div
           layout="position"
           transition={layoutTransition}
-          className={cn("flex items-center", collapsed ? "flex-col px-2 pt-3" : "mt-2 h-11 gap-0.5 pl-4.5 pr-2")}
+          className={cn("flex items-center", collapsed ? "flex-col px-2 pt-3" : "mt-2 h-11 gap-0.5 pl-2.5 pr-2")}
         >
-          <motion.div layout="position" transition={layoutTransition} className={cn("min-w-0", !collapsed && "flex flex-1 items-center gap-1.5")}>
+          <motion.div layout="position" transition={layoutTransition} className={cn("min-w-0", !collapsed && "flex flex-1 items-center gap-2")}>
             {collapsed && onToggleCollapse ? (
               /*
                * THE RAIL'S HEAD IS ONE CONTROL. It used to stack the mark, the
@@ -1492,28 +1491,20 @@ export function AppSidebar({
               onClick={() => setSidebarOpen(false)}
               aria-label={isCode ? `${BRAND.code.title} home` : `${PRODUCT_NAME} home`}
               className={cn(
-                "flex items-center rounded-control text-foreground outline-offset-2",
-                collapsed ? "size-9 justify-center" : "h-9 w-fit"
+                "grid shrink-0 place-items-center rounded-control text-foreground outline-offset-2 transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover",
+                collapsed ? "size-9" : "size-8 coarse:size-11"
               )}
             >
-              {collapsed ? (
-                <ContinuumMark size={14} tight tone="current" />
-              ) : (
-                <motion.span initial={revealOnMount} animate={{ opacity: 1 }} transition={transition.base} className="flex items-center">
-                  {/* The brand's own lockup, the drawing the public pages and
-                      the auth screens carry (Continuum and the serif
-                      wordmark). It was an app-icon tile (the mark in a black
-                      rounded square) beside the name in the UI sans: a second
-                      logo, and the generic one. */}
-                  <AlevrLockup height={20} decorative />
-                </motion.span>
-              )}
+              {/* The mark alone (owner, 17 Nov 2026: the 20px lockup beside
+                  the switch was "the big logo"). The name is the page's, the
+                  tab's and the home page's to say; the column's head is the
+                  way home and the switch. */}
+              <ContinuumMark size={collapsed ? 14 : 16} tight tone="current" />
             </Link>
             )}
-            {/* The product you are in, beside the lockup: "Alevr  Chat ⌄"
-                opens the product menu (product-switch.tsx, ProductMenu). */}
+            {/* Chat · Code, in the header row (product-switch.tsx). */}
             {!collapsed && (
-              <ProductMenu
+              <ProductSwitch
                 active={product}
                 plan={quota.plan}
                 codeOpen={features.codeOpen}

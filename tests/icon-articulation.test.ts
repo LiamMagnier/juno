@@ -81,8 +81,8 @@ test("destinations opt in: sidebar destination rows and empty-state actions", ()
   assert.match(sidebar, /const articulate = moves \? "" : undefined;/);
   assert.equal((sidebar.match(/data-jicon-articulate=\{articulate\}/g) ?? []).length, 2, "link and button forms of NavRow");
   assert.match(read("src/components/ui/empty-state.tsx"), /data-jicon-articulate="within"/);
-  // The product switch is a menu now (ProductMenu, owner 16 Nov 2026), and
-  // menus never opt in (below): its rows hold still.
+  // The product switch is two labelled segments in the header (owner, 17 Nov
+  // 2026), with no glyph to articulate: only its thumb moves.
   assert.doesNotMatch(read("src/components/app/product-switch.tsx"), /data-jicon-articulate/);
 });
 

@@ -3,11 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Check, ChevronDown, Lock } from "@/components/ui/icons";
+import { Lock } from "@/components/ui/icons";
 
 import { SidebarMotionIcon, type SidebarMotionIconKind } from "@/components/app/sidebar-motion-icon";
 import { Kbd } from "@/components/ui/kbd";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useModifierKeyLabel } from "@/components/ui/platform";
 import { PLANS, planRank } from "@/lib/plans";
@@ -215,96 +214,90 @@ export function ProductSwitch({
     );
   }
 
-  // The expanded column names the product in its header instead (ProductMenu).
-  return <ProductMenu active={active} plan={plan} codeOpen={codeOpen} onNavigate={onNavigate} />;
+  return (
+    /*
+     * THE SWITCH, BACK AND SMALLER (owner, 17 Nov 2026: "bring back the
+     * switcher but make it look better", after the menu on the name). It sits
+     * in the header row beside the mark, at the header's own 32px, so the
+     * mark, the switch, the bell and the panel toggle read as one line rather
+     * than a control bolted above the column. Two segments sized to their
+     * words, not a full-width bar: the track is a tone, the segment you are
+     * in is the flat thumb every segmented control in the product draws
+     * (globals.css, .product-switch-thumb), and it slides between the two.
+     * Labels only: at sidebar width a glyph per segment crowded the bell.
+     *
+     * Still LINKS (see the note at the top of the file), still the plan gate
+     * (a lock in front of the name, routed to /upgrade) and the chord in the
+     * tooltip. The rail keeps its stacked track.
+     */
+    <nav aria-label={`${PRODUCT_NAME} products`} className="shrink-0">
+      <div className="product-switch-track flex items-center gap-0.5 rounded-full p-[3px]">
+        {PRODUCTS.map((product) => (
+          <Segment
+            key={product.id}
+            product={product}
+            active={product.id === active}
+            locked={isLocked(product, plan, codeOpen)}
+            thumbId={thumbId}
+            thumbTransition={thumbTransition}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </div>
+    </nav>
+  );
 }
 
-/** What each product is for, in the menu under the product's name. */
-const PRODUCT_LINES: Record<ProductSurface, string> = {
-  chat: "Conversations, research and agents",
-  code: "Work in your repositories",
-};
-
-/**
- * THE PRODUCT MENU (owner, 16 Nov 2026: "Product menu on the logo", after
- * the full-width segmented pill and two nav rows were both turned down). The
- * header reads "Alevr  Chat ⌄": the product you are in, in the muted ink,
- * beside the lockup, the way Linear, Vercel and Raycast name the workspace
- * you are in. It opens a short menu, one row per product with its glyph, a
- * line saying what it is for, and its shortcut, the current one checked.
- * The column below carries no switch at all, so it opens on the actions.
- *
- * Still LINKS (see the note at the top of the file): each row is the product's
- * href, so ⌘-click opens it in a new tab and Back works. Code below its plan
- * stays listed, with a lock in place of its mark and the plan's name where the
- * shortcut goes, and routes to /upgrade.
- */
-export function ProductMenu({
+function Segment({
+  product,
   active,
-  plan,
-  codeOpen = false,
+  locked,
+  thumbId,
+  thumbTransition,
   onNavigate,
 }: {
-  active: ProductSurface;
-  plan?: PlanId;
-  codeOpen?: boolean;
+  product: Product;
+  active: boolean;
+  locked: boolean;
+  thumbId: string;
+  thumbTransition: object;
   onNavigate?: () => void;
 }) {
-  const mod = useModifierKeyLabel();
-  const current = PRODUCTS.find((product) => product.id === active) ?? PRODUCTS[0];
+  const chord = useChordLabel(product.chord);
+  const here = active && !locked;
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={`${current.label}. Switch product`}
-          className="group pressable inline-flex h-7 shrink-0 items-center gap-1 rounded-control pl-2 pr-1.5 text-nav font-medium text-muted-foreground hover:bg-sidebar-hover hover:text-foreground data-[state=open]:bg-sidebar-hover data-[state=open]:text-foreground motion-reduce:active:scale-100 coarse:h-11"
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link
+          href={locked ? "/upgrade" : product.href}
+          onClick={onNavigate}
+          aria-current={here ? "page" : undefined}
+          aria-label={accessibleName(product, locked)}
+          className={cn(
+            // No transition utility: `.pressable` owns the transition list.
+            "pressable relative inline-flex h-[26px] items-center gap-1 rounded-full px-2.5 text-ui font-medium leading-none outline-offset-1",
+            "motion-reduce:active:scale-100 coarse:h-9 coarse:px-3",
+            here ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
         >
-          <span>{current.label}</span>
-          <ChevronDown
-            aria-hidden="true"
-            className="size-3.5 shrink-0 transition-transform duration-fast ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none"
-          />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={6} className="flex w-80 flex-col gap-0.5">
-        {PRODUCTS.map((product) => {
-          const locked = isLocked(product, plan, codeOpen);
-          const here = product.id === active && !locked;
-          return (
-            <DropdownMenuItem key={product.id} asChild>
-              <Link
-                href={locked ? "/upgrade" : product.href}
-                onClick={onNavigate}
-                aria-current={here ? "page" : undefined}
-                aria-label={accessibleName(product, locked)}
-                className="flex items-start gap-3"
-                // Two lines per row: the menu recipe's single-line padding
-                // (signature.css, .cmenu rows) would press them together.
-                style={{ paddingBlock: 8 }}
-              >
-                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center [&_svg]:size-[18px]">
-                  {locked ? <Lock aria-hidden="true" /> : <SidebarMotionIcon kind={product.kind} />}
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className={cn("truncate", here && "font-medium")}>{product.label}</span>
-                  <span className="truncate text-caption text-muted-foreground">{PRODUCT_LINES[product.id]}</span>
-                </span>
-                <span className="mt-0.5 flex shrink-0 items-center">
-                  {here ? (
-                    <Check aria-hidden="true" className="size-4" />
-                  ) : locked ? (
-                    <span className="text-caption text-muted-foreground">{PLANS[product.minPlan].name}</span>
-                  ) : (
-                    <Kbd>{product.chord.replace("⌘", mod)}</Kbd>
-                  )}
-                </span>
-              </Link>
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {here && (
+            <motion.span
+              layoutId={thumbId}
+              aria-hidden="true"
+              transition={thumbTransition}
+              className="product-switch-thumb absolute inset-0"
+              style={{ borderRadius: 999 }}
+            />
+          )}
+          {locked && <Lock aria-hidden="true" className="relative size-3" />}
+          <span className="relative">{product.label}</span>
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {locked ? `Upgrade to ${PLANS[product.minPlan].name}` : here ? product.label : `Switch to ${product.label}`}
+        {!locked && <Kbd className="ml-1.5">{chord}</Kbd>}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
