@@ -12,10 +12,6 @@ import { ChoiceMenu } from "@/components/settings/choice-menu";
 import { useSaveStates } from "@/components/settings/save-status";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
-import { SaveStatus } from "@/components/settings/save-status";
-import { CustomizeSection, customizeEnterClass, customizeFieldClass } from "@/components/customize/customize-section";
-import { staggerDelay } from "@/lib/motion";
-import { cn } from "@/lib/utils";
 import { PERSONALITIES, DEFAULT_PERSONALITY, isPersonalityId } from "@/lib/personalities";
 import {
   CHARACTERISTICS,
@@ -146,167 +142,17 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
     return () => flush.current();
   }, []);
 
-  if (variant === "page") {
-    const words = instructions.trim() ? instructions.trim().split(/\s+/).length : 0;
-    return (
-      <div className="space-y-12">
-        <CustomizeSection
-          title="About you"
-          meta="Every chat reads this"
-          controls={
-            <>
-              <SaveStatus state={saves.status("name")} />
-              <SaveStatus state={saves.status("customInstructions")} />
-            </>
-          }
-        >
-          <label htmlFor="personal-name" className="mt-2 block text-label text-muted-foreground">
-            {`What ${PRODUCT_NAME} calls you`}
-          </label>
-          <Input
-            id="personal-name"
-            value={name}
-            maxLength={80}
-            placeholder="Your name"
-            autoComplete="given-name"
-            onChange={(e) => setName(e.target.value)}
-            onBlur={saveName}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
-            }}
-            className={cn("mt-2 h-9 max-w-sm coarse:h-11", customizeFieldClass)}
-          />
-
-          <div className="mt-6 flex items-baseline justify-between gap-3">
-            <label htmlFor="custom-instructions" className="text-label text-muted-foreground">
-              Custom instructions
-            </label>
-            <span className="text-caption tabular-nums text-muted-foreground">
-              {words === 1 ? "1 word" : `${words} words`}
-            </span>
-          </div>
-          <Textarea
-            id="custom-instructions"
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            onBlur={saveInstructions}
-            placeholder="For example: I’m a product manager. Keep answers short and use bullet points."
-            aria-describedby="custom-instructions-hint"
-            className={cn("mt-2 min-h-56 rounded-card px-4 py-4 text-body leading-relaxed", customizeFieldClass)}
-          />
-          <p id="custom-instructions-hint" className="mt-2 max-w-prose text-caption text-muted-foreground">
-            {`${PRODUCT_NAME} keeps these in mind in every conversation: who you are, what you work on, how you like answers.`}
-          </p>
-        </CustomizeSection>
-
-        <CustomizeSection
-          title="Responses"
-          meta="Your instructions come first"
-          controls={<SaveStatus state={saves.status("personality")} />}
-        >
-          <div className="@container">
-            <div role="radiogroup" aria-label="Personality" className="grid gap-2 @[34rem]:grid-cols-2 @[52rem]:grid-cols-3">
-              {PERSONALITIES.map((p, index) => {
-                const on = p.id === activePersonality;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={on}
-                    onClick={() => {
-                      if (on) return;
-                      void saves.track("personality", () => save({ personality: p.id }));
-                    }}
-                    style={staggerDelay(index, "tight")}
-                    className={cn(
-                      customizeEnterClass,
-                      // A quiet card: hairline at rest, a firmer edge and a one
-                      // pixel lift under the pointer, the selected one on the key
-                      // tone with the brightest edge. No serif inside: the page
-                      // title is the only display type here.
-                      "relative flex min-h-24 flex-col items-start rounded-card border p-4 text-left transition-[border-color,background-color,transform] duration-fast ease-out-soft hover:-translate-y-px active:scale-[0.99] motion-reduce:transition-[border-color,background-color] motion-reduce:hover:translate-y-0",
-                      on
-                        ? "surface-key border-foreground/25"
-                        : "border-foreground/[0.08] hover:border-foreground/[0.14] hover:bg-accent/40"
-                    )}
-                  >
-                    <span className="flex w-full items-center justify-between gap-2">
-                      <span className="text-ui font-medium text-foreground">{p.label}</span>
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          "grid size-4 place-items-center rounded-full border transition-colors duration-fast",
-                          on ? "border-foreground bg-foreground" : "border-foreground/50"
-                        )}
-                      >
-                        <span className={cn("size-1.5 rounded-full bg-background transition-transform duration-base ease-out-soft", on ? "scale-100" : "scale-0")} />
-                      </span>
-                    </span>
-                    <span className="mt-1.5 text-ui text-muted-foreground">{p.description}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {toneOn && (
-          <div className="mt-6 border-t border-foreground/[0.06] pt-6">
-            <p className="text-ui font-medium text-foreground">Characteristics</p>
-            <p className="text-ui text-muted-foreground">Tune the personality’s tone. Default leaves it as it is.</p>
-            <div className="mt-4 space-y-3">
-              {CHARACTERISTICS.map((c) => (
-                <div key={c.key} className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-ui text-foreground">{c.label}</p>
-                    <p className="text-caption text-muted-foreground">{c.description}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <SaveStatus state={saves.status(c.key)} />
-                    <SegmentedControl
-                      ariaLabel={c.label}
-                      size="sm"
-                      value={characteristics[c.key]}
-                      onChange={(level) => saveCharacteristic(c.key, level)}
-                      options={LEVEL_OPTIONS}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          )}
-
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-foreground/[0.06] pt-6">
-            <div>
-              <p className="text-ui font-medium text-foreground">Response language</p>
-              <p className="text-ui text-muted-foreground">{`The language ${PRODUCT_NAME} replies in.`}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <SaveStatus state={saves.status("responseLanguage")} />
-              <Select
-                value={settings.responseLanguage}
-                onValueChange={(responseLanguage) => void saves.track("responseLanguage", () => save({ responseLanguage }))}
-              >
-                <SelectTrigger aria-label="Response language" className="w-52">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {languages.map((l) => (
-                    <SelectItem key={l.value} value={l.value}>
-                      {l.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CustomizeSection>
-      </div>
-    );
-  }
-
-  return (
+  /*
+   * ONE DRAWING FOR BOTH PLACES (owner, 17 Nov 2026: "rework memory,
+   * instructions and all those pages"). The Customize page drew these same
+   * settings a second way: sections with a mono side-note, a word counter, and
+   * six bordered radio cards with a lift under the pointer. It now draws the
+   * Settings pane's groups (rows on hairlines, a title and one sentence per
+   * group, the personality as one menu with its description under the label),
+   * inside the page's container, so a setting looks the same wherever it is
+   * changed. The page keeps a taller field for the instructions.
+   */
+  const body = (
     <>
       <SettingsGroup>
         <SettingRow
@@ -341,7 +187,7 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
             onChange={(e) => setInstructions(e.target.value)}
             onBlur={saveInstructions}
             placeholder="For example: I’m a product manager. Keep answers short and use bullet points."
-            className="min-h-32"
+            className={variant === "page" ? "min-h-48" : "min-h-32"}
             aria-label="Custom instructions"
           />
         </SettingBlock>
@@ -417,4 +263,5 @@ export function PersonalizationSection({ variant = "settings" }: { variant?: "se
       )}
     </>
   );
+  return variant === "page" ? <div className="@container/pane">{body}</div> : body;
 }

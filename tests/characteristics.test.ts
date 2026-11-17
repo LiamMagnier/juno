@@ -176,11 +176,12 @@ test("the settings page draws one Less / Default / More control per characterist
   const page = source("src/components/settings/sections/personalization.tsx");
   assert.match(page, /import \{ SegmentedControl, type SegmentedOption \} from "@\/components\/ui\/segmented-control"/);
   assert.match(page, /\{ value: "less", label: "Less" \},\s*\{ value: "default", label: "Default" \},\s*\{ value: "more", label: "More" \}/);
-  // Both the Settings pane and the Customize page render the list, each only
-  // while the server has the characteristics on (TONE_CHARACTERISTICS_ENABLED).
-  assert.equal(page.match(/CHARACTERISTICS\.map\(\(c\) =>/g)?.length, 2);
+  // The Settings pane and the Customize page render one shared list (the page
+  // draws the pane's groups, owner 17 Nov 2026), only while the server has the
+  // characteristics on (TONE_CHARACTERISTICS_ENABLED).
+  assert.equal(page.match(/CHARACTERISTICS\.map\(\(c\) =>/g)?.length, 1);
   assert.match(page, /const toneOn = features\.toneCharacteristics === true;/);
-  assert.equal(page.match(/\{toneOn && \(/g)?.length, 2);
+  assert.equal(page.match(/\{toneOn && \(/g)?.length, 1);
   assert.match(source("src/lib/app-data.ts"), /toneCharacteristics: isToneCharacteristicsEnabled\(\),/);
   // One field per write, tracked under its own key.
   assert.match(page, /saves\.track\(key, \(\) => save\(patch\)\)/);

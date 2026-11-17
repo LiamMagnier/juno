@@ -179,12 +179,17 @@ export function SkillsLibraryView({
         backdrop
         heading="Skills"
         lede={`Instructions ${PRODUCT_NAME} follows for a specific job. Type / in chat to use one.`}
+        // One way to add on screen: while there are no skills, the empty state
+        // carries Teach, Import and Write (as Routines, Memory and Projects
+        // do); the header's Add returns with the first skill.
         actions={
-          <AddSkillMenu
-            onImport={() => actions.onImport()}
-            onWrite={actions.onWrite}
-            onCreateWithJuno={actions.onCreateWithJuno}
-          />
+          library !== null && !hasAny ? undefined : (
+            <AddSkillMenu
+              onImport={() => actions.onImport()}
+              onWrite={actions.onWrite}
+              onCreateWithJuno={actions.onCreateWithJuno}
+            />
+          )
         }
         className={customizeHeaderClass}
       />

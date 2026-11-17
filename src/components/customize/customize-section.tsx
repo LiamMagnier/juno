@@ -5,13 +5,13 @@ import { fieldSurfaceClass } from "@/components/ui/field-recipe";
 /*
  * The pieces every Customize tab (Apps, Skills, Routines, Instructions) is
  * built from, so the four read as one place, and as the same place as
- * Projects and Memory: the shared page header, sections titled in the serif
- * with their count in mono, and lists of rows on hairlines.
+ * Projects and Memory: the shared page header, sections titled the way the
+ * Settings groups are (`body` 15/500, a muted count beside), and lists of rows
+ * on hairlines.
  *
- * Still plain. A section is a serif title at the tile-name rung (22px, the
- * size a project's name and a project page's "Folders" and "Chats" use), an
- * optional count or note beside it in mono, an optional control on the right,
- * and its content below: no margin column, no display serif, no figures.
+ * Still plain. A section is a title, an optional count or note beside it,
+ * an optional control on the right, and its content below: no margin column,
+ * no display serif, no figures.
  */
 
 /**
@@ -60,8 +60,12 @@ export function CustomizeSection({
     <section aria-labelledby={headingId} id={id} className={cn("min-w-0", className)}>
       <div className="mb-4 flex min-h-6 items-center justify-between gap-3">
         <h2 id={headingId} className="flex min-w-0 items-baseline gap-2 text-foreground">
-          <span className="customize-title truncate">{title}</span>
-          {meta != null && <span className="ed-annot shrink-0">{meta}</span>}
+          {/* The Settings groups' title (setting-row.tsx, SettingsGroup:
+              `body` 15/500), so a section reads the same on every Customize
+              tab and in Settings; its count in the same face, muted, not a
+              mono side-note (owner, 17 Nov 2026). */}
+          <span className="truncate text-body font-medium">{title}</span>
+          {meta != null && <span className="shrink-0 text-body font-normal tabular-nums text-muted-foreground">{meta}</span>}
         </h2>
         {controls && <div className="flex shrink-0 items-center gap-2">{controls}</div>}
       </div>
