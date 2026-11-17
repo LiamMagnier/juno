@@ -1403,23 +1403,23 @@ enum ModelPickerWebFixtures {
             price: JunoModelPrice(inputPerMillion: 0.95, outputPerMillion: 4)
         ),
         JunoModelDescriptor(
-            id: "google:gemini-4-hydrogen",
+            id: "google:gemini-4-carbon",
             providerID: "google",
             providerName: "Google · Gemini",
-            displayName: "Gemini 4 Hydrogen",
-            summary: "Google's fast multimodal Gemini 4 model, with a 1M context window and adjustable reasoning.",
+            displayName: "Gemini 4 Carbon",
+            summary: "Google's Gemini 4 model for complex multimodal work with a 1M context window.",
             modality: .chat,
             isLegacy: false,
-            released: "2026-11",
+            released: "2026-10",
             contextWindowTokens: 1048576,
-            speedGrade: 8,
-            intelligenceGrade: 9,
+            speedGrade: 6,
+            intelligenceGrade: 10,
             capabilities: [.reasoning, .vision, .search, .tools],
-            thinking: JunoThinkingLadder(stops: [.init(id: "low", label: "Low", accessibilityLabel: "Low"), .init(id: "medium", label: "Medium", accessibilityLabel: "Medium"), .init(id: "high", label: "High", accessibilityLabel: "High"), .init(id: "xhigh", label: "Extra high", accessibilityLabel: "Extra high")], modelName: "Gemini 4 Hydrogen", fastModeRateMultiplier: nil, defaultStopID: "high"),
+            thinking: JunoThinkingLadder(stops: [.init(id: "low", label: "Low", accessibilityLabel: "Low"), .init(id: "medium", label: "Medium", accessibilityLabel: "Medium"), .init(id: "high", label: "High", accessibilityLabel: "High")], modelName: "Gemini 4 Carbon", fastModeRateMultiplier: nil, defaultStopID: "medium"),
             unavailabilityReason: nil,
             deprecationNote: nil,
             retiresOn: nil,
-            price: JunoModelPrice(inputPerMillion: 1.5, outputPerMillion: 7.5)
+            price: JunoModelPrice(inputPerMillion: 2, outputPerMillion: 10)
         ),
         JunoModelDescriptor(
             id: "google:gemini-4-argon",
@@ -1441,23 +1441,23 @@ enum ModelPickerWebFixtures {
             price: JunoModelPrice(inputPerMillion: 2, outputPerMillion: 10)
         ),
         JunoModelDescriptor(
-            id: "google:gemini-4-carbon",
+            id: "google:gemini-4-hydrogen",
             providerID: "google",
             providerName: "Google · Gemini",
-            displayName: "Gemini 4 Carbon",
-            summary: "Google's Gemini 4 model for complex multimodal work with a 1M context window.",
+            displayName: "Gemini 4 Hydrogen",
+            summary: "Google's fast multimodal Gemini 4 model, with a 1M context window and adjustable reasoning.",
             modality: .chat,
             isLegacy: false,
-            released: "2026-10",
+            released: "2026-11",
             contextWindowTokens: 1048576,
-            speedGrade: 6,
-            intelligenceGrade: 10,
+            speedGrade: 8,
+            intelligenceGrade: 9,
             capabilities: [.reasoning, .vision, .search, .tools],
-            thinking: JunoThinkingLadder(stops: [.init(id: "low", label: "Low", accessibilityLabel: "Low"), .init(id: "medium", label: "Medium", accessibilityLabel: "Medium"), .init(id: "high", label: "High", accessibilityLabel: "High")], modelName: "Gemini 4 Carbon", fastModeRateMultiplier: nil, defaultStopID: "medium"),
+            thinking: JunoThinkingLadder(stops: [.init(id: "low", label: "Low", accessibilityLabel: "Low"), .init(id: "medium", label: "Medium", accessibilityLabel: "Medium"), .init(id: "high", label: "High", accessibilityLabel: "High"), .init(id: "xhigh", label: "Extra high", accessibilityLabel: "Extra high")], modelName: "Gemini 4 Hydrogen", fastModeRateMultiplier: nil, defaultStopID: "high"),
             unavailabilityReason: nil,
             deprecationNote: nil,
             retiresOn: nil,
-            price: JunoModelPrice(inputPerMillion: 2, outputPerMillion: 10)
+            price: JunoModelPrice(inputPerMillion: 1.5, outputPerMillion: 7.5)
         ),
         JunoModelDescriptor(
             id: "google:gemini-3.8-flash",
