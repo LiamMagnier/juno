@@ -15,55 +15,36 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
- * The page's small print, and the one irreversible thing it can do.
+ * The page's small print: what never reaches memory, and where to change it.
  *
- * The privacy strip this replaces carried a second on/off switch, three
- * buttons and a paragraph in a filled box. The switch is the header's now; the
- * buttons are text links; the paragraph is the two sentences a reader needs
- * about what never reaches memory, set as a caption under everything else.
+ * It used to end in a row of six text links (settings, topics, import,
+ * export, reset, and a clear for the project on screen), every one of them
+ * also in the header's menu, and the separators doubled up when the project
+ * link was absent ("Export · · Reset memory…"). The rare actions live in the
+ * menu now; the footer keeps the two that belong to its sentence.
  */
 
 const linkClass =
-  "hit-24 rounded-xs font-medium text-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:underline disabled:pointer-events-none disabled:text-muted-foreground";
+  "hit-24 rounded-xs font-medium text-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:underline";
 
 export function MemoryFooter({
-  paused,
-  empty,
-  onImport,
-  onExport,
-  onReset,
   onSettings,
   onTopics,
-  project,
-  onClearProject,
 }: {
-  paused: boolean;
-  /** Nothing is remembered anywhere: export and reset have nothing to act on. */
-  empty: boolean;
-  onImport: () => void;
-  onExport: () => void;
-  onReset: () => void;
   onSettings: () => void;
-  /** Opens "Topics not remembered" — the person's own exclusions. */
+  /** Opens "Topics not remembered": the person's own exclusions. */
   onTopics?: () => void;
-  /** The project the page is showing, when it is showing one. */
-  project?: { id: string; name: string } | null;
-  onClearProject?: () => void;
 }) {
   return (
-    <footer className="mt-10 border-t border-border pt-4 text-caption text-muted-foreground">
-      <p className="flex items-start gap-2">
-        <ShieldCheck className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+    <footer className="mt-12 border-t border-[var(--mem-hair)] pt-4 text-ui text-muted-foreground">
+      <p className="flex max-w-prose items-start gap-2">
+        <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <span>
           Incognito chats are never remembered. Sensitive subjects like health or religion are only learned if you
           allow them, and topics you exclude are never learned at all.
         </span>
       </p>
-      <nav aria-label="Your memory data" className="ml-[1.375rem] mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1">
-        <button type="button" onClick={onSettings} className={linkClass}>
-          Memory settings
-        </button>
-        <span aria-hidden="true">·</span>
+      <nav aria-label="Memory privacy" className="ml-6 mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
         {onTopics ? (
           <>
             <button type="button" onClick={onTopics} className={linkClass} data-excluded-topics-open="">
@@ -72,26 +53,8 @@ export function MemoryFooter({
             <span aria-hidden="true">·</span>
           </>
         ) : null}
-        <button type="button" onClick={onImport} disabled={paused} className={linkClass}>
-          Import
-        </button>
-        <span aria-hidden="true">·</span>
-        <button type="button" onClick={onExport} disabled={empty} className={linkClass}>
-          Export
-        </button>
-        <span aria-hidden="true">·</span>
-        {project && onClearProject ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <button type="button" onClick={onClearProject} className={linkClass} data-clear-project="">
-              <span>Clear</span> <span translate="no">{project.name}</span>
-              <span>…</span>
-            </button>
-          </>
-        ) : null}
-        <span aria-hidden="true">·</span>
-        <button type="button" onClick={onReset} disabled={empty} className={linkClass}>
-          Reset memory…
+        <button type="button" onClick={onSettings} className={linkClass}>
+          Memory settings
         </button>
       </nav>
     </footer>

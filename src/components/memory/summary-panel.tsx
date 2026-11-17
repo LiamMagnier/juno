@@ -14,22 +14,23 @@ import { relativeTime } from "@/components/memory/memory-time";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
- * The summary: the one raised surface on the page, because it is the one
- * thing on it written to be read top to bottom.
+ * The summary: what Alevr makes of everything it remembers, in a few
+ * paragraphs. The one block on the page written to be read top to bottom,
+ * so it sits first, on a flat surface with a hairline edge (no shadow: it is
+ * in the page's flow, not floating over it).
  *
- * NO SCROLLER INSIDE THE PAGE. The summary used to sit in a 34vh inner scroll
- * area with a fade mask, which is a scrolling region inside a scrolling page,
- * and an Expand button opened the same text in a dialog because the box was
- * too small to read it in. Now it shows its opening sections and unfolds the
- * rest in place, under the same fade that says there is more.
+ * It used to be set as a document of its own: a 13rem margin column naming
+ * it, a 21px lead paragraph, and a two-column body. Read beside the list, the
+ * page had two typographic systems. Now its prose is set at the page's body
+ * size, the opening section in full ink and the rest muted, and it shows its
+ * first sections and unfolds the rest in place (never a scroller inside the
+ * page).
  *
- * The prompt bar is the panel's foot (`children`): changing memory in words
- * happens directly under the words being changed. It is inset 6px from the
- * panel's edge (p-1.5), which makes its 10px corners concentric with the
- * panel's 16px ones.
+ * The prompt bar that changes memory in words follows it (`children`), so the
+ * prose and the way to correct it are read together.
  */
 
-/** Roughly how much prose shows before "Read the whole summary": about six lines of the reading column. */
+/** Roughly how much prose shows before "Read the whole summary". */
 const PREVIEW_CHARS = 520;
 
 interface SummaryPanelProps {
@@ -46,7 +47,16 @@ interface SummaryPanelProps {
   children?: React.ReactNode;
 }
 
-export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpenActivity, reviewCount = 0, onOpenReview, children }: SummaryPanelProps) {
+export function SummaryPanel({
+  summary,
+  project,
+  consolidating,
+  onRebuild,
+  onOpenActivity,
+  reviewCount = 0,
+  onOpenReview,
+  children,
+}: SummaryPanelProps) {
   const sections = React.useMemo(
     () => (summary ? parseSummarySections(summary.content, project ? "About this project" : "About you") : []),
     [summary, project]
@@ -69,25 +79,45 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
   }, [sections]);
   const preview = sections.slice(0, previewCount);
   const rest = sections.slice(previewCount);
-
   const hasSummary = !!summary && sections.length > 0;
 
   return (
-    // Set like the list under it: a 13rem margin column that names the block
-    // and holds its controls, and the reading column. The two blocks share one
-    // grid line, so the page reads as one document rather than stacked boxes.
-    <section aria-labelledby="memory-summary-heading" className="@container/summary">
-      <div className="grid gap-x-14 gap-y-5 @[50rem]/summary:grid-cols-[13rem_minmax(0,1fr)]">
-        <div className="min-w-0">
-          <h2 id="memory-summary-heading" className="mem-h2 text-foreground">
-            {project ? "This project" : "Summary"}
+    <section aria-labelledby="memory-summary-heading">
+      <div className="mem-surface rounded-panel px-5 pb-4 pt-4 @[40rem]/page:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <h2 id="memory-summary-heading" className="flex min-w-0 items-baseline gap-2 text-foreground">
+            <span className="mem-title">{project ? "Project summary" : "Summary"}</span>
+            {hasSummary && (
+              <span className="mem-count text-ui">
+                <span>Updated</span> <span>{relativeTime(summary.updatedAt)}</span>
+              </span>
+            )}
           </h2>
-          {hasSummary && (
-            <p className="mem-annot mt-2">
-              <span>Updated</span> <span>{relativeTime(summary.updatedAt)}</span>
-            </p>
-          )}
-          <div className="-ml-2.5 mt-3 flex flex-wrap gap-0.5 @[50rem]/summary:flex-col @[50rem]/summary:items-start">
+          {/* Ghost buttons, pulled out by their own padding so their words
+              line up with the title: left when they wrap under it on a
+              phone, right beside it on a wider page. */}
+          <div className="-ml-2.5 flex flex-wrap items-center gap-0.5 @[40rem]/page:-mr-2.5 @[40rem]/page:ml-0">
+            {reviewCount > 0 && onOpenReview ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" onClick={onOpenReview} className="gap-1.5 px-2.5 text-muted-foreground">
+                    <ListChecks className="size-4" aria-hidden="true" />
+                    <span>Review</span>
+                    <span className="tabular-nums text-foreground">{reviewCount > 99 ? "99+" : reviewCount}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{`Check what ${PRODUCT_NAME} is unsure of, or hasn’t heard in months`}</TooltipContent>
+              </Tooltip>
+            ) : null}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="sm" onClick={onOpenActivity} className="gap-1.5 px-2.5 text-muted-foreground">
+                  <History className="size-4" aria-hidden="true" />
+                  <span>Activity</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Your edits, and a recap of what changed</TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -95,74 +125,48 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
                   size="sm"
                   loading={consolidating}
                   onClick={onRebuild}
-                  className="gap-2 px-2.5 text-muted-foreground"
+                  className="gap-1.5 px-2.5 text-muted-foreground"
                 >
-                  <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+                  <ActionIcons.refresh className="size-4" aria-hidden="true" />
                   <span>{hasSummary ? "Rebuild" : "Write summary"}</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{`Rewrite it from everything ${PRODUCT_NAME} remembers`}</TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" onClick={onOpenActivity} className="gap-2 px-2.5 text-muted-foreground">
-                  <History className="size-3.5" aria-hidden="true" />
-                  <span>Activity</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Your edits and a recap of what changed</TooltipContent>
-            </Tooltip>
-            {reviewCount > 0 && onOpenReview ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="sm" onClick={onOpenReview} className="gap-2 px-2.5 text-muted-foreground">
-                    <ListChecks className="size-3.5" aria-hidden="true" />
-                    <span>Review</span>
-                    <span className="grid h-[1.125rem] min-w-[1.125rem] place-items-center rounded-full bg-primary px-1 text-[0.6875rem] font-semibold tabular-nums leading-none text-primary-foreground">
-                      {reviewCount > 99 ? "99+" : reviewCount}
-                    </span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{`Check what ${PRODUCT_NAME} is unsure of, or hasn’t heard in months`}</TooltipContent>
-              </Tooltip>
-            ) : null}
           </div>
         </div>
 
-        <div className="min-w-0">
+        <div className="mt-3">
           {hasSummary ? (
             <div key={`${project?.id ?? "account"}:${summary.updatedAt}`} className="motion-safe:animate-fade-in">
-              <Lead section={sections[0]} />
-              {preview.length > 1 && (
-                <div className="relative mt-8">
-                  <Sections sections={preview.slice(1)} />
-                  {rest.length > 0 && (
-                    <div
-                      aria-hidden="true"
-                      className={cn(
-                        "pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent transition-opacity duration-base ease-out-soft",
-                        expanded && "opacity-0"
-                      )}
-                    />
-                  )}
-                </div>
-              )}
+              <div className="relative">
+                <Sections sections={preview} leadFirst />
+                {rest.length > 0 && (
+                  <div
+                    aria-hidden="true"
+                    className={cn(
+                      "pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background to-transparent transition-opacity duration-base ease-out-soft",
+                      expanded && "opacity-0"
+                    )}
+                  />
+                )}
+              </div>
               {rest.length > 0 && (
                 <>
-                  <Collapse open={expanded} innerClassName="pt-6">
+                  <Collapse open={expanded} innerClassName="pt-4">
                     <Sections sections={rest} />
                   </Collapse>
                   <button
                     type="button"
                     onClick={() => setExpanded((open) => !open)}
                     aria-expanded={expanded}
-                    className="relative -mx-3 mt-2 inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-ui font-medium hit-44 text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground"
+                    className="relative -mx-2 mt-2 inline-flex h-8 items-center gap-1.5 rounded-control px-2 text-ui font-medium text-muted-foreground hit-44 transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
                   >
                     {expanded ? <span>Show less</span> : <span>Read the whole summary</span>}
                     <ChevronDown
                       aria-hidden="true"
                       className={cn(
-                        "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                        "size-4 transition-transform duration-base ease-in-out motion-reduce:transition-none",
                         expanded && "rotate-180"
                       )}
                     />
@@ -171,46 +175,38 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
               )}
             </div>
           ) : consolidating ? (
-            <p role="status" className="flex items-center gap-2.5 text-body text-muted-foreground">
+            <p role="status" className="flex items-center gap-2.5 pb-1 text-body text-muted-foreground">
               <GalaxyMark phase="working" size={16} />
               {project ? <span>Reading this project’s chats…</span> : <span>Reading your chats and projects…</span>}
             </p>
           ) : project ? (
-            <p className="mem-lead max-w-[36rem] text-muted-foreground">
+            <p className="max-w-prose pb-1 text-body text-muted-foreground">
               {`${PRODUCT_NAME} writes this from the chats in this project as you go. Only those chats read it, and they read nothing else ${PRODUCT_NAME} remembers about you.`}
             </p>
           ) : (
-            <p className="mem-lead max-w-[36rem] text-muted-foreground">
-              {`${PRODUCT_NAME} writes a short summary of what it knows once it has a few things to go on. Everything it remembers is listed below either way.`}
+            <p className="max-w-prose pb-1 text-body text-muted-foreground">
+              {`${PRODUCT_NAME} writes a short summary once it has a few things to go on. Everything it remembers is listed below either way.`}
             </p>
           )}
-
-          {children && <div className="mt-8">{children}</div>}
         </div>
       </div>
+
+      {children && <div className="mt-3">{children}</div>}
     </section>
   );
 }
 
-/** The opening section, set as the page's lead: the one paragraph meant to be read first. */
-function Lead({ section }: { section: SummarySection }) {
+/** The opening section is the one meant to be read first, so it alone is in full ink. */
+function Sections({ sections, leadFirst = false }: { sections: SummarySection[]; leadFirst?: boolean }) {
   return (
-    <section>
-      <h3 className="mem-annot">{section.title}</h3>
-      <Markdown content={section.body} className="mem-lead mt-2 max-w-[40rem] text-foreground [&_p]:m-0" />
-    </section>
-  );
-}
-
-function Sections({ sections }: { sections: SummarySection[] }) {
-  // Two columns once the panel is wide enough to set two readable measures:
-  // the summary reads like a profile, not one 900px line.
-  return (
-    <div className="gap-10 @[40rem]/summary:columns-2 [&>section:not(:first-child)]:mt-5">
-      {sections.map((section) => (
-        <section key={section.title} className="break-inside-avoid">
-          <h3 className="text-ui font-medium text-foreground">{section.title}</h3>
-          <Markdown content={section.body} className="mt-1.5 text-body text-muted-foreground" />
+    <div className="max-w-prose space-y-4">
+      {sections.map((section, index) => (
+        <section key={section.title}>
+          <h3 className="text-ui font-medium text-muted-foreground">{section.title}</h3>
+          <Markdown
+            content={section.body}
+            className={cn("mt-1 text-body [&_p]:m-0", leadFirst && index === 0 ? "text-foreground" : "text-muted-foreground")}
+          />
         </section>
       ))}
     </div>

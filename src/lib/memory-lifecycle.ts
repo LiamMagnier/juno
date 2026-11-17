@@ -1951,7 +1951,7 @@ export interface MemoryUpdateActivity {
    * receipt survives a reload (ClientMemoryWrite in src/types/chat.ts).
    */
   memoryWrite?: {
-    saved: Array<{ id: string; content: string; category?: string | null }>;
+    saved: Array<{ id: string; content: string; category?: string | null; reinstated?: true }>;
     forgotten?: string[];
   };
 }
@@ -1971,7 +1971,7 @@ export function memoryUpdateActivity(
   outcome: { created: number; superseded: number },
   newFacts: readonly string[],
   /** The believed rows themselves, when the caller has them: what Undo and Edit act on. */
-  saved: readonly { id: string; content: string; category?: string | null }[] = []
+  saved: readonly { id: string; content: string; category?: string | null; reinstated?: boolean }[] = []
 ): MemoryUpdateActivity | null {
   if (outcome.created <= 0) return null;
   const parts: string[] = [];
@@ -1994,7 +1994,17 @@ export function memoryUpdateActivity(
     // The first saved row's own place on the memory page, when there is one.
     url: saved[0] ? `/memory?entry=${encodeURIComponent(saved[0].id)}` : "/memory",
     ...(saved.length
-      ? { memoryWrite: { saved: saved.map((row) => ({ id: row.id, content: row.content, category: row.category ?? null })) } }
+      ? {
+          memoryWrite: {
+            saved: saved.map((row) => ({
+              id: row.id,
+              content: row.content,
+              category: row.category ?? null,
+              // Believed again rather than new: its Undo returns it to history.
+              ...(row.reinstated ? { reinstated: true as const } : {}),
+            })),
+          },
+        }
       : {}),
   };
 }

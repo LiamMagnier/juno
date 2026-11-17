@@ -1,38 +1,48 @@
 "use client";
 
 import * as React from "react";
-import { MessagesSquare, Upload } from "@/components/ui/icons";
-import { ComposerIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
+import { EmptyState } from "@/components/ui/empty-state";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
- * An account with nothing remembered yet.
+ * An account with nothing remembered yet: the page's empty state, in the
+ * shape every app page's empty list takes (EmptyState, as Routines and
+ * Skills draw it), carrying the page's primary action, so the header does
+ * not repeat it.
  *
- * It used to get the whole page anyway: a stats strip reading 0 and 0, an
- * empty summary card, an empty edits card, a toolbar over "No topics yet" and
- * the privacy strip. Six surfaces saying there was nothing, and none of them
- * saying how to get something. Now it is one panel in the place the summary
- * will take, with the three ways memory starts: tell Juno something, bring
- * what another assistant knows, or let Juno read the chats it has not read.
+ * It offers the three ways memory starts, most direct first:
  *
- * "Tell Juno something" unfolds the same prompt bar the full page has, in the
- * same panel, so the first instruction and every later one look alike.
+ *   Tell Alevr something   one sentence, kept exactly as typed;
+ *   Learn from past chats  read the chats already here, when there are some
+ *                          unread (it used to hide in the header's menu,
+ *                          where a new account never looks);
+ *   Import                 bring over what ChatGPT or Claude knows.
+ *
+ * "Tell Alevr something" unfolds the same field the full page's Add memory
+ * opens (`children`), in place, so the first memory and every later one are
+ * added the same way. A change drafted in words and still waiting (rare on an
+ * empty page) shows here too (`pending`), so it is never stranded.
  */
+
+const TITLE = `${PRODUCT_NAME} hasn’t remembered anything yet`;
+const DESCRIPTION = `As you chat, ${PRODUCT_NAME} keeps the details worth carrying over, like your work, your preferences and how you like answers. Each one shows up here, where you can correct it or forget it.`;
 
 interface MemoryWelcomeProps {
   paused: boolean;
-  /** Unread chats Juno could learn from; the third action only exists when there are some. */
+  /** Unread chats Alevr could learn from; the action only exists when there are some. */
   unread: number | null;
   learning: boolean;
   onImport: () => void;
   onLearn: () => void;
-  /** Open the prompt dock (children) and focus it. Also true while a proposal waits. */
+  /** The add field is open (children). */
   composing: boolean;
   onCompose: () => void;
-  /** The prompt dock. */
+  /** The add field. */
   children: React.ReactNode;
+  /** A drafted change still waiting for a decision: the prompt dock, shown open. */
+  pending?: React.ReactNode;
 }
 
 export function MemoryWelcome({
@@ -44,49 +54,42 @@ export function MemoryWelcome({
   composing,
   onCompose,
   children,
+  pending,
 }: MemoryWelcomeProps) {
   const unreadCount = unread ?? 0;
   return (
-    <section aria-labelledby="memory-welcome-heading" className="surface-raised rounded-panel">
-      <div className="flex flex-col items-center px-6 pb-7 pt-10 text-center">
-        <span
-          aria-hidden="true"
-          className="grid size-12 place-items-center rounded-field border border-border bg-background text-muted-foreground"
-        >
-          <ComposerIcons.memory motion="none" className="size-6" />
-        </span>
-        <h2 id="memory-welcome-heading" className="mt-4 text-heading text-foreground">
-          {`${PRODUCT_NAME} hasn’t remembered anything yet`}
-        </h2>
-        <p className="mt-1.5 max-w-md text-balance text-body text-muted-foreground">
-          {`As you chat, ${PRODUCT_NAME} keeps the details worth carrying over, like your work, your preferences and how you like answers. You can also start it off yourself.`}
-        </p>
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-          <Button size="sm" onClick={onCompose} disabled={paused} aria-expanded={composing}>
-            {`Tell ${PRODUCT_NAME} something`}
-          </Button>
-          <Button size="sm" variant="outline" onClick={onImport} disabled={paused} className="gap-1.5">
-            <Upload className="size-3.5" aria-hidden="true" />
-            Import from ChatGPT or Claude
-          </Button>
-          {unreadCount > 0 && (
-            <Button size="sm" variant="outline" onClick={onLearn} disabled={paused} loading={learning} className="gap-1.5">
-              <MessagesSquare className="size-3.5" aria-hidden="true" />
-              {unreadCount === 1 ? (
-                <span>Learn from 1 past chat</span>
-              ) : (
-                <>
-                  <span>Learn from past chats</span>
-                  <span className="tabular-nums text-muted-foreground">{unreadCount}</span>
-                </>
-              )}
+    <section aria-label="Get started with memory" data-memory-welcome="">
+      <EmptyState
+        title={TITLE}
+        description={DESCRIPTION}
+        className="pb-8"
+        action={
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button onClick={onCompose} disabled={paused} aria-expanded={composing}>
+              {`Tell ${PRODUCT_NAME} something`}
             </Button>
-          )}
-        </div>
-      </div>
-      <Collapse open={composing} innerClassName="p-2 pt-0">
+            {unreadCount > 0 && (
+              <Button variant="outline" onClick={onLearn} disabled={paused} loading={learning}>
+                {unreadCount === 1 ? (
+                  <span>Learn from 1 past chat</span>
+                ) : (
+                  <>
+                    <span>Learn from past chats</span>
+                    <span className="tabular-nums text-muted-foreground">{unreadCount}</span>
+                  </>
+                )}
+              </Button>
+            )}
+            <Button variant="outline" onClick={onImport} disabled={paused}>
+              Import from ChatGPT or Claude
+            </Button>
+          </div>
+        }
+      />
+      <Collapse open={composing && !paused} innerClassName="mx-auto max-w-xl pb-8">
         {children}
       </Collapse>
+      {pending ? <div className="mx-auto max-w-xl pb-8">{pending}</div> : null}
     </section>
   );
 }

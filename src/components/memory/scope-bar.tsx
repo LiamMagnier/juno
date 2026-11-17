@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, ChevronDown } from "@/components/ui/icons";
+import { ChevronDown } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,7 +20,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * WHOSE MEMORY: the whole account, or one project.
  *
  * A chat filed in a project reads its memory in isolation: that project's
- * facts and its own summary, and nothing else Juno remembers. That is a real
+ * facts and its own summary, and nothing else Alevr remembers. That is a real
  * boundary with real consequences for what the model is shown, so the page can
  * show each side of it. The control only exists once there is a project to
  * narrow to; an account with no project memory never sees it.
@@ -106,14 +106,13 @@ export function ScopeBar({
       {selected.id && (
         // Keyed on the project so the line re-enters with the subject it
         // describes, rather than swapping its words in place.
-        <p key={selected.id} className="text-caption text-muted-foreground motion-safe:animate-fade-in">
+        <p key={selected.id} className="text-ui text-muted-foreground motion-safe:animate-fade-in">
           <span>{`Only chats in this project use these memories, and they use nothing else ${PRODUCT_NAME} remembers.`}</span>{" "}
           <Link
             href={`/projects/${encodeURIComponent(selected.id)}`}
-            className="inline-flex items-center gap-1 rounded-xs font-medium text-foreground underline-offset-2 hover:underline"
+            className="hit-24 rounded-xs font-medium text-foreground underline-offset-2 hover:underline"
           >
             Open project
-            <ArrowRight className="size-3" aria-hidden="true" />
           </Link>
         </p>
       )}

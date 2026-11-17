@@ -1,133 +1,61 @@
 /*
- * Memory, in the homepage's language (src/components/home/alv-base.css): the
- * construction's hairline orbits, Newsreader for the few things meant to be
- * read as a page, mono annotations for figures, and presence blue for the one
- * live object (the most recent thing Alevr learned). One theme family, the
- * app's radius ladder (row 8, card 12, panel 16, composer 22).
+ * Memory, in the app's plain page language (docs/design/direction-2026-11):
+ * graphite neutrals, the serif only on the page title, Inter for the rest,
+ * in-flow surfaces drawn with a hairline and no shadow, and motion only where
+ * something changed (a row arriving, an edit saving, a removal and its Undo).
+ *
+ * What used to live here (the constellation's orbits, the display figures,
+ * a staggered entrance for every section as it scrolled in) went with the
+ * hero it decorated. Entrances that only said "the page loaded" are gone;
+ * the shared page frame already rises once.
  */
 .mem {
-  --mem-line: hsl(var(--foreground) / 0.12);
   --mem-hair: hsl(var(--foreground) / 0.07);
-  --mem-presence-soft: hsl(var(--presence) / 0.1);
-  --mem-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 .dark .mem {
-  --mem-line: hsl(var(--foreground) / 0.14);
   --mem-hair: hsl(var(--foreground) / 0.08);
-  --mem-presence-soft: hsl(var(--presence) / 0.12);
 }
 
-/* Type */
-/* The page title, as every app page sets it (editorial.css, .app-page-title). */
-.mem-display {
-  font-family: var(--font-serif), Newsreader, serif;
-  font-weight: 400;
-  font-size: clamp(28px, 2.4vw, 32px);
-  line-height: 1.15;
-  letter-spacing: -0.01em;
-  font-optical-sizing: auto;
-}
-.mem-h2 {
+/* A section's title (Summary, Memories): the Customize tabs' section rung. */
+.mem-title {
   font-family: var(--font-sans), system-ui, sans-serif;
   font-weight: 600;
-  font-size: 24px;
-  line-height: 1.15;
-  letter-spacing: -0.018em;
-}
-.mem-h3 {
-  font-family: var(--font-sans), system-ui, sans-serif;
-  font-weight: 600;
-  font-size: 20px;
-  line-height: 1.2;
+  font-size: 17px;
+  line-height: 24px;
   letter-spacing: -0.012em;
 }
-.mem-lead {
+
+/* A group's name over its rows (About you, Your work): the ui rung, set heavier. */
+.mem-group {
   font-family: var(--font-sans), system-ui, sans-serif;
-  font-weight: 400;
-  font-size: 21px;
-  line-height: 1.45;
-  letter-spacing: -0.006em;
-  text-wrap: pretty;
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 20px;
+  letter-spacing: -0.003em;
 }
-.mem-figure {
-  font-family: var(--font-sans), system-ui, sans-serif;
-  font-weight: 400;
-  font-size: 30px;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums lining-nums;
-}
-.mem-figure-sm { font-size: 20px; letter-spacing: -0.012em; }
-.mem-annot {
-  font-size: 0.75rem;
-  line-height: 16px;
-  letter-spacing: 0.02em;
+
+/* Counts beside a name, in the interface face with even digits. */
+.mem-count {
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
+  font-weight: 400;
 }
 
-/* The constellation: orbits, spokes and the trajectory are the dot matrix
-   (DotRings, dot-construction.css) under the SVG's points and labels. */
-.mem-dots { --dots-pitch: 3.6px; --dots-strength: 0.74; }
-.dark .mem-dots { --dots-strength: 0.82; }
-.mem-node { fill: hsl(var(--foreground)); transition: transform var(--dur-slow) var(--mem-ease), fill var(--dur-base); transform-box: fill-box; transform-origin: center; }
-.mem-node-hit { fill: transparent; cursor: pointer; }
-.mem-node-ring { fill: none; stroke: hsl(var(--presence)); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.mem-node-live { fill: hsl(var(--presence)); }
-.mem-center { fill: hsl(var(--foreground)); }
-.mem-label {
-  fill: hsl(var(--muted-foreground));
-  font-size: 13px;
-  letter-spacing: 0.02em;
-  transition: fill var(--dur-base);
-}
-.mem-star:hover .mem-node,
-.mem-star:focus-visible .mem-node,
-.mem-star[data-active] .mem-node { transform: scale(1.45); }
-.mem-star:hover .mem-label,
-.mem-star:focus-visible .mem-label,
-.mem-star[data-active] .mem-label { fill: hsl(var(--foreground)); }
-.mem-star { outline: none; }
-.mem-star:focus-visible .mem-node-hit { stroke: hsl(var(--foreground)); stroke-width: 1; }
-
-/* Entrances. Everything here is drawn or set once; nothing loops except the
-   one live ring, which breathes slowly and rests under reduced motion. */
-@media (prefers-reduced-motion: no-preference) {
-  .mem-pop {
-    opacity: 0;
-    animation: mem-pop var(--dur-emphasis) var(--mem-ease) forwards;
-    animation-delay: calc(min(var(--i, 0), var(--stagger-max) - 1) * var(--stagger-tile) + var(--dur-emphasis));
-  }
-  .mem-breathe { animation: mem-breathe calc(var(--loop-beat) * 3) var(--ease-breathe) infinite; transform-box: fill-box; transform-origin: center; }
-  .mem-rise {
-    opacity: 0;
-    transform: translateY(14px);
-    animation: mem-rise var(--dur-emphasis) var(--mem-ease) forwards;
-    animation-delay: calc(min(var(--i, 0), var(--stagger-max) - 1) * var(--stagger-tile));
-  }
-  .mem-reveal { opacity: 0; transform: translateY(18px); transition: opacity var(--dur-emphasis) var(--mem-ease), transform var(--dur-emphasis) var(--mem-ease); }
-  .mem-reveal[data-on] { opacity: 1; transform: none; }
-}
-@keyframes mem-pop { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
-@keyframes mem-rise { to { opacity: 1; transform: none; } }
-@keyframes mem-breathe {
-  0%, 100% { opacity: 0.55; transform: scale(1); }
-  50% { opacity: 0.15; transform: scale(1.6); }
-}
-
+/* Learned in the last three days: real state, in presence ink. */
 .mem-new { color: hsl(var(--presence-ink)); }
 
-/* Rows enter in sequence the first time their section scrolls in; rows that
-   arrive later (Show all, an Undo) play the list's own unfold instead. */
-@media (prefers-reduced-motion: no-preference) {
-  .mem-reveal > ul > li { opacity: 0; transform: translateY(8px); }
-  .mem-reveal[data-on] > ul > li { animation: mem-rise var(--dur-emphasis) var(--mem-ease) forwards; }
-  .mem-reveal[data-on] > ul > li:nth-child(2) { animation-delay: var(--stagger-tile); }
-  .mem-reveal[data-on] > ul > li:nth-child(3) { animation-delay: calc(var(--stagger-tile) * 2); }
-  /* At most four items stagger (spec D17); the rest paint with the fourth. */
-  .mem-reveal[data-on] > ul > li:nth-child(n + 4) { animation-delay: calc(var(--stagger-tile) * 3); }
+/* An in-flow surface: a hairline edge and the page's own ground, no shadow. */
+.mem-surface {
+  border: 1px solid var(--mem-hair);
+  background: hsl(var(--background));
 }
 
-/* Rows */
-.mem-row-meta { opacity: 0.85; transition: opacity var(--dur-exit); }
-.group\/row:hover .mem-row-meta { opacity: 1; }
+/* The row's verbs (Edit, the menu) arrive with the pointer, keyboard focus
+   or an open menu; on a touch screen they are always there. */
+.mem-row-actions { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft); }
+.group\/row:hover .mem-row-actions,
+.group\/row:focus-within .mem-row-actions,
+.mem-row-actions:has([data-state="open"]) { opacity: 1; }
+@media (pointer: coarse) {
+  .mem-row-actions { opacity: 1; }
+}

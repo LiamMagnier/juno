@@ -12,7 +12,12 @@
  * that follows a flush) safe to wire to the same send.
  */
 
-export type RemovalKind = "forget" | "delete";
+/**
+ * forget: retire and block-list. delete: remove the row. replace: the person
+ * kept another memory over this one ("Needs a look"), which retires this one
+ * behind it.
+ */
+export type RemovalKind = "forget" | "delete" | "replace";
 
 export interface PendingRemoval<T extends { id: string }> {
   memory: T;

@@ -1,6 +1,6 @@
 import "server-only";
 import { getMemoryProfile } from "@/lib/memory";
-import { agentMemoryAccessOf, turnMayUseMemory } from "@/lib/memory-scope";
+import { agentGrantForTurn, turnMayUseMemory } from "@/lib/memory-scope";
 import { prisma } from "@/lib/prisma";
 import { workspacePermits, type WorkspaceConfig } from "@/lib/projects/workspace-config";
 import type { TurnSettings } from "./account";
@@ -51,13 +51,19 @@ export async function resolveMemory({
   // An agent's turn reads only what that agent's memory grant allows
   // (src/lib/memory-scope.ts): it is not the person, and does not inherit
   // every private memory just because its owner has them.
+  //
+  // A deleted agent is read too. Its thread lives on, and the lookup used to
+  // skip deleted agents, so a thread whose agent had "profile" or "none" got
+  // the account's full memory the moment the agent was deleted: deleting
+  // something widened what its chat could read. The thread keeps the grant
+  // its agent had (agentGrantForTurn).
   const memoryAgent = accountMemory && agentId
     ? await prisma.agent.findFirst({
-        where: { id: agentId, userId, deletedAt: null },
+        where: { id: agentId, userId },
         select: { id: true, memoryAccess: true },
       })
     : null;
-  const agentAccess = memoryAgent ? agentMemoryAccessOf(memoryAgent.memoryAccess) : null;
+  const agentAccess = agentGrantForTurn(accountMemory ? agentId : null, memoryAgent);
   // An agent granted "none" gets the private chat's treatment: no memory
   // instructions, and its memory and forget tags are ignored, since every
   // write downstream is gated on this one flag. A chat with memory off for

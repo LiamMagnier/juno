@@ -3,9 +3,10 @@ import { MemoryPageSkeleton } from "@/components/memory/memory-skeleton";
 import "@/components/memory/memory.css";
 
 /**
- * The page's own shape while its code loads: the hero and the two-column body,
- * from the same component the manager shows while its data loads, so the two
- * hand over without a jump (see MemoryPageSkeleton).
+ * The page's own shape while its code loads: the real header, then the
+ * summary's surface and the list's rows, from the same component the manager
+ * shows while its data loads, so the two hand over without a jump (see
+ * MemoryPageSkeleton).
  */
 export default function MemoryLoading() {
   return (

@@ -69,6 +69,9 @@ export function richMemories(): Memory[] {
     fact("Was born in Dublin and moved to Portugal in 2019", "identity", 64),
     fact("Has a dog called Miso", "identity", 90),
     fact("Prefers short answers that lead with the recommendation", "preferences", 1, { sourceRef: "edit", source: "MANUAL" }),
+    // Typed again a week later in other words: a pair the page asks about
+    // ("Needs a look"), since a typed fact is never merged on a guess.
+    fact("Prefers short answers", "preferences", 8, { sourceRef: "manual", source: "MANUAL" }),
     fact("Likes code examples in TypeScript rather than JavaScript", "preferences", 9, { lastVerifiedAt: ago(1), sourceMessageId: "msg-1" }),
     fact("Wants metric units and 24-hour times", "preferences", 6, { sourceRef: "manual", source: "MANUAL" }),
     fact("Dislikes bullet points for anything that reads better as prose", "preferences", 9),
@@ -324,6 +327,15 @@ function useFixtureMemory(initial: {
     deleteMemory: async (entry) => {
       await wait(300);
       setMemories((prev) => (prev ?? []).filter((m) => m.id !== entry.id));
+      return true;
+    },
+    replaceMemory: async (entry, kept) => {
+      await wait(300);
+      setMemories((prev) =>
+        (prev ?? []).map((m) =>
+          m.id === entry.id ? { ...m, status: "superseded", supersededById: kept.id, reason: `Merged: you kept “${kept.content}”, which says the same.` } : m
+        )
+      );
       return true;
     },
     moveMemory: async (entry, project) => {
@@ -603,7 +615,9 @@ export function MemoryGallery({ state }: { state: string }) {
   }
   return (
     <MotionConfig reducedMotion="user">
-      <div className="h-dvh bg-background text-foreground">
+      {/* `@container/page`, as the app shell's main canvas declares it, so
+          the page's container queries resolve here as they do in the app. */}
+      <div className="@container/page h-dvh bg-background text-foreground">
         {/* The real route's frame (customize tabs, the wide measure), so the
             gallery shows the page at the width it ships at. */}
         <CustomizeFrame current="memory">

@@ -7,18 +7,20 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { openSettings } from "@/components/settings/settings-sections";
 import { cn } from "@/lib/utils";
+import { findMemoryOverlaps, overlapKey, type MemoryOverlap } from "@/lib/memory-overlaps";
 import { ActivitySheet, type ActivityTab } from "@/components/memory/activity-sheet";
 import { ImportDialog } from "@/components/memory/import-dialog";
 import { ClearProjectDialog, MemoryFooter, ResetDialog } from "@/components/memory/memory-footer";
 import { ExcludedTopicsDialog } from "@/components/memory/excluded-topics";
 import { SkillCandidates, type SkillCandidateTransport } from "@/components/memory/skill-candidates";
-import { MemoryHeaderActions } from "@/components/memory/memory-header";
-import { MemoryList, topicSummary, type MemoryListHandle, type MemorySort } from "@/components/memory/memory-list";
-import { MemoryHero } from "@/components/memory/memory-hero";
+import { MemoryHeaderActions, MemoryPageHeader } from "@/components/memory/memory-header";
+import { AddForm, MemoryList } from "@/components/memory/memory-list";
+import type { MemoryGrouping } from "@/components/memory/memory-groups";
 import "@/components/memory/memory.css";
 import { BackfillNotice, PausedNotice, PolicyNotice } from "@/components/memory/memory-notices";
 import { MemoryBodySkeleton } from "@/components/memory/memory-skeleton";
 import { MemoryWelcome } from "@/components/memory/memory-welcome";
+import { OverlapsPanel } from "@/components/memory/overlaps-panel";
 import { PromptDock, type PromptDockHandle } from "@/components/memory/prompt-dock";
 import type { RecapExtras } from "@/components/memory/recap-view";
 import { ScopeBar } from "@/components/memory/scope-bar";
@@ -33,29 +35,32 @@ import {
   isRetired,
   memoriesInScope,
   memoryScopes,
+  type Memory,
   type MemoryEditRecord,
 } from "@/components/memory/memory-model";
 import type { RecapPeriod } from "@/lib/memory-recap";
 
 /*
- * The memory page: what Juno knows, where it came from, and every way to
- * change it.
+ * The memory page: what Alevr knows, where each thing came from, and every
+ * way to correct it or take it away.
  *
- * ONE CALM COLUMN. The page used to stack seven bordered surfaces sixteen
- * pixels apart (scope chips, a stats strip, the summary card, a "Manage edits"
- * card, a toolbar with three views, a card per topic, a privacy strip), and
- * none of them was the primary one. Now there is one raised surface, the
- * summary with its prompt bar, and everything else is a list or quiet text:
+ * A PRODUCT PAGE, NOT A REPORT. It opens the way every app page does (the
+ * shared header: the name, one plain sentence, its controls) and then reads
+ * top to bottom:
  *
- *   header      the name, the one On/Off switch, a menu for the rare things
  *   notices     memory is off / a policy refused / reading past chats
  *   scope       only when a project has memory of its own
- *   summary     prose that unfolds in place, the prompt bar at its foot, and
- *               a drafted change right under the bar
- *   list        every memory, by topic or by date, rows on hairlines
- *   footer      what never reaches memory, and import, export, reset
+ *   summary     what Alevr makes of it all, in prose, and the bar that
+ *               changes memory in words right under it
+ *   list        every memory, grouped by what it is about (or where it came
+ *               from, or when), with what needs a look first
+ *   footer      what never reaches memory
  *
- * The edit history and the recap are one step aside, in the activity sheet.
+ * It used to open on a hero: a display title, three large figures and a dot
+ * constellation, with the summary and the list each set beside a 13rem margin
+ * column of their own. All of it said less than the list's own group counts.
+ * The edit history and the recap are one step aside, in the activity sheet;
+ * import, export and reset are in the header's menu.
  *
  * DATA AND PRESENTATION ARE SPLIT. `MemoryManager` owns the requests (the
  * memory hook, the backfill job, the project list); `MemoryManagerView` is the
@@ -100,6 +105,8 @@ interface MemoryManagerViewProps {
 }
 
 const SORT_KEY = "juno.memory.sort";
+/** Pairs the person said are both right ("Keep both"): a per-viewer convenience, so browser storage. */
+const KEPT_BOTH_KEY = "alevr.memory.kept-both";
 /** How long a row that a change just touched stays lit. */
 const HIGHLIGHT_MS = 1400;
 /** Below this many memories, unread history is worth a banner, not just a menu item. */
@@ -108,6 +115,15 @@ const THIN_MEMORY = 12;
 /** The rows an edit rewrites in place (its adds arrive as new ids). */
 function updatedIds(edit: MemoryEditRecord, inverse = false): string[] {
   return (inverse ? edit.inverse ?? [] : edit.operations).flatMap((op) => (op.op === "update" ? [op.id] : []));
+}
+
+function readKeptBoth(): Set<string> {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(KEPT_BOTH_KEY) ?? "[]");
+    return new Set(Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === "string") : []);
+  } catch {
+    return new Set();
+  }
 }
 
 export function MemoryManagerView({
@@ -120,7 +136,7 @@ export function MemoryManagerView({
   skillCandidates,
 }: MemoryManagerViewProps) {
   const [query, setQuery] = React.useState("");
-  const [sort, setSort] = React.useState<MemorySort>("topic");
+  const [grouping, setGrouping] = React.useState<MemoryGrouping>("topic");
   /** The project the page is narrowed to, or null for everything. */
   const [scope, setScope] = React.useState<string | null>(null);
   const [scopeSwitched, setScopeSwitched] = React.useState(false);
@@ -131,17 +147,20 @@ export function MemoryManagerView({
   const [clearing, setClearing] = React.useState<{ id: string; name: string } | null>(null);
   const [activityOpen, setActivityOpen] = React.useState(false);
   const [activityTab, setActivityTab] = React.useState<ActivityTab>("edits");
-  const [composing, setComposing] = React.useState(false);
+  /** The add field is open: at the top of the list, or in the empty state. */
+  const [adding, setAdding] = React.useState(false);
+  const addButtonRef = React.useRef<HTMLButtonElement>(null);
   const [reviewOpen, setReviewOpen] = React.useState(false);
   // Tracked here rather than read off `memory.busy`, which is also true while
   // an instruction drafts: the Rebuild button spins only for a rebuild.
   const [rebuilding, setRebuilding] = React.useState(false);
   const [highlightIds, setHighlightIds] = React.useState<ReadonlySet<string>>(() => new Set());
   const [justApplied, setJustApplied] = React.useState<ReadonlyMap<string, number>>(() => new Map());
+  const [keptBoth, setKeptBoth] = React.useState<ReadonlySet<string>>(() => new Set());
   /**
    * The fact the page was opened on — `/memory?entry=<id>`, where a chat's
    * "View in memory" and "Memory updated → View" land — and whether to open
-   * it for editing (`&edit=1`). The list unfolds its section, scrolls it into
+   * it for editing (`&edit=1`). The list unfolds its group, scrolls it into
    * view and lights it once.
    */
   const [reveal, setReveal] = React.useState<{ id: string; edit: boolean } | null>(null);
@@ -158,10 +177,11 @@ export function MemoryManagerView({
     if (entry) setReveal({ id: entry, edit: params.get("edit") === "1" });
     try {
       const saved = window.localStorage.getItem(SORT_KEY);
-      if (saved === "topic" || saved === "newest") setSort(saved);
+      if (saved === "topic" || saved === "source" || saved === "newest") setGrouping(saved);
     } catch {
       // Storage unavailable: the default grouping is fine.
     }
+    setKeptBoth(readKeptBoth());
   }, []);
 
   // Kept in the URL, so a narrowed page survives a reload and can be linked.
@@ -174,8 +194,8 @@ export function MemoryManagerView({
     window.history.replaceState(window.history.state, "", url.pathname + url.search);
   }, []);
 
-  const changeSort = React.useCallback((next: MemorySort) => {
-    setSort(next);
+  const changeGrouping = React.useCallback((next: MemoryGrouping) => {
+    setGrouping(next);
     try {
       window.localStorage.setItem(SORT_KEY, next);
     } catch {
@@ -183,9 +203,20 @@ export function MemoryManagerView({
     }
   }, []);
 
-  const removal = useDeferredRemoval((entry, kind) =>
-    kind === "forget" ? memory.forgetMemory(entry, { silent: true }) : memory.deleteMemory(entry, { silent: true })
-  );
+  /*
+   * Delete, Forget, and "Keep this" on a flagged pair all wait out an Undo
+   * toast before anything is sent (useDeferredRemoval). Keep needs to know
+   * which memory was kept and why; that rides here, by the set-aside row's id,
+   * until the request goes or the Undo takes it back.
+   */
+  const replaceTargets = React.useRef(new Map<string, { kept: Memory; because: MemoryOverlap["kind"] }>());
+  const removal = useDeferredRemoval(async (entry, kind) => {
+    if (kind === "forget") return memory.forgetMemory(entry, { silent: true });
+    if (kind === "delete") return memory.deleteMemory(entry, { silent: true });
+    const target = replaceTargets.current.get(entry.id);
+    replaceTargets.current.delete(entry.id);
+    return target ? memory.replaceMemory(entry, target.kept, target.because, { silent: true }) : false;
+  });
   // A reset has removed everything a waiting delete or forget would have, so
   // they are dropped rather than sent after it (to rows that no longer exist)
   // and their Undo leaves with them. A failed reset keeps them waiting.
@@ -229,11 +260,15 @@ export function MemoryManagerView({
     memory.projectSummaries.length > 0;
   const pendingCount = memory.edits.filter((edit) => edit.status === "pending").length;
 
+  // Memories that may say the same thing, or disagree, in the scope on screen.
+  const overlaps = React.useMemo(() => findMemoryOverlaps(facts, { dismissed: keptBoth }), [facts, keptBoth]);
+  const factsById = React.useMemo(() => new Map(facts.map((entry) => [entry.id, entry])), [facts]);
+
   /*
    * CAUSE AND EFFECT. A change that lands somewhere the reader is not looking
-   * (an applied instruction rewrites three rows further down; a fact added from
-   * the list header files itself under a topic) lights the rows it touched for
-   * a moment. The marker is set before the change and read when the list
+   * (an applied instruction rewrites three rows further down; a fact added at
+   * the top files itself under a group) lights the rows it touched for a
+   * moment. The marker is set before the change and read when the list
    * arrives, so the flash lands on the rows as they are after it: new ids, and
    * the ones an update rewrote in place.
    */
@@ -290,12 +325,27 @@ export function MemoryManagerView({
     [activeScope, memory, withHighlight]
   );
 
-  // "Tell Juno something" in the welcome unfolds the dock; focus follows it in.
-  React.useEffect(() => {
-    if (!composing) return;
-    const timer = window.setTimeout(() => dockRef.current?.focus(), 80);
-    return () => window.clearTimeout(timer);
-  }, [composing]);
+  // "Keep this" sets the other aside at once (with Undo) and lights the one
+  // kept, so the eye sees which stayed.
+  const keepOverlap = React.useCallback(
+    (kept: Memory, drop: Memory, overlap: MemoryOverlap) => {
+      replaceTargets.current.set(drop.id, { kept, because: overlap.kind });
+      removal.remove(drop, "replace");
+      setHighlightIds(new Set([kept.id]));
+    },
+    [removal]
+  );
+  const keepBoth = React.useCallback((overlap: MemoryOverlap) => {
+    setKeptBoth((prev) => {
+      const next = new Set(prev).add(overlapKey(overlap.ids));
+      try {
+        window.localStorage.setItem(KEPT_BOTH_KEY, JSON.stringify([...next].slice(-200)));
+      } catch {
+        // Not remembered past this visit: the pair is asked about again next time.
+      }
+      return next;
+    });
+  }, []);
 
   const openActivity = (tab: ActivityTab) => {
     setActivityTab(tab);
@@ -310,35 +360,6 @@ export function MemoryManagerView({
     !backfill.dreaming &&
     (backfill.remaining ?? 0) > 0 &&
     accountActiveCount < THIN_MEMORY;
-
-  // The hero's figures and constellation describe the scope on screen.
-  const topics = React.useMemo(() => topicSummary(facts), [facts]);
-  const newest = React.useMemo(() => {
-    let best: (typeof facts)[number] | null = null;
-    for (const entry of facts) {
-      if (isRetired(entry)) continue;
-      if (!best || entry.createdAt > best.createdAt) best = entry;
-    }
-    return best;
-  }, [facts]);
-  const previews = React.useMemo(() => {
-    const byTopic: Record<string, string[]> = {};
-    const newestFirst = facts.filter((entry) => !isRetired(entry)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    for (const entry of newestFirst) {
-      const id = topics.some((t) => t.id === entry.category) ? (entry.category as string) : "uncategorised";
-      const list = (byTopic[id] ??= []);
-      if (list.length < 3) list.push(entry.content);
-    }
-    return byTopic;
-  }, [facts, topics]);
-  const activeCount = React.useMemo(() => facts.filter((entry) => !isRetired(entry)).length, [facts]);
-  const listRef = React.useRef<MemoryListHandle>(null);
-  const [currentTopic, setCurrentTopic] = React.useState<string | null>(null);
-  const liveTopicId = React.useMemo(
-    () => (newest ? (topics.find((t) => t.id === (newest.category ?? "uncategorised"))?.id ?? null) : null),
-    [newest, topics]
-  );
-  const showHeroData = loaded && anythingRemembered && !memory.loadError;
 
   const dock = (
     <PromptDock
@@ -356,8 +377,8 @@ export function MemoryManagerView({
   );
 
   return (
-    <div className="mem @container/memory">
-      <MemoryHero
+    <div className="mem">
+      <MemoryPageHeader
         actions={
           <MemoryHeaderActions
             enabled={!memory.paused}
@@ -370,24 +391,18 @@ export function MemoryManagerView({
             onExport={memory.exportMemory}
             onSettings={onOpenSettings}
             onActivity={() => openActivity("edits")}
+            onTopics={() => setTopicsOpen(true)}
             onReset={() => setResetOpen(true)}
+            project={activeProject}
+            onClearProject={() => setClearing(activeProject)}
             empty={!anythingRemembered}
+            // While nothing is remembered the empty state carries Add.
+            onAdd={loaded && anythingRemembered ? () => setAdding((open) => !open) : undefined}
+            adding={adding}
+            addButtonRef={addButtonRef}
           />
         }
-        count={activeCount}
-        topics={showHeroData ? topics : []}
-        lastLearned={newest?.createdAt ?? null}
-        liveTopicId={liveTopicId}
-        activeId={currentTopic}
-        onSelect={(id) => listRef.current?.jumpTo(id)}
-        previews={previews}
-        scopes={
-          loaded && anythingRemembered && scopes.length > 1 ? (
-            <ScopeBar scopes={scopes} value={activeScope} onChange={changeScope} />
-          ) : undefined
-        }
       />
-      <div className="h-12" aria-hidden="true" />
 
       <PausedNotice open={memory.paused} onTurnOn={() => void memory.setPaused(false)} />
       <PolicyNotice message={memory.policyNotice} onOpenSettings={onOpenSettings} />
@@ -420,86 +435,80 @@ export function MemoryManagerView({
           <MemoryBodySkeleton />
         </div>
       ) : !anythingRemembered ? (
-        <div className="motion-safe:animate-rise-in">
-          <MemoryWelcome
-            paused={memory.paused}
-            unread={backfill.remaining}
-            learning={backfill.running}
-            onImport={() => setImportOpen(true)}
-            onLearn={backfill.run}
-            composing={composing || pendingCount > 0}
-            onCompose={() => setComposing(true)}
-          >
-            {dock}
-          </MemoryWelcome>
-        </div>
+        <MemoryWelcome
+          paused={memory.paused}
+          unread={backfill.remaining}
+          learning={backfill.running}
+          onImport={() => setImportOpen(true)}
+          onLearn={backfill.run}
+          composing={adding}
+          onCompose={() => setAdding((open) => !open)}
+          pending={pendingCount > 0 ? dock : undefined}
+        >
+          <AddForm project={null} onAdd={addMemory} onClose={() => setAdding(false)} />
+        </MemoryWelcome>
       ) : (
-        // One entrance for the page body as the data lands; nothing inside it
-        // staggers. A scope switch re-plays a fade on the content it changed.
-        <div className="motion-safe:animate-rise-in">
-          <div key={activeScope ?? "account"} className={cn(scopeSwitched && "motion-safe:animate-fade-in")}>
-            <SummaryPanel
-              summary={activeScope ? projectSummary : memory.summary}
-              project={activeProject}
-              consolidating={rebuilding}
-              onRebuild={async () => {
-                setRebuilding(true);
-                await memory.regenerate({ projectId: activeScope });
-                setRebuilding(false);
-              }}
-              onOpenActivity={() => openActivity("edits")}
-              reviewCount={reviewItems.length}
-              onOpenReview={() => setReviewOpen(true)}
-            >
-              {/* The drafting model edits account-wide facts, so the bar is
-                  offered only where the page is showing the account. */}
-              {!activeScope && dock}
-            </SummaryPanel>
-
-            <div className="mt-16">
-              <MemoryList
-                handleRef={listRef}
-                onActiveChange={setCurrentTopic}
-                facts={facts}
-                query={query}
-                onQueryChange={setQuery}
-                sort={sort}
-                onSortChange={changeSort}
-                paused={memory.paused}
-                project={activeProject}
-                busyIds={memory.busyIds}
-                highlightIds={highlightIds}
-                restoredIds={removal.restoredIds}
-                projects={projects}
-                onWantProjects={onWantProjects}
-                onAdd={addMemory}
-                onEdit={memory.editMemory}
-                onRemove={removal.remove}
-                onMove={(entry, project) => void memory.moveMemory(entry, project)}
-                revealId={revealedId}
-                revealEdit={reveal?.edit ?? false}
-              />
+        // A scope switch re-plays a fade on the content it changed; nothing
+        // else here has an entrance, since the page frame already rose once.
+        <div key={activeScope ?? "account"} className={cn(scopeSwitched && "motion-safe:animate-fade-in")}>
+          {scopes.length > 1 && (
+            <div className="mb-6">
+              <ScopeBar scopes={scopes} value={activeScope} onChange={changeScope} />
             </div>
+          )}
+          <SummaryPanel
+            summary={activeScope ? projectSummary : memory.summary}
+            project={activeProject}
+            consolidating={rebuilding}
+            onRebuild={async () => {
+              setRebuilding(true);
+              await memory.regenerate({ projectId: activeScope });
+              setRebuilding(false);
+            }}
+            onOpenActivity={() => openActivity("edits")}
+            reviewCount={reviewItems.length}
+            onOpenReview={() => setReviewOpen(true)}
+          >
+            {/* The drafting model edits account-wide facts, so the bar is
+                offered only where the page is showing the account. */}
+            {!activeScope && dock}
+          </SummaryPanel>
+
+          <div className="mt-12">
+            <MemoryList
+              facts={facts}
+              query={query}
+              onQueryChange={setQuery}
+              grouping={grouping}
+              onGroupingChange={changeGrouping}
+              paused={memory.paused}
+              project={activeProject}
+              busyIds={memory.busyIds}
+              highlightIds={highlightIds}
+              restoredIds={removal.restoredIds}
+              projects={projects}
+              onWantProjects={onWantProjects}
+              adding={adding}
+              onAddingChange={setAdding}
+              addButtonRef={addButtonRef}
+              onAdd={addMemory}
+              onEdit={memory.editMemory}
+              onRemove={removal.remove}
+              onMove={(entry, project) => void memory.moveMemory(entry, project)}
+              overlaps={
+                <OverlapsPanel overlaps={overlaps} memories={factsById} onKeep={keepOverlap} onKeepBoth={keepBoth} />
+              }
+              revealId={revealedId}
+              revealEdit={reveal?.edit ?? false}
+            />
           </div>
         </div>
       )}
 
       {/* Procedural memory: methods, not facts — proposed for the account as a whole. */}
-      {loaded && !activeScope && !memory.loadError && <SkillCandidates transport={skillCandidates} />}
+      {loaded && !activeScope && <SkillCandidates transport={skillCandidates} />}
 
-      {loaded && (
-        <MemoryFooter
-          paused={memory.paused}
-          empty={!anythingRemembered}
-          onImport={() => setImportOpen(true)}
-          onExport={memory.exportMemory}
-          onReset={() => setResetOpen(true)}
-          onSettings={onOpenSettings}
-          onTopics={() => setTopicsOpen(true)}
-          project={activeProject}
-          onClearProject={() => setClearing(activeProject)}
-        />
-      )}
+      {loaded && <MemoryFooter onSettings={onOpenSettings} onTopics={() => setTopicsOpen(true)} />}
       <ExcludedTopicsDialog open={topicsOpen} onOpenChange={setTopicsOpen} onChanged={() => void memory.reload()} />
       <ClearProjectDialog
         project={clearing}

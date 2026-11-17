@@ -2,16 +2,25 @@ import Module, { createRequire } from "node:module";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildSystemPromptSections } from "@/lib/chat/system-prompt";
-import { turnMayUseMemory } from "@/lib/memory-scope";
+import { agentGrantForTurn, turnMayUseMemory } from "@/lib/memory-scope";
 import { postGenerationPlan } from "@/lib/chat/post-processing";
 
 // The real resolveMemory stage over fixtures: the agent row it reads, and the
 // memory reads it would make.
-let agentRow: { id: string; memoryAccess: string } | null = null;
+let agentRow: { id: string; memoryAccess: string; deletedAt?: Date | null } | null = null;
 const profileReads: unknown[] = [];
 const stubs: Record<string, unknown> = {
   "server-only": {},
-  "@/lib/prisma": { prisma: { agent: { findFirst: async () => agentRow } } },
+  // Answers the way Postgres would: a query that asks for live agents only
+  // (`deletedAt: null`) does not find a deleted one.
+  "@/lib/prisma": {
+    prisma: {
+      agent: {
+        findFirst: async ({ where }: { where: { deletedAt?: null } }) =>
+          agentRow && where.deletedAt === null && agentRow.deletedAt ? null : agentRow,
+      },
+    },
+  },
   "@/lib/memory": {
     getMemoryProfile: async (_userId: string, opts: unknown) => {
       profileReads.push(opts);
@@ -33,8 +42,8 @@ try {
   moduleLoader._load = originalLoad;
 }
 
-async function turnFor(memoryAccess: string | null) {
-  agentRow = memoryAccess ? { id: "agent-1", memoryAccess } : null;
+async function turnFor(memoryAccess: string | null, opts: { deleted?: boolean; missing?: boolean } = {}) {
+  agentRow = memoryAccess && !opts.missing ? { id: "agent-1", memoryAccess, deletedAt: opts.deleted ? new Date() : null } : null;
   profileReads.length = 0;
   return resolveMemory({
     userId: "u1",
@@ -78,4 +87,25 @@ test("an agent with memoryAccess none neither reads nor writes the person's memo
   assert.equal(turnMayUseMemory({ enabled: true, agentAccess: "none" }), false);
   assert.equal(turnMayUseMemory({ enabled: false, agentAccess: "full" }), false);
   assert.equal(turnMayUseMemory({ enabled: true, agentAccess: null }), true);
+});
+
+test("a deleted agent's thread keeps the grant its agent had, and an unknown agent reads nothing", async () => {
+  // docs/quality/memory-and-tools-2026-11.md, defect 6: the lookup skipped
+  // deleted agents, so their threads read the account's full memory.
+  const none = await turnFor("none", { deleted: true });
+  assert.equal(none.memoryEnabled, false, "deleting an agent granted none must not open memory to its thread");
+  assert.equal(profileReads.length, 0);
+
+  const profile = await turnFor("profile", { deleted: true });
+  assert.equal(profile.memoryEnabled, true);
+  assert.deepEqual((profileReads[0] as { agent: unknown }).agent, { id: "agent-1", access: "profile" });
+
+  // An agent id that finds no row at all fails closed, not open.
+  const missing = await turnFor("full", { missing: true });
+  assert.equal(missing.memoryEnabled, false);
+  assert.equal(profileReads.length, 0);
+
+  assert.equal(agentGrantForTurn(null, null), null);
+  assert.equal(agentGrantForTurn("agent-1", null), "none");
+  assert.equal(agentGrantForTurn("agent-1", { memoryAccess: "nonsense" }), "profile");
 });

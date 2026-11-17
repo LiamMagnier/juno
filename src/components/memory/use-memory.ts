@@ -88,6 +88,17 @@ export interface MemoryState {
   /** The person says this fact still holds (Review). Resolves true when saved. */
   confirmMemory: (memory: Memory) => Promise<boolean>;
   deleteMemory: (memory: Memory, opts?: { silent?: boolean }) => Promise<boolean>;
+  /**
+   * The person kept `kept` over `memory` (two the page flagged as saying the
+   * same thing, or disagreeing): `memory` becomes history behind it. `silent`
+   * as for forget. Resolves true when the server agreed.
+   */
+  replaceMemory: (
+    memory: Memory,
+    kept: Memory,
+    because: "duplicate" | "conflict",
+    opts?: { silent?: boolean }
+  ) => Promise<boolean>;
   /** File a fact under one project, or (null) back under the whole account. */
   moveMemory: (memory: Memory, project: { id: string; name: string } | null) => Promise<boolean>;
   /** Delete everything remembered, account-wide. Resolves true when the server did. */
@@ -578,6 +589,36 @@ export function useMemory(): MemoryState {
     [mark]
   );
 
+  const replaceMemory = React.useCallback(
+    async (memory: Memory, kept: Memory, because: "duplicate" | "conflict", opts?: { silent?: boolean }): Promise<boolean> => {
+      mark(setBusyIds, memory.id, true);
+      try {
+        const res = await fetch(`/api/memory/${memory.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ replacedBy: kept.id, because }),
+          // Sent by the page's deferred removal, which can fire as the tab closes.
+          keepalive: true,
+        });
+        if (!res.ok) {
+          const { message } = await readRefusal(res);
+          throw new Error(message);
+        }
+        // Reloaded: the set-aside row moves to the retired trail with its
+        // reason, and the kept one is re-dated as confirmed.
+        await reload();
+        if (!opts?.silent) toast.success("Kept. The other one is under No longer used.");
+        return true;
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : GENERIC_FAILURE);
+        return false;
+      } finally {
+        mark(setBusyIds, memory.id, false);
+      }
+    },
+    [mark, reload]
+  );
+
   const moveMemory = React.useCallback(
     async (memory: Memory, project: { id: string; name: string } | null): Promise<boolean> => {
       mark(setBusyIds, memory.id, true);
@@ -681,6 +722,7 @@ export function useMemory(): MemoryState {
     forgetMemory,
     confirmMemory,
     deleteMemory,
+    replaceMemory,
     moveMemory,
     resetMemory,
     clearProjectMemory,

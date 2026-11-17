@@ -49,6 +49,16 @@ export function memoryWriteOf(activity: readonly ClientActivityEvent[] | null | 
   return { saved, ...(forgotten.length ? { forgotten } : {}) };
 }
 
+/**
+ * What one Undo on a turn's "Memory updated" sends, fact by fact: every fact
+ * the turn saved, each with whether it was new or believed again. A fact
+ * believed again goes back to history rather than onto the block-list
+ * (forgetPlan, src/lib/memory-undo.ts), so the flag has to reach the route.
+ */
+export function undoRequests(saved: readonly ClientMemoryReceipt[]): { id: string; reinstated: boolean }[] {
+  return saved.map((fact) => ({ id: fact.id, reinstated: fact.reinstated === true }));
+}
+
 /** Where one fact lives on the memory page; `edit` opens it for editing there. */
 export function memoryEntryHref(id: string, opts: { edit?: boolean } = {}): string {
   return `/memory?entry=${encodeURIComponent(id)}${opts.edit ? "&edit=1" : ""}`;

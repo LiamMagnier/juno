@@ -122,8 +122,13 @@ export async function DELETE(req: Request) {
     select: { id: true },
   });
   if (uncovered.length) {
+    // skipDuplicates, as the project branch has: a chat's first extraction can
+    // create its row between the read above and this write, and without it the
+    // insert throws after the erase has committed, so the page reported a
+    // reset that had succeeded as a failure.
     await prisma.conversationMemory.createMany({
       data: uncovered.map((c) => ({ userId: user.id, conversationId: c.id, processedAt: now })),
+      skipDuplicates: true,
     });
   }
   return NextResponse.json({ ok: true });

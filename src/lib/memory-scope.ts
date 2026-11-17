@@ -63,6 +63,24 @@ export const AGENT_MEMORY_ACCESS_META: Record<AgentMemoryAccess, { label: string
   },
 };
 
+/**
+ * The grant a turn's agent holds, given the row the lookup found.
+ *
+ * Fails closed. A turn no agent speaks in has no grant (null, an ordinary
+ * chat). An agent that was deleted keeps the grant it had: its thread is
+ * still its thread, and deleting an agent must never widen what that thread
+ * reads. An agent id that finds no row at all (not this person's, or gone
+ * without a trace) reads nothing, rather than everything.
+ */
+export function agentGrantForTurn(
+  agentId: string | null,
+  row: { memoryAccess: unknown } | null
+): AgentMemoryAccess | null {
+  if (!agentId) return null;
+  if (!row) return "none";
+  return agentMemoryAccessOf(row.memoryAccess);
+}
+
 export type MemoryReader =
   | { kind: "account" }
   | { kind: "project"; projectId: string }

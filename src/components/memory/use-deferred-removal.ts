@@ -110,11 +110,14 @@ export function useDeferredRemoval(
         onDismiss: () => flush(memory.id),
       };
       // Each verb says what it does NOT do as well as what it does: delete can
-      // be relearned from the chat the fact came from, forget cannot.
+      // be relearned from the chat the fact came from, forget cannot, and a
+      // memory set aside for another one is kept as history.
       const toastId =
         kind === "forget"
           ? toast.success(`Forgotten. ${PRODUCT_NAME} won’t learn this again.`, options)
-          : toast.success(`Deleted. ${PRODUCT_NAME} may learn it again from the chat it came from.`, options);
+          : kind === "replace"
+            ? toast.success("Kept. The other one is under No longer used.", options)
+            : toast.success(`Deleted. ${PRODUCT_NAME} may learn it again from the chat it came from.`, options);
       queue.add({ memory, kind, toastId });
     },
     [flush, queue, setMember, undo]

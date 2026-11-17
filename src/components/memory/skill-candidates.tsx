@@ -80,23 +80,23 @@ export function SkillCandidates({ transport = fetchSkillCandidateTransport }: { 
   };
 
   return (
-    <section aria-labelledby="memory-methods-heading" className="@container/methods mt-16" data-memory-methods="">
-      <div className="grid gap-x-14 gap-y-5 @[50rem]/methods:grid-cols-[13rem_minmax(0,1fr)]">
+    <section aria-labelledby="memory-methods-heading" className="mt-12" data-memory-methods="">
+      <div>
         <div className="min-w-0">
-          <h2 id="memory-methods-heading" className="mem-h2 text-foreground">
+          <h2 id="memory-methods-heading" className="mem-title text-foreground">
             Methods you repeat
           </h2>
-          <p className="mem-annot mt-2">{`From your own runs. A skill is how ${PRODUCT_NAME} does something; memory stays what it knows.`}</p>
+          <p className="mt-0.5 max-w-prose text-ui text-muted-foreground">{`From your own runs. A skill is how ${PRODUCT_NAME} does something; memory stays what it knows.`}</p>
         </div>
-        <ul className="min-w-0 divide-y divide-[var(--mem-hair)]">
+        <ul className="mt-3 min-w-0 divide-y divide-[var(--mem-hair)]">
           {candidates.map((candidate) => {
             const href = made[candidate.id];
             return (
-              <li key={candidate.id} className="py-4 first:pt-0">
+              <li key={candidate.id} className="py-4">
                 <p className="text-body font-medium text-foreground" translate="no">
                   {candidate.title}
                 </p>
-                <p className="mem-annot mt-1">
+                <p className="mt-1 text-caption text-muted-foreground">
                   <span>{`${candidate.runCount} runs`}</span> <span aria-hidden="true">·</span>{" "}
                   <span>last {relativeTime(candidate.lastSeenAt)}</span> <span aria-hidden="true">·</span>{" "}
                   <span>{candidate.tools.join(", ")}</span>

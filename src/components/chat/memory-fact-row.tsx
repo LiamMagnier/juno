@@ -123,10 +123,19 @@ async function patchMemory(
 /**
  * Forget one fact and record the outcome for every surface showing it.
  * `undo` is a chat's Undo on a fact its turn just saved: whatever that fact
- * replaced comes back too. Resolves to the failure message, or null.
+ * replaced comes back too. `reinstated` says the turn believed the fact again
+ * rather than creating it, so the Undo returns it to history and does not
+ * block-list it (forgetPlan, src/lib/memory-undo.ts). Resolves to the failure
+ * message, or null.
  */
-export async function forgetMemoryFact(id: string, opts: { undo?: boolean } = {}): Promise<string | null> {
-  const result = await patchMemory(id, opts.undo ? { forget: true, undo: true } : { forget: true }, "forget");
+export async function forgetMemoryFact(
+  id: string,
+  opts: { undo?: boolean; reinstated?: boolean } = {},
+): Promise<string | null> {
+  const body = opts.undo
+    ? { forget: true, undo: true, ...(opts.reinstated ? { reinstated: true } : {}) }
+    : { forget: true };
+  const result = await patchMemory(id, body, "forget");
   if (result.failure === null) setOutcome(id, { forgotten: true, restored: result.restored });
   return result.failure;
 }
@@ -186,7 +195,7 @@ export function MemoryFactRow({
   const forget = async () => {
     setBusy("forget");
     setError(null);
-    const failure = await forgetMemoryFact(fact.id, { undo: saved });
+    const failure = await forgetMemoryFact(fact.id, { undo: saved, reinstated: saved && fact.reinstated === true });
     setBusy(null);
     if (failure) {
       setError(failure);
@@ -309,7 +318,9 @@ export function MemoryFactRow({
                 ? "Forgotten. It won’t be used again."
                 : outcome?.restored
                   ? "Removed. What it replaced is remembered again."
-                  : "Removed, and it won’t be learned again."}
+                  : fact.reinstated
+                    ? "Undone. Memory is as it was before this chat."
+                    : "Removed, and it won’t be learned again."}
             </span>
           ) : notRelevant ? (
             <>
@@ -383,6 +394,12 @@ export function MemoryFactRow({
       )}
     </li>
   );
+}
+
+/** The facts forgotten or undone in this tab, by id: a second Undo skips them. */
+export function useForgottenIds(): ReadonlySet<string> {
+  const all = useOutcomes();
+  return new Set([...all].flatMap(([id, outcome]) => (outcome.forgotten ? [id] : [])));
 }
 
 /** Whether every one of these facts has been forgotten or undone in this tab. */

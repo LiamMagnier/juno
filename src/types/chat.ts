@@ -372,6 +372,12 @@ export interface ClientMemoryReceipt {
   category?: string | null;
   sourceRef?: string | null;
   sourceMessageId?: string | null;
+  /**
+   * On a "Memory updated" receipt: the turn believed this fact again rather
+   * than creating it, so Undo returns it to history instead of block-listing
+   * it (src/lib/memory-undo.ts).
+   */
+  reinstated?: boolean;
 }
 
 /**

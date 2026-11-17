@@ -15,6 +15,8 @@ import { screenMemoryWrite } from "@/lib/memory-suppression";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
 import { factFields } from "@/lib/memory-lifecycle";
 import { summaryInvalidations } from "@/lib/memory-summary-changes";
+import { UNBELIEVED_REASON, forgetPlan } from "@/lib/memory-undo";
+import { replacedByReason } from "@/lib/memory-overlaps";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
@@ -79,6 +81,12 @@ const schema = z
      */
     undo: z.literal(true).optional(),
     /**
+     * With `undo`: the turn did not create this fact, it believed it again
+     * (the receipt's `reinstated`). Undo then returns it to history and
+     * writes no block-list entry (forgetPlan in memory-undo.ts).
+     */
+    reinstated: z.literal(true).optional(),
+    /**
      * An answer used this fact where it did not belong (true), or that was a
      * mistake (false). On its own: it is a signal about ranking, not an edit.
      */
@@ -90,12 +98,30 @@ const schema = z
      * review and back to full weight in context.
      */
     confirm: z.literal(true).optional(),
+    /**
+     * The person kept another memory over this one: the page flagged the two
+     * as saying the same thing (`because: "duplicate"`) or disagreeing
+     * (`"conflict"`), see memory-overlaps.ts. This one becomes history behind
+     * the kept one, with that reason; nothing is block-listed, and the kept
+     * one counts as confirmed.
+     */
+    replacedBy: z.string().min(1).optional(),
+    because: z.enum(["duplicate", "conflict"]).optional(),
   })
   .refine((body) => body.notRelevant === undefined || Object.keys(body).length === 1, {
     message: "Not relevant is sent on its own",
   })
   .refine((body) => body.confirm === undefined || Object.keys(body).length === 1, {
     message: "Confirm is sent on its own",
+  })
+  .refine(
+    (body) =>
+      (body.replacedBy === undefined && body.because === undefined) ||
+      (body.replacedBy !== undefined && body.because !== undefined && Object.keys(body).length === 2),
+    { message: "Replaced by is sent on its own, with its reason" }
+  )
+  .refine((body) => body.reinstated === undefined || (body.forget === true && body.undo === true), {
+    message: "Reinstated is only sent with an Undo",
   })
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change" });
 
@@ -139,7 +165,72 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ ok: true, lastVerifiedAt: lastVerifiedAt.toISOString(), confidence });
   }
 
+  if (body.replacedBy && body.because) {
+    if (body.replacedBy === id) return NextResponse.json({ error: "A memory can’t replace itself." }, { status: 400 });
+    // Both must be believed facts in one scope: the page only ever pairs those,
+    // and a stale page pressing Keep after something changed must not retire
+    // a row behind one that is itself history or lives somewhere else.
+    const kept = await prisma.memoryEntry.findFirst({
+      where: { id: body.replacedBy, userId: user.id },
+      select: { id: true, content: true, kind: true, status: true, projectId: true, confidence: true },
+    });
+    if (!kept) return NextResponse.json({ error: "That memory no longer exists." }, { status: 404 });
+    if (
+      existing.kind !== "FACT" ||
+      kept.kind !== "FACT" ||
+      existing.status !== "active" ||
+      kept.status !== "active" ||
+      (existing.projectId ?? null) !== (kept.projectId ?? null)
+    ) {
+      return NextResponse.json({ error: "These memories have changed since. Reload to see them." }, { status: 409 });
+    }
+    const now = new Date();
+    await prisma.$transaction([
+      prisma.memoryEntry.updateMany({
+        where: { id, userId: user.id, status: "active" },
+        data: { status: "superseded", supersededById: kept.id, reason: replacedByReason(body.because, kept.content) },
+      }),
+      // Choosing it over the other is saying it again.
+      prisma.memoryEntry.updateMany({
+        where: { id: kept.id, userId: user.id },
+        data: { lastVerifiedAt: now, confidence: Math.max(kept.confidence, CONFIRMED_CONFIDENCE), notRelevantAt: null },
+      }),
+    ]);
+    refreshSummariesLater(user.id, [existing.projectId]);
+    return NextResponse.json({ ok: true, status: "superseded", replacedBy: kept.id });
+  }
+
   if (body.forget) {
+    const plan = forgetPlan(existing, body);
+    if (plan.kind === "nothing") {
+      return NextResponse.json({ ok: true, status: existing.status, restored: 0 });
+    }
+    if (plan.kind === "unbelieve") {
+      const now = new Date();
+      const restored = await prisma.$transaction(async (tx) => {
+        // What the reinstatement took the slot back from (it pointed those
+        // rows here), read first so this row can point back at one of them.
+        const replaced = await tx.memoryEntry.findMany({
+          where: { userId: user.id, kind: "FACT", status: "superseded", supersededById: id },
+          select: { id: true },
+          orderBy: { updatedAt: "desc" },
+        });
+        // Guarded on `active`: a second press, or another tab, finds it
+        // already history and changes nothing.
+        const { count } = await tx.memoryEntry.updateMany({
+          where: { id, userId: user.id, status: "active" },
+          data: { status: "superseded", supersededById: replaced[0]?.id ?? null, reason: UNBELIEVED_REASON },
+        });
+        if (count === 0 || replaced.length === 0) return 0;
+        const back = await tx.memoryEntry.updateMany({
+          where: { userId: user.id, id: { in: replaced.map((row) => row.id) }, status: "superseded", supersededById: id },
+          data: { status: "active", supersededById: null, reason: null, lastVerifiedAt: now },
+        });
+        return back.count;
+      });
+      refreshSummariesLater(user.id, [existing.projectId]);
+      return NextResponse.json({ ok: true, status: "superseded", restored });
+    }
     // Already forgotten and still on the block-list: say so rather than
     // writing a second suppression. A chat's Undo can be pressed again after a
     // reload (its receipt is the turn's historical record), and each press
@@ -181,11 +272,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           lastVerifiedAt: now,
         },
       });
-      // Only while this fact is still the one believed. An Undo pressed on an
-      // old receipt after something newer replaced it ("lives in Berlin" after
-      // "lives in Madrid") must not bring back what it replaced ("Lisbon")
-      // beside the newer fact: that would be two answers to one question.
-      if (!body.undo || existing.status !== "active") return 0;
+      // Only while this fact is still the one believed (forgetPlan). An Undo
+      // pressed on an old receipt after something newer replaced it ("lives
+      // in Berlin" after "lives in Madrid") must not bring back what it
+      // replaced ("Lisbon") beside the newer fact.
+      if (!plan.restoreReplaced) return 0;
       // Undo: the rows this fact superseded (`supersede` in memory.ts marks
       // them "superseded" and points them here) are believed again. A row
       // something else has since replaced points elsewhere and stays as it is.

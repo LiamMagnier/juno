@@ -193,9 +193,10 @@ test("consolidation treats a forget as a change, not only a new fact count", () 
 
 test("editing, forgetting or deleting a row rebuilds the summary afterwards", () => {
   const body = src("src/app/api/memory/[id]/route.ts");
-  // Three call sites — forget, rewrite-or-move, delete — each naming the
-  // scopes whose summaries the change touched (null is the account's).
-  assert.equal((body.match(/refreshSummariesLater\(user\.id, \[/g) ?? []).length, 3);
+  // Five call sites — forget, a chat's Undo of a fact it believed again,
+  // keeping one of two flagged memories, rewrite-or-move, delete — each
+  // naming the scopes whose summaries the change touched (null is the account's).
+  assert.equal((body.match(/refreshSummariesLater\(user\.id, \[/g) ?? []).length, 5);
   assert.match(body, /after\(\(\) => refreshSummaries\(userId, scopes\)/);
 });
 

@@ -6,12 +6,12 @@ import { motion } from "framer-motion";
 import { Check, X } from "@/components/ui/icons";
 import { ComposerIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { MemoryFactRow, forgetMemoryFact, useAllForgotten } from "@/components/chat/memory-fact-row";
-import { memoryEntryHref } from "@/lib/chat/memory-receipts";
+import { MemoryFactRow, forgetMemoryFact, useAllForgotten, useForgottenIds } from "@/components/chat/memory-fact-row";
+import { memoryEntryHref, undoRequests } from "@/lib/chat/memory-receipts";
 import { cn } from "@/lib/utils";
 import { DURATION } from "@/lib/design/tokens.generated";
 import { useReducedMotion } from "@/lib/motion-preference";
-import type { ClientMemoryWrite } from "@/types/chat";
+import type { ClientMemoryReceipt, ClientMemoryWrite } from "@/types/chat";
 
 /*
  * "MEMORY UPDATED", AS SOMETHING YOU CAN ACT ON.
@@ -198,7 +198,7 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
           <Popover open={editOpen} onOpenChange={setEditOpen}>
             <PopoverTrigger asChild>
               <button type="button" className={cn(actionClass, "data-[state=open]:bg-accent data-[state=open]:text-foreground")}>
-                {saved.length > 1 ? "Edit or undo" : "Edit"}
+                Edit
               </button>
             </PopoverTrigger>
             <PopoverContent align="end" side="bottom" sideOffset={8} className="w-[min(24rem,calc(100vw-2rem))] p-3">
@@ -211,8 +211,8 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
             </PopoverContent>
           </Popover>
         )}
-        {first && saved.length === 1 && !allUndone && (
-          <UndoButton id={first.id} onUndone={() => requestAnimationFrame(() => closeRef.current?.focus())} />
+        {first && !allUndone && (
+          <UndoButton facts={saved} onUndone={() => requestAnimationFrame(() => closeRef.current?.focus())} />
         )}
         <span aria-hidden="true" className="mx-1 h-4 w-px bg-border/80" />
         <button ref={closeRef} type="button" aria-label="Dismiss" onClick={() => leave()} className={cn(actionClass, "w-8 justify-center px-0")}>
@@ -240,13 +240,18 @@ export function MemoryUpdatedNotice({ write, onDismiss }: { write: ClientMemoryW
 }
 
 /**
- * Undo for the one fact a turn saved, without opening anything. Its name is
- * its word: the notice it sits in has just named the fact, and a sentence
- * built around the fact would never reach the translation catalog.
+ * Undo for everything the turn saved, in one press, without opening anything.
+ * It used to exist only for a turn that saved one fact; a turn that saved two
+ * hid Undo inside "Edit or undo", one fact at a time. Each fact goes back the
+ * way the receipt says it arrived (`undoRequests`): a new one is forgotten, one
+ * believed again returns to history. Its name is its word: the notice has
+ * just named the fact, and a sentence built around the fact would never reach
+ * the translation catalog.
  */
-function UndoButton({ id, onUndone }: { id: string; onUndone: () => void }) {
+function UndoButton({ facts, onUndone }: { facts: readonly ClientMemoryReceipt[]; onUndone: () => void }) {
   const [busy, setBusy] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
+  const forgotten = useForgottenIds();
   return (
     <button
       type="button"
@@ -254,7 +259,13 @@ function UndoButton({ id, onUndone }: { id: string; onUndone: () => void }) {
       onClick={async () => {
         setBusy(true);
         setFailed(false);
-        const failure = await forgetMemoryFact(id, { undo: true });
+        let failure: string | null = null;
+        // One at a time: each Undo can bring back what its fact replaced, and
+        // two of them racing over the same slot would each see the other half done.
+        for (const request of undoRequests(facts)) {
+          if (forgotten.has(request.id)) continue;
+          failure = (await forgetMemoryFact(request.id, { undo: true, reinstated: request.reinstated })) ?? failure;
+        }
         setBusy(false);
         setFailed(failure !== null);
         // The button goes with the change it undid; a keyboard reader's focus
@@ -263,7 +274,7 @@ function UndoButton({ id, onUndone }: { id: string; onUndone: () => void }) {
       }}
       className={cn(actionClass, "text-foreground", failed && "text-destructive hover:text-destructive")}
     >
-      {busy ? "Undoing…" : failed ? "Try again" : "Undo"}
+      {busy ? "Undoing…" : failed ? "Try again" : facts.length > 1 ? "Undo all" : "Undo"}
     </button>
   );
 }

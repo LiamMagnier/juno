@@ -580,6 +580,7 @@ export function readMemoryReceipt(raw: unknown): ClientMemoryReceipt[] | undefin
     if (sourceRef !== undefined) entry.sourceRef = sourceRef;
     const sourceMessageId = readOptionalText(item.sourceMessageId);
     if (sourceMessageId !== undefined) entry.sourceMessageId = sourceMessageId;
+    if (item.reinstated === true) entry.reinstated = true;
     receipt.push(entry);
   }
   return receipt.length ? receipt : undefined;

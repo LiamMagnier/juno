@@ -2,50 +2,59 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Plus, Search, type IconComponent } from "@/components/ui/icons";
+import { ChevronDown, Search } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapse } from "@/components/ui/collapse";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
 import { RollingNumber } from "@/components/ui/micro";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { MEMORY_CATEGORIES, MEMORY_CATEGORY_META, isMemoryCategory } from "@/lib/memory-categories";
+import { customizeFieldClass } from "@/components/customize/customize-section";
 import { cn } from "@/lib/utils";
 import { EntryRow } from "@/components/memory/entry-row";
 import { MemoryIcons } from "@/components/memory/memory-icons";
-import { groupMemoriesByTopic, isRetired, type Memory } from "@/components/memory/memory-model";
-import { DATE_BUCKETS, dateBucket, relativeTime } from "@/components/memory/memory-time";
+import { isRetired, type Memory } from "@/components/memory/memory-model";
+import {
+  MEMORY_GROUPINGS,
+  groupMemories,
+  memorySearchText,
+  offerSearch,
+  type MemoryGrouping,
+} from "@/components/memory/memory-groups";
 import type { ProjectOption, ProjectOptions } from "@/components/memory/use-project-options";
 import type { RemovalKind } from "@/components/memory/use-deferred-removal";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import { prefersReducedMotion } from "@/lib/motion-preference";
 
 /*
- * Everything Juno remembers, as one list.
+ * Everything Alevr remembers, as one list on hairlines.
  *
- * It used to be three peer views of the same rows: Topics (an accordion of
- * cards, one open at a time), All facts (the same rows sorted by date) and
- * Recap (a report). Reading everything took one click per topic, and the three
- * disagreed about what a row looked like. Now there is one list, grouped by
- * topic as plain headings with every section open, or by date when the reader
- * asks for newest first. A long section shows its first few rows and unfolds
- * the rest in place. The recap moved to the activity sheet, where a report
- * belongs.
+ * GROUPED THE WAY A PERSON SORTS THEIR LIFE (memory-groups.ts): About you,
+ * Your work, Preferences, Goals and learning, For now. Or by where each
+ * memory came from (what you told Alevr, what it learned in your chats, what
+ * was imported), or by when it was said. The list used to sit beside a
+ * sticky index of the classifier's nine categories, with a search box, a sort
+ * switch and an Add button stacked in that margin; a list of five groups
+ * needs no index, and the controls sit on the list's own title line.
  *
- * SEARCH IS CLIENT-SIDE, even though `GET /api/memory?q=` exists: the whole
- * list is already loaded (hundreds of short sentences, not a corpus), so
- * filtering here is instant, keystroke for keystroke. It matches a fact by its
- * words, its topic and its project, because a reader searching "thesis" means
- * the project as readily as the word.
+ * SEARCH ARRIVES WHEN IT HELPS: once the list is longer than a screen takes
+ * in at a glance (offerSearch). It is client-side, even though
+ * `GET /api/memory?q=` exists: the whole list is already loaded (short
+ * sentences, not a corpus), so filtering here keeps up with every keystroke.
+ *
+ * ADDING happens at the top of the list, in place: the header's Add memory
+ * opens the field here (`adding`), and closing it hands focus back to that
+ * button (`addButtonRef`).
+ *
+ * WHAT NEEDS A LOOK comes first (`overlaps`, the panel the manager draws for
+ * memories that may say the same thing or disagree), then the groups, then
+ * what memory no longer uses, folded.
  */
 
-export type MemorySort = "topic" | "newest";
-
-/** Rows a section shows before "Show all". Enough to read the topic, few enough to scan past it. */
+/** Rows a group shows before "Show all". Enough to read the group, few enough to scan past it. */
 const PREVIEW_ROWS = 5;
-/** A section folds only when that hides at least this many rows: "Show all" for one more is a click spent on nothing. */
+/** A group folds only when that hides at least this many rows: "Show all" for one more is a click spent on nothing. */
 const MIN_FOLDED = 3;
 
 // Copy that differs between the account and one project, named so the copy
@@ -64,8 +73,8 @@ interface MemoryListProps {
   facts: Memory[];
   query: string;
   onQueryChange: (query: string) => void;
-  sort: MemorySort;
-  onSortChange: (sort: MemorySort) => void;
+  grouping: MemoryGrouping;
+  onGroupingChange: (grouping: MemoryGrouping) => void;
   /** Writes are refused while memory is off; reading and editing are not. */
   paused: boolean;
   /** The page is showing one project: its rows need no project token, and Add files into it. */
@@ -75,38 +84,29 @@ interface MemoryListProps {
   restoredIds: ReadonlySet<string>;
   projects: ProjectOptions;
   onWantProjects: () => void;
+  /** The add field is open (the header's Add memory). */
+  adding: boolean;
+  onAddingChange: (open: boolean) => void;
+  /** The control that opened the add field, where focus returns when it closes. */
+  addButtonRef: React.RefObject<HTMLButtonElement | null>;
   onAdd: (content: string) => Promise<boolean>;
   onEdit: (id: string, content: string) => Promise<boolean>;
   onRemove: (memory: Memory, kind: RemovalKind) => void;
   onMove: (memory: Memory, project: ProjectOption | null) => void;
-  /** Told which section the reader is on, so the constellation can light it. */
-  onActiveChange?: (id: string | null) => void;
-  /** Lets the page jump the list to a topic (the constellation's points). */
-  handleRef?: React.Ref<MemoryListHandle>;
-  /** A fact to bring into view once (`/memory?entry=`): its section unfolds and it scrolls to it. */
+  /** Memories that may say the same thing or disagree: drawn above the groups. */
+  overlaps?: React.ReactNode;
+  /** A fact to bring into view once (`/memory?entry=`): its group unfolds and it scrolls to it. */
   revealId?: string | null;
   /** Open that fact for editing as it arrives (`&edit=1`). */
   revealEdit?: boolean;
-}
-
-export interface MemoryListHandle {
-  jumpTo: (id: string) => void;
-}
-
-interface Section {
-  id: string;
-  label: string;
-  description?: string;
-  icon?: IconComponent;
-  rows: Memory[];
 }
 
 export function MemoryList({
   facts,
   query,
   onQueryChange,
-  sort,
-  onSortChange,
+  grouping,
+  onGroupingChange,
   paused,
   project,
   busyIds,
@@ -114,33 +114,33 @@ export function MemoryList({
   restoredIds,
   projects,
   onWantProjects,
+  adding,
+  onAddingChange,
+  addButtonRef,
   onAdd,
   onEdit,
   onRemove,
   onMove,
-  onActiveChange,
-  handleRef,
+  overlaps,
   revealId = null,
   revealEdit = false,
 }: MemoryListProps) {
-  const [adding, setAdding] = React.useState(false);
-  const addButtonRef = React.useRef<HTMLButtonElement>(null);
   // The field that had focus folds away with the form, on a save or a cancel;
   // the button that opened it is where a keyboard reader expects to be.
   const closeAdd = React.useCallback(() => {
-    setAdding(false);
+    onAddingChange(false);
     requestAnimationFrame(() => addButtonRef.current?.focus());
-  }, []);
+  }, [addButtonRef, onAddingChange]);
   const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
   const [showRetired, setShowRetired] = React.useState(false);
 
   const needle = query.trim().toLowerCase();
   const searching = needle.length > 0;
 
-  // Rows that leave because the reader searched or re-sorted leave at once;
+  // Rows that leave because the reader searched or regrouped leave at once;
   // only a removal they asked for plays the fold (see EntryRow). The flag is
   // true for exactly the render in which the filter changed.
-  const filterKey = `${needle}|${sort}`;
+  const filterKey = `${needle}|${grouping}`;
   const lastFilterKey = React.useRef(filterKey);
   const instant = lastFilterKey.current !== filterKey;
   React.useEffect(() => {
@@ -148,41 +148,15 @@ export function MemoryList({
   }, [filterKey]);
 
   const matching = React.useMemo(
-    () => (searching ? facts.filter((entry) => haystack(entry).includes(needle)) : facts),
+    () => (searching ? facts.filter((entry) => memorySearchText(entry).includes(needle)) : facts),
     [facts, needle, searching]
   );
-  const active = React.useMemo(() => matching.filter((entry) => !isRetired(entry)), [matching]);
   const retired = React.useMemo(
     () => matching.filter(isRetired).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [matching]
   );
   const totalActive = React.useMemo(() => facts.filter((entry) => !isRetired(entry)).length, [facts]);
-
-  const sections = React.useMemo<Section[]>(() => {
-    if (sort === "newest") {
-      const byBucket = new Map<string, Memory[]>();
-      for (const entry of [...active].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
-        const bucket = dateBucket(entry.createdAt);
-        byBucket.set(bucket, [...(byBucket.get(bucket) ?? []), entry]);
-      }
-      return DATE_BUCKETS.filter((bucket) => byBucket.has(bucket.id)).map((bucket) => ({
-        id: bucket.id,
-        label: bucket.label,
-        rows: byBucket.get(bucket.id) ?? [],
-      }));
-    }
-    return groupMemoriesByTopic(active, topicMetaFor, MEMORY_CATEGORIES)
-      .filter((topic) => topic.active.length > 0)
-      .map((topic) => ({
-        id: topic.id,
-        label: topic.label,
-        description: topicMetaFor(topic.id === "uncategorised" ? null : topic.id).description,
-        icon: MemoryIcons.forTopic(topic.id),
-        // Newest first inside a topic too: the fact most likely to be wrong is
-        // the one learned last.
-        rows: [...topic.active].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-      }));
-  }, [active, sort]);
+  const groups = React.useMemo(() => groupMemories(matching, grouping), [matching, grouping]);
 
   // A linked fact: unfold whatever hides it, once, then bring it into view.
   const revealed = React.useRef<string | null>(null);
@@ -193,9 +167,9 @@ export function MemoryList({
     revealed.current = revealId;
     if (isRetired(entry)) setShowRetired(true);
     else {
-      const section = sections.find((candidate) => candidate.rows.some((row) => row.id === revealId));
-      const index = section ? section.rows.findIndex((row) => row.id === revealId) : -1;
-      if (section && index >= PREVIEW_ROWS) setExpanded((prev) => new Set([...prev, section.id]));
+      const group = groups.find((candidate) => candidate.rows.some((row) => row.id === revealId));
+      const index = group ? group.rows.findIndex((row) => row.id === revealId) : -1;
+      if (group && index >= PREVIEW_ROWS) setExpanded((prev) => new Set([...prev, group.id]));
     }
     // After the unfold has rendered the row.
     const frame = window.requestAnimationFrame(() => {
@@ -206,9 +180,9 @@ export function MemoryList({
       });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [facts, revealId, sections]);
+  }, [facts, revealId, groups]);
 
-  const toggleSection = (id: string) =>
+  const toggleGroup = (id: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -225,329 +199,243 @@ export function MemoryList({
     onMove,
   };
 
-  // Scroll-spy on the section headings. The observer's band is everything
-  // above a line a third of the way down the view, so each heading flips
-  // exactly once as it crosses that line, however fast the reader scrolls
-  // (a narrow band is jumped over by a flick and never reports). The current
-  // section is the last one whose heading is above the line.
-  const sectionRefs = React.useRef(new Map<string, HTMLElement>());
-  const headingRefs = React.useRef(new Map<string, HTMLElement>());
-  const [current, setCurrent] = React.useState<string | null>(null);
-  const sectionKey = sections.map((section) => section.id).join("|");
-  React.useEffect(() => {
-    const order = sectionKey ? sectionKey.split("|") : [];
-    const above = new Set<string>();
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const id = (entry.target as HTMLElement).dataset.heading ?? "";
-          if (entry.isIntersecting) above.add(id);
-          else above.delete(id);
-        }
-        const last = [...order].reverse().find((id) => above.has(id));
-        setCurrent(last ?? order[0] ?? null);
-      },
-      { rootMargin: "100000px 0px -66% 0px" }
-    );
-    headingRefs.current.forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, [sectionKey]);
-  React.useEffect(() => onActiveChange?.(current), [current, onActiveChange]);
-
-  const jumpTo = React.useCallback((id: string) => {
-    const el = sectionRefs.current.get(id);
-    if (!el) return;
-    setCurrent(id);
-    el.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
-  }, []);
-  React.useImperativeHandle(handleRef, () => ({ jumpTo }), [jumpTo]);
-
   const nothing = facts.length === 0;
   const noMatch = searching && matching.length === 0;
+  const showSearch = offerSearch(totalActive, query);
 
   return (
     // `data-memory-list` is the region a removed row hands focus on within
     // (see EntryRow), and the heading is where it lands when no row is left.
-    <section aria-labelledby="memory-list-heading" data-memory-list="" className="@container/list">
-      <div className="grid gap-x-14 gap-y-6 @[50rem]/list:grid-cols-[13rem_minmax(0,1fr)]">
-        {/* The index: sticky beside the list on a wide page, a row of topics
-            above it on a narrow one. */}
-        <aside className="min-w-0 self-start @[50rem]/list:sticky @[50rem]/list:top-6">
-          <h2
-            id="memory-list-heading"
-            tabIndex={-1}
-            data-memory-list-anchor=""
-            className="mem-h2 flex items-baseline gap-2.5 text-foreground outline-none"
-          >
-            <span>Memories</span>
-            <span className="mem-annot">
-              <RollingNumber value={totalActive} />
-            </span>
-          </h2>
-
-          <div className="relative mt-5">
-            <Search
-              aria-hidden="true"
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              value={query}
-              onChange={(event) => onQueryChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" && query) {
-                  event.preventDefault();
-                  onQueryChange("");
-                }
-              }}
-              type="search"
-              aria-label="Search memories"
-              placeholder="Search"
-              className="h-9 rounded-field pl-9 pr-8 [&::-webkit-search-cancel-button]:hidden"
-            />
-            {query && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Clear search"
-                    onClick={() => onQueryChange("")}
-                    className="absolute right-1.5 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-safe:animate-fade-in coarse:size-9"
-                  >
-                    <ActionIcons.dismiss className="size-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>Clear search</TooltipContent>
-              </Tooltip>
-            )}
+    <section aria-labelledby="memory-list-heading" data-memory-list="">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <h2
+          id="memory-list-heading"
+          tabIndex={-1}
+          data-memory-list-anchor=""
+          className="flex items-baseline gap-2 text-foreground outline-none"
+        >
+          <span className="mem-title">Memories</span>
+          <span className="mem-count text-ui">
+            <RollingNumber value={totalActive} />
+          </span>
+        </h2>
+        {!nothing && (
+          <div className="flex w-full flex-wrap items-center gap-2 @[40rem]/page:w-auto">
+            {showSearch && <SearchField query={query} onQueryChange={onQueryChange} />}
+            <GroupingSwitch value={grouping} onChange={onGroupingChange} />
           </div>
+        )}
+      </div>
 
-          {sections.length > 0 && (
-            <nav
-              aria-label={sort === "topic" ? "Topics" : "Periods"}
-              className="-mx-1 mt-3 flex gap-0.5 overflow-x-auto px-1 py-1 [scrollbar-width:none] @[50rem]/list:mx-0 @[50rem]/list:flex-col @[50rem]/list:overflow-visible @[50rem]/list:px-0 [&::-webkit-scrollbar]:hidden"
-            >
-              {sections.map((section) => {
-                const on = current === section.id;
-                return (
-                  <button
-                    key={section.id}
-                    type="button"
-                    onClick={() => jumpTo(section.id)}
-                    aria-current={on ? "true" : undefined}
-                    className={cn(
-                      "relative flex h-8 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 text-ui hit-44 transition-colors duration-fast ease-out-soft",
-                      on ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {on && (
-                      <motion.span
-                        layoutId="memory-index-current"
-                        aria-hidden="true"
-                        className="absolute inset-0 rounded-control bg-muted"
-                        transition={{ type: "spring", stiffness: 420, damping: 36 }}
-                      />
-                    )}
-                    <span className="relative min-w-0 flex-1 truncate text-left">{section.label}</span>
-                    <span className="relative mem-annot">{section.rows.length}</span>
-                  </button>
-                );
-              })}
-            </nav>
-          )}
+      <Collapse open={adding && !paused}>
+        <div className="pt-4">
+          <AddForm project={project} onAdd={onAdd} onClose={closeAdd} />
+        </div>
+      </Collapse>
 
-          <div className="mt-4 flex items-center gap-2 @[50rem]/list:mt-5 @[50rem]/list:border-t @[50rem]/list:border-border/60 @[50rem]/list:pt-4">
-            <SortSwitch value={sort} onChange={onSortChange} />
-            <AddButton ref={addButtonRef} paused={paused} open={adding} onToggle={() => setAdding((open) => !open)} />
-          </div>
-        </aside>
-
-        <div className="min-w-0">
-          <Collapse open={adding && !paused}>
-            <div className="pb-6">
-              <AddForm project={project} onAdd={onAdd} onClose={closeAdd} />
-            </div>
-          </Collapse>
-
-          {/* A search changes the rows under a screen reader without a word; this
-              says how many are left. Always mounted, so the change is announced. */}
-          <p role="status" className="sr-only">
-            {searching &&
-              (matching.length === 1 ? (
-                <span>1 memory matches</span>
-              ) : (
-                <>
-                  <span>{matching.length}</span> <span>memories match</span>
-                </>
-              ))}
-          </p>
-
-          {nothing ? (
-            <EmptyState
-              size="panel"
-              icon={MemoryIcons.topic}
-              title={project ? PROJECT_EMPTY_TITLE : ACCOUNT_EMPTY_TITLE}
-              description={project ? PROJECT_EMPTY_DESCRIPTION : ACCOUNT_EMPTY_DESCRIPTION}
-            />
-          ) : noMatch ? (
-            <EmptyState
-              size="panel"
-              icon={MemoryIcons.search}
-              title="Nothing matches that"
-              description="Try a shorter word, or search by topic or project name."
-              action={
-                <Button variant="outline" size="sm" onClick={() => onQueryChange("")}>
-                  Clear search
-                </Button>
-              }
-            />
+      {/* A search changes the rows under a screen reader without a word; this
+          says how many are left. Always mounted, so the change is announced. */}
+      <p role="status" className="sr-only">
+        {searching &&
+          (matching.length === 1 ? (
+            <span>1 memory matches</span>
           ) : (
-            <div>
-              {sections.map((section, index) => {
-                // A search shows every match: capping results is hiding them.
-                const foldable = !searching && section.rows.length - PREVIEW_ROWS >= MIN_FOLDED;
-                const open = !foldable || expanded.has(section.id);
-                const shown = open ? section.rows : section.rows.slice(0, PREVIEW_ROWS);
-                return (
-                  <InViewReveal
-                    key={section.id}
-                    as="section"
-                    aria-labelledby={`memory-section-${section.id}`}
-                    data-section={section.id}
-                    sectionRef={(el) => {
-                      if (el) sectionRefs.current.set(section.id, el);
-                      else sectionRefs.current.delete(section.id);
-                    }}
-                    className={cn(
-                      "scroll-mt-6",
-                      index > 0 && "mt-12 border-t border-[var(--mem-hair)] pt-10"
-                    )}
-                  >
-                    <header
-                      data-heading={section.id}
-                      ref={(el) => {
-                        if (el) headingRefs.current.set(section.id, el);
-                        else headingRefs.current.delete(section.id);
-                      }}
-                      className="flex items-baseline gap-3"
-                    >
-                      <h3 id={`memory-section-${section.id}`} className="mem-h3 text-foreground">
-                        {section.label}
-                      </h3>
-                      <span className="mem-annot">{section.rows.length}</span>
-                      {sort === "topic" && section.rows[0] && (
-                        <span className="mem-annot ml-auto hidden @[34rem]/list:inline">
-                          <span>Updated</span> <span>{relativeTime(section.rows[0].createdAt)}</span>
-                        </span>
-                      )}
-                    </header>
-                    {section.description && (
-                      <p className="mt-1.5 max-w-[34rem] text-pretty text-ui text-muted-foreground">{section.description}</p>
-                    )}
-                    <ul className="-mx-3 mt-4">
-                      <AnimatePresence initial={false} custom={instant}>
-                        {shown.map((entry, rowIndex) => (
-                          <EntryRow
-                            key={entry.id}
-                            memory={entry}
-                            busy={busyIds.has(entry.id)}
-                            highlighted={highlightIds.has(entry.id)}
-                            startEditing={revealEdit && entry.id === revealId}
-                            // Rows past the preview unfold with "Show all"; a row
-                            // Undo brought back re-enters where it was.
-                            enter={restoredIds.has(entry.id) || (foldable && !instant && rowIndex >= PREVIEW_ROWS)}
-                            {...rowProps}
-                          />
-                        ))}
-                      </AnimatePresence>
-                    </ul>
-                    {foldable && (
-                      <button
-                        type="button"
-                        onClick={() => toggleSection(section.id)}
-                        aria-expanded={open}
-                        className="group/more relative -mx-3 mt-1 inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-ui font-medium text-muted-foreground hit-44 transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground"
-                      >
-                        {open ? (
-                          <span>Show fewer</span>
-                        ) : (
-                          <>
-                            <span>Show all</span>
-                            <span className="tabular-nums">{section.rows.length}</span>
-                          </>
-                        )}
-                        <ChevronDown
-                          aria-hidden="true"
-                          className={cn(
-                            "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
-                            open && "rotate-180"
-                          )}
-                        />
-                      </button>
-                    )}
-                  </InViewReveal>
-                );
-              })}
+            <>
+              <span>{matching.length}</span> <span>memories match</span>
+            </>
+          ))}
+      </p>
 
-              {retired.length > 0 && (
-                <div className="mt-12 border-t border-[var(--mem-hair)] pt-6">
+      {!searching && overlaps ? <div className="mt-5">{overlaps}</div> : null}
+
+      {nothing ? (
+        <EmptyState
+          size="panel"
+          className="mt-5"
+          title={project ? PROJECT_EMPTY_TITLE : ACCOUNT_EMPTY_TITLE}
+          description={project ? PROJECT_EMPTY_DESCRIPTION : ACCOUNT_EMPTY_DESCRIPTION}
+        />
+      ) : noMatch ? (
+        <EmptyState
+          size="panel"
+          className="mt-5"
+          icon={MemoryIcons.search}
+          title="Nothing matches that"
+          description="Try a shorter word, or search by group or project name."
+          action={
+            <Button variant="outline" size="sm" onClick={() => onQueryChange("")}>
+              Clear search
+            </Button>
+          }
+        />
+      ) : (
+        <div>
+          {groups.map((group) => {
+            // A search shows every match: capping results is hiding them.
+            const foldable = !searching && group.rows.length - PREVIEW_ROWS >= MIN_FOLDED;
+            const open = !foldable || expanded.has(group.id);
+            const shown = open ? group.rows : group.rows.slice(0, PREVIEW_ROWS);
+            return (
+              <section
+                key={group.id}
+                aria-labelledby={`memory-group-${group.id}`}
+                data-memory-group={group.id}
+                className="mt-8 scroll-mt-6"
+              >
+                <header className="flex items-baseline gap-2">
+                  <h3 id={`memory-group-${group.id}`} className="mem-group text-foreground">
+                    {group.label}
+                  </h3>
+                  <span className="mem-count text-ui">{group.rows.length}</span>
+                </header>
+                {group.description && (
+                  <p className="mt-0.5 max-w-prose text-pretty text-ui text-muted-foreground">{group.description}</p>
+                )}
+                <ul className="ed-list -mx-3 mt-2">
+                  <AnimatePresence initial={false} custom={instant}>
+                    {shown.map((entry, rowIndex) => (
+                      <EntryRow
+                        key={entry.id}
+                        memory={entry}
+                        busy={busyIds.has(entry.id)}
+                        highlighted={highlightIds.has(entry.id)}
+                        startEditing={revealEdit && entry.id === revealId}
+                        // Rows past the preview unfold with "Show all"; a row
+                        // Undo brought back re-enters where it was.
+                        enter={restoredIds.has(entry.id) || (foldable && !instant && rowIndex >= PREVIEW_ROWS)}
+                        {...rowProps}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </ul>
+                {foldable && (
                   <button
                     type="button"
-                    onClick={() => setShowRetired((open) => !open)}
-                    aria-expanded={showRetired}
-                    aria-controls="memory-retired-list"
-                    className="-mx-3 flex h-9 items-center gap-2 rounded-control px-3 text-left coarse:h-11 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground"
+                    onClick={() => toggleGroup(group.id)}
+                    aria-expanded={open}
+                    className="relative -mx-3 mt-1 inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-ui font-medium text-muted-foreground hit-44 transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
                   >
+                    {open ? (
+                      <span>Show fewer</span>
+                    ) : (
+                      <>
+                        <span>Show all</span>
+                        <span className="tabular-nums">{group.rows.length}</span>
+                      </>
+                    )}
                     <ChevronDown
                       aria-hidden="true"
                       className={cn(
-                        "size-3.5 -rotate-90 transition-transform duration-base ease-in-out motion-reduce:transition-none",
-                        showRetired && "rotate-0"
+                        "size-4 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                        open && "rotate-180"
                       )}
                     />
-                    {/* The count sits in its own node so the extractor sees a whole phrase. */}
-                    <span>No longer used</span>
-                    <span className="tabular-nums">{retired.length}</span>
                   </button>
-                  <Collapse open={showRetired || (searching && retired.length > 0)}>
-                    <p className="max-w-[34rem] pb-2 pt-1 text-caption text-muted-foreground">
-                      {`Replaced by something newer, contradicted, expired, or forgotten at your request. ${PRODUCT_NAME} doesn’t use these.`}
-                    </p>
-                    <ul id="memory-retired-list" className="-mx-3">
-                      <AnimatePresence initial={false} custom={instant}>
-                        {retired.map((entry) => (
-                          <EntryRow
-                            key={entry.id}
-                            memory={entry}
-                            busy={busyIds.has(entry.id)}
-                            highlighted={highlightIds.has(entry.id)}
-                            startEditing={revealEdit && entry.id === revealId}
-                            enter={restoredIds.has(entry.id)}
-                            {...rowProps}
-                          />
-                        ))}
-                      </AnimatePresence>
-                    </ul>
-                  </Collapse>
-                </div>
-              )}
+                )}
+              </section>
+            );
+          })}
+
+          {retired.length > 0 && (
+            <div className="mt-10 border-t border-[var(--mem-hair)] pt-4">
+              <button
+                type="button"
+                onClick={() => setShowRetired((open) => !open)}
+                aria-expanded={showRetired}
+                aria-controls="memory-retired-list"
+                className="relative -mx-3 flex h-9 items-center gap-2 rounded-control px-3 text-left text-ui text-muted-foreground hit-44 transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
+              >
+                <ChevronDown
+                  aria-hidden="true"
+                  className={cn(
+                    "size-4 -rotate-90 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                    showRetired && "rotate-0"
+                  )}
+                />
+                {/* The count sits in its own node so the extractor sees a whole phrase. */}
+                <span className="font-medium">No longer used</span>
+                <span className="tabular-nums">{retired.length}</span>
+              </button>
+              <Collapse open={showRetired || (searching && retired.length > 0)}>
+                <p className="max-w-prose pb-2 pt-1 text-ui text-muted-foreground">
+                  {`Replaced by something newer, contradicted, expired, or forgotten at your request. ${PRODUCT_NAME} doesn’t use these.`}
+                </p>
+                <ul id="memory-retired-list" className="ed-list -mx-3">
+                  <AnimatePresence initial={false} custom={instant}>
+                    {retired.map((entry) => (
+                      <EntryRow
+                        key={entry.id}
+                        memory={entry}
+                        busy={busyIds.has(entry.id)}
+                        highlighted={highlightIds.has(entry.id)}
+                        startEditing={revealEdit && entry.id === revealId}
+                        enter={restoredIds.has(entry.id)}
+                        {...rowProps}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </ul>
+              </Collapse>
             </div>
           )}
         </div>
-      </div>
+      )}
     </section>
   );
 }
 
-/** Topic or date, as two segments: both choices visible, one press to switch. */
-function SortSwitch({ value, onChange }: { value: MemorySort; onChange: (sort: MemorySort) => void }) {
+function SearchField({ query, onQueryChange }: { query: string; onQueryChange: (query: string) => void }) {
   return (
-    <div role="radiogroup" aria-label="Group memories" className="flex h-8 flex-1 items-center rounded-control bg-muted p-0.5">
-      {(
-        [
-          ["topic", "By topic"],
-          ["newest", "Newest"],
-        ] as const
-      ).map(([id, label]) => {
+    <label className="relative block min-w-0 flex-1 @[40rem]/page:w-60 @[40rem]/page:flex-none">
+      <span className="sr-only">Search memories</span>
+      <Search
+        aria-hidden="true"
+        className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+      />
+      <input
+        type="search"
+        value={query}
+        onChange={(event) => onQueryChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && query) {
+            event.preventDefault();
+            onQueryChange("");
+          }
+        }}
+        placeholder="Search memories"
+        className={cn(
+          "h-8 w-full rounded-field border pl-9 pr-8 text-ui outline-none transition-[border-color] duration-fast ease-out-soft placeholder:text-muted-foreground coarse:h-11 [&::-webkit-search-cancel-button]:hidden",
+          customizeFieldClass
+        )}
+      />
+      {query && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => onQueryChange("")}
+              className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground hit-44 transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
+            >
+              <ActionIcons.dismiss className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Clear search</TooltipContent>
+        </Tooltip>
+      )}
+    </label>
+  );
+}
+
+/** Topic, source or date, as three segments: every choice visible, one press to switch. */
+function GroupingSwitch({ value, onChange }: { value: MemoryGrouping; onChange: (grouping: MemoryGrouping) => void }) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Group memories by"
+      className="flex h-8 shrink-0 items-center rounded-control bg-muted p-0.5 coarse:h-10"
+    >
+      {MEMORY_GROUPINGS.map(({ id, label }) => {
         const on = value === id;
         return (
           <button
@@ -557,15 +445,17 @@ function SortSwitch({ value, onChange }: { value: MemorySort; onChange: (sort: M
             aria-checked={on}
             onClick={() => onChange(id)}
             className={cn(
-              "relative h-full flex-1 rounded-sm px-2 text-caption font-medium hit-44 transition-colors duration-fast ease-out-soft",
-              on ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+              "relative h-full rounded-sm px-2.5 text-ui hit-44 transition-colors duration-fast ease-out-soft",
+              on ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
             {on && (
+              // The selected segment is a flat key on the track: the page's
+              // ground with a hairline, no shadow.
               <motion.span
-                layoutId="memory-sort-thumb"
+                layoutId="memory-grouping-thumb"
                 aria-hidden="true"
-                className="absolute inset-0 rounded-sm bg-background shadow-raised"
+                className="absolute inset-0 rounded-sm bg-background shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.08)]"
                 transition={{ type: "spring", stiffness: 480, damping: 38 }}
               />
             )}
@@ -577,97 +467,8 @@ function SortSwitch({ value, onChange }: { value: MemorySort; onChange: (sort: M
   );
 }
 
-/** A section that rises in the first time it scrolls into view. */
-function InViewReveal({
-  as: Tag = "section",
-  sectionRef,
-  className,
-  children,
-  ...rest
-}: {
-  as?: "section" | "div";
-  sectionRef: (el: HTMLElement | null) => void;
-  className?: string;
-  children: React.ReactNode;
-} & Omit<React.HTMLAttributes<HTMLElement>, "className" | "children"> & { "data-section"?: string }) {
-  const ref = React.useRef<HTMLElement | null>(null);
-  const [on, setOn] = React.useState(false);
-  React.useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setOn(true);
-          io.disconnect();
-        }
-      },
-      { threshold: 0.08 }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-  return React.createElement(
-    Tag,
-    {
-      ...rest,
-      ref: (el: HTMLElement | null) => {
-        ref.current = el;
-        sectionRef(el);
-      },
-      className: cn("mem-reveal", className),
-      "data-on": on || undefined,
-    },
-    children
-  );
-}
-
-const AddButton = React.forwardRef<
-  HTMLButtonElement,
-  { paused: boolean; open: boolean; onToggle: () => void }
->(function AddButton({ paused, open, onToggle }, ref) {
-  const button = (
-    <Button
-      ref={ref}
-      type="button"
-      variant="outline"
-      size="sm"
-      disabled={paused}
-      aria-expanded={open}
-      onClick={onToggle}
-      className="gap-1.5 px-2.5"
-    >
-      {/* The plus rests at 45° while the field is open, so the control that
-          opened it reads as the one that closes it. The turn is on a wrapper:
-          the glyph's own hover articulation would out-rank a utility on the svg. */}
-      <span
-        aria-hidden="true"
-        className={cn(
-          "inline-flex transition-transform duration-base ease-in-out motion-reduce:transition-none",
-          open && "rotate-45"
-        )}
-      >
-        <Plus motion="none" className="size-3.5" />
-      </span>
-      Add
-    </Button>
-  );
-  if (!paused) return button;
-  // A disabled button takes no pointer events, so the tooltip that says why
-  // hangs on a focusable wrapper instead.
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span tabIndex={0} className="rounded-control">
-          {button}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>Turn memory on to add to it</TooltipContent>
-    </Tooltip>
-  );
-});
-
-function AddForm({
+/** The field a new memory is typed into: one sentence, kept as written. */
+export function AddForm({
   project,
   onAdd,
   onClose,
@@ -708,7 +509,6 @@ function AddForm({
 
   return (
     <form
-      className="pt-3"
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -734,7 +534,7 @@ function AddForm({
         className="block min-h-0 resize-none overflow-hidden px-3 py-2"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
-        <p className="min-w-0 text-caption text-muted-foreground">
+        <p className="min-w-0 text-ui text-muted-foreground">
           {project ? (
             <>
               <span>Only chats in</span> <span translate="no">{project.name}</span> <span>will use it.</span>
@@ -756,41 +556,7 @@ function AddForm({
   );
 }
 
-/** Topics in scope with their active counts: the constellation's points. */
+/** Topics in scope with their active counts. */
 export function topicSummary(facts: Memory[]): { id: string; label: string; count: number }[] {
-  return groupMemoriesByTopic(
-    facts.filter((entry) => !isRetired(entry)),
-    topicMetaFor,
-    MEMORY_CATEGORIES
-  )
-    .filter((topic) => topic.active.length > 0)
-    .map((topic) => ({ id: topic.id, label: topic.label, count: topic.active.length }));
-}
-
-/** Everything a search should be able to find a fact by. */
-function haystack(entry: Memory): string {
-  return [
-    entry.content,
-    entry.projectName ?? "",
-    isMemoryCategory(entry.category) ? MEMORY_CATEGORY_META[entry.category].label : "",
-    entry.reason ?? "",
-  ]
-    .join(" ")
-    .toLowerCase();
-}
-
-/**
- * Category id to the section's identity. Rows written before Memory v2 carry
- * no category, and a newer build could write one this bundle has never heard
- * of; both land under "Uncategorised" rather than under a raw enum value.
- */
-export function topicMetaFor(category: string | null): { id: string; label: string; description: string } {
-  if (isMemoryCategory(category)) {
-    return { id: category, ...MEMORY_CATEGORY_META[category] };
-  }
-  return {
-    id: "uncategorised",
-    label: "Uncategorised",
-    description: `Facts ${PRODUCT_NAME} kept before it started filing them by subject.`,
-  };
+  return groupMemories(facts, "topic").map((group) => ({ id: group.id, label: group.label, count: group.rows.length }));
 }

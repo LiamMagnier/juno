@@ -32,7 +32,8 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 import { useReducedMotion } from "@/lib/motion-preference";
 
 /*
- * One remembered fact: a line of text, one muted line about it, and a menu.
+ * One remembered fact: a line of text, one muted line about where it came
+ * from and when, and its two verbs (Edit, and a menu for the rest).
  *
  * WHAT THE ROW STOPPED SAYING. It used to carry up to six badges (topic,
  * sensitivity, project, confidence, status, "not in use"), a provenance line
@@ -118,7 +119,8 @@ export function EntryRow({
       // The hairline between rows is drawn inset to the text column, not by
       // the list's border: the row itself bleeds 12px either side so its hover
       // fill has room around the text, and a border would bleed with it.
-      className="relative grid grid-rows-[1fr]"
+      // `ed-row`: a row of an `.ed-list`, whose hairline steps aside under a hovered row.
+      className="ed-row relative grid grid-rows-[1fr]"
       data-memory-id={memory.id}
     >
       {/* The clip lives on the track's only item and the padding one level in:
@@ -149,7 +151,7 @@ export function EntryRow({
             // Keyed on the highlight so a second change to the same row replays it.
             key={highlighted ? "flash" : "rest"}
             className={cn(
-              "group/row flex items-start gap-2 rounded-control px-3 py-3 transition-colors duration-fast ease-out-soft hover:bg-muted",
+              "group/row flex items-start gap-3 rounded-control px-3 py-3 transition-colors duration-fast ease-out-soft hover:bg-accent",
               highlighted && "animate-cite-flash [animation-duration:var(--dur-emphasis)]"
             )}
           >
@@ -168,9 +170,27 @@ export function EntryRow({
               >
                 {memory.content}
               </p>
-              <RowMeta memory={memory} showProject={showProject} />
+              <MemoryRowMeta memory={memory} showProject={showProject} />
             </div>
-            <RowMenu
+            <div className="mem-row-actions -my-1 flex shrink-0 items-center gap-0.5">
+              {!retired && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <IconButton
+                      variant="ghost"
+                      size="sm"
+                      label="Edit"
+                      title=""
+                      disabled={busy}
+                      onClick={() => setEditing(true)}
+                    >
+                      <ActionIcons.edit className="size-4" />
+                    </IconButton>
+                  </TooltipTrigger>
+                  <TooltipContent>Edit</TooltipContent>
+                </Tooltip>
+              )}
+              <RowMenu
               memory={memory}
               busy={busy}
               buttonRef={menuButtonRef}
@@ -180,6 +200,7 @@ export function EntryRow({
               onRemove={onRemove}
               onMove={onMove}
             />
+            </div>
           </div>
         )}
       </div>
@@ -295,7 +316,7 @@ function sourceChatId(memory: Memory): string | null {
 /** How long a memory reads as new. */
 const NEW_FOR_MS = 3 * 24 * 60 * 60 * 1000;
 
-function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean }) {
+export function MemoryRowMeta({ memory, showProject }: { memory: Memory; showProject: boolean }) {
   const words = learnedFrom(memory);
   const chatId = sourceChatId(memory);
   const status = isRetired(memory) && isMemoryStatus(memory.status) ? MEMORY_STATUS_META[memory.status] : null;
@@ -388,7 +409,7 @@ function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean
   }
 
   return (
-    <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-caption text-muted-foreground">
+    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-caption text-muted-foreground">
       {parts.map((part, i) => (
         <React.Fragment key={i}>
           {i > 0 && <span aria-hidden="true">·</span>}
@@ -475,9 +496,9 @@ function RowMenu({
               disabled={busy}
               data-memory-row-menu=""
               // The verbs arrive with the pointer, keyboard focus or an open
-              // menu; a column of dots on every fact was the loudest thing in
-              // a list meant for reading. Always there on a touch screen.
-              className="-my-1 opacity-0 transition-opacity duration-fast ease-out-soft focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
+              // menu (`.mem-row-actions`, memory.css); a column of dots on
+              // every fact was the loudest thing in a list meant for reading.
+              // Always there on a touch screen.
             >
               <ActionIcons.more className="size-4" />
             </IconButton>

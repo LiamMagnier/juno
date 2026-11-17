@@ -925,7 +925,17 @@ export interface SaveCandidatesResult {
    * The rows this batch made believed — new, or believed again — by id. What
    * the chat's "Memory updated" receipt offers Undo and Edit on.
    */
-  believed: Array<{ id: string; content: string; category: string | null }>;
+  believed: Array<{
+    id: string;
+    content: string;
+    category: string | null;
+    /**
+     * Believed AGAIN, not new: the receipt carries it so a chat's Undo returns
+     * the row to history instead of block-listing a statement the person made
+     * before this turn (forgetPlan in memory-undo.ts).
+     */
+    reinstated?: true;
+  }>;
 }
 
 /**
@@ -1079,7 +1089,7 @@ export async function saveCandidates(
         result.reinstated++;
         if (known) {
           createdContents.push(known.content);
-          result.believed.push({ id: known.id, content: known.content, category: known.category ?? null });
+          result.believed.push({ id: known.id, content: known.content, category: known.category ?? null, reinstated: true });
         }
       }
       if (plan.supersedes) await supersede(plan.supersedes.entryId, plan.entryId, plan.supersedes.reason);

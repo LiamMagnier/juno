@@ -9,11 +9,11 @@ test before it was fixed. Line numbers are against this branch.*
 |---|---|---|---|
 | 1 | A memory reader already waiting on its model saves the chat's facts after the chat was deleted, memory was turned off for it, memory was paused, its project was cleared or everything was reset. After a reset it also moves the read mark back. | **High** (privacy: "delete" and "erase" do not hold) | **Fixed** |
 | 2 | Clearing a project's memory keeps the edit ledger. Its Undo entries quote the cleared facts word for word, and pressing Undo writes them back into the project. | **Medium-high** (privacy, and an erased fact can come back) | **Fixed** |
-| 3 | Undo on a receipt fact that the turn *believed again* (reinstated), rather than created, block-lists a fact the person stated before that turn. It does not return memory to how it was. | Medium | Open |
+| 3 | Undo on a receipt fact that the turn *believed again* (reinstated), rather than created, block-lists a fact the person stated before that turn. It does not return memory to how it was. | Medium | **Fixed** |
 | 4 | A brokered Alevr tool that is stopped or times out mid-run is completed on its durable receipt as `failed` with an empty result. The action may have happened, and a replay of that receipt hands the model an empty failed result. | Medium-low | Open |
 | 5 | Audit rows are written as `executed` before authorisation. If the broker throws, the row is never settled and still says `executed`. | Low-medium (audit integrity) | Open |
-| 6 | A turn whose agent was deleted reads the account's full memory, not the deleted agent's narrower grant. | Low (unclear whether this is intended) | Open |
-| 7 | The account reset's `createMany` has no `skipDuplicates`. A concurrent first extraction can make it return 500 after the erase has already committed. | Low | Open |
+| 6 | A turn whose agent was deleted reads the account's full memory, not the deleted agent's narrower grant. | Low (unclear whether this is intended) | **Fixed** (fail closed; see below) |
+| 7 | The account reset's `createMany` has no `skipDuplicates`. A concurrent first extraction can make it return 500 after the erase has already committed. | Low | **Fixed** |
 | 8 | There are three copies of the call-id stamper. The two adapter copies add one suffix and never re-check it, and the `seenCallIds` set they read is never written. | Low (latent) | Open |
 | 9 | A voice tool POST builds a fresh dispatcher every time, so a relay retry of the same paid search runs it again and bills it again. Reads carry no receipt. | Low (the relay was not seen retrying) | Open |
 
@@ -42,6 +42,14 @@ a deleted agent's thread should simply become an ordinary chat is a product
 decision. To repro: create an agent with `memoryAccess: "none"`, start a thread
 with it, soft-delete the agent, and send a message. The turn's
 `memoryProfile.used` is non-empty.
+
+**Fixed, failing closed (17 Nov 2026).** The lookup no longer skips deleted
+agents, so the thread keeps the grant its agent had, and an agent id that finds
+no row at all reads nothing (`agentGrantForTurn`, `src/lib/memory-scope.ts`).
+If the product wants a deleted agent's thread to become an ordinary chat, that
+is a one-line change in that function. Proven by
+`tests/agent-memory-none.test.ts` ("a deleted agent's thread keeps the grant
+its agent had"), which failed against the old lookup.
 
 ### Write: extraction after a turn, and explicit "remember this"
 
@@ -99,8 +107,19 @@ block-listed for good.
 
 A correct fix has to tell the route which rows the turn reinstated, by adding
 a flag to the receipt and to `readMemoryWrite`. A reinstated row's Undo should
-then return it to `superseded`, without a block-list entry. That changes the
-client and stored-receipt contract, so it was left for review.
+then return it to `superseded`, without a block-list entry.
+
+**Fixed (17 Nov 2026).** `saveCandidates` marks a reinstated row in `believed`
+(`reinstated: true`), `memoryUpdateActivity` and `readMemoryReceipt` carry it on
+the receipt (`ClientMemoryReceipt.reinstated`), and the chat's Undo sends it
+(`forgetMemoryFact`, `undoRequests`). The route asks one pure rule,
+`forgetPlan` (`src/lib/memory-undo.ts`): a reinstated row that is still
+believed goes back to `superseded` behind the row it took the slot from, that
+row is believed again, and no block-list entry is written; one no longer
+believed is left alone. `reinstated` is refused without `undo`, so it cannot
+soften a plain Forget. Older receipts without the flag behave as before.
+Proven by `tests/memory-route-fixes.test.ts` (the Lisbon, Porto, Lisbon repro
+through the real route; it failed before the fix).
 
 ### Deletion: one memory, clear all, per-project clear, per-chat memory off, incognito
 
@@ -128,6 +147,11 @@ now.
 route return 500 after the erase has committed, so the page says the reset
 failed when it succeeded. The fix is `skipDuplicates: true`, as the project
 branch already has.
+
+**Fixed (17 Nov 2026)** as described. Proven by
+`tests/memory-route-fixes.test.ts` ("a reset that races a first extraction
+still succeeds"), which lands the extraction's read mark between the route's
+read and its insert; it failed before the fix.
 
 ### Data boundaries
 

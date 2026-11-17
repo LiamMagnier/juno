@@ -10,10 +10,11 @@ import { Progress } from "@/components/ui/progress";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 
 /*
- * The page's announcements: memory is off, a policy refused the work, Juno is
+ * The page's announcements: memory is off, a policy refused the work, Alevr is
  * reading your older chats, or there is unread history worth reading.
  *
- * One shape for all four, a flat tonal band under the header, because they
+ * One shape for all four, a flat band on a hairline under the header (an
+ * in-flow surface: no fill to compete with the rows, no shadow), because they
  * are the same kind of sentence: a state of the whole page, and at most one
  * thing to do about it. Paused used to be told a different way in five places
  * (a dimmed summary, a badge, "Not in use" on every row, disabled buttons and a
@@ -36,7 +37,7 @@ function Notice({
   return (
     <div
       role={live ? "status" : undefined}
-      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-card bg-secondary px-4 py-3 text-ui text-foreground"
+      className="mem-surface flex flex-wrap items-center gap-x-3 gap-y-2 rounded-card px-4 py-3 text-ui text-foreground"
     >
       <span className="flex min-w-0 flex-1 items-start gap-2.5">
         <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>
@@ -49,7 +50,7 @@ function Notice({
 
 export function PausedNotice({ open, onTurnOn }: { open: boolean; onTurnOn: () => void }) {
   return (
-    <Collapse open={open} innerClassName="pb-4">
+    <Collapse open={open} innerClassName="pb-6">
       <Notice
         icon={<PauseCircle className="size-4" aria-hidden="true" />}
         action={
@@ -59,7 +60,7 @@ export function PausedNotice({ open, onTurnOn }: { open: boolean; onTurnOn: () =
         }
       >
         <span className="font-medium">Memory is off.</span>{" "}
-        <span className="text-muted-foreground">{`${PRODUCT_NAME} isn’t using or saving memories. What’s here is kept.`}</span>
+        <span className="text-muted-foreground">{`${PRODUCT_NAME} isn’t using or saving memories in any chat. What’s here is kept, and you can still correct or forget it.`}</span>
       </Notice>
     </Collapse>
   );
@@ -67,7 +68,7 @@ export function PausedNotice({ open, onTurnOn }: { open: boolean; onTurnOn: () =
 
 export function PolicyNotice({ message, onOpenSettings }: { message: string | null; onOpenSettings: () => void }) {
   return (
-    <Collapse open={!!message} innerClassName="pb-4">
+    <Collapse open={!!message} innerClassName="pb-6">
       <Notice
         live
         icon={<StatusIcons.info className="size-4" aria-hidden="true" />}
@@ -104,7 +105,7 @@ export function BackfillNotice({
   const done = Math.max(0, total - remaining);
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   return (
-    <Collapse open={running || offer} innerClassName="pb-4">
+    <Collapse open={running || offer} innerClassName="pb-6">
       {running ? (
         <Notice live icon={<GalaxyMark phase="working" size={16} />}>
           <span className="font-medium">Reading your past chats.</span>{" "}
