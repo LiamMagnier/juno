@@ -157,9 +157,32 @@ export type VoiceServerMessage =
       estCostInUsd?: number;
       estCostOutUsd?: number;
     }
-  | { type: "session.closed"; reason: "session-limit" | "provider" | "client" | "error" }
-  | { type: "error"; message: string }
+  /** `budget`: the account's voice budget ran out mid-call. The relay sends
+   *  this, then the same `error` an older client understands, then closes the
+   *  socket. The native decoder drops an unknown reason, so the apps go on
+   *  reading the error as before. */
+  | { type: "session.closed"; reason: VoiceCloseReason }
+  /**
+   * `code` says which failure, so a client can word it without parsing
+   * provider text; `fatal: false` is a provider hiccup the call outlives (a
+   * cancel with nothing to cancel, a transient socket error). Both are
+   * optional: an older relay sends neither, and every error then ends the
+   * call, as it always did. A provider that really fails also closes, so a
+   * non-fatal error is never the only word on a dead call.
+   */
+  | { type: "error"; message: string; code?: VoiceErrorCode; fatal?: boolean }
   | { type: "pong" };
+
+export type VoiceCloseReason = "session-limit" | "provider" | "client" | "error" | "budget";
+
+/** Why the relay could not go on (`error.code`). */
+export type VoiceErrorCode =
+  | "session_limit"
+  | "provider_unknown"
+  | "provider_unavailable"
+  | "provider_failed"
+  | "provider_error"
+  | "budget";
 
 export const MIC_SAMPLE_RATE = 16000;
 export const PLAYBACK_SAMPLE_RATE = 24000;

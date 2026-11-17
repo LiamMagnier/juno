@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { voiceEndedCopy, voiceErrorCopy, voiceLimitWarning, voiceStartErrorCopy } from "@/lib/voice-copy";
+import { voiceEndedCopy, voiceErrorCopy, voiceLimitWarning, voiceRestartLabel, voiceStartErrorCopy } from "@/lib/voice-copy";
 
 /*
  * What a voice call says when it cannot start, stops, or ends. The rule
@@ -48,4 +48,21 @@ test("the last minute of a capped call is announced once, in whole minutes then 
   assert.equal(voiceLimitWarning(start, 900, start + 15 * 60_000 + 1), null, "the limit itself ends the call");
   assert.equal(voiceLimitWarning(null, 900, start), null);
   assert.equal(voiceLimitWarning(start, 0, start), null, "an uncapped provider never warns");
+});
+
+test("the relay's error code decides the sentence, whatever the provider's text says", () => {
+  assert.equal(voiceErrorCopy("gpt-live: socket hang up", "GPT-Live 1", "provider_failed"), "GPT-Live 1 isn’t available right now. Try again, or pick another voice.");
+  assert.equal(voiceErrorCopy("xai is not configured on this relay.", null, "provider_unavailable"), "This voice isn’t available right now. Try again, or pick another voice.");
+  assert.equal(voiceErrorCopy("anything at all", null, "budget"), "Voice is paused: you’ve used this period’s voice budget.");
+  assert.equal(voiceErrorCopy("anything at all", null, "session_limit"), "This call reached its time limit. Start a new call to continue.");
+  assert.equal(voiceErrorCopy("gemini: read ECONNRESET", "Gemini 3.8 Live", "provider_error"), "Gemini 3.8 Live stopped responding. Try again.");
+});
+
+test("after a call, the one next step fits why it ended", () => {
+  assert.equal(voiceRestartLabel("error", null), "Try again");
+  assert.equal(voiceRestartLabel("ended", "session-limit"), "Continue", "the transcript carries into the new call");
+  assert.equal(voiceRestartLabel("ended", "provider"), "Continue");
+  assert.equal(voiceRestartLabel("ended", null), "Try again", "a line that dropped and would not come back");
+  assert.equal(voiceRestartLabel("ended", "client"), "Start again");
+  assert.equal(voiceRestartLabel("ended", "budget"), null, "a new call would be refused the same way");
 });

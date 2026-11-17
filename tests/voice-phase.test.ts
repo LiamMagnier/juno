@@ -45,8 +45,10 @@ test("muted is never hidden behind listening", () => {
   assert.equal(phase({ muted: true, awaitingResponse: true }), "muted");
 });
 
-test("the model speaking outranks mute, because that audio is still audible", () => {
-  assert.equal(phase({ muted: true, assistantSpeaking: true }), "speaking");
+test("muted outranks the model speaking: the caller must never think they are heard", () => {
+  // It used to read "Speaking" until the answer ended, so muting to cough
+  // mid-answer showed no sign of having worked.
+  assert.equal(phase({ muted: true, assistantSpeaking: true }), "muted");
 });
 
 test("every phase has a label and an announcement", () => {

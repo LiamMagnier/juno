@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { voiceEndedCopy, voiceErrorCopy, voiceLimitWarning, voiceStartErrorCopy } from "@/lib/voice-copy";
+import { VOICE_SCREEN_SHARE_FAILED, voiceEndedCopy, voiceErrorCopy, voiceLimitWarning, voiceStartErrorCopy } from "@/lib/voice-copy";
+import { canShareScreen } from "@/lib/voice-call-state";
+import { createCallWakeLock, createVoiceHeartbeat, type CallWakeLock, type VoiceHeartbeat } from "@/lib/voice-keepalive";
 import { getAudioContext } from "@/lib/audio-context";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import {
@@ -19,6 +21,7 @@ import {
   VOICE_HISTORY_MAX_TURN_CHARS,
   VOICE_HISTORY_MAX_TURNS,
   VOICE_PROVIDERS,
+  voiceModelLabel,
 } from "@/lib/voice-relay-protocol";
 import type { ClientAttachment } from "@/types/chat";
 import {
@@ -269,6 +272,9 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const [notice, setNotice] = React.useState<string | null>(null);
   /** The model the relay says is serving the call — never a guess from the id. */
   const [model, setModel] = React.useState<string | null>(null);
+  /** The same, for the socket handler, which names the model in an error sentence. */
+  const modelRef = React.useRef<string | null>(null);
+  modelRef.current = model;
   /** The backend model the call hands harder turns to, as the relay reports it. */
   const [delegate, setDelegate] = React.useState<VoiceDelegate | null>(null);
   /**
@@ -307,6 +313,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const [screenSharing, setScreenSharing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [closedReason, setClosedReason] = React.useState<string | null>(null);
+  /** This call came up at least once: an error after that stopped a call, before it the call never started. */
+  const [wasLive, setWasLive] = React.useState(false);
 
   /** Multiplexed 0..1 floor for the aura. Active speaker only. */
   const levelRef = React.useRef(0);
@@ -415,6 +423,10 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const reconnectAttemptsRef = React.useRef(0);
   const reconnectTimerRef = React.useRef<number | null>(null);
   const echoCancellationRef = React.useRef<boolean | null>(null);
+  /** The socket's heartbeat (lib/voice-keepalive.ts): a ping nobody answers is a drop. */
+  const heartbeatRef = React.useRef<VoiceHeartbeat | null>(null);
+  /** The screen stays awake while a call runs; created on first use. */
+  const wakeLockRef = React.useRef<CallWakeLock | null>(null);
   const bargeDetectorRef = React.useRef(new RealtimeVoiceActivityDetector());
   /*
    * The caller's own turn, heard locally while the model is quiet. Gemini Live
@@ -728,6 +740,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     speechRef.current.stop();
     stopScreenShare();
 
+    heartbeatRef.current?.stop();
+    heartbeatRef.current = null;
     const ws = wsRef.current;
     wsRef.current = null;
     if (ws) {
@@ -978,6 +992,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           // The provider's cap runs from the first session of the call; a
           // switch keeps the relay's clock, so it keeps this one too.
           if (callStartedAtRef.current == null) callStartedAtRef.current = Date.now();
+          setWasLive(true);
           capsRef.current = msg.capabilities;
           liveProviderRef.current = msg.provider;
           thinkingRef.current = msg.thinking;
@@ -1073,13 +1088,31 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           setAwaitingResponse(false);
           return;
         case "error":
+          // Raw provider text to the console; a sentence to the screen.
+          console.warn("[voice] relay error:", msg.code ?? "", msg.message);
+          // A hiccup the call outlives (a cancel with nothing to cancel, a
+          // provider socket error it recovers from). It used to end the call
+          // on screen while the call went on talking; a provider that really
+          // fails also closes, and the close ends the call.
+          if (msg.fatal === false) return;
+          if (msg.code === "budget") {
+            // The relay sends the reason first (`session.closed`), so this
+            // only lands when that frame did not: end the call with the same
+            // reason rather than calling it a failure.
+            setClosedReason("budget");
+            sealTranscript();
+            releaseResources();
+            statusRef.current = "ended";
+            setStatus("ended");
+            setUserSpeaking(false);
+            setAwaitingResponse(false);
+            return;
+          }
           // Promoted from any status, not only "connecting". A relay error
           // arriving mid-call used to set a message that nothing rendered,
           // because the dock's alert was gated on the status — so the user sat
           // in a call that had already failed and was told nothing.
-          // Raw provider text to the console; a sentence to the screen.
-          console.warn("[voice] relay error:", msg.message);
-          setError(voiceErrorCopy(msg.message, null));
+          setError(voiceErrorCopy(msg.message, voiceModelLabel(modelRef.current), msg.code));
           // The screen says the call stopped, so it stops: the microphone,
           // the socket and playback used to stay live behind "Call stopped",
           // the browser's mic light on and audio streaming into nothing.
@@ -1151,7 +1184,14 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       // Re-entry from the reconnect timer keeps the visible "reconnecting"
       // state; a fresh/manual start resets the retry budget.
       const isReconnect = statusRef.current === "reconnecting" && reconnectAttemptsRef.current > 0;
-      if (!isReconnect) reconnectAttemptsRef.current = 0;
+      if (!isReconnect) {
+        reconnectAttemptsRef.current = 0;
+        // A fresh call (a retry included) runs its own clock to the
+        // provider's cap: the relay starts a new session for it. Kept, the
+        // last call's start meant the cap warning never showed on a continued call.
+        callStartedAtRef.current = null;
+        setWasLive(false);
+      }
       // A fresh call says afresh whether it wants memory and which thread it
       // is in; a reconnect keeps what the call it continues asked for.
       if (!isReconnect) memoryRef.current = opts?.memory ?? null;
@@ -1256,8 +1296,32 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
         const ws = new WebSocket(`${normalizeRelayUrl(data.url)}/?token=${encodeURIComponent(data.token)}`);
         ws.binaryType = "arraybuffer";
         wsRef.current = ws;
+        // A dropped line: reconnect while the budget lasts, otherwise end.
+        const handleDrop = () => {
+          if (generationRef.current !== generation || wsRef.current !== ws) return;
+          if ((statusRef.current === "live" || statusRef.current === "reconnecting") && scheduleReconnect()) return;
+          sealTranscript();
+          releaseResources();
+          setStatus((cur) => {
+            const next = cur === "ended" || cur === "error" ? cur : "ended";
+            statusRef.current = next;
+            return next;
+          });
+        };
         ws.onopen = () => {
           if (generationRef.current !== generation || wsRef.current !== ws) return;
+          // A half-open socket raises no event of its own, so the line is
+          // pinged while it is quiet, and a ping nobody answers is a drop.
+          heartbeatRef.current?.stop();
+          heartbeatRef.current = createVoiceHeartbeat({
+            ping: () => {
+              if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" } satisfies VoiceClientMessage));
+            },
+            onSilent: () => {
+              console.warn("[voice] the relay stopped answering; reconnecting");
+              handleDrop();
+            },
+          });
           setProvider(target);
           const voiceHistory: VoiceHistoryEntry[] = transcriptRef.current
             .filter((line) => line.final && line.text.trim())
@@ -1274,6 +1338,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
         };
         ws.onmessage = (e) => {
           if (generationRef.current !== generation || wsRef.current !== ws) return;
+          heartbeatRef.current?.heard();
           if (e.data instanceof ArrayBuffer) playPcm(e.data);
           else {
             try {
@@ -1285,17 +1350,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
         };
         // Unexpected transport drops (a deliberate end/session.closed detaches
         // these handlers first) auto-reconnect while the retry budget lasts.
-        ws.onclose = () => {
-          if (generationRef.current !== generation || wsRef.current !== ws) return;
-          if ((statusRef.current === "live" || statusRef.current === "reconnecting") && scheduleReconnect()) return;
-          sealTranscript();
-          releaseResources();
-          setStatus((cur) => {
-            const next = cur === "ended" || cur === "error" ? cur : "ended";
-            statusRef.current = next;
-            return next;
-          });
-        };
+        ws.onclose = handleDrop;
         ws.onerror = () => {
           if (generationRef.current !== generation || wsRef.current !== ws) return;
           if ((statusRef.current === "live" || statusRef.current === "reconnecting") && scheduleReconnect()) return;
@@ -1556,6 +1611,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     if (
       statusRef.current !== "live" ||
       !capsRef.current?.screenInput ||
+      !canShareScreen() ||
       !socket ||
       socket.readyState !== WebSocket.OPEN
     ) return;
@@ -1617,13 +1673,21 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           JSON.stringify({ type: "video.frame", jpegBase64: dataUrl.slice(dataUrl.indexOf(",") + 1) } satisfies VoiceClientMessage)
         );
       }, 1000);
-    } catch {
+    } catch (err) {
       for (const track of stream?.getTracks() ?? []) track.stop();
       if (video) {
         video.pause();
         video.srcObject = null;
       }
       if (stream && screenStreamRef.current === stream) stopScreenShare();
+      // Cancelling the browser's picker is a choice, not a failure: quiet.
+      // Anything else used to fail silently too, leaving the person to
+      // wonder whether the model could see their screen.
+      const cancelled = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "AbortError");
+      if (!cancelled) {
+        console.warn("[voice] screen share failed:", err);
+        setNotice(VOICE_SCREEN_SHARE_FAILED);
+      }
     }
   }, [stopScreenShare]);
 
@@ -1656,7 +1720,31 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     setToolsOffered(null);
     setMuted(false);
     mutedRef.current = false;
+    setWasLive(false);
   }, [clearReconnectTimer, cues, releaseResources, sealTranscript]);
+
+  /*
+   * The screen stays awake while a call is on its way or running. A phone
+   * used to sleep at the OS timeout mid-call, which suspended the page and
+   * dropped the call. The lock is re-taken when the page comes back into view
+   * (the browser lets it go whenever the page is hidden).
+   */
+  const holdsScreen = status === "connecting" || status === "reconnecting" || status === "live";
+  React.useEffect(() => {
+    if (!holdsScreen) {
+      wakeLockRef.current?.release();
+      return;
+    }
+    wakeLockRef.current ??= createCallWakeLock();
+    wakeLockRef.current.hold();
+  }, [holdsScreen]);
+  React.useEffect(
+    () => () => {
+      wakeLockRef.current?.dispose();
+      wakeLockRef.current = null;
+    },
+    []
+  );
 
   /*
    * The last minute of a capped call (Gemini Live ends at 15 minutes), said
@@ -1712,7 +1800,9 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     toolActivity,
     closedReason,
     /** Why the call ended, when the person did not end it ("Ended: calls with … last up to 15 minutes."). */
-    endedNote: status === "ended" ? voiceEndedCopy(closedReason, null, capabilities?.maxSessionSec ?? null) : null,
+    endedNote: status === "ended" ? voiceEndedCopy(closedReason, voiceModelLabel(model), capabilities?.maxSessionSec ?? null) : null,
+    /** The call came up at least once, so an error stopped a call rather than kept one from starting. */
+    wasLive,
     /** "1 min left in this call" in the last minute of a capped call. */
     limitWarning,
     levelRef,

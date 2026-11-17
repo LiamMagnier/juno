@@ -3585,7 +3585,10 @@ function ComposerImpl({
             </>
           }
           action={
-                voiceCall && !canSend ? voiceCall.end : <Tooltip>
+                // In a call End keeps the primary slot; a typed draft puts
+                // Send beside it, never in its place (voice audit D6).
+                <>
+                {(!voiceCall || canSend) && <Tooltip>
                   <TooltipTrigger asChild>
                     <ComposerPrimaryAction
                       face={PRIMARY_FACES[primaryFace]}
@@ -3643,7 +3646,9 @@ function ComposerImpl({
                             ? steering.sendLabel
                             : "Send"}
                   </TooltipContent>
-                </Tooltip>
+                </Tooltip>}
+                {voiceCall?.end}
+                </>
           }
         />
         </VoiceComposerGlow>

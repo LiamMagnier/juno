@@ -153,7 +153,9 @@ test("a chat names its thread for its calls, kept across reconnects and retries,
   const bar = src("src/components/voice/realtime-voice.tsx");
   assert.match(bar, /return voice\.persona && speakerName \? speakerName : PRODUCT_NAME;/);
   assert.match(bar, /label=\{`Stop \$\{speaker\} speaking`\}/);
-  assert.match(bar, /announcementFor\(phase, prevPhase\.current, speaker\)/);
+  // The live region no longer names the speaker on every turn: it says what
+  // a person acts on (lib/voice-call-state.ts), debounced.
+  assert.doesNotMatch(bar, /announcementFor\(/);
   // Both copies of the protocol carry the flag.
   assert.match(src("relay/src/protocol.ts"), /persona\?: boolean;/);
   assert.match(src("src/lib/voice-relay-protocol.ts"), /persona\?: boolean;/);

@@ -1,0 +1,212 @@
+/*
+ * THE VOICE CALL: the state chip, the controls' entrance and the exit back to
+ * the composer (realtime-voice.tsx, voice-call-chip.tsx). The edge light is
+ * Tailwind on its own layers (voice-composer-glow.tsx).
+ *
+ * Motion is on the house ladder (DIRECTION.md §7): entrances on base (220)
+ * with a --stagger-tile (45ms) stagger, the word on fast (120), exits a rung faster on ease-in.
+ * Every travelling or scaling keyframe reads --motion-shift and
+ * --motion-scale-from, which the reduced tier pins to 0 and 1 (globals.css),
+ * so reduced motion keeps the fades and the colour and loses the travel.
+ * Loops (the connecting dots) run only under no-preference.
+ */
+
+/* ———————————————————————— entrance ———————————————————————— */
+
+@keyframes voice-part-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--voice-dx, 6px) * var(--motion-shift, 1)));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes voice-end-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--motion-scale-from, 0.9));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Each part of the call row arrives from the voice button it was opened
+   with: the controls slide a few pixels leftward out of the End disc, the
+   nearest first, and the chip rises in on the left. One beat, about 300ms
+   from first to last. */
+.voice-call-part {
+  animation: voice-part-in var(--dur-base) var(--ease-out-soft) both;
+  animation-delay: calc(var(--voice-i, 0) * var(--stagger-tile, 45ms));
+}
+.voice-call-end {
+  animation: voice-end-in var(--dur-fast) var(--ease-out-expo) both;
+}
+
+/* ———————————————————————— the chip ———————————————————————— */
+
+.voice-chip {
+  --voice-dx: -4px;
+}
+
+/* On a composer too narrow for the pill (a phone held upright), the pill
+   gives its fill and padding back before the word truncates: the word and
+   Stop matter more than the shape around them. The composer's field tier is
+   the query container (composer-shell.tsx, `@container`). */
+@container (max-width: 22.5rem) {
+  .voice-call-frame .voice-chip {
+    background: transparent;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+/* The graphic slot: the meter, the working mark and the warning share one
+   cell and trade opacity (plus a small scale) on the fast rung, so a change
+   of state morphs in place instead of cutting. */
+.voice-chip-face {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+  transition:
+    opacity var(--dur-fast) var(--ease-out-soft),
+    transform var(--dur-fast) var(--ease-out-soft);
+}
+.voice-chip-face[data-shown="false"] {
+  opacity: 0;
+  transform: scale(var(--motion-scale-from, 0.8));
+  transition-timing-function: var(--ease-in);
+  transition-duration: var(--dur-press);
+}
+
+/* Five capsules. Their height is a clip (round at both ends at any height),
+   written per frame by the meter; their colour says whose voice it is. */
+.voice-meter {
+  display: grid;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+  transition: color var(--dur-fast) var(--ease-out-soft);
+}
+.voice-meter-bar {
+  width: 3px;
+  height: 16px;
+  border-radius: 999px;
+  background: currentColor;
+  clip-path: inset(6.4px 0 round 999px);
+}
+.voice-meter[data-meter="you"] {
+  color: hsl(var(--foreground));
+}
+.voice-meter[data-meter="alevr"] {
+  color: hsl(var(--primary));
+}
+.voice-meter[data-meter="rest"],
+.voice-meter[data-meter="none"] {
+  color: hsl(var(--muted-foreground) / 0.7);
+}
+
+/* Waiting for the line (connecting, reconnecting): the dots take turns,
+   opacity only. Under reduced motion they stand still and the word says it. */
+@keyframes voice-dot-wait {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  45% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .voice-meter[data-waiting] .voice-meter-bar {
+    animation: voice-dot-wait var(--loop-beat, 1.2s) var(--ease-breathe) infinite;
+    animation-delay: calc(var(--voice-bar, 0) * var(--dur-fast, 120ms));
+  }
+}
+
+/* The word: the old one leaves a rung faster than the new one arrives, in
+   one cell, so the chip reads one word at a time. */
+@keyframes voice-word-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(3px * var(--motion-shift, 1)));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes voice-word-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(calc(-3px * var(--motion-shift, 1)));
+  }
+}
+.voice-chip-word {
+  grid-area: 1 / 1;
+}
+.voice-chip-word[data-phase="in"] {
+  animation: voice-word-in var(--dur-fast) var(--ease-out-soft) both;
+}
+.voice-chip-word[data-phase="out"] {
+  animation: voice-word-out var(--dur-press) var(--ease-in) both;
+}
+
+/* ———————————————————————— targets ———————————————————————— */
+
+/* 44 by 44 on every pointer. The drawn disc stays 36 on a mouse so the call
+   row keeps the composer's height; an invisible pad centred on it takes the
+   rest, and the row's 8px gap means two pads meet without overlapping.
+   Under a coarse pointer the discs are drawn at 44 already. */
+.voice-target {
+  position: relative;
+}
+.voice-target::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 2.75rem);
+  height: max(100%, 2.75rem);
+  translate: -50% -50%;
+  border-radius: 999px;
+}
+
+/* The verbs never give up width: on a narrow composer the chip's word
+   truncates before any control is pushed under End. (The shell's trailing
+   cluster may shrink by design, for the model chip's label; in a call it
+   holds nothing that can.) */
+[data-composer-row] div:has(> .voice-call-controls),
+[data-composer-row] div:has(> div > .voice-call-controls) {
+  flex-shrink: 0;
+}
+
+/* ———————————————————————— exit ———————————————————————— */
+
+/* End cross-fades the call row back into the composer's own row with an
+   element-scoped view transition on the call's frame (VoiceCallEnd): one
+   object changing its mind, on the exit rung, faster than it arrived.
+   Browsers without scoped transitions switch at once. */
+.voice-call-frame::view-transition-group(*) {
+  animation-duration: var(--dur-exit);
+  animation-timing-function: var(--ease-in);
+}
+.voice-call-frame::view-transition-old(*),
+.voice-call-frame::view-transition-new(*) {
+  animation-duration: var(--dur-exit);
+}
+/* Reduced motion keeps the cross-fade (opacity) and drops any geometry. */
+@media (prefers-reduced-motion: reduce) {
+  .voice-call-frame::view-transition-group(*) {
+    animation: none !important;
+  }
+}
+

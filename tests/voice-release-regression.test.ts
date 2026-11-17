@@ -224,11 +224,12 @@ test("the call bar separates what you press from what you set", () => {
   // "Stop sharing screen" are not the same kind of row.
   assert.match(voiceBar, /PopoverContent/);
   assert.doesNotMatch(voiceBar, /DropdownMenuItem/);
-  // No status cluster competes with the controls (the state is one word on
+  // No status cluster competes with the controls (the state is one chip on
   // the row's left, beside +): the controls never shrink and End sits in the
   // composer's own primary slot, so nothing can push it off a narrow screen.
   // (End may say it closes voice once the call has ended; it stays the End.)
-  assert.match(voiceBar, /flex shrink-0 items-center gap-0\.5/);
+  // 8px between them, so each 44px target meets its neighbour's without overlap.
+  assert.match(voiceBar, /flex shrink-0 items-center gap-2/);
   assert.match(voiceBar, /end: <VoiceCallEnd onClose=\{onClose\}[^>]*\/>/);
 });
 

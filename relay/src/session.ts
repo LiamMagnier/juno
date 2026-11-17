@@ -416,16 +416,21 @@ export class RelaySession {
     // owed no provider session: one opened now bills with nobody on the line.
     if (this.closed) return;
     if (this.sessionLimitReached) {
-      this.send({ type: "error", message: "This voice session reached its time limit. Start a new session to continue." });
+      this.send({
+        type: "error",
+        message: "This voice session reached its time limit. Start a new session to continue.",
+        code: "session_limit",
+        fatal: true,
+      });
       return;
     }
     const factory = PROVIDERS[id];
     if (!factory) {
-      this.send({ type: "error", message: `Unknown provider "${id}".` });
+      this.send({ type: "error", message: `Unknown provider "${id}".`, code: "provider_unknown", fatal: true });
       return;
     }
     if (!factory.available()) {
-      this.send({ type: "error", message: `${id} is not configured on this relay.` });
+      this.send({ type: "error", message: `${id} is not configured on this relay.`, code: "provider_unavailable", fatal: true });
       return;
     }
     if (this.switching) return;
@@ -519,9 +524,13 @@ export class RelaySession {
         ...(tools.length ? { tools: established.tools ?? 0 } : {}),
       });
     } catch (err) {
+      // Fatal: a switch closed the old provider before dialling this one, so
+      // there is nothing left to talk to.
       this.send({
         type: "error",
         message: `Couldn't start ${id}: ${err instanceof Error ? err.message : String(err)}`,
+        code: "provider_failed",
+        fatal: true,
       });
     } finally {
       this.switching = false;
@@ -636,7 +645,13 @@ export class RelaySession {
           this.usage.costOutMeasured = true;
         }
       },
-      onError: (message) => isCurrent() && this.send({ type: "error", message }),
+      // Not fatal on its own. A provider that has really failed also calls
+      // onClosed (every provider pairs the two on its dying paths), and that
+      // ends the call; an error alone is a hiccup the call outlives: a cancel
+      // with nothing to cancel, a socket error the socket recovers from. Sent
+      // as fatal, those used to tell the caller the call had stopped while it
+      // went on talking.
+      onError: (message) => isCurrent() && this.send({ type: "error", message, code: "provider_error", fatal: false }),
       onClosed: (reason) => {
         if (!isCurrent()) return;
         this.send({ type: "session.closed", reason });
@@ -745,13 +760,33 @@ export class RelaySession {
       const body = (await res.json().catch(() => null)) as { allowed?: boolean } | null;
       if (body?.allowed === false && !this.budgetExhausted) {
         this.budgetExhausted = true;
-        this.send({ type: "error", message: "Voice stopped: this month's usage budget is spent." });
-        await this.destroy();
+        await this.endForBudget();
       }
     } catch {
       // Network or timeout. reportedCostUsd stays put, so the next tick retries.
     } finally {
       this.reporting = false;
+    }
+  }
+
+  /**
+   * The budget ran out mid-call: say why, then hang up for real.
+   *
+   * It used to send an error and destroy the provider, but leave the socket
+   * open, so the client sat in "Call stopped" with its microphone streaming
+   * into a relay with nobody behind it. Now the close says why (`budget`),
+   * the same error follows for clients that do not know that reason (the
+   * apps drop a close they cannot decode and read the error, as before), and
+   * the socket is closed, which ends the call on every client.
+   */
+  private async endForBudget(): Promise<void> {
+    this.send({ type: "session.closed", reason: "budget" });
+    this.send({ type: "error", message: "Voice stopped: this month's usage budget is spent.", code: "budget", fatal: true });
+    await this.destroy();
+    try {
+      this.ws.close(1000, "budget");
+    } catch {
+      /* already closing */
     }
   }
 

@@ -1,15 +1,20 @@
 "use client";
 
 import * as React from "react";
-import { CallEnd, CallMic, CallMicOff, CallSettings, CallStop, Loader2, MonitorUp, MonitorX } from "@/components/ui/icons";
+import { flushSync } from "react-dom";
+import { CallEnd, CallMic, CallMicOff, CallSettings, CallStop, MonitorUp, MonitorX } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ApprovalCard } from "@/components/chat/approval-card";
+import { GalaxyMark } from "@/components/brand/galaxy-mark";
 import { useRealtimeVoice, type VoiceToolActivity } from "@/hooks/use-realtime-voice";
 import { voiceToolStatusWord } from "@/lib/voice-tool-activity";
-import { announcementFor, voicePhaseOf, type VoicePhase } from "@/lib/voice-phase";
+import { canShareScreen, voiceCallView, type VoiceCallState, type VoiceCallView } from "@/lib/voice-call-state";
+import { voiceRestartLabel } from "@/lib/voice-copy";
+import { inputModality } from "@/lib/input-modality";
 import {
   VOICE_GEMINI_DELEGATE_MODEL,
   VOICE_OPENAI_DELEGATE_MODEL,
@@ -26,27 +31,26 @@ import { EffortPanelContext, ReasoningSlider } from "@/components/chat/reasoning
 import { cn } from "@/lib/utils";
 import { readVoiceLevel } from "@/lib/voice-level";
 import type { VoiceGlowTone } from "@/components/effects/use-effect-theme";
-import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
+import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
+import { VoiceCallChip } from "@/components/voice/voice-call-chip";
 import { PRODUCT_NAME } from "@/lib/brand/names";
-import { TIMING } from "@/lib/interaction";
+import "@/components/voice/voice-call.css";
 
 type VoiceController = ReturnType<typeof useRealtimeVoice>;
 
 /**
- * One line per provider, describing the trade it makes.
- *
- * Kept to what the relay's own registry says each one can do
- * (relay/src/providers/registry.ts) rather than to marketing: these decide a
- * call, so a wrong word here costs someone a conversation.
+ * One line per provider, describing the trade it makes, in the person's
+ * words rather than the relay's ("full duplex" and "speech pipeline" were
+ * engineering terms, and "full duplex" was not even true in this client).
  */
 const PROVIDER_BLURB: Record<VoiceProviderId, string> = {
-  openai: `OpenAI · full duplex · thinks with ${voiceModelLabel(VOICE_OPENAI_DELEGATE_MODEL)}`,
-  gemini: `Screen sharing · thinks with ${voiceModelLabel(VOICE_GEMINI_DELEGATE_MODEL)}`,
+  openai: `Thinks with ${voiceModelLabel(VOICE_OPENAI_DELEGATE_MODEL)} · sees images`,
+  gemini: `Sees your screen · thinks with ${voiceModelLabel(VOICE_GEMINI_DELEGATE_MODEL)}`,
   qwen: "Long calls · sees images and your screen",
-  minimax: "Speech pipeline · no vision, no screen",
+  minimax: "Long calls · can’t see images",
   // The row's title is already the model ("Grok Voice 3.0"); the line under
   // it names the provider, as OpenAI's does, rather than saying it twice.
-  xai: "xAI · full duplex · no vision, no screen",
+  xai: "xAI · can’t see images",
   mock: "Developer stand-in · no provider is called",
 };
 
@@ -54,96 +58,85 @@ const PROVIDER_BLURB: Record<VoiceProviderId, string> = {
  * THE VOICE CALL, AS PARTS OF THE COMPOSER.
  *
  * Voice is a mode of the conversation, not a place (ChatGPT and Gemini both
- * retired their takeover screens for the same reason), so a call no longer
- * stacks a second floating bar on top of the composer. The composer itself
- * becomes the call: its left side says what the call is doing, its right side
- * holds the controls, and its primary button ends the call (or sends, when
- * something has been typed). Chat mounts the parts into the composer's slots
- * (`voiceCall` on <Composer>); surfaces without a composer of their own still
+ * retired their takeover screens for the same reason; INTERACTION_SPEC C16),
+ * so the composer itself becomes the call, laid out like a native call
+ * screen in one row:
+ *
+ *   [+]  (≋ Speaking ■)                        [mic] [share] [⚙] [↑] [End]
+ *
+ * - LEFT, one state at a time: the state chip (voice-call-chip.tsx), a word
+ *   and a meter that follows real audio, from one state model
+ *   (lib/voice-call-state.ts), with Stop inside it while Alevr speaks.
+ * - RIGHT, the verbs in one row: Mute, Share where the browser can share a
+ *   screen, the call's settings, and End in the
+ *   composer's primary slot, the only coloured control, in the destructive
+ *   role. Typing during a call puts Send beside End, never in its place.
+ *   Every target is 44 by 44.
+ * - THE EDGE: the composer's own edge carries the light while audio moves
+ *   (voice-composer-glow.tsx), graphite for you and the accent for Alevr.
+ *
+ * Opening the call is one entrance from the voice button: End takes the
+ * button's place, the controls arrive out of it nearest first, and the chip
+ * rises in on the left (voice-call.css). End leaves faster than the call
+ * arrived, cross-fading back into the composer with the draft as it was.
+ *
+ * Chat mounts the parts into the composer's slots (`voiceCall` on
+ * <Composer>), Code into its own; surfaces without a composer of their own
  * use <RealtimeVoice>, the same parts in one quiet bar.
- *
- * What the call says is still the phase (`src/lib/voice-phase.ts`): one word
- * beside `+` names it, the glow carries the level, Stop exists exactly while there is speech to stop,
- * mute is struck through, and every change is announced, because this is the
- * one mode designed to be used without looking at the screen.
- *
- * No glow, no page wash. The ambient aura that tinted the whole column during
- * a call and the light along the old bar's edge made the screen look busy
- * without saying anything the label and the meter do not.
  */
 
 export interface VoiceCallParts {
-  /** Left of the composer: the call's state in one word, plus the live region. */
+  /** Left of the composer: the state chip, with the call's live region. */
   status: React.ReactNode;
-  /** Right of the composer: Stop, Mute, Share, call settings. */
+  /** Right of the composer: Mute, Share, call settings. */
   controls: React.ReactNode;
-  /** The composer's primary slot while the draft is empty. */
+  /** The composer's primary slot: End, whether or not a draft is typed (Send goes beside it). */
   end: React.ReactNode;
-  /** The live level (0-1) of whoever is talking, read once per frame by the glow. */
+  /** The call's one state (lib/voice-call-state.ts). */
+  state?: VoiceCallState;
+  /** Whose light the composer's edge carries; null while no audio moves. */
+  edge?: VoiceCallView["edge"];
+  /** The live level (0-1) of whoever is talking. */
   level: () => number;
-  /**
-   * Each voice's own envelope, read once per frame by the glow: your
-   * microphone and Juno's output as heard. Split, so talking over Juno lights
-   * both voices instead of blending them into one. Wins over `stream`.
-   */
+  /** Each voice's own envelope: your microphone and Alevr's output as heard. */
   levels: { you: () => number; alevr: () => number };
   /**
-   * The audio of whoever holds the floor, when there is one to hear: your
-   * microphone while you talk, Juno's output AS IT PLAYS while Juno talks.
-   * The glow analyses it in low / mid / high bands, so its lobes move with
-   * the syllables rather than a single volume. Wins over `level` when set.
+   * Kept for the dictation light's props: a call's light reads `levels`, so
+   * this is always null now.
    */
   stream: MediaStream | null;
-  /** Gain on the analysed stream: Juno's output is hotter than a microphone. */
+  /** Kept with `stream`: unused by the call's light. */
   sensitivity?: number;
   /** The gap after you stop, while the reply is thought through. */
   processing: boolean;
-  /** No call up (connecting, ended, muted): the glow holds still. */
+  /** No audio moves (connecting, reconnecting, ended, failed). */
   paused: boolean;
-  /** Whose light: warm while you talk, cool while Juno talks, both while it thinks. */
+  /** Whose light, in the glow's older vocabulary (the voice lab reads it). */
   tone: VoiceGlowTone;
 }
 
-/** The glow's light for a phase: the call's state, told in colour. */
-function toneFor(phase: VoicePhase): VoiceGlowTone {
-  switch (phase) {
-    case "speaking":
-      return "juno";
-    case "thinking":
-      return "thinking";
-    case "listening":
-    case "user-speaking":
-      return "you";
-    default:
-      return "muted";
-  }
-}
-
-/** The realtime hook's split envelopes (lib/voice-level.ts), for the glow. */
+/** The realtime hook's split envelopes (lib/voice-level.ts). */
 const CALL_LEVELS = {
   you: () => readVoiceLevel("user"),
   alevr: () => readVoiceLevel("assistant"),
 };
 
-/** Juno's voice arrives mastered, near full scale; a room microphone doesn't. */
-const OUTPUT_SENSITIVITY = 2.2;
+/** The call's one state, from the controller (lib/voice-call-state.ts). */
+function viewOf(voice: VoiceController): VoiceCallView {
+  return voiceCallView({
+    transport: voice.status,
+    muted: voice.muted,
+    userSpeaking: voice.userSpeaking,
+    awaitingResponse: voice.awaitingResponse,
+    assistantSpeaking: voice.assistantSpeaking,
+    wasLive: voice.wasLive,
+  });
+}
 
-/** Whose audio the glow should listen to in a phase, if any. */
-function streamFor(
-  phase: VoicePhase,
-  streams: { mic: MediaStream | null; output: MediaStream | null }
-): MediaStream | null {
-  switch (phase) {
-    case "speaking":
-      return streams.output;
-    case "listening":
-    case "user-speaking":
-      return streams.mic;
-    default:
-      // Thinking gathers into a beam, muted holds a low grey: neither is
-      // driven by audio.
-      return null;
-  }
+function toneOf(view: VoiceCallView): VoiceGlowTone {
+  if (view.edge === "you") return "you";
+  if (view.edge === "alevr") return "juno";
+  return view.state === "thinking" ? "thinking" : "muted";
 }
 
 /** Everything the composer needs to become the call. */
@@ -156,20 +149,19 @@ export function voiceCallParts({
   onClose: () => void;
   speakerName?: string;
 }): VoiceCallParts {
-  const phase = voicePhaseOf(voice);
+  const view = viewOf(voice);
   const levelRef = voice.levelRef;
   return {
-    // Muted: a low, even grey band, visibly on and visibly quiet, rather than
-    // a frozen frame of whatever was said last.
-    level: phase === "muted" ? () => 0.12 : () => levelRef.current,
+    state: view.state,
+    edge: view.edge,
+    level: view.state === "muted" ? () => 0 : () => levelRef.current,
     levels: CALL_LEVELS,
-    stream: streamFor(phase, voice.audioStreams),
-    sensitivity: phase === "speaking" ? OUTPUT_SENSITIVITY : undefined,
-    processing: phase === "thinking",
-    paused: phase === "idle" || phase === "connecting" || phase === "error",
-    tone: toneFor(phase),
+    stream: null,
+    processing: view.state === "thinking",
+    paused: view.edge === null && view.state !== "thinking" && view.state !== "listening",
+    tone: toneOf(view),
     status: <VoiceCallStatus voice={voice} speakerName={speakerName} />,
-    controls: <VoiceCallControls voice={voice} speakerName={speakerName} />,
+    controls: <VoiceCallControls voice={voice} speakerName={speakerName} onClose={onClose} />,
     end: <VoiceCallEnd onClose={onClose} ended={voice.status === "ended" || voice.status === "error"} />,
   };
 }
@@ -179,199 +171,233 @@ function speakerOf(voice: VoiceController, speakerName?: string) {
 }
 
 /**
- * The call's state as one word on screen (INTERACTION_SPEC C16: "every state
- * is also a word"). The glow says it in light, but light alone left the
- * states that draw none (connecting, reconnecting, ended) looking exactly like
- * an idle composer, told you from Juno by hue only, and showed thinking only
- * while a beam happened to be passing.
- *
- * Your own speech reads "Listening", like silence: the hook flips between the
- * two with every syllable, and a word that flickered at that rate would be
- * the busiest thing on the screen.
- */
-const PHASE_WORD: Record<VoicePhase, string> = {
-  idle: "Call ended",
-  connecting: "Connecting…",
-  listening: "Listening",
-  "user-speaking": "Listening",
-  thinking: "Thinking",
-  speaking: "Speaking",
-  muted: "Muted",
-  error: "Call stopped",
-};
-
-/** The words of a call in progress: they wait out `phaseMinHold` before replacing one another. */
-const PACED_WORDS = new Set(["Listening", "Thinking", "Speaking"]);
-
-function stateWordOf(voice: VoiceController, phase: VoicePhase): string {
-  return voice.status === "reconnecting" ? "Reconnecting…" : PHASE_WORD[phase];
-}
-
-/**
- * The word on screen, paced. Between the phases of a working call (listening,
- * thinking, speaking) each word holds at least `phaseMinHold`, so a quick
- * exchange never strobes; everything else (muted, a dropped or ended call)
- * shows at once, because those are the states a person acts on.
- */
-function useStateWord(word: string): string {
-  const [shown, setShown] = React.useState(word);
-  const since = React.useRef(0);
-  React.useEffect(() => {
-    if (word === shown) return;
-    const paced = PACED_WORDS.has(word) && PACED_WORDS.has(shown);
-    const wait = paced ? Math.max(0, since.current + TIMING.phaseMinHold - performance.now()) : 0;
-    const timer = window.setTimeout(() => {
-      since.current = performance.now();
-      setShown(word);
-    }, wait);
-    return () => window.clearTimeout(timer);
-  }, [word, shown]);
-  return shown;
-}
-
-/**
- * What the call is doing: one quiet word beside `+`, in the muted ink the
- * composer's own chips use, and the sentence assistive technology hears. A voice mode is
- * used without looking at the screen, so every phase change is announced
- * (the word itself is hidden from assistive technology, which would only hear
- * it twice), and which provider and model are answering is said once the call
- * is up.
+ * What the call is doing, beside `+`: the state chip. The word is for eyes;
+ * a screen reader hears the chip's debounced live region, which says what a
+ * person acts on (connected, microphone off and on, reconnecting, ended) and
+ * never narrates the turns over the model's own voice.
  */
 export function VoiceCallStatus({ voice, speakerName }: { voice: VoiceController; speakerName?: string }) {
-  const phase: VoicePhase = voicePhaseOf(voice);
   const speaker = speakerOf(voice, speakerName);
-  const word = useStateWord(stateWordOf(voice, phase));
-  const [announcement, setAnnouncement] = React.useState("");
-  const prevPhase = React.useRef<VoicePhase | null>(null);
-  React.useEffect(() => {
-    const next = announcementFor(phase, prevPhase.current, speaker);
-    prevPhase.current = phase;
-    if (next) setAnnouncement(next);
-  }, [phase, speaker]);
-
-  const live = voice.status === "live";
-  const detail = live
-    ? [
-        VOICE_PROVIDER_LABELS[voice.provider],
-        voiceModelLabel(voice.model),
-        voice.delegate
-          ? `thinking with ${voiceModelLabel(voice.delegate.model)} at ${VOICE_REASONING_EFFORT_LABELS[voice.delegate.effort].toLowerCase()} effort`
-          : null,
-        voice.memory ? "remembers you" : null,
-      ]
-        .filter(Boolean)
-        .join(", ")
-    : null;
-
   return (
-    <>
-      {/* Keyed, so a new word fades in on the base rung (opacity only)
-          rather than being swapped in a frame. */}
-      <span
-        aria-hidden="true"
-        data-voice-state={phase}
-        className="voice-call-state flex min-w-0 select-none items-center whitespace-nowrap pl-1 pr-1.5 text-ui text-muted-foreground"
-      >
-        <span key={word} className="motion-safe:animate-fade-in">
-          {word}
-        </span>
-      </span>
-      <span role="status" aria-live="polite" className="sr-only">
-        {announcement}
-        {detail ? ` ${detail}.` : null}
-      </span>
-    </>
+    <VoiceCallChip
+      view={viewOf(voice)}
+      // Stop lives in the chip, beside the word it ends: the row's right side
+      // never grows or jumps when Alevr starts talking, and a phone keeps its
+      // width for Mute and End.
+      stop={
+        voice.assistantSpeaking ? (
+          <ChipStop onClick={voice.interrupt} label={`Stop ${speaker} speaking`} />
+        ) : null
+      }
+    />
   );
 }
 
-/** The verbs of a call, as the composer's icon buttons. */
-export function VoiceCallControls({ voice, speakerName }: { voice: VoiceController; speakerName?: string }) {
-  const live = voice.status === "live";
-  const restartable = voice.status === "ended" || voice.status === "error";
-  const speaker = speakerOf(voice, speakerName);
-
+/** Stop, inside the chip while Alevr speaks: a small disc drawn, a 44px target. */
+function ChipStop({ onClick, label }: { onClick: () => void; label: string }) {
   return (
-    <div className="voice-call-controls flex shrink-0 items-center gap-0.5">
-      {restartable ? (
-        // The one thing to do next after a call ends or fails, so it says so
-        // in words rather than as a lone glyph beside the red disc. Its name
-        // is its visible text (WCAG 2.5.3).
+    <Tooltip>
+      <TooltipTrigger asChild>
         <button
           type="button"
-          onClick={() => void voice.retry()}
+          onClick={onClick}
+          aria-label={label}
           className={cn(
-            "pressable inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full pl-2.5 pr-3 text-ui font-medium text-foreground",
-            "hover:bg-accent motion-reduce:active:scale-100 coarse:h-11"
+            "pressable voice-target -my-1 -mr-1.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full coarse:size-5",
+            // An ink disc, the product's stop: it reads on the pill and, on a
+            // phone where the pill gives its fill back, on the composer.
+            "bg-foreground text-background hover:bg-foreground/90 motion-reduce:active:scale-100"
           )}
         >
-          <ActionIcons.refresh className="size-4" aria-hidden="true" />
-          Try again
+          <CallStop className="size-2.5 fill-current" />
         </button>
+      </TooltipTrigger>
+      <TooltipContent>Stop speaking</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Which provider and model answer, and what the call knows: the settings button's description. */
+function callDetail(voice: VoiceController): string | null {
+  if (voice.status !== "live") return null;
+  return [
+    VOICE_PROVIDER_LABELS[voice.provider],
+    voiceModelLabel(voice.model),
+    voice.delegate
+      ? `thinking with ${voiceModelLabel(voice.delegate.model)} at ${VOICE_REASONING_EFFORT_LABELS[voice.delegate.effort].toLowerCase()} effort`
+      : null,
+    voice.memory ? "remembers you" : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+/**
+ * The verbs of a call, as the composer's icon buttons, in one row.
+ *
+ * FOCUS. Opening a call replaces the voice button the person pressed, which
+ * threw focus to <body>; it lands on Mute instead, the most-used verb that
+ * ends nothing (for a keyboard; a pointer needs no focus moved). Escape anywhere in the row stops Alevr speaking, and when it
+ * is not speaking ends the call (C16).
+ */
+export function VoiceCallControls({
+  voice,
+  onClose,
+}: {
+  voice: VoiceController;
+  speakerName?: string;
+  onClose?: () => void;
+}) {
+  const live = voice.status === "live";
+  const restartable = voice.status === "ended" || voice.status === "error";
+  const muteRef = React.useRef<HTMLButtonElement>(null);
+  const restart = restartable ? voiceRestartLabel(voice.status === "error" ? "error" : "ended", voice.closedReason) : null;
+
+  React.useEffect(() => {
+    // Only for a keyboard, and only when focus was lost with the button that
+    // opened the call: a person already elsewhere (typing in the field) keeps
+    // their place, and a pointer needs no focus moved (it would only pop
+    // Mute's tooltip up under nobody's cursor).
+    const active = document.activeElement;
+    if (inputModality() === "keyboard" && (!active || active === document.body)) muteRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    event.preventDefault();
+    if (voice.assistantSpeaking) voice.interrupt();
+    else onClose?.();
+  };
+
+  return (
+    // 8px between 36px discs, so their 44px targets meet; on touch the discs
+    // are 44 already and sit edge to edge, glyphs well apart.
+    <div role="group" aria-label="Call controls" onKeyDown={onKeyDown} className="voice-call-controls flex shrink-0 items-center gap-2 coarse:gap-0">
+      {restartable ? (
+        restart && (
+          // The one thing to do next after a call ends or fails, in words
+          // rather than as a lone glyph beside the red disc. Its name is its
+          // visible text (WCAG 2.5.3).
+          <span className="voice-call-part" style={{ "--voice-i": 1 } as React.CSSProperties}>
+            <button
+              type="button"
+              onClick={() => void voice.retry()}
+              className={cn(
+                "pressable voice-target inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full pl-2.5 pr-3 text-ui font-medium text-foreground",
+                "hover:bg-accent motion-reduce:active:scale-100",
+                // A phone keeps the chip's word and End: the verb becomes its
+                // glyph in a 44px disc, its word still its name.
+                "coarse:size-11 coarse:justify-center coarse:p-0"
+              )}
+            >
+              <ActionIcons.refresh className="size-4" aria-hidden="true" />
+              <span className="coarse:sr-only">{restart}</span>
+            </button>
+          </span>
+        )
       ) : (
         <>
-          {voice.assistantSpeaking && (
-            <CallButton onClick={voice.interrupt} label={`Stop ${speaker} speaking`} className="motion-safe:animate-fade-in">
-              <CallStop className="size-4" />
-            </CallButton>
-          )}
-          <CallButton
-            onClick={voice.toggleMute}
-            disabled={!live}
-            pressed={voice.muted}
-            label={voice.muted ? "Turn your microphone back on" : "Mute your microphone"}
-          >
-            <SwapGlyph on={voice.muted} onGlyph={<CallMicOff className="size-[18px]" />} offGlyph={<CallMic className="size-[18px]" />} />
-          </CallButton>
-          {voice.capabilities?.screenInput && live && (
+          <span className="voice-call-part" style={{ "--voice-i": 2 } as React.CSSProperties}>
             <CallButton
-              onClick={() => {
-                if (voice.screenSharing) voice.stopScreenShare();
-                else void voice.startScreenShare();
-              }}
-              pressed={voice.screenSharing}
-              label={voice.screenSharing ? "Stop sharing your screen" : "Share your screen"}
+              ref={muteRef}
+              onClick={voice.toggleMute}
+              pressed={voice.muted}
+              // One name and a pressed state, as call apps say it; a name that
+              // flipped with the state as well read "Turn your microphone back
+              // on, pressed".
+              label="Mute microphone"
+              tooltip={voice.muted ? "Unmute" : "Mute"}
             >
-              <SwapGlyph
-                on={voice.screenSharing}
-                onGlyph={<MonitorX className="size-4" />}
-                offGlyph={<MonitorUp className="size-4" />}
-              />
+              <IconSwap swapped={voice.muted} from={<CallMic className="size-[18px]" />} to={<CallMicOff className="size-[18px]" />} />
             </CallButton>
+          </span>
+          {voice.capabilities?.screenInput && live && canShareScreen() && (
+            <span className="voice-call-part" style={{ "--voice-i": 1 } as React.CSSProperties}>
+              <CallButton
+                onClick={() => {
+                  if (voice.screenSharing) voice.stopScreenShare();
+                  else void voice.startScreenShare();
+                }}
+                pressed={voice.screenSharing}
+                label="Share your screen"
+                tooltip={voice.screenSharing ? "Stop sharing" : "Share screen"}
+              >
+                <IconSwap swapped={voice.screenSharing} from={<MonitorUp className="size-4" />} to={<MonitorX className="size-4" />} />
+              </CallButton>
+            </span>
           )}
         </>
       )}
-      <VoiceSettings voice={voice} />
+      <span className="voice-call-part" style={{ "--voice-i": 0 } as React.CSSProperties}>
+        <VoiceSettings voice={voice} />
+      </span>
     </div>
   );
 }
 
+type ScopedTransitionHost = HTMLElement & {
+  startViewTransition?: (update: () => void) => { ready: Promise<void> };
+};
+
 /**
  * End, in the composer's primary slot: the same size and place as Send, so
- * the hand already knows where it is, and the only coloured control in a call.
+ * the hand already knows where it is, the only coloured control in a call,
+ * and in the destructive role. It stays in that slot while a draft is typed:
+ * Send appears beside it, never in its place (voice audit D6).
+ *
+ * LEAVING. The press hands the call back to the composer through an
+ * element-scoped view transition on the call's frame, so the call row
+ * cross-fades into the composer's own row on the exit rung, and only the
+ * composer is touched: the thread stays live and clickable. Where scoped
+ * transitions are missing the swap is immediate. Focus, which was on End,
+ * goes to the field for a keyboard user (the draft is exactly as it was).
  *
  * `ended`: the call has already ended or failed, and the same button now
  * leaves voice mode. It keeps its face and place, and stops claiming to end a
  * call that is no longer there.
  */
 export function VoiceCallEnd({ onClose, ended = false }: { onClose: () => void; ended?: boolean }) {
+  const ref = React.useRef<HTMLButtonElement>(null);
+  const close = () => {
+    const frame = (ref.current?.closest(".voice-call-frame") ?? null) as ScopedTransitionHost | null;
+    const keyboard = inputModality() === "keyboard";
+    const field = frame?.querySelector<HTMLElement>('[contenteditable="true"], textarea') ?? null;
+    const update = () => {
+      flushSync(onClose);
+      const active = document.activeElement;
+      if (keyboard && field?.isConnected && (!active || active === document.body)) field.focus({ preventScroll: true });
+    };
+    if (frame?.startViewTransition) {
+      try {
+        frame.startViewTransition(update).ready.catch(() => {});
+        return;
+      } catch {
+        /* no transition: switch at once */
+      }
+    }
+    update();
+  };
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={ended ? "Close voice" : "End the call"}
-          className={cn(
-            "pressable inline-flex size-9 shrink-0 items-center justify-center rounded-full",
-            "bg-destructive text-destructive-foreground shadow-sm hover:brightness-[1.06]",
-            "motion-reduce:active:scale-100 coarse:size-11"
-          )}
-        >
-          <CallEnd className="size-5" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{ended ? "Close voice" : "End call"}</TooltipContent>
-    </Tooltip>
+    <span className="voice-call-end inline-flex">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            ref={ref}
+            type="button"
+            onClick={close}
+            aria-label={ended ? "Close voice" : "End the call"}
+            className={cn(
+              "pressable voice-target inline-flex size-9 shrink-0 items-center justify-center rounded-full",
+              "bg-destructive text-destructive-foreground hover:brightness-[1.06] active:brightness-95",
+              "motion-reduce:active:scale-100 coarse:size-11"
+            )}
+          >
+            <CallEnd className="size-5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{ended ? "Close voice" : "End call"}</TooltipContent>
+      </Tooltip>
+    </span>
   );
 }
 
@@ -432,7 +458,8 @@ const TOOL_CHIP_GLYPH = "size-3 shrink-0";
 function ToolChipGlyph({ status }: { status: VoiceToolActivity["status"] }) {
   switch (status) {
     case "running":
-      return <Loader2 className={cn(TOOL_CHIP_GLYPH, "motion-safe:animate-spin")} aria-hidden="true" />;
+      // The working mark, the one working indicator (DIRECTION.md §1), not a spinner.
+      return <GalaxyMark phase="working" size={12} className="shrink-0" />;
     case "awaiting_approval":
       return <StatusIcons.info className={cn(TOOL_CHIP_GLYPH, "text-primary")} aria-hidden="true" />;
     case "succeeded":
@@ -499,8 +526,8 @@ function VoiceToolActivityRow({ voice }: { voice: VoiceController }) {
 
 /**
  * The call for surfaces with no composer of their own (Code's voice briefing,
- * Work): the same parts in one quiet bar, on the popover material, with no
- * glow along its edge.
+ * Work): the same parts in one quiet bar on the floating material, with the
+ * same edge light along its outline.
  */
 export function RealtimeVoice({
   voice,
@@ -515,22 +542,15 @@ export function RealtimeVoice({
   return (
     <section aria-label="Voice call" className="relative mx-auto mb-3 flex w-full flex-col items-center px-2 motion-safe:animate-fade-in sm:px-0">
       <VoiceCallNotices voice={voice} />
-      <JunoVoiceGlow
-        stream={parts.stream}
-        levels={parts.levels}
-        sensitivity={parts.sensitivity}
-        level={parts.level}
-        processing={parts.processing}
-        paused={parts.paused}
-        tone={parts.tone}
-        className="relative rounded-full"
-      >
-        <div className="voice-glow-host flex items-center gap-1 rounded-full border border-border bg-popover p-1.5 shadow-float">
-          {parts.status}
-          {parts.controls}
-          {parts.end}
-        </div>
-      </JunoVoiceGlow>
+      <div className="max-w-full">
+        <VoiceComposerGlow call={parts}>
+          <div className="flex items-center gap-2 rounded-full border border-[var(--float-edge)] bg-popover p-1.5 shadow-float coarse:gap-1">
+            {parts.status}
+            {parts.controls}
+            {parts.end}
+          </div>
+        </VoiceComposerGlow>
+      </div>
     </section>
   );
 }
@@ -551,6 +571,8 @@ export function RealtimeVoice({
  */
 function VoiceSettings({ voice }: { voice: VoiceController }) {
   const voiceHeadingId = React.useId();
+  const detailId = React.useId();
+  const detail = callDetail(voice);
   const live = voice.status === "live";
   const reconnecting = voice.status === "reconnecting";
   const switchable = live || voice.status === "connecting" || reconnecting;
@@ -573,11 +595,15 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
         <TooltipTrigger asChild>
           <PopoverTrigger
             aria-label="Call settings"
+            // Which model answers and what the call knows, said when the
+            // button is reached rather than riding the live region on every
+            // change (it used to be appended to each announcement).
+            aria-describedby={detail ? detailId : undefined}
             className={cn(
               // `.pressable` times the colour cross-fade and the dip itself;
               // a transition-* utility beside it would replace that list and
               // leave the press untimed.
-              "pressable inline-flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground",
+              "pressable voice-target inline-flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground",
               "hover:bg-accent hover:text-foreground",
               "data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11",
               "motion-reduce:active:scale-100"
@@ -588,6 +614,11 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
         </TooltipTrigger>
         <TooltipContent>Call settings</TooltipContent>
       </Tooltip>
+      {detail ? (
+        <span id={detailId} className="sr-only">
+          {detail}
+        </span>
+      ) : null}
 
       <PopoverContent align="end" side="top" sideOffset={10} className="w-[min(20rem,calc(100vw-1.5rem))] p-0">
         <div className="flex flex-col">
@@ -599,6 +630,18 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
             ref={listRef}
             role="radiogroup"
             aria-labelledby={voiceHeadingId}
+            // A radio group is one Tab stop with the arrows inside it, as the
+            // platform's own radios are; these were Tab stops each, with no
+            // arrow keys at all.
+            onKeyDown={(event) => {
+              const step = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : event.key === "ArrowUp" || event.key === "ArrowLeft" ? -1 : 0;
+              if (!step) return;
+              const radios = Array.from(listRef.current?.querySelectorAll<HTMLElement>('[role="radio"]:not(:disabled)') ?? []);
+              const at = radios.indexOf(document.activeElement as HTMLElement);
+              if (at < 0 || radios.length === 0) return;
+              event.preventDefault();
+              radios[(at + step + radios.length) % radios.length]?.focus();
+            }}
             className="flex flex-col gap-0.5 p-1"
           >
             <h3 id={voiceHeadingId} className="px-2.5 pb-1 pt-1 text-caption font-medium text-muted-foreground">Voice</h3>
@@ -611,6 +654,7 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
                   type="button"
                   role="radio"
                   aria-checked={active}
+                  tabIndex={active ? 0 : -1}
                   disabled={unavailable}
                   onClick={() => (switchable ? voice.switchProvider(id) : void voice.start(id))}
                   className={cn(
@@ -683,36 +727,36 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
 }
 
 /**
- * One control in a call: an icon button the size of the composer's own, with
- * its name in the tooltip and the accessible label. A pressed toggle (muted,
- * sharing) takes the ink fill, so its state reads without its label.
+ * One control in a call: an icon button the size of the composer's own, a
+ * 44px target on every pointer (`voice-target`), with its name in the
+ * tooltip and the accessible label. A pressed toggle (muted, sharing) takes
+ * the ink fill, so its state reads without its label.
  */
-function CallButton({
-  onClick,
-  label,
-  disabled,
-  pressed,
-  className,
-  children,
-}: {
-  onClick: () => void;
-  label: string;
-  disabled?: boolean;
-  pressed?: boolean;
-  className?: string;
-  children: React.ReactNode;
-}) {
+const CallButton = React.forwardRef<
+  HTMLButtonElement,
+  {
+    onClick: () => void;
+    label: string;
+    /** What the tooltip says, when it should name the next action rather than the control. */
+    tooltip?: string;
+    disabled?: boolean;
+    pressed?: boolean;
+    className?: string;
+    children: React.ReactNode;
+  }
+>(function CallButton({ onClick, label, tooltip, disabled, pressed, className, children }, ref) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
+          ref={ref}
           type="button"
           onClick={onClick}
           disabled={disabled}
           aria-label={label}
           aria-pressed={pressed}
           className={cn(
-            "pressable inline-flex size-9 shrink-0 items-center justify-center rounded-full",
+            "pressable voice-target inline-flex size-9 shrink-0 items-center justify-center rounded-full",
             "disabled:pointer-events-none disabled:opacity-40",
             "motion-reduce:active:scale-100 coarse:size-11",
             pressed ? "bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -722,27 +766,7 @@ function CallButton({
           {children}
         </button>
       </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
+      <TooltipContent>{tooltip ?? label}</TooltipContent>
     </Tooltip>
   );
-}
-
-/**
- * Two glyphs for one control's two states, cross-faded in one grid cell.
- *
- * Mute ⇄ unmute and share ⇄ stop sharing used to swap drawings in a single
- * frame. They trade opacity and a small scale on `--dur-fast` now
- * (ICONS_AND_MOTION.md §2.2.7), so the control is seen to change state rather
- * than to be replaced. The fade rides wrappers: a glyph's own transition list
- * belongs to its hover articulation. Reduced motion keeps the fade.
- */
-function SwapGlyph({ on, onGlyph, offGlyph }: { on: boolean; onGlyph: React.ReactNode; offGlyph: React.ReactNode }) {
-  const face =
-    "col-start-1 row-start-1 grid place-items-center transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-opacity";
-  return (
-    <span aria-hidden="true" className="grid place-items-center">
-      <span className={cn(face, on ? "scale-75 opacity-0" : "opacity-100")}>{offGlyph}</span>
-      <span className={cn(face, on ? "opacity-100" : "scale-75 opacity-0")}>{onGlyph}</span>
-    </span>
-  );
-}
+});

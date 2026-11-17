@@ -56,17 +56,20 @@ export interface PhaseInput {
 /**
  * Total, and deliberately ordered: the first condition that holds wins.
  *
- * Muted outranks everything inside a live call because it is the one state a
- * caller can be actively wrong about — believing they are being heard when
- * they are not is worse than any other confusion a call can produce.
+ * Muted outranks everything inside a live call, speaking included, because it
+ * is the one state a caller can be actively wrong about: believing they are
+ * being heard when they are not is worse than any other confusion a call can
+ * produce, and the model talking is exactly when people mute. (The comment
+ * said so for a long time while the code put speaking first, so muting during
+ * an answer read "Speaking" until the answer ended.)
  */
 export function derivePhase(input: PhaseInput): VoicePhase {
   const { transport, muted, userSpeaking, awaitingResponse, assistantSpeaking } = input;
   if (transport === "error") return "error";
   if (transport === "idle" || transport === "ended") return "idle";
   if (transport === "connecting" || transport === "reconnecting") return "connecting";
-  if (assistantSpeaking) return "speaking";
   if (muted) return "muted";
+  if (assistantSpeaking) return "speaking";
   if (userSpeaking) return "user-speaking";
   if (awaitingResponse) return "thinking";
   return "listening";

@@ -1,3 +1,5 @@
+// The Code composer brings the voice call, which imports its own stylesheet (voice-call.css).
+import "./support/ignore-css";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

@@ -8,6 +8,8 @@
  * console; the screen gets a sentence that says what happened and what to do.
  */
 
+import type { VoiceCloseReason, VoiceErrorCode } from "@/lib/voice-relay-protocol";
+
 const BUDGET = "Voice is paused: you’ve used this period’s voice budget.";
 const UNREACHABLE = "Couldn’t reach voice. Check your connection, then try again.";
 
@@ -22,9 +24,25 @@ export function voiceStartErrorCopy(code: string | undefined, message?: string):
   return UNREACHABLE;
 }
 
-/** An `error` frame from the relay, as the person should read it. */
-export function voiceErrorCopy(raw: string, modelName: string | null): string {
+/**
+ * An `error` frame from the relay, as the person should read it. The relay's
+ * `code` decides when there is one; an older relay sends only text, which is
+ * read the way it always was.
+ */
+export function voiceErrorCopy(raw: string, modelName: string | null, code?: VoiceErrorCode): string {
   const voice = modelName ?? "This voice";
+  switch (code) {
+    case "budget":
+      return BUDGET;
+    case "session_limit":
+      return "This call reached its time limit. Start a new call to continue.";
+    case "provider_unknown":
+    case "provider_unavailable":
+    case "provider_failed":
+      return `${voice} isn’t available right now. Try again, or pick another voice.`;
+    case "provider_error":
+      return `${voice} stopped responding. Try again.`;
+  }
   if (/budget/i.test(raw)) return BUDGET;
   if (/time limit|session[- ]limit/i.test(raw)) return "This call reached its time limit. Start a new call to continue.";
   if (/^couldn'?t start|not configured|unknown provider|unavailable/i.test(raw)) {
@@ -61,4 +79,22 @@ export function voiceLimitWarning(startedAtMs: number | null, maxSessionSec: num
   const leftMs = startedAtMs + maxSessionSec * 1000 - nowMs;
   if (leftMs <= 0 || leftMs > 60_000) return null;
   return leftMs > 30_000 ? "1 min left in this call" : `${Math.ceil(leftMs / 1000)} s left in this call`;
+}
+
+/** Screen sharing failed for a reason other than the person cancelling the picker. */
+export const VOICE_SCREEN_SHARE_FAILED = "Couldn’t share your screen.";
+
+/**
+ * The one thing to do next once a call is over, or null when there is
+ * nothing to do but close. A call that ran into its time limit or was ended
+ * by the provider goes on where it left off (the transcript rides into the new
+ * session), so it says Continue; a failed call says Try again; a spent budget
+ * offers nothing, because a new call would be refused the same way.
+ */
+export function voiceRestartLabel(state: "ended" | "error", closedReason: VoiceCloseReason | string | null): string | null {
+  if (state === "error") return "Try again";
+  if (closedReason === "budget") return null;
+  if (closedReason === "client") return "Start again";
+  // A line that dropped and would not come back closes with no reason.
+  return closedReason ? "Continue" : "Try again";
 }

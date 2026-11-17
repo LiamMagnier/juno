@@ -994,9 +994,8 @@ export const Composer = React.forwardRef<
             {call ? (
               <>
                 {call.controls}
-                {!hasDraft ? (
-                  call.end
-                ) : (
+                {/* End keeps its place while a draft is typed; Send joins it (voice audit D6). */}
+                {hasDraft && (
                   <button type="button" className="cv2-send" data-mode={mode} disabled={mode === "disabled"} aria-label="Send" onClick={() => submit(running ? (canQueue ? "queue" : "steer") : "send")}>
                     <span className="glyph">
                       <Glyph name="arrow-up" size={16} />
@@ -1004,6 +1003,7 @@ export const Composer = React.forwardRef<
                     <span className="stop" />
                   </button>
                 )}
+                {call.end}
               </>
             ) : (
               <>
