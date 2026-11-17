@@ -183,7 +183,7 @@ test("the motion is one short gesture on the ladder: transform and opacity only,
   assert.ok(durations.length >= 5);
   for (const ms of durations) assert.ok(ms >= 160 && ms <= 360, `${ms}ms`);
   // Strong ease-out on the way in; the toggle's word uses the same curve.
-  assert.match(CSS, /\[data-gesture="on"\] \.im-hat \{\s*animation: incognito-hat-on 320ms var\(--ease-out-expo\) both;/);
+  assert.match(CSS, /\[data-gesture="on"\] \.im-hat \{\s*animation: incognito-hat-on 360ms var\(--ease-out-expo\) both;/);
   assert.match(TOGGLE, /motion-safe:animate-\[incognito-word-in_220ms_var\(--ease-out-expo\)_both\] motion-reduce:animate-fade-in/);
 });
 

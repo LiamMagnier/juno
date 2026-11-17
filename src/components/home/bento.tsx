@@ -1,4 +1,5 @@
-import { BookOpen, EyeOff, FileSpreadsheet, FileText, FolderOpen, MessageSquareText, MessagesSquare, Plug, Presentation, Sparkles, UserPen } from "@/components/ui/icons";
+import { BookOpen, FileSpreadsheet, FileText, FolderOpen, MessageSquareText, MessagesSquare, Plug, Presentation, Sparkles, UserPen } from "@/components/ui/icons";
+import { IncognitoGlyph } from "@/components/chat/incognito-glyph";
 import { InView } from "./in-view";
 
 /**
@@ -82,7 +83,7 @@ export function Bento() {
           <article className="alv-cell alv-cell-e">
             <h3>Incognito when you need it.</h3>
             <p className="alv-body">Turn on incognito and nothing from the conversation is saved.</p>
-            <div className="alv-cell-art"><span className="alv-private"><EyeOff aria-hidden />Incognito is on. Nothing is saved.</span></div>
+            <div className="alv-cell-art"><span className="alv-private"><IncognitoGlyph on size={18} />Incognito is on. Nothing is saved.</span></div>
           </article>
         </div>
       </div>

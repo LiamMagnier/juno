@@ -32,7 +32,7 @@
    in its first 100ms and spends the rest settling. One play per press. */
 @keyframes incognito-hat-on {
   from {
-    transform: translateY(-3px) rotate(-12deg);
+    transform: translateY(calc(-3px * var(--motion-shift, 1))) rotate(calc(-12deg * var(--motion-shift, 1)));
   }
   to {
     transform: none;
@@ -40,7 +40,7 @@
 }
 @keyframes incognito-glasses-on {
   from {
-    transform: translateY(-1.5px);
+    transform: translateY(calc(-1.5px * var(--motion-shift, 1)));
   }
   to {
     transform: none;
@@ -55,7 +55,7 @@
     animation-timing-function: var(--ease-out-strong);
   }
   40% {
-    transform: translateY(-1.75px) rotate(-9deg);
+    transform: translateY(calc(-1.75px * var(--motion-shift, 1))) rotate(calc(-9deg * var(--motion-shift, 1)));
     animation-timing-function: var(--ease-out-soft);
   }
   100% {
@@ -63,13 +63,13 @@
   }
 }
 .incognito-mark[data-gesture="on"] .im-hat {
-  animation: incognito-hat-on 320ms var(--ease-out-expo) both;
+  animation: incognito-hat-on 360ms var(--ease-out-expo) both;
 }
 .incognito-mark[data-gesture="on"] .im-glasses {
-  animation: incognito-glasses-on 260ms var(--ease-out-expo) 40ms both;
+  animation: incognito-glasses-on 220ms var(--ease-out-expo) var(--delay-greeting) both;
 }
 .incognito-mark[data-gesture="off"] .im-hat {
-  animation: incognito-hat-off 240ms both;
+  animation: incognito-hat-off 220ms both;
 }
 
 /* The pill's word (private-chat-toggle.tsx) arrives out of the mark it sits
@@ -95,11 +95,13 @@
   animation: incognito-hat-on 360ms var(--ease-out-expo) 160ms both;
 }
 :root[data-private-mode] .incognito-greet .incognito-mark .im-glasses {
-  animation: incognito-glasses-on 300ms var(--ease-out-expo) 200ms both;
+  animation: incognito-glasses-on 220ms var(--ease-out-expo) 220ms both;
 }
 
-/* Reduced motion: no travel and no turn. The fill still fades, so the state
-   change is still shown, in opacity alone. */
+/* Reduced motion: no travel and no turn. The keyframes read --motion-shift
+   (0 under the OS preference and the in-app Motion setting alike), and the
+   OS preference also stops them outright. The fill still fades, so the
+   state change is still shown, in opacity alone. */
 @media (prefers-reduced-motion: reduce) {
   .incognito-mark[data-gesture] :is(.im-hat, .im-glasses),
   :root[data-private-mode] .incognito-greet .incognito-mark :is(.im-hat, .im-glasses) {

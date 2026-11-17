@@ -619,7 +619,6 @@ const ITEMS_REVIEWED: Record<string, string> = {
   ...Object.fromEntries(
     [
       "bento.tsx#BookOpen",
-      "bento.tsx#EyeOff",
       "bento.tsx#FileSpreadsheet",
       "bento.tsx#FileText",
       "bento.tsx#FolderOpen",
