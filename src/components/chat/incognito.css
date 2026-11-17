@@ -1,0 +1,137 @@
+/*
+ * Incognito: the fade between the mark's two cuts, its one gesture, and the
+ * room it turns on (incognito-glyph.tsx, private-chat-toggle.tsx,
+ * chat-view.tsx). Loaded by the toggle, which every chat page draws.
+ *
+ * Everything here moves transform, opacity or colour only (D27), on the
+ * closed duration ladder, and nothing in it loops.
+ */
+
+/* ── The mark ─────────────────────────────────────────────────────────────
+   Fill means on (DIRECTION §3): the crown and the lenses flood with the ink.
+   The fill is its own layer under the line, its opacity set on the path
+   itself (incognito-glyph.tsx), so it fades here rather than snapping, and
+   the line never changes weight between the two cuts. */
+.incognito-mark .im-fill {
+  transition: opacity var(--dur-fast, 120ms) var(--ease-out-soft);
+}
+/* Both parts turn about points in the drawing's own units: the hat about the
+   middle of its brim, the shades about their brow bar. */
+.incognito-mark :is(.im-hat, .im-glasses) {
+  transform-box: view-box;
+}
+.incognito-mark .im-hat {
+  transform-origin: 12px 11px;
+}
+.incognito-mark .im-glasses {
+  transform-origin: 12px 15px;
+}
+
+/* ON: the hat comes down onto the head from a tilt and the shades drop the
+   last unit onto the face, on the hardest decelerate, so the gesture lands
+   in its first 100ms and spends the rest settling. One play per press. */
+@keyframes incognito-hat-on {
+  from {
+    transform: translateY(-3px) rotate(-12deg);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes incognito-glasses-on {
+  from {
+    transform: translateY(-1.5px);
+  }
+  to {
+    transform: none;
+  }
+}
+/* OFF: the brim tips, a small lift and tilt that comes straight back, while
+   the fill drains out of the drawing underneath it. Shorter than the
+   entrance, as every exit in the product is. */
+@keyframes incognito-hat-off {
+  0% {
+    transform: none;
+    animation-timing-function: var(--ease-out-strong);
+  }
+  40% {
+    transform: translateY(-1.75px) rotate(-9deg);
+    animation-timing-function: var(--ease-out-soft);
+  }
+  100% {
+    transform: none;
+  }
+}
+.incognito-mark[data-gesture="on"] .im-hat {
+  animation: incognito-hat-on 320ms var(--ease-out-expo) both;
+}
+.incognito-mark[data-gesture="on"] .im-glasses {
+  animation: incognito-glasses-on 260ms var(--ease-out-expo) 40ms both;
+}
+.incognito-mark[data-gesture="off"] .im-hat {
+  animation: incognito-hat-off 240ms both;
+}
+
+/* The pill's word (private-chat-toggle.tsx) arrives out of the mark it sits
+   beside: 4px of travel and the fade, on the small-move rung. */
+@keyframes incognito-word-in {
+  from {
+    opacity: 0;
+    transform: translateX(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The page's own mark (PrivateGreeting) plays the same entrance as the room
+   turns, a beat after the toggle's and once its greeting has started to come
+   up (chat-view holds the greeting 120ms), so the eye that left the header
+   finds the gesture again in the middle of the page. Keyed on the attribute
+   chat-view writes on <html>, so it plays each time incognito turns on and
+   never on a page that merely contains the (hidden) greeting. */
+:root[data-private-mode] .incognito-greet .incognito-mark .im-hat {
+  animation: incognito-hat-on 360ms var(--ease-out-expo) 160ms both;
+}
+:root[data-private-mode] .incognito-greet .incognito-mark .im-glasses {
+  animation: incognito-glasses-on 300ms var(--ease-out-expo) 200ms both;
+}
+
+/* Reduced motion: no travel and no turn. The fill still fades, so the state
+   change is still shown, in opacity alone. */
+@media (prefers-reduced-motion: reduce) {
+  .incognito-mark[data-gesture] :is(.im-hat, .im-glasses),
+  :root[data-private-mode] .incognito-greet .incognito-mark :is(.im-hat, .im-glasses) {
+    animation: none;
+  }
+}
+
+/* ── The room ─────────────────────────────────────────────────────────────
+   Incognito dims the chat's panel a step, the same graphite family one
+   lightness rung down (one up in the dark theme's depth, darker than the
+   sidebar), so the whole surface says the mode before any word does. The
+   composer and the bubbles keep their own fills and so stand forward on it.
+
+   Contrast (tests/incognito.test.ts measures these against globals.css):
+   light: ink 15.0:1, muted 4.66:1 on 94%; dark: ink 15.8:1, muted 6.6:1 on
+   6%. High contrast's darker muted inks only widen those.
+
+   The tokens are re-pointed on the panel rather than painted on one box, so
+   everything inside that is drawn "on the ground" (fades, offsets, the focus
+   ring's gap) follows. Unlayered, so it outranks the panel's own fill in
+   `@layer components` (globals.css). The ground cross-fades on the region
+   rung both ways; colour is allowed under reduced motion. */
+.juno-content-panel[data-product="chat"] {
+  transition: background-color var(--dur-slow, 360ms) var(--ease-out-soft);
+}
+:root:not(.dark)[data-private-mode] .juno-content-panel[data-product="chat"] {
+  --background: 220 9% 94%;
+  /* The bubble's own tone (94%) is this ground's: it lifts to paper. */
+  --user-bubble: 0 0% 100%;
+  background-color: hsl(var(--background));
+}
+:root.dark[data-private-mode] .juno-content-panel[data-product="chat"] {
+  --background: 220 6% 6%;
+  background-color: hsl(var(--background));
+}

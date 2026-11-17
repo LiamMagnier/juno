@@ -4,6 +4,7 @@ import * as React from "react";
 import { useApp } from "@/components/app/app-provider";
 import { IncognitoGlyph } from "@/components/chat/incognito-glyph";
 import { Construction } from "@/components/home/construction";
+import { shellString } from "@/lib/strings";
 import { cn } from "@/lib/utils";
 
 /**
@@ -142,29 +143,33 @@ function PrivateField() {
 }
 
 /**
- * Private-mode empty header. The same headline rung as the normal greeting
- * (`chat-home__title`), so switching modes swaps one still headline for
- * another of the same size, with no entrance animation of its own (the two
- * cross-fade in chat-view).
+ * Incognito's empty page: the mark, the mode's name and what it means, on the
+ * dimmed ground the panel takes in incognito (incognito.css).
  *
- * The mark is a hairline ring on the page's own ground rather than a solid
- * disc: the solid one was the heaviest object on the page, louder than the
- * headline, for a mode whose whole point is to be quiet. Incognito is the
- * quietest screen in the product: no drawing behind the mark or the copy (the
- * home's own field steps out too, chat-view `visible`), no starters; the
- * ring, the serif headline and one muted sentence carry the mode.
+ * The same headline rung as the normal greeting, so switching modes swaps one
+ * still headline for another of the same size; the two cross-fade in
+ * chat-view. Both lines come from the shared string table, so the page says
+ * exactly what the Mac and the iPhone say. `incognito.promise` is everything
+ * this mode does today and nothing more: a private turn writes no
+ * conversation, no message and no memory, and reads no memory either
+ * (lib/chat/turn/private-turn.ts). It deliberately says nothing about
+ * training: a model the reader picks can be one whose provider trains on
+ * prompts (`trainsOnPrompts`, models.ts), and the training clause waits for
+ * the owner's sign-off (S8, shell.generated.ts).
+ *
+ * The mark stands on the ground in its filled cut, with no disc or ring
+ * around it: Graphite surfaces are flat, and a framed badge was the heaviest
+ * object on the page. It plays the toggle's entrance a beat after the toggle
+ * does (`.incognito-greet`, incognito.css). No drawing behind it and no
+ * starters: the mark, the serif headline and one sentence carry the mode.
  */
 export function PrivateGreeting({ field = false }: { field?: boolean }) {
   return (
-    <div className="relative isolate flex w-full flex-col items-center text-center">
+    <div className="incognito-greet relative isolate flex w-full flex-col items-center text-center">
       {field ? <PrivateField /> : null}
-      <span className="grid size-12 place-items-center rounded-full border border-foreground/[0.12] bg-background text-foreground shadow-[0_1px_2px_hsl(var(--foreground)/0.04)]">
-        <IncognitoGlyph className="size-6" strokeWidth={1.5} />
-      </span>
-      <h1 className="mt-5 text-balance font-serif text-display font-normal text-foreground">Incognito chat</h1>
-      <p className="mt-2 max-w-md text-pretty text-body text-muted-foreground">
-        This chat won’t appear in your history, won’t be added to memory, and isn’t used to train models.
-      </p>
+      <IncognitoGlyph on size={32} className="text-foreground" />
+      <h1 className="mt-4 text-balance font-serif text-display font-normal text-foreground">{shellString("incognito.name")}</h1>
+      <p className="mt-2 max-w-md text-pretty text-body text-muted-foreground">{shellString("incognito.promise")}</p>
     </div>
   );
 }

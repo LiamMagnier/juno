@@ -1,29 +1,37 @@
 "use client";
 
 import * as React from "react";
-import { IncognitoGlyph, useIncognitoLook } from "@/components/chat/incognito-glyph";
+import { IncognitoGlyph, incognitoGestureFor, type IncognitoGesture } from "@/components/chat/incognito-glyph";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+// The mark's gesture and the incognito room (the panel's ground, the
+// greeting's entrance). Imported here because chat-view imports this toggle,
+// so the sheet is on every chat page and the still mark elsewhere needs none.
+import "@/components/chat/incognito.css";
 
 /**
- * The incognito switch in the chat root's header cluster.
+ * The incognito switch at the right of the chat's header band.
  *
  * "Incognito", everywhere the mode is named: the toggle, its tooltip, the
- * banner and the transcript heading. The same mode used to be "private chat"
- * on this button and "incognito" on the page it turned on, which read as two
- * features.
+ * band on a phone and the page's own greeting.
  *
- * THE GHOST IS A BESPOKE JUNO MARK, not an interface glyph, and it is kept on
- * purpose. A stock eye-with-a-slash was tried in its place and rejected: it is
- * the set's general "hide" drawing, and at rest (private mode OFF) a slashed
- * eye reads as if privacy were already on. If it ever moves into the icon
- * set, it goes in as its own drawing on the 256 grid with a regular and a fill
- * cut, and the pointer-tracking eyes stay unless the owner signs off on
- * dropping them.
+ * ONE CONTROL, BOTH STATES. It stays where it is when incognito turns on and
+ * becomes the way back out: chat-view keeps the header band mounted in
+ * incognito (it used to drop it, and this button with it, for a separate band
+ * with a close button), so the thing you pressed is the thing that answers,
+ * and pressing it again is how you leave.
  *
- * Its geometry lives in `juno-glyph-paths.ts` (`GHOST`) because the native
- * apps do carry it in their icon set — `juno.ghost`, with still eyes, at the
- * set's line, plus a `fill` cut for the "on" state. One drawing, two readers.
+ *   Off: a quiet 36px circle, the same rung as Share beside it, the mark in
+ *   outline at full ink.
+ *   On: a solid ink pill that names the mode, the mark in its filled cut. The
+ *   mark keeps its place at the pill's right end, so it plays its gesture
+ *   where the eye already is, and the word grows in to its left. The pill
+ *   takes the circle's place in one frame (width never tweens, D27); its
+ *   fill, ink and word cross-fade in.
+ *
+ * The mark plays one gesture per change (incognito.css): on, the hat settles
+ * onto the head and the shades onto the face; off, the brim tips. Under
+ * reduced motion only the fill fades. 44px under a finger (`hit-44`).
  */
 export function PrivateChatToggle({
   active,
@@ -34,51 +42,48 @@ export function PrivateChatToggle({
   disabled?: boolean;
   onToggle: () => void;
 }) {
-  /*
-   * Off: a quiet 36px circle, the same rung as Share beside it (Pressable's
-   * `icon lg`, a size-5 glyph), so the header cluster is one family. On: the
-   * homepage's solid primary, near-white with dark ink in the dark theme, as a
-   * pill that names the mode, so being incognito is never something you have
-   * to infer from a tinted icon. The pill takes the circle's place in one
-   * frame and its fill, ink and word cross-fade in; it used to grow out of the
-   * circle by transitioning `width` and `padding`, which re-laid-out the whole
-   * header row on every frame (D27). It presses at .97 like the homepage's
-   * buttons.
-   *
-   * The glasses look at the pointer once it comes within reach of the button
-   * (`useIncognitoLook`): a small invitation before the press, quiet at rest,
-   * still under reduced motion and on touch.
-   */
-  const buttonRef = React.useRef<HTMLButtonElement>(null);
-  const look = useIncognitoLook(buttonRef, !disabled);
+  // Derived during render (React's "storing information from previous
+  // renders"), so the gesture starts in the same frame as the fill change
+  // rather than one effect later.
+  const [seen, setSeen] = React.useState(active);
+  const [gesture, setGesture] = React.useState<IncognitoGesture | null>(null);
+  if (seen !== active) {
+    setGesture((current) => incognitoGestureFor(seen, active, current));
+    setSeen(active);
+  }
+  const label = active ? "Leave incognito" : "Turn on incognito";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
-          ref={buttonRef}
           type="button"
-          aria-label={active ? "Leave incognito" : "Turn on incognito"}
+          aria-label={label}
           aria-pressed={active}
           // How chat-view finds this button to hand focus back to it when the
-          // incognito band's close button folds away under the reader.
+          // phone band's close button folds away under the reader.
           data-incognito-toggle=""
+          data-state-on={active ? "" : undefined}
           disabled={disabled}
           onClick={onToggle}
           className={cn(
-            "inline-flex h-9 items-center justify-center gap-2 rounded-full text-ui font-medium outline-none coarse:h-11",
+            "hit-44 relative inline-flex h-9 items-center justify-center gap-2 rounded-full text-ui font-medium outline-none",
             "transition-[background-color,color,transform] duration-base ease-out-soft active:scale-[0.97] active:duration-press",
             "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             "disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-colors motion-reduce:active:scale-100",
             active
-              ? "bg-foreground pl-3 pr-3.5 text-background hover:bg-foreground/90"
-              : "w-9 text-muted-foreground hover:bg-accent hover:text-foreground coarse:w-11"
+              ? "bg-foreground pl-3.5 pr-2.5 text-background hover:bg-foreground/90"
+              : "w-9 text-foreground hover:bg-accent"
           )}
         >
-          <IncognitoGlyph className="size-4.5" strokeWidth={1.5} look={look} />
-          {active ? <span className="tracking-[-0.005em] animate-fade-in">Incognito</span> : null}
+          {active ? (
+            <span className="tracking-[-0.005em] motion-safe:animate-[incognito-word-in_220ms_var(--ease-out-expo)_both] motion-reduce:animate-fade-in">
+              Incognito
+            </span>
+          ) : null}
+          <IncognitoGlyph on={active} size={18} gesture={gesture} />
         </button>
       </TooltipTrigger>
-      <TooltipContent>{active ? "Incognito is on. Nothing is saved." : "Incognito chat"}</TooltipContent>
+      <TooltipContent>{active ? "Leave incognito" : "Incognito chat"}</TooltipContent>
     </Tooltip>
   );
 }

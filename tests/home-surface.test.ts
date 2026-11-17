@@ -65,7 +65,9 @@ test("incognito draws nothing behind its mark or its copy, and its copy is types
   assert.match(EMPTY, /export function PrivateGreeting\(\{ field = false \}/);
   const greeting = EMPTY.slice(EMPTY.indexOf("export function PrivateGreeting"));
   assert.doesNotMatch(greeting, /&apos;|'t /, "typographic apostrophes, as the greeting beside it");
-  assert.match(greeting, /won’t appear in your history, won’t be added to memory, and isn’t used/);
+  // The sentence is the shared table's, which sets typographic apostrophes
+  // itself; incognito.test.ts pins what it says.
+  assert.match(greeting, /\{shellString\("incognito\.promise"\)\}/);
 });
 
 test("the tray's project control says Project, never a cut 'Select proj…'", () => {

@@ -7,7 +7,7 @@ import nextDynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ContinueOnMenu } from "@/components/chat/continue-on-menu";
-import { EyeOff, GitFork, GripVertical } from "@/components/ui/icons";
+import { GitFork, GripVertical } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
@@ -32,6 +32,7 @@ import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
 import { HomeArrivalFocus } from "@/components/chat/home-starters";
 import { LiveUIHostProvider } from "@/components/chat/live-ui/host";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
+import { IncognitoGlyph } from "@/components/chat/incognito-glyph";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 /*
  * THE CANVAS AND THE VOICE PANEL ARE LOADED WHEN THEY OPEN, not before.
@@ -2602,8 +2603,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   const actionsContent = (
     <div
       className={cn(
-        "flex items-center gap-1.5 transition-[opacity,transform] duration-base ease-out-soft",
-        privateMode ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100",
+        // In incognito the cluster is the toggle alone (everything else in it
+        // is gated on `!privateMode`), and it stays visible: it is the "on"
+        // state and the way out (private-chat-toggle.tsx).
+        "flex items-center gap-1.5",
         (sidePanelOpen || thoughtOpenId) && "hidden"
       )}
     >
@@ -2735,7 +2738,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             sidePanelOpen && "hidden @[50rem]/split:flex"
           )}
         >
-          {topActionsSlotOwner && !privateMode && (
+          {/* Kept in incognito, so the toggle that turned it on stays in place
+              as its "on" pill and the way back out. Only a forked branch
+              (also private transport) trades it for the band below. */}
+          {topActionsSlotOwner && !forkedFrom && (
             <ThreadHeader
               className={thoughtOpenId ? "!hidden @[50rem]/split:!flex" : undefined}
               title={headerTitle ? (
@@ -2767,7 +2773,11 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             <MemoryUpdatedAnnouncement key={memoryNotice.key} write={memoryNotice.write} onDismiss={dismissMemoryNotice} />
           )}
 
-          {/* Incognito header — grid-rows collapse keeps height animation smooth. */}
+          {/* Private-transport band — grid-rows collapse keeps height animation
+              smooth. A forked branch's header at every width. Plain incognito
+              needs it only below md, where the header band (and the toggle
+              in it) is not drawn: there it names the mode and is the way
+              out. From md up the toggle does both, in place. */}
           <div
             ref={incognitoBandRef}
             // Folded, the band is invisible but its close button was still in
@@ -2775,7 +2785,8 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             inert={!privateMode}
             className={cn(
               "relative z-30 grid transition-[grid-template-rows,opacity] duration-slow ease-out-soft",
-              privateMode ? "grid-rows-[1fr] opacity-100 pointer-events-auto" : "grid-rows-[0fr] opacity-0 pointer-events-none"
+              privateMode ? "grid-rows-[1fr] opacity-100 pointer-events-auto" : "grid-rows-[0fr] opacity-0 pointer-events-none",
+              !forkedFrom && "md:hidden"
             )}
           >
             <div className={cn("min-h-0 overflow-hidden", !privateMode && "pointer-events-none")}>
@@ -2791,11 +2802,11 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                     </span>
                   </div>
                 ) : (
-                  <div className="inline-flex items-center gap-2 font-medium">
-                    {/* The private-chat toggle's own mark in its ON cut, so the
-                        header and the control that set it name one state with
-                        one drawing. It was a hand-drawn ghost on a 48 grid. */}
-                    <EyeOff weight="fill" className="size-4 text-muted-foreground" />
+                  <div className="inline-flex items-center gap-2 font-medium text-foreground">
+                    {/* The toggle's own mark in its ON cut, so the band and the
+                        control that set the mode name one state with one
+                        drawing. It was a slashed eye, the set's "hide". */}
+                    <IncognitoGlyph on size={18} />
                     Incognito chat
                   </div>
                 )}
@@ -2824,7 +2835,10 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             </div>
           </div>
 
-          {/* Main column — settles into a quiet framed card in incognito. */}
+          {/* Main column — settles into a quiet framed card in a forked branch.
+              Plain incognito is not framed: the whole panel takes the
+              incognito ground instead (incognito.css), flat, as Graphite
+              surfaces are. */}
           <div
             className={cn(
               // The frame fades in; its inset does not travel. This used to
@@ -2836,9 +2850,9 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
               // frame and the card's fill, edge and shadow cross-fade over it.
               // Those are Tier A, so they fade under reduced motion too.
               "flex min-h-0 flex-1 flex-col overflow-hidden transition-[border-color,background-color,box-shadow] duration-slow ease-out-soft",
-              privateMode
+              forkedFrom
                 // `bg-card`, not `bg-card/50` — half a 6.5% fill over black is
-                // ~3.3%, so the "quiet framed card" incognito settles into was a
+                // ~3.3%, so the "quiet framed card" a branch settles into was a
                 // rounded border with the page inside it.
                 ? "m-2 rounded-popover border border-border/70 bg-card shadow-soft sm:m-3 sm:rounded-composer"
                 : "m-0 rounded-none border border-transparent bg-transparent shadow-none"
@@ -3035,10 +3049,18 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                         aria-hidden={Boolean(privateMode || chat.pendingClarification)}
                         inert={Boolean(privateMode || chat.pendingClarification)}
                         className={cn(
-                          "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
+                          // The two greetings hand over rather than cross: the
+                          // one leaving goes on the exit rung, the one arriving
+                          // waits until it has all but gone (120ms) and takes
+                          // the slow rung, so the two headlines (which share
+                          // this cell) are never both half-there as a double
+                          // exposure. An arbitrary property, not `delay-[…]`:
+                          // tailwindcss-animate also claims `delay-*`, and
+                          // Tailwind drops the ambiguous class without a rule.
+                          "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity ease-out-soft",
                           privateMode || chat.pendingClarification
-                            ? "pointer-events-none opacity-0"
-                            : "opacity-100"
+                            ? "pointer-events-none opacity-0 duration-exit"
+                            : "opacity-100 duration-slow [transition-delay:120ms]"
                         )}
                       >
                         {agent ? (
@@ -3054,10 +3076,16 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                         aria-hidden={Boolean(!privateMode || chat.pendingClarification)}
                         inert={Boolean(!privateMode || chat.pendingClarification)}
                         className={cn(
-                          "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
+                          // Incognito's greeting rises the last 6px as it fades
+                          // in, on the same rung as the ground turning under it,
+                          // so the room, the headline and the toggle change as
+                          // one, and sinks the same 6px as it leaves (the hand-
+                          // over timing is the greeting's above). Reduced
+                          // motion keeps only the fade.
+                          "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-[opacity,transform] ease-out-soft motion-reduce:transform-none",
                           privateMode && !chat.pendingClarification
-                            ? "opacity-100"
-                            : "pointer-events-none opacity-0"
+                            ? "translate-y-0 opacity-100 duration-slow [transition-delay:120ms]"
+                            : "pointer-events-none translate-y-1.5 opacity-0 duration-exit"
                         )}
                       >
                         <PrivateGreeting />
@@ -3066,7 +3094,16 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
 
                     <div
                       ref={emptyComposerRef}
-                      className="chat-home__composer relative isolate w-full"
+                      className={cn(
+                        "chat-home__composer relative isolate w-full",
+                        // Incognito draws no tray under the home composer
+                        // (composer.tsx, `showTray`), and the track is centred,
+                        // so the composer dropped half the tray's height in one
+                        // frame as the room changed around it. Holding the
+                        // tray's place (12px gap + 34px row, signature.css §12)
+                        // keeps the one thing being typed into still.
+                        privateMode && "pb-[46px]"
+                      )}
                     >
                       {/* No dot field behind the home composer any more (Graphite §1:
                           no decorative drawing in the product). Masked to stay
