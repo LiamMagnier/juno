@@ -17,7 +17,7 @@
   },
   "x-native-summary": {
     "native": 222,
-    "planned": 281,
+    "planned": 282,
     "web-only": 111,
     "unclassified": 0
   },
@@ -2663,6 +2663,11 @@
           ],
           "x-native": "planned",
           "x-native-note": "As sourceRef."
+        },
+        "reinstated": {
+          "type": "boolean",
+          "x-native": "planned",
+          "x-native-note": "Undo on a fact the turn believed again returns it to history instead of block-listing it (src/lib/memory-undo.ts); the Swift apps' receipt Undo still forgets."
         }
       },
       "required": [

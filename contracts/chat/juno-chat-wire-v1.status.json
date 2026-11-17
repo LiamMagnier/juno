@@ -441,6 +441,10 @@
       "status": "planned",
       "note": "As sourceRef."
     },
+    "ClientMemoryReceipt.reinstated": {
+      "status": "planned",
+      "note": "Undo on a fact the turn believed again returns it to history instead of block-listing it (src/lib/memory-undo.ts); the Swift apps' receipt Undo still forgets."
+    },
     "ClientActionApproval.id": "native",
     "ClientActionApproval.surface": "native",
     "ClientActionApproval.sessionId": "native",
