@@ -731,6 +731,14 @@ section[data-sidebar-section]:not(:first-child) {
   border-radius: 0;
   background: none;
 }
+/* The old shelf's dark tone (composer.css, `.dark .composer-tray`) weighs
+   the same as the rule above, and a route's loading chunk can carry
+   composer.css after this sheet, so the shelf came back in dark as a square
+   strip behind the capsule. One more class keeps the dock bare whatever the
+   chunk order. */
+.dark .composer-tray.composer-tray--dock {
+  background: none;
+}
 .composer-tray--dock .composer-tray__row {
   gap: 8px;
   min-height: 34px;
