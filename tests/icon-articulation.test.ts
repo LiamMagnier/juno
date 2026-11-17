@@ -76,12 +76,14 @@ test("the dead svg.icon[data-motion] rules and the unused juno-glyphs renderer a
   assert.equal(existsSync(path.join(root, "src/components/ui/juno-glyphs.tsx")), false);
 });
 
-test("destinations opt in: sidebar destination rows, the product switch, empty-state actions", () => {
+test("destinations opt in: sidebar destination rows and empty-state actions", () => {
   const sidebar = read("src/components/app/app-sidebar.tsx");
   assert.match(sidebar, /const articulate = moves \? "" : undefined;/);
   assert.equal((sidebar.match(/data-jicon-articulate=\{articulate\}/g) ?? []).length, 2, "link and button forms of NavRow");
-  assert.match(read("src/components/app/product-switch.tsx"), /data-jicon-articulate=\{locked \? undefined : ""\}/);
   assert.match(read("src/components/ui/empty-state.tsx"), /data-jicon-articulate="within"/);
+  // The product switch is a menu now (ProductMenu, owner 16 Nov 2026), and
+  // menus never opt in (below): its rows hold still.
+  assert.doesNotMatch(read("src/components/app/product-switch.tsx"), /data-jicon-articulate/);
 });
 
 test("menus, the composer and message actions never opt in", () => {

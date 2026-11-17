@@ -69,7 +69,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { PopoverTrigger } from "@/components/ui/popover";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { useApp } from "@/components/app/app-provider";
-import { ProductSwitch, type ProductSurface } from "@/components/app/product-switch";
+import { ProductMenu, ProductSwitch, type ProductSurface } from "@/components/app/product-switch";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { CodeShellList } from "@/components/app/code-work-list";
 import { LIST_ROW_TRANSITION, Section, Disclosure, listRowClass } from "@/components/app/sidebar-section";
@@ -1455,7 +1455,7 @@ export function AppSidebar({
           transition={layoutTransition}
           className={cn("flex items-center", collapsed ? "flex-col px-2 pt-3" : "mt-2 h-11 gap-0.5 pl-4.5 pr-2")}
         >
-          <motion.div layout="position" transition={layoutTransition} className={cn("min-w-0", !collapsed && "flex-1")}>
+          <motion.div layout="position" transition={layoutTransition} className={cn("min-w-0", !collapsed && "flex flex-1 items-center gap-1.5")}>
             {collapsed && onToggleCollapse ? (
               /*
                * THE RAIL'S HEAD IS ONE CONTROL. It used to stack the mark, the
@@ -1505,10 +1505,20 @@ export function AppSidebar({
                       wordmark). It was an app-icon tile (the mark in a black
                       rounded square) beside the name in the UI sans: a second
                       logo, and the generic one. */}
-                  <AlevrLockup height={22} decorative />
+                  <AlevrLockup height={20} decorative />
                 </motion.span>
               )}
             </Link>
+            )}
+            {/* The product you are in, beside the lockup: "Alevr  Chat ⌄"
+                opens the product menu (product-switch.tsx, ProductMenu). */}
+            {!collapsed && (
+              <ProductMenu
+                active={product}
+                plan={quota.plan}
+                codeOpen={features.codeOpen}
+                onNavigate={() => setSidebarOpen(false)}
+              />
             )}
           </motion.div>
           {!collapsed && (
@@ -1567,31 +1577,6 @@ export function AppSidebar({
             </Button>
           )}
         </motion.div>
-
-        {/* The labelled Chat | Code switch, full width on its own row. It
-            fades with the collapse rather than cutting (the closing panel is
-            still ~200px wide when the rows start to move), and `popLayout`
-            lets the rows below close the gap on the same frame. */}
-        <AnimatePresence initial={false} mode="popLayout">
-          {!collapsed && (
-            <motion.div
-              key="header-switch"
-              layout="position"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ ...layoutTransition, opacity: transition.fast }}
-              className="px-2 pb-2 pt-0.5"
-            >
-              <ProductSwitch
-                active={product}
-                plan={quota.plan}
-                codeOpen={features.codeOpen}
-                onNavigate={() => setSidebarOpen(false)}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* The rail keeps the stacked icon column: see the note above.
             It FADES in and out rather than cutting, on the same collapse the

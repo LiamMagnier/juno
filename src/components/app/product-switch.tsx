@@ -3,10 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Lock } from "@/components/ui/icons";
+import { Check, ChevronDown, Lock } from "@/components/ui/icons";
 
 import { SidebarMotionIcon, type SidebarMotionIconKind } from "@/components/app/sidebar-motion-icon";
 import { Kbd } from "@/components/ui/kbd";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useModifierKeyLabel } from "@/components/ui/platform";
 import { PLANS, planRank } from "@/lib/plans";
@@ -214,98 +215,96 @@ export function ProductSwitch({
     );
   }
 
-  return (
-    /*
-     * TWO ROWS (owner, 16 Nov 2026: "rework the Chat/Code switch"). The
-     * products are the column's first two rows, drawn with the nav rows' own
-     * recipe (navRowClass in app-sidebar.tsx: 32px, a 20px glyph slot, the
-     * 14px `nav` label on the column's text edge), the way Claude and ChatGPT
-     * list Code: a place in the column, not a toggle above it. The recessed
-     * track with a sliding thumb (2026-10-14) read as a phone toggle bolted
-     * to the top of the sidebar.
-     *
-     * The product you are in is FULL INK AND MEDIUM WEIGHT, not a fill: the
-     * rows below already draw the selected fill for the page you are on
-     * (Projects, a chat), and a filled product row above them would show two
-     * selected rows at once. A hairline under the pair separates where you
-     * are from what you can do there.
-     *
-     * Still LINKS (see the note at the top of the file), still the plan gate
-     * and the chord in the tooltip. The rail keeps the track, where two
-     * glyphs need a shape around them to read as one choice.
-     */
-    <nav aria-label={`${PRODUCT_NAME} products`} className="w-full shrink-0">
-      <div className="flex flex-col">
-        {PRODUCTS.map((product) => (
-          <Segment
-            key={product.id}
-            product={product}
-            active={product.id === active}
-            locked={isLocked(product, plan, codeOpen)}
-            onNavigate={onNavigate}
-          />
-        ))}
-      </div>
-      <div className="mx-2 mt-2 h-px bg-sidebar-border" aria-hidden="true" />
-    </nav>
-  );
+  // The expanded column names the product in its header instead (ProductMenu).
+  return <ProductMenu active={active} plan={plan} codeOpen={codeOpen} onNavigate={onNavigate} />;
 }
 
-function Segment({
-  product,
+/** What each product is for, in the menu under the product's name. */
+const PRODUCT_LINES: Record<ProductSurface, string> = {
+  chat: "Conversations, research and agents",
+  code: "Work in your repositories",
+};
+
+/**
+ * THE PRODUCT MENU (owner, 16 Nov 2026: "Product menu on the logo", after
+ * the full-width segmented pill and two nav rows were both turned down). The
+ * header reads "Alevr  Chat ⌄": the product you are in, in the muted ink,
+ * beside the lockup, the way Linear, Vercel and Raycast name the workspace
+ * you are in. It opens a short menu, one row per product with its glyph, a
+ * line saying what it is for, and its shortcut, the current one checked.
+ * The column below carries no switch at all, so it opens on the actions.
+ *
+ * Still LINKS (see the note at the top of the file): each row is the product's
+ * href, so ⌘-click opens it in a new tab and Back works. Code below its plan
+ * stays listed, with a lock in place of its mark and the plan's name where the
+ * shortcut goes, and routes to /upgrade.
+ */
+export function ProductMenu({
   active,
-  locked,
+  plan,
+  codeOpen = false,
   onNavigate,
 }: {
-  product: Product;
-  active: boolean;
-  locked: boolean;
+  active: ProductSurface;
+  plan?: PlanId;
+  codeOpen?: boolean;
   onNavigate?: () => void;
 }) {
-  const chord = useChordLabel(product.chord);
+  const mod = useModifierKeyLabel();
+  const current = PRODUCTS.find((product) => product.id === active) ?? PRODUCTS[0];
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Link
-          href={locked ? "/upgrade" : product.href}
-          onClick={onNavigate}
-          aria-current={active ? "page" : undefined}
-          aria-label={accessibleName(product, locked)}
-          // Primary navigation: a destination, so its glyph answers the pointer (icons.css).
-          data-jicon-articulate={locked ? undefined : ""}
-          className={cn(
-            // navRowClass's expanded recipe (app-sidebar.tsx), so these two
-            // rows and the nav rows under them are one list to the eye.
-            // No transition utility: `.pressable` owns the transition list.
-            "pressable jicon-trigger sidebar-nav-row group relative flex h-8 w-full items-center gap-2.5 rounded-control px-2",
-            "motion-reduce:active:scale-100 coarse:h-11",
-            /*
-             * One ink for a product you are not in, locked or not: the
-             * column's own row ink. The lock glyph in place of the product
-             * mark says it is locked; the name stays readable (AA).
-             */
-            // The other product steps back to the muted ink: in the column's
-            // row ink the two read alike, and which one you are in was a
-            // weight difference alone.
-            active && !locked ? "font-medium text-foreground" : "font-normal text-muted-foreground hover:bg-sidebar-hover hover:text-foreground",
-          )}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`${current.label}. Switch product`}
+          className="group pressable inline-flex h-7 shrink-0 items-center gap-1 rounded-control pl-2 pr-1.5 text-nav font-medium text-muted-foreground hover:bg-sidebar-hover hover:text-foreground data-[state=open]:bg-sidebar-hover data-[state=open]:text-foreground motion-reduce:active:scale-100 coarse:h-11"
         >
-          <span
-            className={cn(
-              "relative flex size-5 shrink-0 items-center justify-center transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground [&_svg]:size-[18px]",
-              active && !locked ? "text-foreground" : "text-muted-foreground",
-            )}
-          >
-            {locked ? <Lock aria-hidden="true" /> : <SidebarMotionIcon kind={product.kind} />}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-nav">{product.label}</span>
-        </Link>
-      </TooltipTrigger>
-      <TooltipContent side="right">
-        {locked ? `Upgrade to ${PLANS[product.minPlan].name}` : `Switch to ${product.label}`}
-        {!locked && <Kbd className="ml-1.5">{chord}</Kbd>}
-      </TooltipContent>
-    </Tooltip>
+          <span>{current.label}</span>
+          <ChevronDown
+            aria-hidden="true"
+            className="size-3.5 shrink-0 transition-transform duration-fast ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+          />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={6} className="flex w-80 flex-col gap-0.5">
+        {PRODUCTS.map((product) => {
+          const locked = isLocked(product, plan, codeOpen);
+          const here = product.id === active && !locked;
+          return (
+            <DropdownMenuItem key={product.id} asChild>
+              <Link
+                href={locked ? "/upgrade" : product.href}
+                onClick={onNavigate}
+                aria-current={here ? "page" : undefined}
+                aria-label={accessibleName(product, locked)}
+                className="flex items-start gap-3"
+                // Two lines per row: the menu recipe's single-line padding
+                // (signature.css, .cmenu rows) would press them together.
+                style={{ paddingBlock: 8 }}
+              >
+                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center [&_svg]:size-[18px]">
+                  {locked ? <Lock aria-hidden="true" /> : <SidebarMotionIcon kind={product.kind} />}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className={cn("truncate", here && "font-medium")}>{product.label}</span>
+                  <span className="truncate text-caption text-muted-foreground">{PRODUCT_LINES[product.id]}</span>
+                </span>
+                <span className="mt-0.5 flex shrink-0 items-center">
+                  {here ? (
+                    <Check aria-hidden="true" className="size-4" />
+                  ) : locked ? (
+                    <span className="text-caption text-muted-foreground">{PLANS[product.minPlan].name}</span>
+                  ) : (
+                    <Kbd>{product.chord.replace("⌘", mod)}</Kbd>
+                  )}
+                </span>
+              </Link>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
