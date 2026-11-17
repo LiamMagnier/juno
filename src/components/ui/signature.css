@@ -121,14 +121,11 @@
   stroke-width: 1.75px;
 }
 
-/* Sidebar destinations: 18px glyphs in the second ink at rest, so a row
-   reads as label-first; the row's hover and selection bring them to full
-   ink (app-sidebar.tsx, NavRow). */
+/* Sidebar destinations: 18px glyphs in full ink (owner, 16 Nov 2026: "make
+   them black"), the label's companion in the same ink rather than a grey
+   hint beside it (app-sidebar.tsx, NavRow). They were the second ink at rest. */
 .sidebar-nav-glyph {
-  color: hsl(var(--foreground) / 0.62);
-}
-.dark .sidebar-nav-glyph {
-  color: hsl(var(--foreground) / 0.66);
+  color: hsl(var(--foreground));
 }
 
 /* Send is the accent while there is something to send: the one primary

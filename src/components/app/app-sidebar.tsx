@@ -1808,6 +1808,27 @@ export function AppSidebar({
                             ))}
                           </div>
                         )}
+                        {/* No agents yet: one row that says what to do, in the
+                            nav rows' recipe and the muted ink, rather than a
+                            heading and a floating + over nothing (owner, 16 Nov
+                            2026: the sidebar's elements should look finished).
+                            Once there are agents, idle ones live behind the
+                            heading, as before. */}
+                        {roster && agents.length === 0 && (
+                          <div className="pt-1">
+                            <Link
+                              href="/agents/new"
+                              prefetch={false}
+                              onClick={() => setSidebarOpen(false)}
+                              className={cn(navRowClass(false, false), "text-muted-foreground hover:text-foreground")}
+                            >
+                              <span className="sidebar-nav-glyph relative flex size-5 shrink-0 items-center justify-center [&_svg]:size-[18px]">
+                                <SidebarMotionIcon kind="agents" />
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-nav">Hire your first agent</span>
+                            </Link>
+                          </div>
+                        )}
                       </section>
                     )}
 
