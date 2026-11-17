@@ -231,7 +231,7 @@ export function ProductSwitch({
      * tooltip. The rail keeps its stacked track.
      */
     <nav aria-label={`${PRODUCT_NAME} products`} className="shrink-0">
-      <div className="product-switch-track flex items-center gap-0.5 rounded-full p-[3px]">
+      <div className="product-switch-track flex items-center gap-0.5 rounded-full p-0.5">
         {PRODUCTS.map((product) => (
           <Segment
             key={product.id}
@@ -275,9 +275,13 @@ function Segment({
           aria-label={accessibleName(product, locked)}
           className={cn(
             // No transition utility: `.pressable` owns the transition list.
-            "pressable relative inline-flex h-[26px] items-center gap-1 rounded-full px-2.5 text-ui font-medium leading-none outline-offset-1",
-            "motion-reduce:active:scale-100 coarse:h-9 coarse:px-3",
-            here ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+            // The column's own rung (`nav`, 14/20, tailwind.config.ts: "sidebar
+            // rows ... the account name"), so the switch and the rows under it
+            // are one size; the segment you are in takes the selected row's
+            // weight (signature.css §10).
+            "pressable relative inline-flex h-7 items-center gap-1 rounded-full px-3 text-nav leading-none outline-offset-1",
+            "motion-reduce:active:scale-100 coarse:h-10",
+            here ? "font-medium text-foreground" : "font-normal text-muted-foreground hover:text-foreground",
           )}
         >
           {here && (

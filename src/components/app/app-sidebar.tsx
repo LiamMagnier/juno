@@ -1452,7 +1452,7 @@ export function AppSidebar({
         <motion.div
           layout="position"
           transition={layoutTransition}
-          className={cn("flex items-center", collapsed ? "flex-col px-2 pt-3" : "mt-2 h-11 gap-0.5 pl-2.5 pr-2")}
+          className={cn("flex items-center", collapsed ? "flex-col px-2 pt-3" : "mt-2 h-10 gap-0.5 pl-2.5 pr-2")}
         >
           <motion.div layout="position" transition={layoutTransition} className={cn("min-w-0", !collapsed && "flex flex-1 items-center gap-2")}>
             {collapsed && onToggleCollapse ? (
@@ -1525,7 +1525,7 @@ export function AppSidebar({
                   (inbox.count?.unreadCount ?? 0) > 0 ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                <SidebarMotionIcon kind="notifications" className="size-4" />
+                <SidebarMotionIcon kind="notifications" className="size-[18px]" />
               </Button>
             </PopoverTrigger>
           </NotificationsPopover>
@@ -1543,7 +1543,7 @@ export function AppSidebar({
                     aria-label="Hide sidebar"
                     aria-keyshortcuts={mod === "⌘" ? "Meta+Shift+S" : "Control+Shift+S"}
                   >
-                    <SidebarMotionIcon kind="panel-close" className="size-4" />
+                    <SidebarMotionIcon kind="panel-close" className="size-[18px]" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="flex items-center gap-1.5">
@@ -1564,7 +1564,7 @@ export function AppSidebar({
               onClick={() => setSidebarOpen(false)}
               aria-label="Close menu"
             >
-              <SidebarMotionIcon kind="close" className="size-4" />
+              <SidebarMotionIcon kind="close" className="size-[18px]" />
             </Button>
           )}
         </motion.div>
@@ -1989,7 +1989,7 @@ export function AppSidebar({
                         (inbox.count?.unreadCount ?? 0) > 0 ? "text-foreground" : "text-sidebar-foreground hover:text-foreground"
                       )}
                     >
-                      <SidebarMotionIcon kind="notifications" className="size-4" />
+                      <SidebarMotionIcon kind="notifications" className="size-[18px]" />
                     </Button>
                   </PopoverTrigger>
                 </TooltipTrigger>
@@ -3100,7 +3100,7 @@ function ConversationMenu({
               className={cn(KEBAB_CLASS, "absolute inset-y-0 right-1 my-auto")}
               aria-label={isCodeSession ? "Session options" : "Conversation options"}
             >
-              <SidebarMotionIcon kind="more" className="size-3.5" />
+              <SidebarMotionIcon kind="more" className="size-4" />
             </Pressable>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -3301,7 +3301,7 @@ function ProjectRow({
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
                 <Pressable kind="icon" className={cn(KEBAB_CLASS, "coarse:order-last")} aria-label="Project options">
-                  <SidebarMotionIcon kind="more" className="size-3.5" />
+                  <SidebarMotionIcon kind="more" className="size-4" />
                 </Pressable>
               </DropdownMenuTrigger>
             </TooltipTrigger>

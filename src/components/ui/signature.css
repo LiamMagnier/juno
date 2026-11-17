@@ -602,8 +602,10 @@ button[role="switch"][data-state="checked"] > span > span,
    touch), one radius for every fill (8px), a 12px gap after the glyph,
    two inks: destinations in the near-full ink at a half-step of weight,
    conversation titles a step quieter at the book weight, section heads the
-   quietest. Sections sit 20px apart so a heading belongs to the list under
-   it, not the one above. */
+   quietest. Sections sit 16px apart, the same 16 the first one keeps from
+   the destinations (owner, 17 Nov 2026: "make everything the same size ...
+   spacing"), four times the 4px between a heading and its first row, so a
+   heading still belongs to the list under it. */
 .sidebar-nav-row.sidebar-nav-row {
   height: 32px;
   border-radius: 8px;
@@ -637,7 +639,7 @@ button[role="switch"][data-state="checked"] > span > span,
 }
 [data-sidebar-section] + [data-sidebar-section],
 section[data-sidebar-section]:not(:first-child) {
-  margin-top: 20px;
+  margin-top: 16px;
 }
 [data-sidebar-section] .shell-annot.shell-annot {
   color: hsl(var(--foreground) / 0.48);
