@@ -250,6 +250,22 @@
         "/api/projects/[id]/members": {
           "status": "planned",
           "note": "Project members (sharing a project); not in the apps yet."
+        },
+        "/api/projects/[id]/sources": {
+          "status": "planned",
+          "note": "A project's Google Drive sources (list and add a file or folder). The apps read the mirrored files as ordinary project attachments through sync, but cannot add or see a source yet."
+        },
+        "/api/projects/[id]/sources/[sourceId]": {
+          "status": "planned",
+          "note": "Sync now and remove for one Drive source; web only until the apps show sources."
+        },
+        "/api/projects/[id]/sources/drive": {
+          "status": "planned",
+          "note": "Browsing the owner's Drive for the add-a-source picker; web only until the apps show sources."
+        },
+        "/api/projects/[id]/knowledge/library": {
+          "status": "planned",
+          "note": "Copies Library files into a project's knowledge (the web's Add from Library); the apps attach files to a project through sync."
         }
       }
     },

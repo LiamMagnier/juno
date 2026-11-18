@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-387 routes: 230 native, 80 planned, 58 web only, 19 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
+391 routes: 230 native, 84 planned, 58 web only, 19 internal. 52 pages: on the Mac 38 native, 2 partial, 3 planned, 9 web only; on iOS 25 native, 9 partial, 9 planned, 9 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -31,7 +31,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Chat and streaming](#chat) | 2/2 | 2/2 | 14 | 4 | 1 | 0 |
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 5 | 4 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
-| [Projects](#projects) | 2/2 | 2/2 | 2 | 1 | 0 | 0 |
+| [Projects](#projects) | 2/2 | 2/2 | 2 | 5 | 0 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 13 | 6 | 2 | 0 |
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 12 | 9 | 3 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 14 | 2 | 0 | 0 |
@@ -190,6 +190,10 @@ The Mac's ⌘K panel searches chats, messages, projects, files and artifacts on 
 | `/api/projects` | GET, POST | Native | JunoChatKit, JunoDesktop |  |
 | `/api/projects/[id]` | GET, PATCH, DELETE | Native | JunoChatKit | NativeProjectFoldersClient (JunoChatKit/NativeProjectFolders.swift): GET reads the folder fields (breadcrumbs, children, inherited), PATCH sends parentId for Move to…, DELETE sends ?children=lift\|cascade for a project that holds folders. Other edits still go through sync (/api/v1/mutations); New folder is POST /api/projects with parentId, and the project sync entity carries parentId. |
 | `/api/projects/[id]/members` | GET, POST | Planned |  | Project members (sharing a project); not in the apps yet. |
+| `/api/projects/[id]/sources` | GET, POST | Planned |  | A project's Google Drive sources (list and add a file or folder). The apps read the mirrored files as ordinary project attachments through sync, but cannot add or see a source yet. |
+| `/api/projects/[id]/sources/[sourceId]` | POST, DELETE | Planned |  | Sync now and remove for one Drive source; web only until the apps show sources. |
+| `/api/projects/[id]/sources/drive` | GET | Planned |  | Browsing the owner's Drive for the add-a-source picker; web only until the apps show sources. |
+| `/api/projects/[id]/knowledge/library` | POST | Planned |  | Copies Library files into a project's knowledge (the web's Add from Library); the apps attach files to a project through sync. |
 
 <a id="library"></a>
 
