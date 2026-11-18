@@ -9,6 +9,7 @@ import { MemoryRowMeta } from "@/components/memory/entry-row";
 import type { Memory } from "@/components/memory/memory-model";
 import { overlapKey, type MemoryOverlap } from "@/lib/memory-overlaps";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { cn } from "@/lib/utils";
 
 /*
  * "NEEDS A LOOK": two memories that may say the same thing, or that disagree,
@@ -41,6 +42,10 @@ export function OverlapsPanel({
 }) {
   const reduceMotion = useReducedMotion() ?? false;
   const shown = overlaps.filter((overlap) => overlap.ids.every((id) => memories.has(id)));
+  // Folded to one line until asked for (owner, 18 Nov 2026): the pairs stood
+  // above the list as a second titled box, before the memories themselves.
+  const [open, setOpen] = React.useState(false);
+  const pairs = shown.length === 1 ? "One pair" : `${shown.length} pairs`;
   const fold = {
     initial: reduceMotion ? { opacity: 0 } : { opacity: 0, gridTemplateRows: "0fr" },
     animate: { opacity: 1, gridTemplateRows: "1fr", transition: transition.symmetric },
@@ -52,12 +57,25 @@ export function OverlapsPanel({
       {shown.length > 0 && (
         <motion.section key="overlaps" aria-labelledby="memory-overlaps-heading" className="grid" data-memory-overlaps="" {...fold}>
           <div className="min-h-0 overflow-hidden">
-            <div className="mem-surface rounded-panel px-5 pb-2 pt-4">
-              <h3 id="memory-overlaps-heading" className="flex items-baseline gap-2 text-foreground">
-                <span className="mem-group">Needs a look</span>
-                <span className="mem-count text-ui">{shown.length}</span>
-              </h3>
-              <p className="mt-0.5 max-w-prose text-ui text-muted-foreground">{NOTE}</p>
+            <div className={cn("mem-surface rounded-panel px-4 py-2", open && "pb-3")}>
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <h3 id="memory-overlaps-heading" className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-foreground">
+                  <span className="text-ui font-medium">Needs a look</span>
+                  <span className="text-ui text-muted-foreground">{`${pairs} may repeat or contradict each other.`}</span>
+                </h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-expanded={open}
+                  aria-controls="memory-overlaps-pairs"
+                  onClick={() => setOpen((value) => !value)}
+                  className="-mr-2 px-2.5 text-muted-foreground hover:text-foreground"
+                >
+                  {open ? "Done" : "Review"}
+                </Button>
+              </div>
+              <div id="memory-overlaps-pairs" hidden={!open}>
+              <p className="mt-1 max-w-prose text-ui text-muted-foreground">{NOTE}</p>
               <AnimatePresence initial={false}>
                 {shown.map((overlap) => {
                   const [a, b] = overlap.ids.map((id) => memories.get(id)!);
@@ -108,6 +126,7 @@ export function OverlapsPanel({
                   );
                 })}
               </AnimatePresence>
+              </div>
             </div>
           </div>
         </motion.section>

@@ -81,6 +81,36 @@ export function SummaryPanel({
   const rest = sections.slice(previewCount);
   const hasSummary = !!summary && sections.length > 0;
 
+  /*
+   * NO SUMMARY YET: one quiet line, not a card (owner, 18 Nov 2026: the page
+   * "looks awful"). A titled panel whose whole content was "a summary will
+   * come later" was the first object on the page, above the memories it
+   * would summarise. The line says the same and keeps Write summary.
+   */
+  if (!hasSummary) {
+    return (
+      <section aria-labelledby="memory-summary-heading" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <h2 id="memory-summary-heading" className="sr-only">{project ? "Project summary" : "Summary"}</h2>
+        <p role={consolidating ? "status" : undefined} className="min-w-0 text-ui text-muted-foreground">
+          {consolidating ? `${PRODUCT_NAME} is writing a summary…` : `No summary yet. ${PRODUCT_NAME} writes one once it has a few things to go on.`}
+        </p>
+        <div className="-ml-2.5 flex items-center gap-0.5 @[40rem]/page:-mr-2.5 @[40rem]/page:ml-0">
+          {reviewCount > 0 && onOpenReview ? (
+            <Button variant="ghost" size="sm" onClick={onOpenReview} className="gap-1.5 px-2.5 text-muted-foreground">
+              <ListChecks className="size-4" aria-hidden="true" />
+              <span>Review</span>
+              <span className="tabular-nums text-foreground">{reviewCount > 99 ? "99+" : reviewCount}</span>
+            </Button>
+          ) : null}
+          <Button variant="ghost" size="sm" loading={consolidating} onClick={onRebuild} className="gap-1.5 px-2.5 text-muted-foreground">
+            <ActionIcons.refresh className="size-4" aria-hidden="true" />
+            <span>Write summary</span>
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section aria-labelledby="memory-summary-heading">
       <div className="mem-surface rounded-panel px-5 pb-4 pt-4 @[40rem]/page:px-6">

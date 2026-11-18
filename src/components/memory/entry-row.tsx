@@ -393,7 +393,11 @@ export function MemoryRowMeta({ memory, showProject }: { memory: Memory; showPro
   }
   // Learned in the last three days: the facts most worth a second look, since
   // the newest is the likeliest to be wrong. Real state, in presence blue.
-  if (!status && Date.now() - new Date(memory.createdAt).getTime() < NEW_FOR_MS) {
+  // Only what Alevr LEARNED: a fact you typed or told it yourself is not a
+  // guess to check, and marking all of them "New" (a list someone had just
+  // filled in) put the accent on every row and said nothing.
+  const yours = memory.source === "MANUAL" || memory.sourceRef === "manual" || memory.sourceRef === "edit";
+  if (!status && !yours && Date.now() - new Date(memory.createdAt).getTime() < NEW_FOR_MS) {
     parts.unshift(
       <span key="new" className="mem-new font-medium">
         New

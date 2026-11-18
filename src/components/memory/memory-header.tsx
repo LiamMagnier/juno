@@ -199,7 +199,7 @@ export function MemoryHeaderActions({
 const AddMemoryButton = React.forwardRef<HTMLButtonElement, { paused: boolean; open: boolean; onClick: () => void }>(
   function AddMemoryButton({ paused, open, onClick }, ref) {
     const button = (
-      <Button ref={ref} size="sm" disabled={paused} aria-expanded={open} onClick={onClick} className="gap-1.5">
+      <Button ref={ref} variant="ghost" size="sm" disabled={paused} aria-expanded={open} onClick={onClick} className="gap-1.5">
         <Plus motion="none" className="size-4" aria-hidden="true" />
         Add memory
       </Button>

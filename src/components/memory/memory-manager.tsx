@@ -373,6 +373,9 @@ export function MemoryManagerView({
       onDiscard={memory.deleteEdit}
       justApplied={justApplied}
       onJustAppliedChange={setJustApplied}
+      // Starting points teach the bar to someone with little remembered; past
+      // a handful of memories they were three more objects on every visit.
+      suggest={facts.length < 4}
     />
   );
 
@@ -456,6 +459,10 @@ export function MemoryManagerView({
               <ScopeBar scopes={scopes} value={activeScope} onChange={changeScope} />
             </div>
           )}
+          {/* The one way to change memory in words, first under the header:
+              the summary and the list follow it (owner, 18 Nov 2026). It edits
+              account-wide facts, so it is offered only on the account. */}
+          {!activeScope && <div className="mb-8">{dock}</div>}
           <SummaryPanel
             summary={activeScope ? projectSummary : memory.summary}
             project={activeProject}
@@ -468,13 +475,9 @@ export function MemoryManagerView({
             onOpenActivity={() => openActivity("edits")}
             reviewCount={reviewItems.length}
             onOpenReview={() => setReviewOpen(true)}
-          >
-            {/* The drafting model edits account-wide facts, so the bar is
-                offered only where the page is showing the account. */}
-            {!activeScope && dock}
-          </SummaryPanel>
+          />
 
-          <div className="mt-12">
+          <div className="mt-10">
             <MemoryList
               facts={facts}
               query={query}

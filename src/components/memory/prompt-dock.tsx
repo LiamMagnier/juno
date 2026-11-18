@@ -63,11 +63,13 @@ interface PromptDockProps {
    */
   justApplied: ReadonlyMap<string, number>;
   onJustAppliedChange: React.Dispatch<React.SetStateAction<ReadonlyMap<string, number>>>;
+  /** Offer the three starting points under the empty bar (default true). */
+  suggest?: boolean;
   className?: string;
 }
 
 export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(function PromptDock(
-  { edits, busyEditIds, paused, onInstruct, onAccept, onUndo, onDiscard, justApplied, onJustAppliedChange, className },
+  { edits, busyEditIds, paused, onInstruct, onAccept, onUndo, onDiscard, justApplied, onJustAppliedChange, suggest = true, className },
   ref
 ) {
   const [value, setValue] = React.useState("");
@@ -236,7 +238,7 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
       {/* Starting points while the bar is empty and nothing is waiting: the
           three things the bar can do, each one press from a draft. */}
       <AnimatePresence initial={false}>
-        {!paused && !busy && !value && drafting === null && pending.length === 0 && (
+        {suggest && !paused && !busy && !value && drafting === null && pending.length === 0 && (
           <motion.div key="suggestions" className="grid" {...unfold}>
             <div className="min-h-0 overflow-hidden">
               <div className="flex flex-wrap items-center gap-1.5 px-1 pt-3">
