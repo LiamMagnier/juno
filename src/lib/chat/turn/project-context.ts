@@ -18,6 +18,7 @@ import { isPdfAttachment, providerReceivesDocumentBytes } from "@/lib/attachment
 import { retrieveAttachmentKnowledge, retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
 import type { WorkspaceConfig } from "@/lib/projects/workspace-config";
 import { loadProjectLineage } from "@/lib/projects/project-tree-server";
+import { isCloudAttachEnabled } from "@/lib/env";
 import { isAttachmentParserPending, isAttachmentParserUnavailable } from "@/lib/attachment-context";
 import type { ChatRequestBody } from "@/lib/chat/request";
 import type { ContextPort, TurnContext } from "@/lib/chat/context-resolution";
@@ -87,6 +88,16 @@ export async function resolveProjectContext({
     ? await loadProjectLineage(conversation.userId, conversation.projectId)
     : null;
   const projectRow = projectLineage?.merged ?? null;
+  // A Google Drive folder filed into the project is refreshed when the project
+  // is used: a stale source is queued to sync after this turn's response, so
+  // the next turn reads what the folder holds now. Never awaited and never
+  // thrown (lib/projects/drive-source-store.ts); off with cloud imports.
+  if (projectRow && conversation.projectId && isCloudAttachEnabled()) {
+    const projectId = conversation.projectId;
+    void import("@/lib/projects/drive-source-store")
+      .then((sources) => sources.scheduleStaleSourceSyncs(conversation.userId, projectId))
+      .catch(() => undefined);
+  }
   const assistantProjectRow = projectRow
     ? {
         ...projectRow,

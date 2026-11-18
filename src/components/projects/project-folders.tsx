@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import { promptPreview } from "@/lib/prompt-preview";
+import { activityLabel } from "@/lib/projects/project-view";
 import { cn } from "@/lib/utils";
 import {
   MAX_PROJECT_DEPTH,
@@ -47,7 +47,12 @@ export interface FolderProject {
   name: string;
   parentId: string | null;
   instructions?: string;
+  /** What the project is for, in the owner's words (the card's second line). */
+  description?: string;
   updatedAt?: string;
+  createdAt?: string;
+  /** The newest of its own edits and its chats' last messages. */
+  lastActivityAt?: string;
   conversationCount?: number;
   fileCount?: number;
   coverUrl?: string | null;
@@ -666,13 +671,16 @@ export function ProjectTile({
   const fileCount = Math.max(0, (p.fileCount ?? 0) - (p.coverUrl ? 1 : 0));
   const folderCount = p.childCount ?? folders.length;
   const canNest = validateNewChild(allProjects, p.id).ok;
-  const excerpt = promptPreview(p.instructions ?? "");
+  // The description, never the instructions: those are a prompt written for
+  // the model, and a card quoting it read as a project about itself.
+  const excerpt = (p.description ?? "").replace(/\s+/g, " ").trim();
+  const activity = activityLabel(p);
   const hasActions = !!(onToggleStar || onRename || onMove || onDelete);
 
   // A folder card is narrow: chats, its own folders and the age, no prefix.
   const meta = compact
     ? [plural(p.conversationCount ?? 0, "chat"), ...(folderCount > 0 ? [plural(folderCount, "folder")] : []), ...(p.updatedAt ? [timeAgo(p.updatedAt)] : [])]
-    : [plural(p.conversationCount ?? 0, "chat"), plural(fileCount, "file"), ...(p.updatedAt ? [`updated ${timeAgo(p.updatedAt)}`] : [])];
+    : [plural(p.conversationCount ?? 0, "chat"), plural(fileCount, "file")];
 
   const nameLink = (
     <Link
@@ -812,9 +820,7 @@ export function ProjectTile({
           {pathLabel && <p className="pj-annot mb-1 break-words">{pathLabel}</p>}
           {nameLink}
         </div>
-        <p className="mt-1 truncate text-ui text-muted-foreground">
-          {excerpt || "No instructions yet"}
-        </p>
+        {excerpt && <p className="mt-1 line-clamp-2 text-pretty text-ui text-muted-foreground">{excerpt}</p>}
 
         {folders.length > 0 && (
           <p className="relative z-[1] mt-3 flex min-w-0 items-center gap-1.5 text-ui text-muted-foreground">
@@ -844,7 +850,7 @@ export function ProjectTile({
             the line being cut or a dot left hanging at its end. */}
         <p className="pj-annot mt-auto flex flex-wrap items-baseline justify-between gap-x-3 pt-4">
           <span>{metaLine(meta.slice(0, 2))}</span>
-          {p.updatedAt && <span>{metaLine([`Updated ${timeAgo(p.updatedAt)}`])}</span>}
+          {activity && <span>{metaLine([activity])}</span>}
         </p>
       </div>
 

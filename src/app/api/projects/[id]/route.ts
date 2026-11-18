@@ -19,6 +19,7 @@ import {
 } from "@/lib/work/projects";
 import { MOVE_REFUSAL_MESSAGES, validateProjectMove } from "@/lib/projects/project-tree";
 import { deleteProjectFolder, loadOwnerProjectTree } from "@/lib/projects/project-tree-server";
+import { sourceIdsByAttachment } from "@/lib/projects/drive-source-store";
 
 export const runtime = "nodejs";
 
@@ -83,6 +84,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           error: true,
           pageCount: true,
           chunkCount: true,
+          tokenCount: true,
           embeddingState: true,
           _count: { select: { blocks: true } },
         },
@@ -131,11 +133,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     }
   }
   const childCountOf = (id: string) => tree.filter((node) => node.parentId === id).length;
+  // Which files a Google Drive source mirrors, so the page draws them under
+  // their source rather than as uploads. Sources are the owner's.
+  const sourceOf = isOwner
+    ? await sourceIdsByAttachment(user.id, project.files.map((file) => file.id))
+    : new Map<string, string>();
 
   return NextResponse.json({
+    // The owner adds and removes knowledge and sources; a collaborator reads.
+    isOwner,
     project: {
       id: project.id,
       name: project.name,
+      description: project.description,
       parentId: isOwner ? project.parentId : null,
       instructions: project.instructions,
       starred: project.starred,
@@ -161,6 +171,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         const document = knowledgeByAttachment.get(file.id);
         return {
           ...serialized,
+          createdAt: file.createdAt.toISOString(),
+          origin: file.origin,
+          sourceId: sourceOf.get(file.id) ?? null,
           knowledge: document
             ? {
                 documentId: document.id,
@@ -169,6 +182,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
                 pageCount: document.pageCount,
                 blockCount: document._count.blocks,
                 chunkCount: document.chunkCount,
+                tokenCount: document.tokenCount,
                 embeddingState: document.embeddingState,
               }
             : null,
@@ -203,6 +217,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
+  /** What the project is for; shown under its name, never sent to the model. */
+  description: z.string().trim().max(2000).optional(),
   // No app-side character cap — model context is the real limit.
   instructions: z.string().optional(),
   starred: z.boolean().optional(),

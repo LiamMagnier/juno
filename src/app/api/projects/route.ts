@@ -25,18 +25,35 @@ export async function GET() {
     },
   });
 
+  // Last activity: the newest of the project's own edits and its chats' last
+  // messages. `updatedAt` alone said "Updated 3 weeks ago" over a project
+  // someone chatted in this morning, since a message does not touch the row.
+  const latestChats = projects.length
+    ? await prisma.conversation.groupBy({
+        by: ["projectId"],
+        where: { userId: user.id, projectId: { in: projects.map((p) => p.id) } },
+        _max: { lastMessageAt: true },
+      })
+    : [];
+  const lastChatAt = new Map(latestChats.map((row) => [row.projectId, row._max.lastMessageAt]));
+
   return NextResponse.json({
     projects: await Promise.all(
       projects.map(async (p) => ({
         id: p.id,
         name: p.name,
         nameSource: p.nameSource,
+        description: p.description,
         // The folder this project sits in (null = top level). The list stays
         // flat; clients build the tree with buildProjectForest.
         parentId: p.parentId,
         instructions: p.instructions,
         starred: p.starred,
         updatedAt: p.updatedAt.toISOString(),
+        createdAt: p.createdAt.toISOString(),
+        lastActivityAt: new Date(
+          Math.max(p.updatedAt.getTime(), lastChatAt.get(p.id)?.getTime() ?? 0)
+        ).toISOString(),
         conversationCount: p._count.conversations,
         fileCount: p._count.files,
         coverUrl: p.files[0] ? await getViewUrl(p.files[0].storageKey) : null,
@@ -49,6 +66,8 @@ const createSchema = z.object({
   // Optional: an unnamed project is created as "Untitled project" and gets an
   // auto-generated name from its first chat.
   name: z.string().trim().min(1).max(120).optional(),
+  /** What the project is for; shown under its name, never sent to the model. */
+  description: z.string().trim().max(2000).optional(),
   // No app-side character cap — model context is the real limit.
   instructions: z.string().optional(),
   /** Create it as a subfolder of this project (one of the caller's own). */
@@ -81,6 +100,7 @@ export async function POST(req: Request) {
       parentId,
       name: parsed.data.name ?? "Untitled project",
       nameSource: parsed.data.name ? "manual" : "default",
+      description: parsed.data.description ?? "",
       instructions: parsed.data.instructions ?? "",
     },
     select: { id: true },

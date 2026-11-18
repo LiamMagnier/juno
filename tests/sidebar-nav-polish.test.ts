@@ -408,6 +408,7 @@ test("the account avatar without a photo is a monogram in the second ink, lighte
 
 test("the Projects route skeleton is drawn to the Projects header", () => {
   const loading = read("src/app/(app)/projects/loading.tsx");
-  // Measured: the lede is 48px at 1280 and 72px on a phone; "New project" is a default Button.
-  assert.match(loading, /<AppPageHeaderSkeleton headingWidth="w-56" ledeLines=\{2\} phoneLedeLines=\{3\} actions="button" \/>/);
+  // Measured (17 Nov 2026, the shorter lede): 24px at 1280 and 24px on an
+  // iPhone 13, one line each; "New project" is a default Button.
+  assert.match(loading, /<AppPageHeaderSkeleton headingWidth="w-56" ledeLines=\{1\} phoneLedeLines=\{1\} actions="button" \/>/);
 });

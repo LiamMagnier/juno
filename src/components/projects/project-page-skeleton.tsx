@@ -6,63 +6,47 @@ import { staggerDelay } from "@/lib/motion";
  * The project page before its data, in the project page's own shape.
  *
  * ONE component, rendered by both things that draw it: the route's
- * `loading.tsx` (the server boundary, shown during the route transition) and
- * the page's own `!data` branch (shown while the client fetch is in flight).
- * They are two different moments in the same load and the reader sees them
- * back to back, so they have to be the same picture — and when they were two
- * files they were not. `loading.tsx` drew the header, the tab row, a composer
- * block and four chat rows beside a rail; the page drew a header and two bare
- * slabs with no tab row at all. The reader got one layout from the transition,
- * a second from the fetch, and the real page third.
+ * `loading.tsx` (shown during the route transition) and the page's own
+ * `!data` branch (shown while the client fetch is in flight). They are two
+ * moments in the same load and the reader sees them back to back, so they
+ * agree by sharing a component, not by two files holding the same numbers.
  *
- * PREMIUM_AUDIT §2b already wrote the rule this closes — "where a skeleton and
- * a page must agree, they agree by sharing a component, not by two files
- * holding the same numbers". The blocks come up on the shared stagger (see
- * STAGGER in src/lib/motion.ts) rather than repainting at once.
+ * The page is two tracks from the top (project/[id]/page.tsx): the header,
+ * composer and chats on the left, the knowledge panel on the right with its
+ * top level with the title. On a phone the panel stacks under the composer,
+ * as the page does.
  *
  * The caller supplies the `<AppPage measure="wide">` frame and the
- * `role="status"` on it, so this emits no landmark of its own: the region
- * speaks once, not twice.
+ * `role="status"` on it, so this emits no landmark of its own.
  */
 export function ProjectPageSkeleton() {
   return (
-    <>
-      {/* `nav`: the project header opens with its back link and the
-          "Project" eyebrow (project-workspace-header.tsx). */}
-      <AppPageHeaderSkeleton nav headingWidth="w-72" actions />
-
-      {/* Tab row: Overview, Sources and Settings, the three every project
-          has. Tasks and Code join only once they hold something. */}
-      <Skeleton className="h-9 w-[17rem] max-w-full rounded-menu" />
-
-      {/* The composer sits in the LEFT column and the rail's top edge is level
-          with it, exactly as the loaded page draws them — so the placeholder
-          reserves the room the content actually takes. */}
-      <div className="mt-6 grid items-start gap-6 @4xl/page:grid-cols-[minmax(0,1fr)_19rem] @4xl/page:gap-8">
-        <div className="min-w-0">
-          <Skeleton
-            className="h-28 w-full rounded-panel [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-            style={staggerDelay(0)}
-          />
-          <Skeleton
-            className="mt-8 h-9 w-full max-w-sm rounded-control [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-            style={staggerDelay(1)}
-          />
-          <div className="mt-4 space-y-1">
-            {[...Array(4)].map((_, i) => (
-              <Skeleton
-                key={i}
-                className="h-12 w-full rounded-control [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-                style={staggerDelay(i + 2)}
-              />
-            ))}
-          </div>
-        </div>
+    <div className="flex flex-col gap-6 @4xl/page:grid @4xl/page:grid-cols-[minmax(0,1fr)_20rem] @4xl/page:items-start @4xl/page:gap-10 @6xl/page:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="min-w-0">
+        {/* `nav`: the header opens with its back link and the breadcrumbs. */}
+        <AppPageHeaderSkeleton nav headingWidth="w-72" actions />
         <Skeleton
-          className="h-72 w-full rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+          className="h-28 w-full rounded-panel [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+          style={staggerDelay(0)}
+        />
+        <Skeleton
+          className="mt-10 h-9 w-full max-w-sm rounded-control [animation-fill-mode:backwards] motion-safe:animate-rise-in"
           style={staggerDelay(1)}
         />
+        <div className="mt-4 space-y-1">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton
+              key={i}
+              className="h-12 w-full rounded-control [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+              style={staggerDelay(i + 2)}
+            />
+          ))}
+        </div>
       </div>
-    </>
+      <Skeleton
+        className="h-80 w-full rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+        style={staggerDelay(1)}
+      />
+    </div>
   );
 }

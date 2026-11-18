@@ -5,7 +5,7 @@ import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ImageOff, ImagePlus, Loader2, Maximize2, Plus } from "@/components/ui/icons";
+import { ArrowLeft, ArrowRight, ImageOff, ImagePlus, Loader2, Maximize2, Plus } from "@/components/ui/icons";
 import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,9 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { SettingsGroup, SettingsHint, SettingsRow } from "@/components/projects/project-settings-group";
 import { Collapse } from "@/components/ui/collapse";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import type { KnowledgeIndexState } from "@/components/library/index-status";
 import { useApp } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import type { ReasoningEffort } from "@/types/chat";
@@ -41,16 +40,21 @@ import {
 import { ProjectWorkDefaults } from "@/components/projects/project-work-defaults";
 import { ProjectWorkspaceHeader } from "@/components/projects/project-workspace-header";
 import { ProjectPageSkeleton } from "@/components/projects/project-page-skeleton";
-import { ProjectOverviewRail, type RailProjectMemory } from "@/components/projects/project-overview-rail";
+import {
+  ProjectKnowledgePanel,
+  type KnowledgeFile,
+  type PanelProjectMemory,
+} from "@/components/projects/project-knowledge-panel";
+import { ProjectDriveDialog } from "@/components/projects/project-drive-dialog";
+import { ProjectLibraryDialog } from "@/components/projects/project-library-dialog";
 import { ProjectChatList } from "@/components/projects/project-chat-list";
 import { ProjectWorkList, type ProjectWorkItem } from "@/components/projects/project-work-list";
 import { ProjectCodeList } from "@/components/projects/project-code-list";
-import { ProjectSourcesList, type ProjectArtifactItem } from "@/components/projects/project-sources-list";
-import { madeInConversations } from "@/lib/artifact-links";
+import { ARTIFACT_NOUN, artifactPath, madeInConversations } from "@/lib/artifact-links";
+import type { ArtifactType } from "@/lib/message-content";
 import {
   DeleteProjectDialog,
   MoveToDialog,
-  FoldersEmpty,
   ProjectNameDialog,
   ProjectSheet,
   ProjectTile,
@@ -62,33 +66,68 @@ import {
 } from "@/components/projects/project-folders";
 import { ProjectInstructionsDialog, type InheritedInstructions } from "@/components/projects/project-instructions-dialog";
 import { MOVE_REFUSAL_MESSAGES, type DeleteChildrenMode, type MoveRefusal } from "@/lib/projects/project-tree";
+import { knowledgeUsage } from "@/lib/projects/knowledge-capacity";
+import {
+  sourcesBusy,
+  type DriveAvailability,
+  type ProjectSourceView,
+  type ProjectSourcesResponse,
+} from "@/lib/projects/project-sources-shared";
 import { FEATURE_NAMES, PRODUCT_NAME } from "@/lib/brand/names";
 import { cachedJson } from "@/lib/client-cache";
+import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 // Soft UI only — no save rejection. Warn when the draft is very large.
 const INSTRUCTIONS_SOFT_WARN = 50_000;
+/** How often the page re-reads its sources while one of them is syncing. */
+const SOURCE_POLL_MS = 2_500;
 
 /**
- * The tabs, and the `?tab=` values that reach them.
- *
- * `workspace` and `assistant` are older spellings of `settings` that people
- * may still hold in a bookmark, so they resolve rather than 404 into Overview.
+ * Where a `?tab=` link lands. The page is one view now (Claude's project page:
+ * the work on the left, what the project knows on the right) plus Settings,
+ * and the lists under the composer switch between chats, tasks, code and
+ * artifacts. The old tab values still resolve, because people hold them in
+ * bookmarks: `work` and `code` open that list, `sources` the overview (the
+ * knowledge panel is always on it), `workspace` and `assistant` the settings.
  */
-const TABS = ["overview", "work", "code", "sources", "settings"] as const;
-type TabValue = (typeof TABS)[number];
+type ListKind = "chats" | "work" | "code" | "artifacts";
+type PageView = "overview" | "settings";
 
-const TAB_ALIASES: Record<string, TabValue> = { workspace: "settings", assistant: "settings" };
+function parseTab(raw: string | null): { view: PageView; list?: ListKind } | null {
+  switch (raw) {
+    case "overview":
+    case "sources":
+      return { view: "overview" };
+    case "work":
+    case "code":
+    case "artifacts":
+      return { view: "overview", list: raw };
+    case "settings":
+    case "workspace":
+    case "assistant":
+      return { view: "settings" };
+    default:
+      return null;
+  }
+}
 
-function parseTab(raw: string | null): TabValue | null {
-  if (!raw) return null;
-  if ((TABS as readonly string[]).includes(raw)) return raw as TabValue;
-  return TAB_ALIASES[raw] ?? null;
+interface ProjectArtifactItem {
+  id: string;
+  identifier: string;
+  title: string;
+  type: string;
+  updatedAt: string;
+  conversationId: string | null;
 }
 
 interface Detail {
+  /** The owner adds and removes knowledge; a collaborator reads it. */
+  isOwner?: boolean;
   project: {
     id: string;
     name: string;
+    description?: string;
     instructions: string;
     starred: boolean;
     updatedAt: string;
@@ -108,20 +147,12 @@ interface Detail {
     title: string;
     lastMessageAt: string;
     pinned: boolean;
-    /** `"chat"` or `"code"` — see the Code tab below for why it is on the wire. */
+    /** `"chat"` or `"code"`: which list it belongs in. */
     kind: string;
     codeWorkspaceName: string | null;
     codeWorkspacePath: string | null;
   }[];
-  files: {
-    id: string;
-    fileName: string;
-    mimeType: string;
-    size: number;
-    url: string;
-    kind: string;
-    knowledge?: (KnowledgeIndexState & { documentId: string }) | null;
-  }[];
+  files: (KnowledgeFile & { kind: string })[];
   workspace: WorkspaceConfig;
 }
 
@@ -134,6 +165,25 @@ const WORKSPACE_TOOL_LABELS: Record<WorkspaceTool, string> = {
   memoryRecall: "Memory",
 };
 
+/**
+ * A project, laid out the way Claude lays one out: a workspace, not a form.
+ *
+ * Left: the way back, the name in the house serif and what the project is
+ * for, a composer that starts a chat IN the project, and the project's chats
+ * (with its tasks, code sessions and artifacts a switch away when it has
+ * any). Right: one flat panel with what every chat here begins with: the
+ * instructions, the knowledge (uploads, Library files and Google Drive files
+ * and folders, kept in sync, with how full the project is) and its memory.
+ *
+ * On a phone it stacks in reading order: the name, the composer, the panel,
+ * then the chats. The left column is `display: contents` below the split, so
+ * its children and the panel are siblings that `order` can interleave; at the
+ * split the column is a block again and the panel takes the right track.
+ *
+ * Settings (model, tools, task defaults) moved off the page's face into a
+ * view of their own, reached from the actions menu: they are set once and
+ * revisited rarely, and five tabs made every project open as a form.
+ */
 export default function ProjectDetailPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
@@ -145,29 +195,20 @@ export default function ProjectDetailPage() {
   /** Guards an unsaved instructions draft against Escape / X / backdrop. */
   const [confirmDiscard, setConfirmDiscard] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
-  /**
-   * The cover's own busy flag.
-   *
-   * It used to share `uploading` with the source uploader, and the two are not
-   * the same event to anyone watching: picking a project image put the Sources
-   * section's add button into a spinner and disabled it, so the rail reported
-   * that a file was being added to the project's knowledge when a decorative
-   * picture was being replaced. Two independent actions, two flags.
-   */
+  /** The cover's own busy flag: replacing a picture is not adding knowledge. */
   const [uploadingCover, setUploadingCover] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const coverRef = React.useRef<HTMLInputElement>(null);
 
-  // Workspace tab state
-  const [tab, setTab] = React.useState<TabValue>("overview");
+  const [view, setView] = React.useState<PageView>("overview");
+  const [list, setList] = React.useState<ListKind>("chats");
   const [savingInstructions, setSavingInstructions] = React.useState(false);
 
   // Server-backed project star (Project.starred), toggled optimistically.
   const [isStarred, setIsStarred] = React.useState(false);
-  // This project's memory — its own summary and the facts learned in its
-  // chats. null until it arrives; the rail holds its place meanwhile.
-  const [projectMemory, setProjectMemory] = React.useState<RailProjectMemory | null>(null);
+  // This project's memory: its own summary and the facts learned in its chats.
+  const [projectMemory, setProjectMemory] = React.useState<PanelProjectMemory | null>(null);
   // Every project the account has, as a tree: the Move to… picker and the
   // drop checks read it.
   const [allProjects, setAllProjects] = React.useState<FolderProject[]>([]);
@@ -176,70 +217,65 @@ export default function ProjectDetailPage() {
   const [folderDialog, setFolderDialog] = React.useState(false);
   const [folderBusy, setFolderBusy] = React.useState(false);
   const [deleteBusy, setDeleteBusy] = React.useState(false);
-  // Chat pending deletion — a real dialog, matching the project-delete confirm.
   const [chatToDelete, setChatToDelete] = React.useState<{ id: string; title: string } | null>(null);
   const [workspace, setWorkspace] = React.useState<WorkspaceConfig>({});
   const [savingWorkspace, setSavingWorkspace] = React.useState(false);
   /**
    * The Work bundle as the reader is editing it, beside what the server last
-   * said.
-   *
-   * Two copies rather than one, for the same reason the instructions box keeps
-   * a draft: the save button is enabled by the difference, and comparing the
-   * draft against the loaded value is the only way to tell an unchanged form
-   * from an edited one. Both sides go through `serializeWorkDefaults` before
-   * they are compared, because that is what fixes the key order — a form that
-   * set a field and unset it again would otherwise serialise the same settings
-   * in a different order and read as edited for the rest of the session.
+   * said. Two copies so Save is enabled by the difference; both go through
+   * `serializeWorkDefaults` before they are compared, which fixes key order.
    */
   const [workDefaults, setWorkDefaults] = React.useState<WorkProjectDefaults>({});
   const [savedWorkDefaults, setSavedWorkDefaults] = React.useState<WorkProjectDefaults>({});
   const [savingWorkDefaults, setSavingWorkDefaults] = React.useState(false);
   const [workRuns, setWorkRuns] = React.useState<ProjectWorkItem[]>([]);
-  /** The project's artifacts as the route found them, each with the chat it
-   *  was made in. Kept whole and narrowed below, because the project's chats
-   *  arrive from another request and can change while the page is open. */
-  const [accountArtifacts, setAccountArtifacts] = React.useState<(ProjectArtifactItem & { conversationId: string | null })[]>([]);
+  /** The project's artifacts with the chat each was made in (narrowed below). */
+  const [accountArtifacts, setAccountArtifacts] = React.useState<ProjectArtifactItem[]>([]);
 
-  // Composer states. `null` model = not chosen yet → fall back to account default
-  // without overwriting a pick the user already made (that overwrite was sending
-  // every project chat to defaultModel / Kimi).
+  // Knowledge sources (Google Drive) and whether Drive can be offered.
+  const [sources, setSources] = React.useState<ProjectSourceView[]>([]);
+  const [drive, setDrive] = React.useState<DriveAvailability | null>(null);
+  const [driveOpen, setDriveOpen] = React.useState(false);
+  const [libraryOpen, setLibraryOpen] = React.useState(false);
+  const [sourceToRemove, setSourceToRemove] = React.useState<ProjectSourceView | null>(null);
+  const [removingSource, setRemovingSource] = React.useState(false);
+  const [dropping, setDropping] = React.useState(false);
+
+  // Composer states. `null` model = not chosen yet → fall back to the
+  // project's preferred model, then the account default, without overwriting
+  // a pick the user already made.
   const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort | null>("high");
   const [selectedModel, setSelectedModel] = React.useState<string | null>(null);
   const projectModel = selectedModel ?? workspace.preferredModelId
     ?? settings?.defaultModel ?? "anthropic:claude-sonnet-5";
 
-  // Deep-link in: /projects/{id}?tab=sources
-  React.useEffect(() => {
-    const t = parseTab(new URLSearchParams(window.location.search).get("tab"));
-    if (t) setTab(t);
-  }, []);
-
   /**
-   * …and deep-link OUT, which is the half that was missing.
-   *
-   * `?tab=` was readable on arrival and never written, so the address bar said
-   * Overview no matter which tab you were on: a reload dropped you back to the
-   * first one, and a link copied from the Sources tab opened somewhere else for
-   * whoever you sent it to. The tab is part of where you are, so it belongs in
-   * the URL.
-   *
-   * `replaceState` rather than `router.replace`: this changes nothing the
-   * server renders, and a route-level navigation for a local state change
-   * remounts the tab panels — which would throw away the composer draft the
-   * `forceMount` below exists to preserve. It is also deliberately not
-   * `pushState`: Back should leave the project, not walk the reader back
-   * through five tabs to get out of it.
+   * Where you are is part of the URL: `?tab=settings` for Settings, `?tab=work`
+   * for the tasks list. `replaceState` rather than a route navigation, so the
+   * composer's draft survives, and not `pushState`, so Back leaves the project
+   * instead of walking back through every switch.
    */
-  const selectTab = React.useCallback((next: string) => {
-    const value = parseTab(next);
-    if (!value) return;
-    setTab(value);
+  const writeTab = React.useCallback((value: string | null) => {
     const url = new URL(window.location.href);
-    if (value === "overview") url.searchParams.delete("tab");
-    else url.searchParams.set("tab", value);
+    if (value) url.searchParams.set("tab", value);
+    else url.searchParams.delete("tab");
     window.history.replaceState(null, "", url);
   }, []);
+  const openView = React.useCallback(
+    (next: PageView) => {
+      setView(next);
+      writeTab(next === "settings" ? "settings" : list === "chats" ? null : list);
+      window.scrollTo?.({ top: 0 });
+    },
+    [list, writeTab],
+  );
+  const openList = React.useCallback(
+    (next: ListKind) => {
+      setList(next);
+      writeTab(next === "chats" ? null : next);
+    },
+    [writeTab],
+  );
 
   const coverFile = data?.files.find((f) => f.fileName === "__cover__");
   const coverUrl = coverFile?.url ?? null;
@@ -255,13 +291,28 @@ export default function ProjectDetailPage() {
       setInstructions(d.project.instructions);
       setWorkspace(d.workspace ?? {});
       // Through the parser on the way in as well as on the way out: a build
-      // older than the one that wrote the column must draw the parts it
-      // understands rather than a field it would ignore on save.
+      // older than the one that wrote the column draws the parts it knows.
       const defaults = parseWorkDefaults(d.project.workDefaults);
       setWorkDefaults(defaults);
       setSavedWorkDefaults(defaults);
     } catch {
       setError("error");
+    }
+  }, [id]);
+
+  const loadSources = React.useCallback(async () => {
+    try {
+      const r = await fetch(`/api/projects/${id}/sources`);
+      if (!r.ok) {
+        // A collaborator: sources are the owner's, and there is nothing to add.
+        setDrive({ enabled: false, configured: false, connected: false, accountLabel: null });
+        return;
+      }
+      const body = (await r.json()) as ProjectSourcesResponse;
+      setSources(body.sources);
+      setDrive(body.drive);
+    } catch {
+      // Keep what is drawn; the next poll or visit tries again.
     }
   }, [id]);
 
@@ -278,43 +329,29 @@ export default function ProjectDetailPage() {
   }, []);
 
   const refreshKnowledgeAfterUpload = React.useCallback(() => {
-    // These are bounded refreshes of the durable state machine, not a guessed
-    // progress animation. If the background invocation was killed, the UI
-    // stays at the honest queued/unknown state instead of claiming completion.
+    // Bounded refreshes of the durable index state, not a guessed progress
+    // animation: a killed background job leaves the honest queued state.
     for (const delay of [900, 2_500, 6_000]) {
       window.setTimeout(() => void load(), delay);
     }
   }, [load]);
 
   React.useEffect(() => {
-    load();
+    void load();
+    void loadSources();
 
-    // This project's memory — never the account's. A chat here reads only
-    // what was learned here, so that is what the rail shows.
-    //
-    // It used to fetch `/api/memory` and test the answer with `Array.isArray`,
-    // but that route answers `{ memories, summary }` — so the rail was empty
-    // for everyone, always. Had the test passed it would have been worse: the
-    // whole account's facts, every other project's included, on this page.
+    // This project's memory, never the account's: a chat here reads only
+    // what was learned here, so that is what the panel shows.
     fetch(`/api/projects/${encodeURIComponent(id)}/memory`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((m: RailProjectMemory | null) => {
-        setProjectMemory(
-          m && Array.isArray(m.facts) ? m : { summary: null, facts: [], activeCount: 0 }
-        );
+      .then((m: PanelProjectMemory | null) => {
+        setProjectMemory(m && Array.isArray(m.facts) ? m : { summary: null, facts: [], activeCount: 0 });
       })
       .catch(() => setProjectMemory({ summary: null, facts: [], activeCount: 0 }));
 
     loadAllProjects();
 
-    // Fetch this project's delegated tasks.
-    //
-    // `/api/work/sessions?projectId=`, not `/api/work?limit=50`. There is no
-    // route at `/api/work` — `src/app/api/work` holds only subdirectories — so
-    // this tab has been silently empty for as long as it has existed: the fetch
-    // 404d, `res.sessions` was undefined, and the `.catch` swallowed it. The
-    // real route filters by project server-side, which is why the client-side
-    // `.filter` on `projectId` is gone with it rather than kept as a belt.
+    // This project's delegated tasks, filtered by project on the server.
     fetch(`/api/work/sessions?projectId=${encodeURIComponent(id)}&limit=50`)
       .then((res) => res.json())
       .then((res) => {
@@ -334,17 +371,7 @@ export default function ProjectDetailPage() {
       })
       .catch(() => {});
 
-    // This project's artifacts (X-21).
-    //
-    // The route answers `{ items }`, and this read `res.artifacts`, so the
-    // Sources tab and the Overview count said zero for everyone, always. Had
-    // the field matched it would have been worse: the fetch was the whole
-    // account's list, so every other project's artifacts would have been
-    // filed here too. The route scopes by `?projectId=` now, so the 200 it
-    // answers are this project's own rather than the account's latest 200
-    // narrowed after the fact. `projectArtifacts` below still keeps only the
-    // ones from the chats on screen, so a chat moved out while the page is
-    // open takes its artifacts with it without a refetch.
+    // This project's artifacts, scoped by the route (`?projectId=`).
     fetch(`/api/artifacts?projectId=${encodeURIComponent(id)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((res) => {
@@ -362,7 +389,44 @@ export default function ProjectDetailPage() {
         }
       })
       .catch(() => {});
-  }, [load, id, loadAllProjects]);
+  }, [load, loadSources, id, loadAllProjects]);
+
+  /**
+   * Arrival: a `?tab=` deep link, and the two hand-offs from Google's consent
+   * screen. `?drive=1` reopens the Drive picker the person left to connect;
+   * `?connected=google-drive` means Drive is linked now, so sources that were
+   * waiting on it sync at once. Both flags are dropped from the address so a
+   * reload does not repeat them.
+   */
+  React.useEffect(() => {
+    const url = new URL(window.location.href);
+    const tab = parseTab(url.searchParams.get("tab"));
+    if (tab) {
+      setView(tab.view);
+      if (tab.list) setList(tab.list);
+    }
+    const reopenDrive = url.searchParams.get("drive") === "1";
+    const connected = url.searchParams.get("connected") === "google-drive";
+    const connectError = url.searchParams.get("connect_error");
+    if (!reopenDrive && !connected && !connectError) return;
+    for (const key of ["drive", "connected", "connect_error"]) url.searchParams.delete(key);
+    window.history.replaceState(window.history.state, "", url.pathname + url.search);
+    if (connectError) {
+      toast.error(connectError === "denied" ? "Google Drive wasn’t connected. Nothing changed." : "Couldn’t connect Google Drive. Try again.");
+      return;
+    }
+    if (reopenDrive) setDriveOpen(true);
+    if (connected) {
+      void fetch(`/api/projects/${id}/sources`)
+        .then((r) => (r.ok ? (r.json() as Promise<ProjectSourcesResponse>) : null))
+        .then((body) => {
+          const waiting = body?.sources.filter((s) => s.errorCode === "reconnect" || s.errorCode === "not_connected" || s.errorCode === "forbidden") ?? [];
+          return Promise.all(waiting.map((s) => fetch(`/api/projects/${id}/sources/${s.id}`, { method: "POST" })));
+        })
+        .then(() => loadSources())
+        .catch(() => {});
+    }
+  }, [id, loadSources]);
 
   React.useEffect(() => {
     const refresh = () => void load();
@@ -378,9 +442,23 @@ export default function ProjectDetailPage() {
     };
   }, [load, loadAllProjects]);
 
-  /** The artifacts made in this project's chats. Derived rather than stored, so
-   *  a chat moved out of the project (or deleted from it) takes its artifacts
-   *  off this page the moment the list of chats changes, with no refetch. */
+  /**
+   * While a source is syncing, read the list again every few seconds, and the
+   * project once more when it settles so the files it brought are drawn. A
+   * poll, not a stream: a sync is minutes at most and runs after a response,
+   * and the list is the durable state, so a reload mid-sync tells the truth.
+   */
+  const busy = sourcesBusy(sources);
+  const wasBusy = React.useRef(false);
+  React.useEffect(() => {
+    if (wasBusy.current && !busy) void load();
+    wasBusy.current = busy;
+    if (!busy) return;
+    const timer = window.setInterval(() => void loadSources(), SOURCE_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [busy, load, loadSources]);
+
+  /** The artifacts made in this project's chats, derived so a chat moved out takes its artifacts with it. */
   const conversations = data?.conversations;
   const projectArtifacts = React.useMemo(
     () => madeInConversations(accountArtifacts, (conversations ?? []).map((c) => c.id)),
@@ -406,7 +484,7 @@ export default function ProjectDetailPage() {
       return;
     }
     setData((cur) => (cur ? { ...cur, project: { ...cur.project, starred: next } } : cur));
-    // No success toast: the star fills under the pointer, which is the receipt.
+    // No success toast: the pin fills under the pointer, which is the receipt.
     window.dispatchEvent(new CustomEvent("starred:sync"));
     window.dispatchEvent(new CustomEvent("projects:sync"));
   };
@@ -423,7 +501,7 @@ export default function ProjectDetailPage() {
       toast.error("Couldn’t save the assistant settings.");
       return;
     }
-    toast.success("Assistant settings synced.");
+    toast.success("Assistant settings saved.");
     await load();
   };
 
@@ -436,8 +514,7 @@ export default function ProjectDetailPage() {
     }).catch(() => null);
     setSavingWorkDefaults(false);
     if (!response?.ok) {
-      // Nothing local is touched on a failure, so the draft the reader
-      // assembled is still in front of them and the button is still enabled.
+      // Nothing local is touched on a failure, so the draft is still there.
       toast.error("Couldn’t save these task defaults. Nothing has changed.");
       return;
     }
@@ -454,11 +531,9 @@ export default function ProjectDetailPage() {
   };
 
   /**
-   * Throws on failure — including a network reject, which `fetch` raises rather
-   * than resolving. It used to toast and return normally, so callers carried on
-   * as if the write had landed: a failed instructions save reported success,
-   * overwrote local state and closed the dialog, silently destroying a draft the
-   * user may have spent real effort pasting in.
+   * Throws on failure, a network reject included, so a caller never carries
+   * on as if a write had landed (a failed instructions save used to close the
+   * dialog and lose the draft).
    */
   const patch = async (body: Record<string, unknown>) => {
     const r = await fetch(`/api/projects/${id}`, {
@@ -478,7 +553,6 @@ export default function ProjectDetailPage() {
       toast.success("Project instructions saved.");
       return true;
     } catch {
-      // Keep the dialog open and the draft intact so the user can retry.
       toast.error("Couldn’t save. Your text is still here, so check your connection and try again.");
       return false;
     } finally {
@@ -486,32 +560,21 @@ export default function ProjectDetailPage() {
     }
   };
 
-  // Save from the dialog. Closing via setInstructionsOpen (not onOpenChange) is what
-  // keeps the just-saved draft from being discarded by `discardInstructions`.
+  // Close only on a confirmed write; closing after a failure would drop the draft.
   const saveInstructionsAndClose = async () => {
-    // Only close on a confirmed write — closing after a failure would drop the
-    // draft the error toast just told the user was safe.
     if (await saveInstructions()) setInstructionsOpen(false);
   };
 
-  // `instructions` is one shared buffer — the sidebar preview and the Workspace inline
-  // editor both read it. Dismissing the dialog has to restore the saved value, or an
-  // abandoned draft keeps rendering elsewhere as if it were persisted.
+  // `instructions` is one shared buffer (the panel, the dialog and the
+  // settings editor all read it), so dismissing restores the saved value.
   const discardInstructions = () => {
     setInstructions(data?.project.instructions ?? "");
     setInstructionsOpen(false);
     setConfirmDiscard(false);
   };
 
-  /**
-   * Every dismissal route — Escape, the X, the backdrop, Cancel — funnels through
-   * here. Dismissing DISCARDS (the shared buffer above forces that), so with an
-   * unsaved draft it must ask first: people paste long prompts in here and a stray
-   * Escape silently destroying one is unacceptable.
-   */
+  /** Every dismissal route funnels here; an unsaved draft asks first. */
   const requestCloseInstructions = () => {
-    // Computed here rather than reusing `instructionsDirty`, which is declared
-    // below the early returns — this handler must not depend on that ordering.
     if (instructions !== (data?.project.instructions ?? "")) {
       setConfirmDiscard(true);
       return;
@@ -522,53 +585,55 @@ export default function ProjectDetailPage() {
   const handleSend = (text: string, options?: { deepResearch?: boolean }) => {
     const q = text.trim();
     if (!q) return;
-    // Carry the composer model through the /chat hand-off. Without `model=`,
-    // NewChatPage always seeds ChatView with the account default (e.g. Kimi).
-    const params = new URLSearchParams({
-      project: id,
-      q,
-      model: projectModel,
-    });
+    // The chat is made IN this project (`project=`), with the composer's model
+    // carried through the hand-off.
+    const params = new URLSearchParams({ project: id, q, model: projectModel });
     if (reasoningEffort) params.set("reasoning", reasoningEffort);
     if (options?.deepResearch) params.set("research", "1");
     router.push(`/chat?${params.toString()}`);
   };
 
   const uploadFile = async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("projectId", id);
+    const r = await fetch("/api/upload", { method: "POST", body: form });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error ?? `Couldn’t upload “${file.name}”.`);
+    setData((cur) =>
+      cur
+        ? {
+            ...cur,
+            files: [
+              {
+                ...d.attachment,
+                sourceId: null,
+                knowledge: { documentId: "pending", state: "queued", error: null, pageCount: null, blockCount: 0 },
+              },
+              ...cur.files,
+            ],
+          }
+        : cur
+    );
+  };
+
+  /** One at a time: they share the one `uploading` flag, and the order is the order picked. */
+  const uploadFiles = async (picked: File[]) => {
+    if (!picked.length) return;
     setUploading(true);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("projectId", id);
-      const r = await fetch("/api/upload", { method: "POST", body: form });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error ?? "Upload failed.");
-      setData((cur) =>
-        cur
-          ? {
-              ...cur,
-              files: [
-                {
-                  ...d.attachment,
-                  knowledge: {
-                    documentId: "pending",
-                    state: "queued",
-                    error: null,
-                    pageCount: null,
-                    blockCount: 0,
-                  },
-                },
-                ...cur.files,
-              ],
-            }
-          : cur
-      );
+    let added = 0;
+    for (const file of picked) {
+      try {
+        await uploadFile(file);
+        added += 1;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Couldn’t upload.");
+      }
+    }
+    setUploading(false);
+    if (added > 0) {
       refreshKnowledgeAfterUpload();
-      toast.success("File added to project.");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn’t upload.");
-    } finally {
-      setUploading(false);
+      toast.success(added === 1 ? "File added to the project." : `${added} files added to the project.`);
     }
   };
 
@@ -589,11 +654,11 @@ export default function ProjectDetailPage() {
       setData((cur) => {
         if (!cur) return null;
         const cleanFiles = cur.files.filter((f) => f.fileName !== "__cover__");
-        return { ...cur, files: [d.attachment, ...cleanFiles] };
+        return { ...cur, files: [{ ...d.attachment, sourceId: null }, ...cleanFiles] };
       });
-      toast.success("Project cover image updated.");
+      toast.success("Project image updated.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn’t upload cover image.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t upload the image.");
     } finally {
       setUploadingCover(false);
     }
@@ -606,24 +671,46 @@ export default function ProjectDetailPage() {
     try {
       await fetch(`/api/attachments/${existingCover.id}`, { method: "DELETE" });
       setData((cur) => (cur ? { ...cur, files: cur.files.filter((f) => f.id !== existingCover.id) } : cur));
-      toast.success("Cover image removed.");
+      toast.success("Project image removed.");
     } catch {
-      toast.error("Couldn’t remove cover image.");
+      toast.error("Couldn’t remove the image.");
     } finally {
       setUploadingCover(false);
     }
   };
 
-
-
   const deleteFile = async (fileId: string) => {
-    const r = await fetch(`/api/attachments/${fileId}`, { method: "DELETE" });
-    if (r.ok) {
+    const r = await fetch(`/api/attachments/${fileId}`, { method: "DELETE" }).catch(() => null);
+    if (r?.ok) {
       setData((cur) => (cur ? { ...cur, files: cur.files.filter((f) => f.id !== fileId) } : cur));
-      toast.success("File removed from project.");
+      toast.success("File removed from the project.");
     } else {
-      toast.error("Couldn’t remove file.");
+      toast.error("Couldn’t remove the file.");
     }
+  };
+
+  const syncSource = async (sourceId: string) => {
+    setSources((cur) => cur.map((s) => (s.id === sourceId ? { ...s, syncing: true } : s)));
+    const r = await fetch(`/api/projects/${id}/sources/${sourceId}`, { method: "POST" }).catch(() => null);
+    if (!r?.ok) {
+      const d = r ? await r.json().catch(() => ({})) : {};
+      toast.error(d.error ?? "Couldn’t start a sync.");
+    }
+    void loadSources();
+  };
+
+  const removeSource = async () => {
+    if (!sourceToRemove) return;
+    setRemovingSource(true);
+    const r = await fetch(`/api/projects/${id}/sources/${sourceToRemove.id}`, { method: "DELETE" }).catch(() => null);
+    setRemovingSource(false);
+    if (!r?.ok) {
+      toast.error("Couldn’t remove that source.");
+      return;
+    }
+    setSources((cur) => cur.filter((s) => s.id !== sourceToRemove.id));
+    setData((cur) => (cur ? { ...cur, files: cur.files.filter((f) => f.sourceId !== sourceToRemove.id) } : cur));
+    setSourceToRemove(null);
   };
 
   const deleteProject = async (mode: DeleteChildrenMode) => {
@@ -681,9 +768,8 @@ export default function ProjectDetailPage() {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Couldn’t create the folder.");
       window.dispatchEvent(new CustomEvent("projects:sync"));
-      // The dialog stays open and busy until the folder's page replaces this
-      // one: closing it (or dropping `busy` in a `finally`) while the route
-      // was still changing left a live "Create folder" that made a second.
+      // Busy until the folder's page replaces this one, so a second click
+      // cannot make a second folder.
       router.push(`/projects/${d.id}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn’t create the folder.");
@@ -698,10 +784,7 @@ export default function ProjectDetailPage() {
     setFolderBusy(false);
   }, [id]);
 
-  // Quick Action: pin a chat. Optimistic, like the project's own pin: the
-  // mark turns under the pointer, which is the receipt, so there is no
-  // success toast (it said "Chat starred." for a control labelled Pin). A
-  // failure, a network reject included, puts it back and says so.
+  // Pin a chat. Optimistic: the mark turns under the pointer, which is the receipt.
   const togglePin = async (chatId: string, currentPinned: boolean) => {
     const setPinned = (pinned: boolean) =>
       setData((cur) =>
@@ -721,25 +804,17 @@ export default function ProjectDetailPage() {
     }
   };
 
-  // Quick Action: Delete chat
   const deleteChat = async (chatId: string) => {
     setChatToDelete(null);
     const r = await fetch(`/api/conversations/${chatId}`, { method: "DELETE" });
     if (r.ok) {
-      setData((cur) => {
-        if (!cur) return null;
-        return {
-          ...cur,
-          conversations: cur.conversations.filter((c) => c.id !== chatId),
-        };
-      });
+      setData((cur) => (cur ? { ...cur, conversations: cur.conversations.filter((c) => c.id !== chatId) } : null));
       toast.success("Chat deleted.");
     } else {
       toast.error("Couldn’t delete chat.");
     }
   };
 
-  // Quick Action: Move chat
   const moveChat = async (chatId: string, targetProjectId: string | null): Promise<boolean> => {
     const r = await fetch(`/api/conversations/${chatId}`, {
       method: "PATCH",
@@ -747,13 +822,7 @@ export default function ProjectDetailPage() {
       body: JSON.stringify({ projectId: targetProjectId }),
     }).catch(() => null);
     if (r?.ok) {
-      setData((cur) => {
-        if (!cur) return null;
-        return {
-          ...cur,
-          conversations: cur.conversations.filter((c) => c.id !== chatId),
-        };
-      });
+      setData((cur) => (cur ? { ...cur, conversations: cur.conversations.filter((c) => c.id !== chatId) } : null));
       const targetProjectName = targetProjectId
         ? allProjects.find((p) => p.id === targetProjectId)?.name ?? "another project"
         : "no project";
@@ -765,16 +834,8 @@ export default function ProjectDetailPage() {
     return false;
   };
 
-  // Two terminal states, two tones. A missing project is not a failure the user
-  // can retry away — it is an empty destination — while a failed load is, and only
-  // the error tone gets the solid destructive fence and role="status".
-  //
-  // Both sit inside the same <AppPage> frame as the loading and loaded branches,
-  // so they take the product's one gutter from `.app-page-content` (16 / 24 / 32,
-  // keyed to the column). They used to return a bare <div> with a hand-rolled
-  // `px-4`, which meant two of this route's three states indented 16px while the
-  // third indented up to 32. The centred, capped treatment is kept through
-  // `contentClassName` and an inner `max-w-xl` column.
+  // Two terminal states, two tones: a missing project is an empty
+  // destination, a failed load is an error the reader can retry.
   if (error === "notfound") {
     return (
       <AppPage measure="wide" contentClassName="flex min-h-full items-center">
@@ -820,9 +881,6 @@ export default function ProjectDetailPage() {
     );
   }
   if (!data) {
-    // Literally the same component the route's own loading.tsx renders, not a
-    // second drawing of it — see ProjectPageSkeleton's header for what the two
-    // hand-copied versions had drifted into.
     return (
       <AppPage measure="wide" role="status" aria-label="Loading project">
         <ProjectPageSkeleton />
@@ -830,25 +888,16 @@ export default function ProjectDetailPage() {
     );
   }
 
-  const workspaceFiles = data.files.filter((f) => f.fileName !== "__cover__");
+  const knowledgeFiles = data.files.filter((f) => f.fileName !== "__cover__");
   const instructionsDirty = instructions !== data.project.instructions;
   const nearInstructionsLimit = instructions.length > INSTRUCTIONS_SOFT_WARN;
+  const usage = knowledgeUsage(
+    knowledgeFiles.map((f) => ({ size: f.size, mimeType: f.mimeType, tokenCount: f.knowledge?.tokenCount ?? null }))
+  );
 
-  /**
-   * Chats and Code sessions are two different kinds of conversation, and the
-   * column that says which is `kind`.
-   *
-   * This page used to decide by searching the TITLE for "code" or "repo". So
-   * every real Code session was listed twice — once here, once in the Chats
-   * list, which counted it — any chat whose title happened to contain either
-   * word was filed as a code session, and the workspace a session actually
-   * belongs to, the one fact the Code list exists to show, was not available
-   * to show. `kind` has been on the Conversation model the whole time; it is
-   * on the wire now (see the GET in api/projects/[id]/route.ts).
-   */
+  // `kind` separates a chat from a Code session (never the title).
   const chats = data.conversations.filter((c) => c.kind !== "code");
   const codeSessions = data.conversations.filter((c) => c.kind === "code");
-  const sourceCount = workspaceFiles.length + projectArtifacts.length;
   const folders = data.children ?? [];
   const crumbs = data.breadcrumbs ?? [];
   const inherited = data.inherited ?? [];
@@ -858,508 +907,389 @@ export default function ProjectDetailPage() {
     ? allProjects
     : [{ id: data.project.id, name: data.project.name, parentId: data.project.parentId ?? null }, ...folders.map((f) => ({ ...f, parentId: data.project.id }))];
   const folderRefusal = newFolderRefusal(tree, data.project.id);
-  const isOwnerView = data.breadcrumbs !== undefined;
+  const isOwner = data.isOwner !== false;
+  const description = data.project.description ?? "";
+
+  // The lists under the composer: chats always, the others when they hold
+  // something (or a link opened them).
+  const listOptions = [
+    { value: "chats" as const, label: "Chats", count: chats.length },
+    ...(workRuns.length > 0 || list === "work" ? [{ value: "work" as const, label: "Tasks", count: workRuns.length }] : []),
+    ...(codeSessions.length > 0 || list === "code" ? [{ value: "code" as const, label: "Code", count: codeSessions.length }] : []),
+    ...(projectArtifacts.length > 0 || list === "artifacts" ? [{ value: "artifacts" as const, label: "Artifacts", count: projectArtifacts.length }] : []),
+  ];
+
+  const header = (
+    <ProjectWorkspaceHeader
+      // Stacked, the column's own gap spaces the header from the composer;
+      // beside the panel the header keeps its usual margin.
+      className="order-1 mb-0 @[40rem]/page:mb-0 @4xl/page:mb-7"
+      project={{ ...data.project, description }}
+      isStarred={isStarred}
+      onToggleStar={toggleProjectStar}
+      onSaveDetails={async ({ name, description: nextDescription }) => {
+        await patch({ name, description: nextDescription });
+        // Saved in place, under the reader's eye; no toast.
+        setData((cur) => (cur ? { ...cur, project: { ...cur.project, name, description: nextDescription } } : cur));
+        window.dispatchEvent(new CustomEvent("projects:sync"));
+      }}
+      onDelete={isOwner ? () => setDeleteOpen(true) : undefined}
+      onOpenSettings={() => openView("settings")}
+      breadcrumbs={crumbs}
+      onDropOnCrumb={isOwner ? handleDrop : undefined}
+      acceptOnCrumb={(drag, targetId) => (drag.kind === "chat" ? targetId !== null && targetId !== id : canDropInto(tree, drag, targetId))}
+      onMove={isOwner ? () => setMoving({ kind: "project", id: data.project.id, name: data.project.name, parentId: data.project.parentId ?? null }) : undefined}
+      onNewFolder={isOwner ? () => setFolderDialog(true) : undefined}
+      newFolderRefusal={folderRefusal}
+      menuExtras={
+        isOwner ? (
+          <>
+            <DropdownMenuItem disabled={uploadingCover} onSelect={() => coverRef.current?.click()}>
+              <ImagePlus className="size-4" aria-hidden="true" />
+              <span>{coverUrl ? "Change image" : "Add project image"}</span>
+            </DropdownMenuItem>
+            {coverUrl && (
+              <DropdownMenuItem disabled={uploadingCover} onSelect={removeCover}>
+                <ImageOff className="size-4" aria-hidden="true" />
+                <span>Remove image</span>
+              </DropdownMenuItem>
+            )}
+          </>
+        ) : undefined
+      }
+    />
+  );
 
   return (
     <AppPage measure="wide">
-        {/* A real link, not router.push on a button: this one is not cmd- or
-            middle-clickable and announces itself as a button. Same defect
-            AppPageHeader's docblock item 2 exists to kill. */}
-        <ProjectWorkspaceHeader
-          project={data.project}
-          stats={{
-            chatCount: chats.length,
-            workCount: workRuns.length,
-            codeCount: codeSessions.length,
-            fileCount: workspaceFiles.length,
-            artifactCount: projectArtifacts.length,
-          }}
-          isStarred={isStarred}
-          onToggleStar={toggleProjectStar}
-          onEditInstructions={() => setInstructionsOpen(true)}
-          onRename={async (name) => {
-            await patch({ name });
-            // Renamed in place, under the reader's eye; no toast.
-            setData({ ...data, project: { ...data.project, name } });
-            window.dispatchEvent(new CustomEvent("projects:sync"));
-          }}
-          onDelete={() => setDeleteOpen(true)}
-          breadcrumbs={crumbs}
-          onDropOnCrumb={isOwnerView ? handleDrop : undefined}
-          acceptOnCrumb={(drag, targetId) => (drag.kind === "chat" ? targetId !== null && targetId !== id : canDropInto(tree, drag, targetId))}
-          onMove={isOwnerView ? () => setMoving({ kind: "project", id: data.project.id, name: data.project.name, parentId: data.project.parentId ?? null }) : undefined}
-          onNewFolder={isOwnerView ? () => setFolderDialog(true) : undefined}
-          newFolderRefusal={folderRefusal}
-          /* The cover's home. It was a 96px dashed slab at the head of the
-             Overview rail — the first thing the eye met on the page, offering
-             the one action here that changes nothing about how the project
-             answers. A rare verb belongs with the other rare verbs. */
-          menuExtras={
-            <>
-              <DropdownMenuItem
-                disabled={uploadingCover}
-                onSelect={() => coverRef.current?.click()}
-              >
-                <ImagePlus className="size-4" aria-hidden="true" />
-                <span>{coverUrl ? "Change image" : "Add project image"}</span>
-              </DropdownMenuItem>
-              {coverUrl && (
-                <DropdownMenuItem disabled={uploadingCover} onSelect={removeCover}>
-                  <ImageOff className="size-4" aria-hidden="true" />
-                  <span>Remove image</span>
-                </DropdownMenuItem>
-              )}
-            </>
-          }
-        />
+      <div className={cn(view !== "overview" && "hidden")}>
+        <div className="flex flex-col gap-6 @4xl/page:grid @4xl/page:grid-cols-[minmax(0,1fr)_20rem] @4xl/page:items-start @4xl/page:gap-10 @6xl/page:grid-cols-[minmax(0,1fr)_22rem]">
+          {/* Below the split this column is `contents`, so the panel can sit
+              between the composer and the chats; at the split it is the
+              left track. */}
+          <div className="contents @4xl/page:block @4xl/page:min-w-0">
+            {header}
 
-        <Tabs value={tab} onValueChange={selectTab}>
-          {/* One count treatment, on every tab that has something to count.
-              This row used to spell it three ways at once — "Tasks (3)" only
-              above zero, "Sources (0)" always including the literal zero, and
-              Code never, whatever it held. Three spellings of one idea in five
-              triggers, which is what a reader registers as "assembled" long
-              before they could say why.
+            <div className="order-2">
+              <Composer
+                conversationId={null}
+                frame="inline"
+                model={projectModel}
+                onModelChange={(m) => setSelectedModel(m)}
+                onSend={(text, _attachments, options) => handleSend(text, options)}
+                isBusy={false}
+                status="idle"
+                onStop={() => {}}
+                reasoningEffort={reasoningEffort}
+                onReasoningChange={setReasoningEffort}
+                /* The project's own name where it fits: this composer starts
+                   a chat in this project, not anywhere. */
+                placeholder={
+                  data.project.name.length <= 32
+                    ? `Start a chat in ${data.project.name}…`
+                    : "Start a chat in this project…"
+                }
+              />
+            </div>
 
-              The scroller is the narrow-width behaviour: an inline-flex track
-              with five triggers in it has nowhere to go under ~30rem, so it was
-              compressing the labels. It scrolls now, and `-mx-*`/`px-*` let the
-              first and last trigger reach the column's own edge rather than
-              sitting inside a second margin. */}
-          <div className="-mx-1 mb-5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              {/* Tasks and Code are shown when they hold something, or when a
-                  link (`?tab=work`, `?tab=code`) has opened them. Every project
-                  used to carry five tabs from its first minute, two of them
-                  empty lists, so a new project opened as a form to fill in
-                  rather than a place to start; the chat that makes a task or a
-                  code session is on Overview, and the tab arrives with the
-                  first thing it has to list.
-
-                  "Tasks", not "Work". The value stays `work` because `?tab=work`
-                  is a URL somebody can hold; the label says what the tab lists. */}
-              {(workRuns.length > 0 || tab === "work") && (
-                <TabsTrigger value="work">
-                  Tasks
-                  <TabCount value={workRuns.length} />
-                </TabsTrigger>
-              )}
-              {(codeSessions.length > 0 || tab === "code") && (
-                <TabsTrigger value="code">
-                  Code
-                  <TabCount value={codeSessions.length} />
-                </TabsTrigger>
-              )}
-              <TabsTrigger value="sources">
-                Sources
-                <TabCount value={sourceCount} />
-              </TabsTrigger>
-              <TabsTrigger value="settings">Settings</TabsTrigger>
-            </TabsList>
-          </div>
-
-          {/* Both tabs stay mounted (forceMount) so composer drafts and refs survive switching. */}
-          <TabsContent value="overview" forceMount className="data-[state=inactive]:hidden">
-            {/* The split starts at the top, and the composer is INSIDE it.
-
-                It spanned the whole column for one version, which put the
-                rail's first eyebrow a composer's height below the field and
-                drew the field itself at ~960px wide by ~100px tall — a
-                letterbox, and the widest object on the page for a box most
-                people type one sentence into. A text field's proportions are
-                part of how much it invites you to write in it.
-
-                In the left column it is ~690px at the same height, and the
-                rail's top edge is level with the field's, so Instructions and
-                Sources are the first things beside what you type rather than
-                a scroll below it.
-
-                The composer keeps `frame="inline"` (see composer.tsx), which
-                is what makes this position work at all: its dock chrome
-                supplies its own `.page-gutter`, so inside an already-guttered
-                page column it used to indent a further 16–32px on both edges
-                and its left edge never agreed with the eyebrow directly
-                beneath it.
-
-                Keyed to the COLUMN, not the window (PREMIUM_AUDIT §2b): the
-                sidebar takes 256px of the window until the width where it
-                starts floating and then stops taking it, so a `lg:` here —
-                which is what this grid used — split the page at a window size
-                that says nothing about how much room this page actually
-                got. */}
-            <div className="grid items-start gap-6 @4xl/page:grid-cols-[minmax(0,1fr)_19rem] @4xl/page:gap-8">
-              <div className="min-w-0">
-                <Composer
-                  conversationId={null}
-                  frame="inline"
-                  model={projectModel}
-                  onModelChange={(m) => setSelectedModel(m)}
-                  onSend={(text, _attachments, options) => handleSend(text, options)}
-                  isBusy={false}
-                  status="idle"
-                  onStop={() => {}}
-                  reasoningEffort={reasoningEffort}
-                  onReasoningChange={setReasoningEffort}
-                  /* The project's own name in the prompt, where it fits. A
-                     composer on a project page asking "How can I help you
-                     today?" is the same sentence the account's home composer
-                     asks, on a surface whose whole content is that this is not
-                     that. Long names fall back rather than filling the field
-                     with a title the reader can already see above it. */
-                  placeholder={
-                    data.project.name.length <= 32
-                      ? `Ask anything about ${data.project.name}…`
-                      : "Ask anything about this project…"
-                  }
-                />
-
-                {/* Folders: the projects inside this one, as compact cards
-                    (folder glyph, serif name, one meta line), so they read as
-                    navigation and leave the project's chats near the top.
-                    Each is a drop target, so a chat or a sibling folder can
-                    be dragged in. Making one is a quiet verb in the section's
-                    header, not a dashed placeholder tile; with none yet, the
-                    section is one sentence and the button. */}
-                {isOwnerView && (
-                  <section className="pj mt-10" aria-labelledby="pj-folders-title">
-                    <div className="mb-4 flex min-h-8 items-center justify-between gap-3">
-                      <h2 id="pj-folders-title" className="flex items-baseline gap-2 text-foreground">
-                        <span className="pj-name">Folders</span>
-                        {folders.length > 0 && <span className="pj-annot">{folders.length}</span>}
-                      </h2>
-                      {folders.length > 0 &&
-                        (folderRefusal ? (
-                          <span className="pj-annot text-right">{folderRefusal}</span>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="-mr-2 text-muted-foreground"
-                            onClick={() => setFolderDialog(true)}
-                          >
-                            <Plus className="size-4" aria-hidden="true" /> New folder
-                          </Button>
-                        ))}
-                    </div>
-                    {folders.length > 0 ? (
-                      <ul className="pj-grid grid gap-2 @[30rem]/page:grid-cols-2 @[80rem]/page:grid-cols-3">
-                        {folders.map((folder, i) => (
-                          <li key={folder.id} className="min-w-0">
-                            <ProjectTile
-                              compact
-                              index={i}
-                              project={folder}
-                              allProjects={tree}
-                              onMove={() => setMoving({ kind: "project", id: folder.id, name: folder.name, parentId: data.project.id })}
-                              onDropInto={(drag) => handleDrop(folder.id, drag)}
-                            />
-                          </li>
-                        ))}
-                      </ul>
+            <div className="order-4 @4xl/page:mt-10">
+              {/* Folders: the projects inside this one, as compact cards that
+                  are drop targets. Shown when there are some; making one is in
+                  the actions menu, with the project's other filing verbs. */}
+              {isOwner && folders.length > 0 && (
+                <section className="pj mb-10" aria-labelledby="pj-folders-title">
+                  <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
+                    <h2 id="pj-folders-title" className="flex items-baseline gap-2 text-ui font-semibold text-foreground">
+                      Folders
+                      <span className="text-caption font-normal tabular-nums text-muted-foreground">{folders.length}</span>
+                    </h2>
+                    {folderRefusal ? (
+                      <span className="text-caption text-muted-foreground">{folderRefusal}</span>
                     ) : (
-                      <FoldersEmpty
-                        projectId={data.project.id}
-                        projectName={data.project.name}
-                        onNewFolder={() => setFolderDialog(true)}
-                        disabledReason={folderRefusal}
-                      />
+                      <Button variant="ghost" size="sm" className="-mr-2 text-muted-foreground" onClick={() => setFolderDialog(true)}>
+                        <Plus className="size-4" aria-hidden="true" /> New folder
+                      </Button>
                     )}
-                  </section>
-                )}
-
-                <section className="mt-10">
-                  <div className="mb-4 flex min-h-7 items-baseline">
-                    <h2 className="pj-name text-foreground">Chats</h2>
                   </div>
+                  <ul className="pj-grid grid gap-2 @[30rem]/page:grid-cols-2">
+                    {folders.map((folder, i) => (
+                      <li key={folder.id} className="min-w-0">
+                        <ProjectTile
+                          compact
+                          index={i}
+                          project={folder}
+                          allProjects={tree}
+                          onMove={() => setMoving({ kind: "project", id: folder.id, name: folder.name, parentId: data.project.id })}
+                          onDropInto={(drag) => handleDrop(folder.id, drag)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              <section aria-label="In this project">
+                <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
+                  {listOptions.length > 1 ? (
+                    <SegmentedControl
+                      size="sm"
+                      columns="content"
+                      value={list}
+                      onChange={openList}
+                      ariaLabel="Show"
+                      options={listOptions}
+                    />
+                  ) : (
+                    <h2 className="text-ui font-semibold text-foreground">Chats</h2>
+                  )}
+                </div>
+
+                {list === "chats" && (
                   <ProjectChatList
                     projectId={data.project.id}
                     conversations={chats}
                     onTogglePin={togglePin}
                     onRequestMove={(chat) => setMoving({ kind: "chat", id: chat.id, name: chat.title, projectId: data.project.id })}
                     onDeleteChat={(chat) => setChatToDelete({ id: chat.id, title: chat.title })}
-                    onNewChat={() => {
-                      router.push(`/chat?project=${id}`);
-                    }}
+                    onNewChat={() => router.push(`/chat?project=${id}`)}
                   />
-                </section>
-              </div>
-
-              <ProjectOverviewRail
-                coverUrl={coverUrl}
-                onPickCover={() => coverRef.current?.click()}
-                onRemoveCover={removeCover}
-                uploadingCover={uploadingCover}
-                instructions={data.project.instructions}
-                inherited={inherited}
-                onEditInstructions={() => setInstructionsOpen(true)}
-                files={workspaceFiles}
-                fileCount={sourceCount}
-                onAddFile={() => fileRef.current?.click()}
-                onDeleteFile={deleteFile}
-                onViewAllSources={() => selectTab("sources")}
-                uploading={uploading}
-                memory={projectMemory}
-                // Straight to this project's slice of the memory page. With
-                // nothing remembered yet there is no slice to open, so the page
-                // opens whole rather than on a scope it would fall back from.
-                onManageMemory={() =>
-                  router.push(
-                    projectMemory && (projectMemory.activeCount > 0 || projectMemory.summary)
-                      ? `/memory?project=${encodeURIComponent(id)}`
-                      : "/memory"
-                  )
-                }
-              />
+                )}
+                {list === "work" && (
+                  <ProjectWorkList
+                    projectId={data.project.id}
+                    workRuns={workRuns}
+                    // A task starts where every task starts: the chat
+                    // composer, with this project selected.
+                    onNewWork={() => router.push(`/chat?project=${data.project.id}`)}
+                  />
+                )}
+                {list === "code" && (
+                  <ProjectCodeList
+                    projectId={data.project.id}
+                    sessions={codeSessions.map((c) => ({
+                      id: c.id,
+                      title: c.title,
+                      lastMessageAt: c.lastMessageAt,
+                      workspaceName: c.codeWorkspaceName ?? undefined,
+                      workspacePath: c.codeWorkspacePath ?? undefined,
+                    }))}
+                    onNewCodeSession={() => router.push("/code")}
+                  />
+                )}
+                {list === "artifacts" && <ArtifactList artifacts={projectArtifacts} />}
+              </section>
             </div>
-          </TabsContent>
+          </div>
 
-          {/* Work Tab: Delegated Tasks */}
-          <TabsContent value="work" forceMount className="data-[state=inactive]:hidden">
-            <ProjectWorkList
-              projectId={data.project.id}
-              workRuns={workRuns}
-              onNewWork={() => {
-                // A new task starts where every task starts now: the chat
-                // composer, with this project already selected. There is no
-                // Work composer to send anyone to.
-                router.push(`/chat?project=${data.project.id}`);
-              }}
-            />
-          </TabsContent>
-
-          {/* Code Tab: Code Sessions */}
-          <TabsContent value="code" forceMount className="data-[state=inactive]:hidden">
-            <ProjectCodeList
-              projectId={data.project.id}
-              sessions={codeSessions.map((c) => ({
-                id: c.id,
-                title: c.title,
-                lastMessageAt: c.lastMessageAt,
-                workspaceName: c.codeWorkspaceName ?? undefined,
-                workspacePath: c.codeWorkspacePath ?? undefined,
-              }))}
-              onNewCodeSession={() => {
-                // `/code` — the Code composer is the landing now, and
-                // `/code/new` only redirects here. The `?project=` this used to
-                // append was never read by anything on the other end, so it is
-                // dropped rather than carried through a bounce; a project does
-                // not name a checkout, which is what that composer asks for.
-                router.push("/code");
-              }}
-            />
-          </TabsContent>
-
-          {/* Sources Tab: Files & Artifacts */}
-          <TabsContent value="sources" forceMount className="data-[state=inactive]:hidden">
-            <ProjectSourcesList
-              projectId={data.project.id}
-              files={data.files}
-              artifacts={projectArtifacts}
-              onUploadClick={() => fileRef.current?.click()}
-              /* The well has drawn "Drop files here" for as long as it has
-                 existed and had nothing to drop onto: `onDropFiles` is what
-                 arms the handlers, and no caller passed it, so the label was
-                 a promise the page could not keep. Sequential rather than
-                 parallel — `uploadFile` owns the one `uploading` flag, and
-                 concurrent writes to it would leave the spinner stuck on
-                 after the first of them finished. */
-              onDropFiles={async (dropped) => {
-                for (const file of dropped) await uploadFile(file);
-              }}
-              onDeleteFile={deleteFile}
+          <div
+            className={cn(
+              "order-3 rounded-card @4xl/page:order-none @4xl/page:sticky @4xl/page:top-4",
+              dropping && "ring-2 ring-presence/60"
+            )}
+            onDragOver={(event) => {
+              if (!isOwner || !event.dataTransfer.types.includes("Files")) return;
+              event.preventDefault();
+              setDropping(true);
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false);
+            }}
+            onDrop={(event) => {
+              if (!isOwner || !event.dataTransfer.files.length) return;
+              event.preventDefault();
+              setDropping(false);
+              void uploadFiles([...event.dataTransfer.files]);
+            }}
+          >
+            <ProjectKnowledgePanel
+              className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
+              style={staggerDelay(1)}
+              coverUrl={coverUrl}
+              onPickCover={() => coverRef.current?.click()}
+              onRemoveCover={removeCover}
+              uploadingCover={uploadingCover}
+              instructions={data.project.instructions}
+              inherited={inherited}
+              onEditInstructions={() => setInstructionsOpen(true)}
+              files={knowledgeFiles}
+              sources={sources}
+              drive={drive}
+              usage={usage}
+              canEdit={isOwner}
               uploading={uploading}
+              onUpload={() => fileRef.current?.click()}
+              onAddFromLibrary={() => setLibraryOpen(true)}
+              onAddFromDrive={() => setDriveOpen(true)}
+              onDeleteFile={(fileId) => void deleteFile(fileId)}
+              onSyncSource={(sourceId) => void syncSource(sourceId)}
+              onRemoveSource={setSourceToRemove}
+              onFixDrive={() => setDriveOpen(true)}
+              memory={projectMemory}
+              // Straight to this project's slice of the memory page, when it has one.
+              onManageMemory={() =>
+                router.push(
+                  projectMemory && (projectMemory.activeCount > 0 || projectMemory.summary)
+                    ? `/memory?project=${encodeURIComponent(id)}`
+                    : "/memory"
+                )
+              }
             />
-          </TabsContent>
+          </div>
+        </div>
+      </div>
 
-          {/* Settings Tab: Instructions & Assistant Configuration.
-
-              One column, on the Overview's own grid: the groups take the
-              composer's column width, so every left edge on the page (title,
-              tabs, composer, these cards) is the same line, and a form never
-              stretches to ~1300px on a wide window. Three groups, each the
-              same shape (project-settings-group.tsx): head, hairline rows with
-              the label left and the control right, Save in the footer. */}
-          <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden">
-            <div className="grid gap-6 @4xl/page:grid-cols-[minmax(0,1fr)_19rem] @4xl/page:gap-8">
-            <div className="min-w-0 space-y-6">
-              <SettingsGroup
-                className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
-                title="System instructions"
-                description="Prepended to every chat, work run, and code session in this project."
-                action={
-                  <Button variant="outline" size="sm" onClick={() => setInstructionsOpen(true)}>
-                    <Maximize2 className="size-3.5" />
-                    Full editor
-                  </Button>
-                }
-                footer={
-                  <>
-                    <span className="flex flex-wrap items-center gap-x-1 text-caption tabular-nums">
-                      <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
-                        {instructions.length.toLocaleString()} chars
-                        {nearInstructionsLimit ? " · large prompt (context window is the limit)" : ""}
-                      </span>
-                      <span className="text-muted-foreground">· Updated {timeAgo(data.project.updatedAt)}</span>
+      {view === "settings" && (
+        <div className="motion-safe:animate-rise-in">
+          <div className="mb-6">
+            <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" onClick={() => openView("overview")}>
+              <ArrowLeft className="size-4" aria-hidden="true" /> {data.project.name}
+            </Button>
+            <h1 className="app-page-title mt-2 text-page-title">Settings</h1>
+          </div>
+          <div className="max-w-3xl space-y-6">
+            <SettingsGroup
+              title="Instructions"
+              description="Every chat, task and code session in this project follows them."
+              action={
+                <Button variant="outline" size="sm" onClick={() => setInstructionsOpen(true)}>
+                  <Maximize2 className="size-3.5" />
+                  Full editor
+                </Button>
+              }
+              footer={
+                <>
+                  <span className="flex flex-wrap items-center gap-x-1 text-caption tabular-nums">
+                    <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
+                      {instructions.length.toLocaleString()} characters
+                      {nearInstructionsLimit ? " · a long prompt (the model’s context is the limit)" : ""}
                     </span>
-                    <Button
-                      size="sm"
-                      onClick={saveInstructions}
-                      disabled={!instructionsDirty || savingInstructions}
-                    >
-                      {savingInstructions && <Loader2 className="size-3.5 animate-spin" />}
-                      Save
-                    </Button>
-                  </>
-                }
-              >
-                <div className="px-4 pb-4">
-                  <Textarea
-                    value={instructions}
-                    onChange={(e) => setInstructions(e.target.value)}
-                    placeholder={`How should ${PRODUCT_NAME} behave? (role, tone, constraints…)`}
-                    spellCheck={false}
-                    aria-label="Project instructions"
-                    className="min-h-[14rem] text-body leading-relaxed"
+                    <span className="text-muted-foreground">· Updated {timeAgo(data.project.updatedAt)}</span>
+                  </span>
+                  <Button size="sm" onClick={saveInstructions} disabled={!instructionsDirty || savingInstructions}>
+                    {savingInstructions && <Loader2 className="size-3.5 animate-spin" />}
+                    Save
+                  </Button>
+                </>
+              }
+            >
+              <div className="px-4 pb-4">
+                <Textarea
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  placeholder={`How should ${PRODUCT_NAME} work here? Its role, tone, and what to always or never do.`}
+                  spellCheck={false}
+                  aria-label="Project instructions"
+                  className="min-h-[14rem] text-body leading-relaxed"
+                />
+              </div>
+            </SettingsGroup>
+
+            {/* Identity, model and tools in ONE group, because one Save
+                writes all three (`saveWorkspace`). */}
+            <SettingsGroup
+              title="Identity and model"
+              description={`What ${PRODUCT_NAME} is called here, and which model answers by default.`}
+              footer={
+                <>
+                  <span />
+                  <Button onClick={saveWorkspace} disabled={savingWorkspace} size="sm" className="gap-2">
+                    {savingWorkspace && <Loader2 className="size-3.5 animate-spin" />}
+                    Save
+                  </Button>
+                </>
+              }
+            >
+              <SettingsRow label="Persona name">
+                <Input
+                  value={workspace.personaName ?? ""}
+                  onChange={(event) =>
+                    setWorkspace((current) => ({ ...current, personaName: event.target.value || undefined }))
+                  }
+                  placeholder={data.project.name}
+                />
+              </SettingsRow>
+              <SettingsRow label="Preferred model">
+                <Select
+                  value={workspace.preferredModelId ?? "account-default"}
+                  onValueChange={(value) =>
+                    setWorkspace((current) => ({ ...current, preferredModelId: value === "account-default" ? undefined : value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="account-default">Account default</SelectItem>
+                    {models
+                      .filter((model) => model.modality === "chat")
+                      .map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </SettingsRow>
+              <SettingsRow label="Tools" as="div">
+                <div className="flex min-h-9 items-center justify-between gap-4">
+                  <p className="text-pretty text-ui text-muted-foreground">{`Narrow what ${PRODUCT_NAME} may reach for while answering here.`}</p>
+                  <Switch
+                    checked={workspace.allowedTools !== undefined}
+                    onCheckedChange={(checked) =>
+                      setWorkspace((current) => ({ ...current, allowedTools: checked ? [...WORKSPACE_TOOLS] : undefined }))
+                    }
+                    aria-label="Restrict assistant tools"
+                    className="shrink-0"
                   />
                 </div>
-              </SettingsGroup>
+                {/* The list unfolds under the switch and goes `inert` with
+                    it, so a row still on screen while the fold plays cannot
+                    be toggled. */}
+                <div className="contents" inert={workspace.allowedTools === undefined}>
+                  <Collapse open={workspace.allowedTools !== undefined} className="-mx-1" innerClassName="px-1 pt-3">
+                    <div className="divide-y divide-foreground/[.07] border-y border-foreground/[.07]">
+                      {WORKSPACE_TOOLS.map((tool) => (
+                        <label key={tool} className="flex min-h-11 items-center justify-between gap-4 py-2">
+                          <span className="text-ui text-foreground">{WORKSPACE_TOOL_LABELS[tool]}</span>
+                          <Switch
+                            checked={workspace.allowedTools?.includes(tool) ?? false}
+                            onCheckedChange={(checked) => setWorkspaceTool(tool, checked)}
+                            aria-label={WORKSPACE_TOOL_LABELS[tool]}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <SettingsHint>
+                      {`Restrictions narrow what is available while ${PRODUCT_NAME} answers in this project. They do not disconnect anything.`}
+                    </SettingsHint>
+                  </Collapse>
+                </div>
+              </SettingsRow>
+            </SettingsGroup>
 
-              {/* Identity, model and tools in ONE group, because one Save
-                  writes all three (`saveWorkspace`). As two cards side by side
-                  the Tools card had no Save of its own and read as if its
-                  switch applied the moment it moved. */}
-              <SettingsGroup
-                className="[animation-delay:var(--stagger-tile)] [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-                title="Identity and model"
-                description={`What ${PRODUCT_NAME} is called here, and which model answers by default.`}
-                footer={
-                  <>
-                    <span />
-                    <Button onClick={saveWorkspace} disabled={savingWorkspace} size="sm" className="gap-2">
-                      {savingWorkspace && <Loader2 className="size-3.5 animate-spin" />}
-                      Save
-                    </Button>
-                  </>
-                }
-              >
-                <SettingsRow label="Persona name">
-                  <Input
-                    value={workspace.personaName ?? ""}
-                    onChange={(event) =>
-                      setWorkspace((current) => ({
-                        ...current,
-                        personaName: event.target.value || undefined,
-                      }))
-                    }
-                    placeholder={data.project.name}
-                  />
-                </SettingsRow>
-                <SettingsRow label="Preferred model">
-                  <Select
-                    value={workspace.preferredModelId ?? "account-default"}
-                    onValueChange={(value) =>
-                      setWorkspace((current) => ({
-                        ...current,
-                        preferredModelId: value === "account-default" ? undefined : value,
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="account-default">Account default</SelectItem>
-                      {models
-                        .filter((model) => model.modality === "chat")
-                        .map((model) => (
-                          <SelectItem key={model.id} value={model.id}>
-                            {model.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </SettingsRow>
-                <SettingsRow label="Tools" as="div">
-                  <div className="flex min-h-9 items-center justify-between gap-4">
-                    <p className="text-pretty text-ui text-muted-foreground">
-                      {`Narrow what ${PRODUCT_NAME} may reach for while answering here.`}
-                    </p>
-                    <Switch
-                      checked={workspace.allowedTools !== undefined}
-                      onCheckedChange={(checked) =>
-                        setWorkspace((current) => ({
-                          ...current,
-                          allowedTools: checked ? [...WORKSPACE_TOOLS] : undefined,
-                        }))
-                      }
-                      aria-label="Restrict assistant tools"
-                      className="shrink-0"
-                    />
-                  </div>
-                  {/* The list unfolds under the switch and folds back the
-                      same way when it is switched off (ICONS_AND_MOTION §2.2
-                      rule 6). The wrapper goes `inert` with the switch, so a
-                      row still on screen while the fold plays cannot be
-                      toggled, and Collapse unmounts the rows after. The gutter
-                      (`-mx-1` out, `px-1` back in) keeps the switches' focus
-                      outlines inside the fold's clip. */}
-                  <div className="contents" inert={workspace.allowedTools === undefined}>
-                    <Collapse
-                      open={workspace.allowedTools !== undefined}
-                      className="-mx-1"
-                      innerClassName="px-1 pt-3"
-                    >
-                      <div className="divide-y divide-foreground/[.07] border-y border-foreground/[.07]">
-                        {WORKSPACE_TOOLS.map((tool) => (
-                          <label key={tool} className="flex min-h-11 items-center justify-between gap-4 py-2">
-                            <span className="text-ui text-foreground">{WORKSPACE_TOOL_LABELS[tool]}</span>
-                            <Switch
-                              checked={workspace.allowedTools?.includes(tool) ?? false}
-                              onCheckedChange={(checked) => setWorkspaceTool(tool, checked)}
-                              aria-label={WORKSPACE_TOOL_LABELS[tool]}
-                            />
-                          </label>
-                        ))}
-                      </div>
-                      <SettingsHint>
-                        {`Restrictions narrow what is available while ${PRODUCT_NAME} generates in this project. They do not disconnect anything.`}
-                      </SettingsHint>
-                    </Collapse>
-                  </div>
-                </SettingsRow>
-              </SettingsGroup>
+            <ProjectWorkDefaults
+              value={workDefaults}
+              onChange={setWorkDefaults}
+              onSave={() => void saveWorkDefaults()}
+              saving={savingWorkDefaults}
+              dirty={JSON.stringify(serializeWorkDefaults(workDefaults)) !== JSON.stringify(serializeWorkDefaults(savedWorkDefaults))}
+            />
+          </div>
+        </div>
+      )}
 
-              <ProjectWorkDefaults
-                className="[animation-delay:calc(var(--stagger-tile)*2)] [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-                value={workDefaults}
-                onChange={setWorkDefaults}
-                onSave={() => void saveWorkDefaults()}
-                saving={savingWorkDefaults}
-                dirty={
-                  JSON.stringify(serializeWorkDefaults(workDefaults)) !==
-                  JSON.stringify(serializeWorkDefaults(savedWorkDefaults))
-                }
-              />
-            </div>
-            </div>
-          </TabsContent>
-        </Tabs>
-
-      {/* The two hidden pickers, at page level rather than inside a tab panel:
-          the source picker is opened from the Overview rail, the Sources tab
-          and the rail's empty state, and the cover picker from the header's
-          actions menu and from the cover itself. A picker owned by one of
-          those places would stop working the moment that place was not the one
-          asking. */}
+      {/* The two hidden pickers live at page level: the knowledge panel, its
+          empty state and the drop target all open the file picker, and the
+          actions menu and the cover itself open the image picker. */}
       <input
         ref={fileRef}
         type="file"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) uploadFile(f);
+          const picked = [...(e.target.files ?? [])];
           e.target.value = "";
+          void uploadFiles(picked);
         }}
       />
       <input
@@ -1372,6 +1302,45 @@ export default function ProjectDetailPage() {
           if (f) uploadCover(f);
           e.target.value = "";
         }}
+      />
+
+      <ProjectDriveDialog
+        open={driveOpen}
+        onOpenChange={setDriveOpen}
+        projectId={data.project.id}
+        drive={drive}
+        onAdded={(next) => setSources(next)}
+      />
+      <ProjectLibraryDialog
+        open={libraryOpen}
+        onOpenChange={setLibraryOpen}
+        projectId={data.project.id}
+        existingNames={new Set(knowledgeFiles.map((f) => f.fileName))}
+        onAdded={() => {
+          void load();
+          refreshKnowledgeAfterUpload();
+        }}
+      />
+
+      <ProjectSheet
+        open={sourceToRemove !== null}
+        onOpenChange={(open) => !open && setSourceToRemove(null)}
+        title={`Remove “${sourceToRemove?.name ?? ""}”?`}
+        description={
+          sourceToRemove?.kind === "folder"
+            ? `Its ${sourceToRemove.fileCount.toLocaleString()} ${sourceToRemove.fileCount === 1 ? "file leaves" : "files leave"} this project’s knowledge and it stops syncing. Nothing changes in Google Drive.`
+            : "It leaves this project’s knowledge and stops syncing. Nothing changes in Google Drive."
+        }
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setSourceToRemove(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" loading={removingSource} onClick={() => void removeSource()}>
+              Remove
+            </Button>
+          </>
+        }
       />
 
       <DeleteProjectDialog
@@ -1454,24 +1423,35 @@ export default function ProjectDetailPage() {
   );
 }
 
-
-/**
- * How many things are behind a tab, said the same way on every tab that has
- * an answer.
- *
- * Quieter than the label it trails and never bracketed: a count is metadata
- * about the tab, not part of its name, and parentheses inside a control's
- * label read as an aside rather than as a number. Withheld at zero on every
- * tab, so "Sources" with nothing in it and "Code" with nothing in it look
- * alike — which they are.
- */
-function TabCount({ value }: { value: number }) {
-  if (!value) return null;
+/** The artifacts made in this project's chats, each opening in place. */
+function ArtifactList({ artifacts }: { artifacts: ProjectArtifactItem[] }) {
+  if (!artifacts.length) {
+    return (
+      <p className="py-6 text-pretty text-ui text-muted-foreground">
+        {`What ${PRODUCT_NAME} makes in this project’s chats (documents, apps, diagrams) collects here.`}
+      </p>
+    );
+  }
   return (
-    <span className="text-caption tabular-nums text-muted-foreground">
-      {value.toLocaleString()}
-    </span>
+    <ul className="-mx-2 space-y-px" aria-label="Artifacts">
+      {artifacts.map((art, index) => (
+        <li key={art.id} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]" style={staggerDelay(Math.min(index, 8))}>
+          <Link
+            href={artifactPath(art.id)}
+            className="group flex w-full items-center gap-3 rounded-inner px-2 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent"
+          >
+            <AppIcons.artifacts className="size-4 shrink-0 text-muted-foreground group-hover:text-foreground" aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-ui font-medium text-foreground">{art.title}</span>
+              <span className="block text-caption text-muted-foreground">
+                {ARTIFACT_NOUN[art.type as ArtifactType] ?? art.type}
+                {art.updatedAt ? ` · ${timeAgo(art.updatedAt)}` : ""}
+              </span>
+            </span>
+            <ArrowRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast group-hover:opacity-100 coarse:opacity-100" aria-hidden="true" />
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
-
-

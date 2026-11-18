@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { getConnector, isConnectorConfigured, buildAuthorizeUrl } from "@/lib/connectors";
 import { encryptSecret, signState } from "@/lib/crypto";
 import { env } from "@/lib/env";
+import { safeReturnPath } from "@/lib/projects/project-sources-shared";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,7 @@ export const runtime = "nodejs";
 
 // Kick off the OAuth flow: set a signed, single-use state cookie and redirect
 // the user to the provider's consent screen.
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.redirect(new URL("/sign-in", env.appUrl));
 
@@ -28,7 +29,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const nonce = randomBytes(16).toString("hex");
   // State binds the flow to this user + connector + nonce, signed so the
   // callback can trust it without a server-side store.
-  const state = signState(JSON.stringify({ u: user.id, c: def.id, n: nonce }));
+  //
+  // `?return=` brings the person back to the page that sent them (a project
+  // adding a Drive folder) instead of to Apps. Only a path on this site, and
+  // it rides inside the signed state, so it cannot be swapped on the way back.
+  const returnTo = safeReturnPath(new URL(req.url).searchParams.get("return"));
+  const state = signState(JSON.stringify({ u: user.id, c: def.id, n: nonce, ...(returnTo ? { r: returnTo } : {}) }));
 
   const jar = await cookies();
   jar.set(`oauth_nonce_${def.id}`, nonce, {

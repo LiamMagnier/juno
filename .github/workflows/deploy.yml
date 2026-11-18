@@ -486,6 +486,22 @@ jobs:
           FIRST_PARTY_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_codex_connectors_test
           NODE_OPTIONS: --conditions=react-server
 
+      # A project's Google Drive folder source end to end: filed, synced into
+      # project attachments and the project index, re-synced as the folder
+      # changes, a refused token, the one-sync-at-a-time lease, ownership.
+      # Google and storage are fakes; the database is real and disposable.
+      - name: Project Drive sources, sync and ownership, against a real database
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE juno_codex_projects_test'
+          npx prisma migrate deploy
+          npx tsx --test --experimental-test-module-mocks tests/project-sources-db.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/shadow
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_codex_projects_test
+          DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_codex_projects_test
+          PROJECT_SOURCES_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_codex_projects_test
+          NODE_OPTIONS: --conditions=react-server
+
       - name: Unified MCP config migration and credential isolation
         run: |
           psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE juno_codex_mcp_test'

@@ -24,13 +24,6 @@ export function ProjectsGridSkeleton({ toolbar = true, className }: { toolbar?: 
     <div className={cn("pj", className)} role="status" aria-label="Loading projects">
       {toolbar && (
         <>
-          {/* The totals line ("8 projects · 4 folders · 35 chats"), drawn
-              where the page draws it (40rem and up) in its own `ui` line box.
-              Without it the toolbar and the grid dropped 36px when the data
-              landed. */}
-          <div className="mb-4 hidden h-[1.5em] items-center text-ui @[40rem]/page:flex" aria-hidden="true">
-            <Skeleton className="h-3 w-56 rounded-xs" />
-          </div>
           {/* The toolbar in the real one's shape: a search that fills the row,
               then the filter and the sort (their own row on a phone), each at
               the controls' own height, 44px on touch. */}
@@ -43,18 +36,17 @@ export function ProjectsGridSkeleton({ toolbar = true, className }: { toolbar?: 
           </div>
         </>
       )}
-      <div className={cn("grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:grid-cols-3 @[42rem]/page:gap-4 @[64rem]/page:gap-5", toolbar && "mt-6")} aria-hidden="true">
+      <div className={cn("grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:gap-4 @[64rem]/page:grid-cols-3", toolbar && "mt-6")} aria-hidden="true">
         {[...Array(6)].map((_, i) => (
           <div
             key={i}
-            className="surface-raised nest-card nest-p-1 flex flex-col [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+            className="pj-tile nest-card nest-p-1 flex flex-col [animation-fill-mode:backwards] motion-safe:animate-rise-in"
             style={staggerDelay(i)}
           >
-            <Skeleton className="aspect-[16/7] w-full rounded-inner" />
             {/* Each bar sits in the line box of the text it stands for (the
                 serif name, the excerpt, the meta line), so a tile is as tall
                 as the real one. */}
-            <div className="flex flex-1 flex-col px-3 pb-3 pt-3.5">
+            <div className="flex flex-1 flex-col px-3 pb-3 pt-3">
               <div className="pj-name flex h-[1.18em] items-center">
                 <Skeleton className="h-5 w-1/2" />
               </div>

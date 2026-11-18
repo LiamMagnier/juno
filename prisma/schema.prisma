@@ -90,6 +90,8 @@ model User {
   votes                       FeatureVote[]
   featureComments             FeatureComment[]
   projects                    Project[]
+  projectSources              ProjectSource[]
+  projectSourceItems          ProjectSourceItem[]
   projectWorkspaces           ProjectWorkspace[]
   savedPrompts                SavedPrompt[]
   authoredAnnouncements       Announcement[]               @relation("AnnouncementAuthor")
@@ -769,6 +771,10 @@ model Project {
   userId              String
   name                String   @default("Untitled project")
   nameSource          String   @default("default")
+  /// What the project is for, in the owner's words. Shown under the name on
+  /// the project page and on its card; never sent to the model (that is what
+  /// `instructions` is for).
+  description         String   @default("") @db.Text
   instructions        String   @default("") @db.Text
   // Starred projects surface in the sidebar's Pinned section. Server-side so
   // stars follow the account across devices (was localStorage-only).
@@ -815,6 +821,7 @@ model Project {
   workspace          ProjectWorkspace?
   members            ProjectMember[]
   artifacts          Artifact[]
+  sources            ProjectSource[]
 
   @@unique([userId, importSourceId])
   @@index([userId, updatedAt])
@@ -838,6 +845,93 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([userId, role])
   @@index([projectId, role])
+}
+
+/// A cloud file or folder kept in sync as part of a project's knowledge.
+///
+/// Today the only provider is Google Drive, read with the owner's own
+/// first-party connection (`Connection` for "google-drive"); no second Google
+/// integration and no new scope. A `folder` source mirrors every file in the
+/// folder (and, with `includeSubfolders`, the folders under it) into project
+/// attachments; a `file` source mirrors the one file. Each mirrored file is a
+/// `ProjectSourceItem`, which is how a later sync tells an added file from a
+/// changed or a removed one (src/lib/projects/drive-source.ts).
+///
+/// Owned by the project's owner (`userId`), whose connection it reads and whose
+/// Library the files are stored in. Removing the source removes its files from
+/// the project; disconnecting Drive leaves the files and marks the source as
+/// needing a reconnect, so knowledge never vanishes because a token expired.
+model ProjectSource {
+  id                String    @id @default(cuid())
+  userId            String
+  projectId         String
+  /// "google-drive"
+  provider          String
+  /// "file" | "folder"
+  kind              String
+  /// The provider's own id for the file or folder.
+  externalId        String
+  /// The name the provider showed when it was last read.
+  name              String
+  /// Folder sources only: mirror the folders under it too.
+  includeSubfolders Boolean   @default(true)
+  /// pending | syncing | ready | error
+  state             String    @default("pending")
+  /// Why the last sync stopped (reconnect | not_connected | forbidden |
+  /// not_found | rate_limited | capacity | provider_error), or null.
+  errorCode         String?
+  /// The sentence the project page shows for `errorCode`.
+  error             String?   @db.Text
+  /// Files mirrored into the project by the last sync.
+  fileCount         Int       @default(0)
+  /// Files the last sync found but could not add (type, size, export refused).
+  skippedCount      Int       @default(0)
+  /// The listing stopped at its ceiling; files past it were not mirrored.
+  truncated         Boolean   @default(false)
+  lastSyncedAt      DateTime?
+  lastAttemptAt     DateTime?
+  /// Lease for the one sync allowed to run at a time. Null when idle.
+  syncClaimedAt     DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items   ProjectSourceItem[]
+
+  @@unique([projectId, provider, externalId])
+  @@index([userId, projectId])
+  @@index([userId, lastSyncedAt])
+}
+
+/// One provider file a `ProjectSource` mirrors, and the attachment it was
+/// stored as. `version` is the provider's change marker for the file (Drive's
+/// `version`, else its modified time), so a sync re-imports only what changed.
+model ProjectSourceItem {
+  id           String   @id @default(cuid())
+  userId       String
+  sourceId     String
+  externalId   String
+  name         String
+  mimeType     String
+  /// Where it sits under the source's folder ("Specs/2026"); "" at its top.
+  path         String   @default("")
+  version      String
+  /// The project attachment holding its bytes; null when it was skipped.
+  attachmentId String?  @unique
+  /// synced | skipped
+  state        String   @default("synced")
+  /// Why a skipped file was not added, as the page says it.
+  error        String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source     ProjectSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  attachment Attachment?   @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceId, externalId])
+  @@index([userId, sourceId])
 }
 
 /// Durable, cross-platform user notification for Work, Code, Research, spend and system events.
@@ -1138,6 +1232,8 @@ model Attachment {
   message      Message?            @relation(fields: [messageId], references: [id], onDelete: SetNull)
   project      Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   versions     AttachmentVersion[]
+  /// Set when a project's cloud source (Google Drive) mirrored this file.
+  sourceItem   ProjectSourceItem?
 
   // Unique, not a plain index: /api/v1/attachments resolves a retry by reading
   // the prior row and only then inserting, so the database constraint is what

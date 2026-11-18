@@ -5,16 +5,20 @@ import { getCurrentUser } from "@/lib/session";
 import { getConnector, isConnectorConfigured, exchangeCodeForTokens, DEFAULT_TOKEN_TTL_MS, type ConnectorOAuthSession } from "@/lib/connectors";
 import { decryptSecret, encryptSecret, verifyState } from "@/lib/crypto";
 import { env } from "@/lib/env";
+import { safeReturnPath } from "@/lib/projects/project-sources-shared";
 
 export const runtime = "nodejs";
 
 // Build post-callback redirects from the configured public app URL, NOT req.url:
 // behind a reverse proxy (nginx) req.url is the internal http://localhost:3000
 // address, which would bounce the browser to a dead local port.
-function back(status: "connected" | string, provider: string) {
-  const url = new URL("/connections", env.appUrl);
+//
+// `returnTo` is the page that started the flow, when it asked to come back
+// (a project adding a Drive folder); it has already passed safeReturnPath.
+function back(status: "connected" | string, provider: string, returnTo?: string | null) {
+  const url = new URL(returnTo ?? "/connections", env.appUrl);
   if (status === "connected") url.searchParams.set("connected", provider);
-  else url.searchParams.set("error", status);
+  else url.searchParams.set(returnTo ? "connect_error" : "error", status);
   return NextResponse.redirect(url);
 }
 
@@ -40,7 +44,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // Validate the signed state and match it to this user + connector + nonce cookie.
   const decoded = verifyState(state);
   if (!decoded) return back("bad_state", id);
-  let parsed: { u?: string; c?: string; n?: string };
+  let parsed: { u?: string; c?: string; n?: string; r?: string };
   try {
     parsed = JSON.parse(decoded);
   } catch {
@@ -52,6 +56,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (parsed.u !== user.id || parsed.c !== def.id || !parsed.n || parsed.n !== nonceCookie) {
     return back("bad_state", id);
   }
+  const returnTo = safeReturnPath(parsed.r);
 
   // mcp_oauth flows stashed their PKCE verifier + registered client here.
   let session: ConnectorOAuthSession | undefined;
@@ -61,7 +66,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     try {
       session = JSON.parse(decryptSecret(sessionCookie)) as ConnectorOAuthSession;
     } catch {
-      return back("bad_state", id);
+      return back("bad_state", id, returnTo);
     }
   }
 
@@ -70,7 +75,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     tokens = await exchangeCodeForTokens(def, code, session);
   } catch (err) {
     console.error("[connectors] token exchange failed", def.id, err instanceof Error ? err.message : err);
-    return back("exchange_failed", id);
+    return back("exchange_failed", id, returnTo);
   }
 
   const accountLabel = await def.fetchAccountLabel(tokens.accessToken).catch(() => null);
@@ -112,5 +117,5 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     },
   });
 
-  return back("connected", def.id);
+  return back("connected", def.id, returnTo);
 }

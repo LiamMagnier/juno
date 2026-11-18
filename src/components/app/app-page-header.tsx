@@ -222,7 +222,7 @@ export function AppPageHeaderSkeleton({
    * three, and a two-bar placeholder there let the page drop 24px when it
    * arrived.
    */
-  phoneLedeLines?: 2 | 3;
+  phoneLedeLines?: 1 | 2 | 3;
   /**
    * `"button"` when the page's action is a default Button on the heading's
    * line (Projects' "New project", Library's "Upload"). On a touch screen that
@@ -289,23 +289,24 @@ export function AppPageHeaderSkeleton({
  * and at 390px nearly every page's sentence takes two lines, so the
  * placeholder is two bars there whatever `ledeLines` says, or three for a
  * page that passes `phoneLedeLines={3}`: 20 + 6 + 20 + 6 + 20 is the
- * paragraph's 72px.
+ * paragraph's 72px. A sentence short enough to stay on one line at 390px
+ * passes `phoneLedeLines={1}` (measured, as Projects' is): one 24px bar there.
  */
-function SkeletonLede({ ledeLines, phoneLedeLines }: { ledeLines: 1 | 2; phoneLedeLines: 2 | 3 }) {
+function SkeletonLede({ ledeLines, phoneLedeLines }: { ledeLines: 1 | 2; phoneLedeLines: 1 | 2 | 3 }) {
   return (
     <div className="mt-2 max-w-prose space-y-1.5">
       <Skeleton
         className={cn(
           "w-full rounded-xs",
-          phoneLedeLines === 3 ? "h-5" : "h-[21px]",
+          phoneLedeLines === 3 ? "h-5" : phoneLedeLines === 1 ? "h-6" : "h-[21px]",
           ledeLines === 1 ? "@[40rem]/page:h-6" : "@[40rem]/page:h-[21px]"
         )}
       />
       <Skeleton
         className={cn(
           "rounded-xs @[40rem]/page:w-2/3",
-          phoneLedeLines === 3 ? "h-5 w-full" : "h-[21px] w-2/3",
-          ledeLines === 1 ? "@[40rem]/page:hidden" : "@[40rem]/page:h-[21px]"
+          phoneLedeLines === 3 ? "h-5 w-full" : phoneLedeLines === 1 ? "hidden" : "h-[21px] w-2/3",
+          ledeLines === 1 ? "@[40rem]/page:hidden" : "@[40rem]/page:block @[40rem]/page:h-[21px]"
         )}
       />
       {phoneLedeLines === 3 && <Skeleton className="h-5 w-1/2 rounded-xs @[40rem]/page:hidden" />}

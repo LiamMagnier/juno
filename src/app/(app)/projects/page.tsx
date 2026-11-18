@@ -19,6 +19,7 @@ import { removeStarredProject } from "@/lib/starred-projects";
 import { cachedJson, peekJson } from "@/lib/client-cache";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { AppIcons } from "@/lib/app-icons";
 import { ProjectsGridSkeleton } from "@/components/projects/projects-grid-skeleton";
 import {
   DeleteProjectDialog,
@@ -31,22 +32,18 @@ import {
   type ProjectDrag,
 } from "@/components/projects/project-folders";
 import { MOVE_REFUSAL_MESSAGES, type DeleteChildrenMode, type MoveRefusal } from "@/lib/projects/project-tree";
+import { PROJECT_SORT_OPTIONS, visibleProjects, type ProjectFilter, type ProjectSort } from "@/lib/projects/project-view";
+import { ProjectDetailsDialog } from "@/components/projects/project-details-dialog";
 
 interface ProjectItem extends FolderProject {
   instructions: string;
+  description?: string;
   updatedAt: string;
+  createdAt?: string;
+  lastActivityAt?: string;
   conversationCount: number;
   fileCount: number;
 }
-
-type SortBy = "updated" | "name" | "conversations";
-type Filter = "all" | "pinned";
-
-const SORT_OPTIONS: { value: SortBy; label: string }[] = [
-  { value: "updated", label: "Last updated" },
-  { value: "name", label: "Name" },
-  { value: "conversations", label: "Most chats" },
-];
 
 const PROJECTS_URL = "/api/projects";
 function projectItems(body: unknown): ProjectItem[] | null {
@@ -55,13 +52,19 @@ function projectItems(body: unknown): ProjectItem[] | null {
   return projects.map((p) => ({ ...p, parentId: p.parentId ?? null }));
 }
 
-type NameDialog = { mode: "create" } | { mode: "folder"; parent: ProjectItem } | { mode: "rename"; project: ProjectItem };
+type NameDialog = { mode: "folder"; parent: ProjectItem } | { mode: "rename"; project: ProjectItem };
 
 /**
- * The account's projects. The top level as tiles, each listing the folders it
- * holds; a search looks through every level and says where each match sits.
- * Folders are made from a tile's menu or inside a project, moved with Move to…
- * or by dragging one tile onto another.
+ * The account's projects, as Claude lists them: one primary action (New
+ * project), a search and a sort, and a grid of cards that each say what the
+ * project is for and when it was last used. The top level by default, each
+ * card naming the folders it holds; a search or the Pinned filter looks
+ * through every level and says where each match sits. Folders are made from a
+ * card's menu or inside a project, moved with Move to… or by dragging one card
+ * onto another.
+ *
+ * With no projects yet the header keeps only its title and the empty state
+ * carries the one action, so the page never offers New project twice.
  */
 export default function ProjectsPage() {
   const router = useRouter();
@@ -77,9 +80,11 @@ export default function ProjectsPage() {
   }, []);
 
   const [query, setQuery] = React.useState("");
-  const [filter, setFilter] = React.useState<Filter>("all");
-  const [sortBy, setSortBy] = React.useState<SortBy>("updated");
+  const [filter, setFilter] = React.useState<ProjectFilter>("all");
+  const [sortBy, setSortBy] = React.useState<ProjectSort>("activity");
 
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [createBusy, setCreateBusy] = React.useState(false);
   const [nameDialog, setNameDialog] = React.useState<NameDialog | null>(null);
   const [nameBusy, setNameBusy] = React.useState(false);
   const [moving, setMoving] = React.useState<MoveSubject | null>(null);
@@ -120,7 +125,7 @@ export default function ProjectsPage() {
     if (url.searchParams.get("new") !== "1") return;
     url.searchParams.delete("new");
     window.history.replaceState(window.history.state, "", url.pathname + url.search);
-    setNameDialog({ mode: "create" });
+    setCreateOpen(true);
   }, []);
 
   const broadcast = () => {
@@ -146,6 +151,26 @@ export default function ProjectsPage() {
     }
   };
 
+  const createProject = async ({ name, description }: { name: string; description: string }) => {
+    setCreateBusy(true);
+    try {
+      const r = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name || undefined, description: description || undefined }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Couldn’t create project.");
+      window.dispatchEvent(new CustomEvent("projects:sync"));
+      // Busy until the new page replaces this one, so a second click cannot
+      // make a second project while the route is still changing.
+      router.push(`/projects/${d.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong.");
+      setCreateBusy(false);
+    }
+  };
+
   const submitName = async (name: string) => {
     if (!nameDialog) return;
     setNameBusy(true);
@@ -165,10 +190,7 @@ export default function ProjectsPage() {
       const r = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name || undefined,
-          ...(nameDialog.mode === "folder" ? { parentId: nameDialog.parent.id } : {}),
-        }),
+        body: JSON.stringify({ name: name || undefined, parentId: nameDialog.parent.id }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Couldn’t create project.");
@@ -269,27 +291,11 @@ export default function ProjectsPage() {
 
   const searching = query.trim().length > 0;
   const filtering = searching || filter !== "all";
-  const shown = React.useMemo(() => {
-    // The top level by default; any filter looks through every level.
-    let result = filtering ? [...all] : all.filter(isTop);
-    if (filter === "pinned") result = result.filter((p) => p.starred);
-    if (searching) {
-      const q = query.toLowerCase();
-      result = result.filter((p) => p.name.toLowerCase().includes(q) || p.instructions.toLowerCase().includes(q));
-    }
-    result.sort((a, b) => {
-      if (sortBy === "name") return a.name.localeCompare(b.name);
-      if (sortBy === "conversations") return b.conversationCount - a.conversationCount;
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
-    return result;
-  }, [all, isTop, query, filter, sortBy, searching, filtering]);
+  const shown = React.useMemo(() => visibleProjects(all, { query, filter, sort: sortBy }), [all, query, filter, sortBy]);
 
   const loading = items === null;
   const empty = !loading && all.length === 0;
   const topCount = all.filter(isTop).length;
-  const folderCount = all.length - topCount;
-  const chatCount = all.reduce((sum, p) => sum + p.conversationCount, 0);
   const pinnedCount = all.filter((p) => p.starred).length;
   // The most recently touched project wears the presence trajectory, here and on the map.
   const liveId = React.useMemo(() => {
@@ -300,8 +306,9 @@ export default function ProjectsPage() {
   const deletingChildren = deleting ? childrenOf.get(deleting.id) ?? [] : [];
   const deletingParent = deleting?.parentId ? all.find((p) => p.id === deleting.parentId) : undefined;
 
+  // The page's one primary action: the accent is spent here and nowhere else.
   const newProject = (
-    <Button variant="secondary" onClick={() => setNameDialog({ mode: "create" })}>
+    <Button onClick={() => setCreateOpen(true)}>
       <Plus className="size-4" aria-hidden="true" /> New project
     </Button>
   );
@@ -309,21 +316,10 @@ export default function ProjectsPage() {
   return (
     <AppPage measure="wide">
       <AppPageHeader
-        backdrop
         heading="Projects"
-        lede="A topic’s chats, instructions and files, kept together. Nest folders inside a project to arrange it your way."
+        lede={empty || error ? undefined : "Chats, instructions and knowledge, kept together."}
         actions={empty || error ? undefined : newProject}
       />
-
-      {/* Folded on a phone (G54): the filter's All count already says how
-          many projects there are, and this line pushed the first one down.
-          The grid skeleton draws the same line at the same widths, so the
-          toolbar does not drop when the data lands. */}
-      {!loading && !empty && !error && (
-        <p className="mb-4 hidden text-ui tabular-nums text-muted-foreground @[40rem]/page:block" aria-label="Project totals">
-          {topCount} projects · {folderCount} folders · {chatCount} chats
-        </p>
-      )}
 
       {!loading && !empty && !error && (
         <div className="flex flex-wrap items-center gap-2 [animation-fill-mode:backwards] motion-safe:animate-rise-in">
@@ -350,12 +346,12 @@ export default function ProjectsPage() {
                 { value: "pinned", label: "Pinned", count: pinnedCount },
               ]}
             />
-            <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
-              <SelectTrigger className="min-w-0 flex-1 @[40rem]/page:w-40 @[40rem]/page:flex-none" aria-label="Sort projects">
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as ProjectSort)}>
+              <SelectTrigger className="min-w-0 flex-1 @[40rem]/page:w-44 @[40rem]/page:flex-none" aria-label="Sort projects">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {SORT_OPTIONS.map((o) => (
+                {PROJECT_SORT_OPTIONS.map((o) => (
                   <SelectItem key={o.value} value={o.value}>
                     {o.label}
                   </SelectItem>
@@ -371,17 +367,13 @@ export default function ProjectsPage() {
       ) : loading ? (
         <ProjectsGridSkeleton />
       ) : empty ? (
-        <section className="pj mt-2 motion-safe:animate-rise-in">
-          <div className="max-w-sm">
-            <h2 className="pj-name text-foreground">Start your first project</h2>
-            <p className="mt-2 text-pretty text-ui leading-relaxed text-muted-foreground">
-              Give a topic its own instructions and files. Every chat you start inside it begins with them, and folders keep the parts apart.
-            </p>
-            <Button className="mt-6" onClick={() => setNameDialog({ mode: "create" })}>
-              <Plus className="size-4" aria-hidden="true" /> New project
-            </Button>
-          </div>
-        </section>
+        <EmptyState
+          className="mt-4"
+          icon={AppIcons.projects}
+          title="Start your first project"
+          description="Give a piece of work its own instructions and knowledge: files, Library documents, or a Google Drive folder that stays in sync. Every chat you start in it begins with them."
+          action={newProject}
+        />
       ) : shown.length === 0 ? (
         <EmptyState
           className="mt-6"
@@ -404,7 +396,7 @@ export default function ProjectsPage() {
           }
         />
       ) : (
-        <ul className="pj pj-grid mt-6 grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:grid-cols-3 @[42rem]/page:gap-4 @[64rem]/page:gap-5" aria-label="Projects">
+        <ul className="pj pj-grid mt-6 grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:gap-4 @[64rem]/page:grid-cols-3" aria-label="Projects">
           {shown.map((p, i) => (
             <li key={p.id} className="min-w-0">
               <ProjectTile
@@ -426,10 +418,17 @@ export default function ProjectsPage() {
         </ul>
       )}
 
+      <ProjectDetailsDialog
+        open={createOpen}
+        onOpenChange={(open) => !createBusy && setCreateOpen(open)}
+        mode="create"
+        busy={createBusy}
+        onSubmit={(details) => void createProject(details)}
+      />
       <ProjectNameDialog
         open={nameDialog !== null}
         onOpenChange={(open) => !open && setNameDialog(null)}
-        mode={nameDialog?.mode ?? "create"}
+        mode={nameDialog?.mode ?? "rename"}
         parentName={nameDialog?.mode === "folder" ? nameDialog.parent.name : undefined}
         initialName={nameDialog?.mode === "rename" ? nameDialog.project.name : ""}
         busy={nameBusy}

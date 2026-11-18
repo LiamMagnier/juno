@@ -10,16 +10,15 @@ import { ProjectsGridSkeleton } from "@/components/projects/projects-grid-skelet
  * one continuous placeholder.
  *
  * The header placeholder is drawn to this page's measured header, so the grid
- * does not move when the page arrives: the lede takes two lines on a desktop
- * (48px) and three on a phone (72px), where the defaults drew one and two and
- * left the page 24px short; and "New project" is a default Button on the
- * heading's line, 44px on a touch screen against a 30px heading, so the lede
- * starts under the button (`actions="button"`), not 14px higher.
+ * does not move when the page arrives: a one-line lede on a desktop and on a
+ * phone (measured, 24px at 1280 and on an iPhone 13, 17 Nov 2026), and
+ * "New project" as a default Button on the heading's line (44px
+ * on a touch screen against a 30px heading), so the lede starts under it.
  */
 export default function ProjectsLoading() {
   return (
     <AppPage measure="wide">
-      <AppPageHeaderSkeleton headingWidth="w-56" ledeLines={2} phoneLedeLines={3} actions="button" />
+      <AppPageHeaderSkeleton headingWidth="w-56" ledeLines={1} phoneLedeLines={1} actions="button" />
       <ProjectsGridSkeleton />
     </AppPage>
   );

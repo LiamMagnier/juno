@@ -61,7 +61,6 @@
 .pj-tile {
   border: 1px solid var(--pj-hair);
   background: hsl(var(--card));
-  box-shadow: 0 1px 2px -1px hsl(var(--foreground) / 0.06);
   transition:
     border-color var(--dur-fast) var(--ease-out-soft),
     background-color var(--dur-fast) var(--ease-out-soft);
@@ -72,7 +71,6 @@
     background: color-mix(in srgb, hsl(var(--card)) 97%, hsl(var(--foreground)));
   }
 }
-.dark .pj-tile { box-shadow: none; }
 .pj-tile:focus-within { border-color: hsl(var(--foreground) / 0.22); }
 .pj-tile[data-drop="over"] {
   border-color: hsl(var(--presence));
@@ -157,6 +155,18 @@
   border: 1px solid var(--pj-line);
   background: hsl(var(--card));
 }
+
+/* The project page's knowledge panel (Instructions, Knowledge, Memory): one
+   flat in-flow surface, a hairline and the card fill, no shadow. In-flow
+   things never cast one (DIRECTION §2.4); menus and dialogs are the only
+   floating material. */
+.pj-panel {
+  border: 1px solid var(--pj-line);
+  background: hsl(var(--card));
+}
+
+/* A row in the Drive picker: the whole row picks, a folder's chevron opens. */
+.pj-pick[data-selected] { background: hsl(var(--selected)); }
 
 /* A drop target that is not a tile: breadcrumbs, the top level. */
 .pj-drop[data-drop="over"] {

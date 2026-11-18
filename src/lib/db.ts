@@ -207,6 +207,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["ImportObject", "userId"],
   ["Notification", "userId"],
   ["ProjectMember", "userId"],
+  // A project's Google Drive sources and the files each one mirrors: whose
+  // connection they read, and whose Library the files are stored in.
+  ["ProjectSource", "userId"],
+  ["ProjectSourceItem", "userId"],
   // Two-step recovery codes. Guarded even though every lookup already has the
   // user in hand: a codeHash is unique, so an unscoped findUnique on it would
   // silently accept one account's recovery code as another account's second
