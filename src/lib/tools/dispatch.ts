@@ -309,6 +309,11 @@ class EventChannel {
  * they happen and returns the results in call order. Throws only when the turn
  * signal is aborted, and only after every call has been answered `cancelled`.
  */
+/** A brokered call stopped or timed out while it was out (defect 4). */
+const INTERRUPTED_RECEIPT_TEXT = `Stopped before ${PRODUCT_NAME} heard back. The action may have taken effect; check before running it again.`;
+/** The audit text when the broker itself failed (defect 5); its own message is not shown. */
+const AUTHORIZATION_FAILED_TEXT = "Authorization did not complete, so nothing ran.";
+
 export async function* executeToolBatch(
   calls: readonly ToolCallInput[],
   signal: AbortSignal,
@@ -564,6 +569,14 @@ async function execute(
           });
         }
 
+        // The audit row above is already written `executed`: if the broker
+        // itself throws (its store is down), settle it as failed before the
+        // error surfaces, so it never claims a call that never left Alevr
+        // (defect 5, docs/quality/memory-and-tools-2026-11.md). `answered`
+        // keeps the catch to the broker's own failure: a refusal or replay
+        // below settles its row itself. The store's message stays out.
+        let answered = false;
+        try {
         const authorization = await ctx.ports.authorizeExternalAction({
           userId: context.userId ?? "",
           // The surface that is acting names itself on the receipt (a voice
@@ -588,6 +601,7 @@ async function execute(
           unattended: false,
           resolvedPolicy: ctx.ports.resolvedPolicy,
         });
+        answered = true;
         if (authorization.kind === "refused") {
           await ctx.ports.settleToolInvocation?.(auditId, {
             status: authorization.status === "denied" ? "denied" : "failed",
@@ -607,6 +621,10 @@ async function execute(
             : { status: "succeeded", text: authorization.result, body };
         }
         receiptId = authorization.receiptId;
+        } catch (error) {
+          if (!answered) await ctx.ports.settleToolInvocation?.(auditId, { status: "failed", error: AUTHORIZATION_FAILED_TEXT });
+          throw error;
+        }
       }
 
       onAuthorized();
@@ -635,15 +653,21 @@ async function execute(
       } finally {
         if (brokered && ctx.ports) {
           const ok = outcome?.status === "succeeded";
+          // No outcome: the call was stopped or timed out while it was out.
+          // It may have taken effect, so the receipt says exactly that rather
+          // than "" (which read as a plain failure in the approvals history,
+          // and which a replay would hand the model as an empty failed
+          // result; defect 4, docs/quality/memory-and-tools-2026-11.md).
+          const result = outcome ? (outcome.text ?? "") : INTERRUPTED_RECEIPT_TEXT;
           await ctx.ports.completeExternalAction?.({
             userId: context.userId ?? "",
             receiptId,
             ok,
-            result: (outcome?.text ?? "").slice(0, 30_000),
+            result: result.slice(0, 30_000),
           });
           await ctx.ports.settleToolInvocation?.(auditId, {
             status: ok ? "executed" : "failed",
-            ...(ok ? {} : { error: outcome?.body }),
+            ...(ok ? {} : { error: outcome ? outcome.body : INTERRUPTED_RECEIPT_TEXT }),
             ...(outcome?.durationMs === undefined ? {} : { durationMs: outcome.durationMs }),
           });
         }

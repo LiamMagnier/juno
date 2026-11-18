@@ -10,8 +10,8 @@ test before it was fixed. Line numbers are against this branch.*
 | 1 | A memory reader already waiting on its model saves the chat's facts after the chat was deleted, memory was turned off for it, memory was paused, its project was cleared or everything was reset. After a reset it also moves the read mark back. | **High** (privacy: "delete" and "erase" do not hold) | **Fixed** |
 | 2 | Clearing a project's memory keeps the edit ledger. Its Undo entries quote the cleared facts word for word, and pressing Undo writes them back into the project. | **Medium-high** (privacy, and an erased fact can come back) | **Fixed** |
 | 3 | Undo on a receipt fact that the turn *believed again* (reinstated), rather than created, block-lists a fact the person stated before that turn. It does not return memory to how it was. | Medium | **Fixed** |
-| 4 | A brokered Alevr tool that is stopped or times out mid-run is completed on its durable receipt as `failed` with an empty result. The action may have happened, and a replay of that receipt hands the model an empty failed result. | Medium-low | Open |
-| 5 | Audit rows are written as `executed` before authorisation. If the broker throws, the row is never settled and still says `executed`. | Low-medium (audit integrity) | Open |
+| 4 | A brokered Alevr tool that is stopped or times out mid-run is completed on its durable receipt as `failed` with an empty result. The action may have happened, and a replay of that receipt hands the model an empty failed result. | Medium-low | **Fixed** (receipt says it may have taken effect; `tests/tool-receipt-outcomes.test.ts`) |
+| 5 | Audit rows are written as `executed` before authorisation. If the broker throws, the row is never settled and still says `executed`. | Low-medium (audit integrity) | **Fixed** for Alevr's own tools (`dispatch.ts`); open for connector calls (`mcp.ts`) |
 | 6 | A turn whose agent was deleted reads the account's full memory, not the deleted agent's narrower grant. | Low (unclear whether this is intended) | **Fixed** (fail closed; see below) |
 | 7 | The account reset's `createMany` has no `skipDuplicates`. A concurrent first extraction can make it return 500 after the erase has already committed. | Low | **Fixed** |
 | 8 | There are three copies of the call-id stamper. The two adapter copies add one suffix and never re-check it, and the `seenCallIds` set they read is never written. | Low (latent) | Open |
@@ -196,7 +196,7 @@ that answers `isError` is recorded as a failure. Proven by
 `tests/tool-dispatch.test.ts`, `tests/tool-dispatch-adversarial.test.ts`,
 `tests/tool-receipt.test.ts` and `tests/mcp-toolset-status.test.ts`.
 
-**Defect 4 (open).** At `dispatch.ts:636-650`, the brokered path completes the
+**Defect 4 (fixed 18 Nov 2026: with no outcome, the receipt and the audit row say the call was stopped before Alevr heard back and may have taken effect; `tests/tool-receipt-outcomes.test.ts`).** At `dispatch.ts:636-650`, the brokered path completes the
 receipt in a `finally` with `ok: outcome?.status === "succeeded"` and
 `result: outcome?.text ?? ""`. On a Stop or timeout mid-run, `outcome` is
 undefined, so the receipt becomes `failed` with an empty result. Two things go
@@ -209,7 +209,7 @@ wrong:
 `failed` with the abort message. A fix wants an outcome-unknown receipt state,
 or at least the timeout/cancel text as the result.
 
-**Defect 5 (open).** At `dispatch.ts:554` and `mcp.ts:817`, the audit row is
+**Defect 5 (fixed in `dispatch.ts` 18 Nov 2026: a broker that throws settles the row as failed, with its own message kept out; still open in `mcp.ts`, where `authorization` is read far below the call and the approval gate wants its declaration intact).** At `dispatch.ts:554` and `mcp.ts:817`, the audit row is
 created with `status: "executed"` before authorisation. If
 `authorizeExternalAction` throws (for example, a database error), the row is
 never settled and claims a call ran that never left Alevr.
