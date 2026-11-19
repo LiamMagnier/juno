@@ -48,16 +48,33 @@ Phosphor's 256-unit grid at designed weights.
   targets and page headers), `size-6` and up (empty-state art only). An icon
   sits optically centred on its text: `gap-2` beside `text-ui`, `gap-1.5`
   beside `text-caption`.
-- Ink: chrome glyphs are `text-muted-foreground` at rest and take the row's
-  foreground on hover or selection (`group-hover:text-foreground`,
-  `transition-colors duration-fast ease-out-soft`). Status glyphs keep their
-  status colour. Menu rows already do this: `menuGlyphInkClass` in
+- Ink (owner, 18 Nov 2026: "make them black"): an interface glyph draws in
+  full ink, `hsl(var(--foreground))`, at rest: the sidebar's places and its
+  header controls (`.sidebar-nav-glyph`, and SidebarMotionIcon's box in
+  signature.css §10), every `Pressable kind="icon"` (the message actions, the
+  thread header's tools), the composer's `+` and mic
+  (`composerIconButtonClass`) and the voice disc's waveform. Muted ink is
+  for a disabled glyph, and for the bell, whose step to full ink is its
+  unread signal. Status glyphs keep their status colour. Menu rows light the
+  glyph with the row: `menuGlyphInkClass` in
   `src/components/ui/menu-recipe.ts` lights the glyph with its row on
   `data-highlighted`, an open submenu (`data-state=open`), hover and keyboard
   focus, in every menu that uses the recipe. A glyph that states its own
   `text-*` keeps it.
 
 ### 1.3 Hover articulation
+**Current rule (owner, 18 Nov 2026: "real sleek motion design").** The
+product draws the Alevr Line family (`alevr-glyphs.ts`), and signature.css
+§6 plays each drawing's one gesture when the control that owns it is hovered
+by a fine pointer or reached by the keyboard: a destination that opts in
+(`data-jicon-articulate`), a `.jicon-trigger`, or an icon button (named by
+`aria-label`). The pen writes a stroke, the lens tilts and settles, the bell
+swings once, the `+` turns a quarter, send lifts, a panel slides its
+divider, copy's sheets come apart and its check draws in when it confirms.
+Never a menu row, an option or a tab, never a disabled control, never under
+reduced motion (`tests/icon-articulation.test.ts` holds both families to
+this). What follows is the V3 rule it extends, kept for the `.ji` galleries.
+
 **Destinations only (G46, 2026-10-15).** Each drawing in the V3 family
 (`src/components/ui/juno-icons/drawings.ts`) carries at most one hover pose
 next to its geometry (`hover: { r, x, y, s, anim }`), and

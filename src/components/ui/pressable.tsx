@@ -84,7 +84,11 @@ const pressableVariants = cva(
         // finger reaches it through the invisible 44px pad (G54) instead.
         chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground hit-44",
         // `rounded-full`: the house idiom for "a glyph you can press" is a circle.
-        icon: "inline-flex items-center justify-center rounded-full border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
+        // Full ink at rest (owner, 18 Nov 2026: "make them black"): the glyph
+        // is the whole control, and in the second ink a row of them (a
+        // message's actions, a header's tools) read as disabled. Hover adds
+        // the fill; disabled keeps the 50% fade below.
+        icon: "inline-flex items-center justify-center rounded-full border border-transparent text-foreground hover:bg-accent",
       },
       /**
        * `selected` is a variant rather than a caller-supplied className because

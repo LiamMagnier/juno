@@ -86,6 +86,43 @@ test("destinations opt in: sidebar destination rows and empty-state actions", ()
   assert.doesNotMatch(read("src/components/app/product-switch.tsx"), /data-jicon-articulate/);
 });
 
+/*
+ * The live family. Every product glyph is an Alevr Line drawing (`svg.ag`,
+ * icons.tsx) whose gesture signature.css §6 plays, and that section once
+ * matched `:is(button, a, label, summary, [role^="menuitem"], …):hover`, so a
+ * pointer crossing any menu set its glyphs moving. The owner's motion pass
+ * (18 Nov 2026) plays a gesture on hover or keyboard focus of the control
+ * that owns the glyph; these hold it to never a menu row, option or tab.
+ */
+const signatureRaw = read("src/components/ui/signature.css");
+const section6 = strip(signatureRaw.slice(signatureRaw.indexOf("/* ── 6. The icons move"), signatureRaw.indexOf("/* ── 8.")));
+
+test("the live family's gestures never play in a menu row, an option, a tab or a disabled control", () => {
+  const posed: string[] = [];
+  for (const match of section6.matchAll(/([^{}]+)\{/g)) {
+    const prelude = match[1].trim();
+    if (prelude.startsWith("@")) continue;
+    for (const selector of splitList(prelude)) {
+      if (/\.ag\b/.test(selector) && /:hover|:focus-visible/.test(selector)) posed.push(selector.trim());
+    }
+  }
+  assert.ok(posed.length >= 20, `found ${posed.length} posed selectors`);
+  for (const selector of posed) {
+    for (const excluded of ['[role^="menuitem"]', '[role="option"]', '[role="tab"]', ":disabled", '[aria-disabled="true"]', ".jicon-quiet"]) {
+      assert.ok(selector.includes(excluded), `${selector} does not exclude ${excluded}`);
+    }
+    assert.doesNotMatch(selector, /^:is\(button, a, label/, `the old blanket trigger: ${selector}`);
+  }
+});
+
+test("the live family moves on the duration tokens and only inside no-preference", () => {
+  assert.ok(section6.length > 2000, "found §6");
+  // The one literal allowed is a stagger step, `calc(var(--i) * 45ms)`.
+  assert.doesNotMatch(section6.replace(/calc\(var\(--i\) \* \d+ms\)/g, ""), /\b\d+ms\b/, "a literal duration");
+  assert.doesNotMatch(section6, /cubic-bezier\(/);
+  for (const block of section6.matchAll(/@media ([^{]+)\{/g)) assert.match(block[1], /prefers-reduced-motion: no-preference/, block[1]);
+});
+
 test("menus, the composer and message actions never opt in", () => {
   for (const file of [
     "src/components/ui/menu-recipe.ts",

@@ -525,9 +525,13 @@ export const composerChevronClass =
  * A circle, like the send disc it mirrors: the `+` seats the composer's
  * bottom-left corner 10px in from a 26px curve.
  * It was a circle (16), rounder than the corner around it allows.
+ *
+ * Full ink at rest (owner, 18 Nov 2026: "make them black"): the `+` and the
+ * mic are the row's tools, not its footnotes. Disabled, the glyph takes the
+ * second ink.
  */
 export const composerIconButtonClass =
-  "size-9 shrink-0 rounded-full border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-selected active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
+  "size-9 shrink-0 rounded-full border-transparent bg-transparent text-foreground shadow-none hover:border-transparent hover:bg-accent hover:shadow-none active:border-transparent active:bg-selected active:shadow-none data-[state=open]:bg-accent disabled:text-muted-foreground coarse:size-11";
 
 /**
  * @deprecated The rule between the chips and the send pair is gone: the row
@@ -703,10 +707,12 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
           // the send disc reads as one round object, as in ChatGPT and Claude.
           "composer-primary-action pressable relative grid size-9 shrink-0 place-items-center rounded-full",
           face === "voice"
-            ? // Empty, the disc is the quiet voice entry: a tone step and the
-              // second ink, so the field (the thing to do) leads and the disc
-              // is never the strongest object of an empty composer.
-              "bg-secondary text-muted-foreground hover:bg-selected hover:text-foreground active:bg-selected"
+            ? // Empty, the disc is the quiet voice entry: a tone step, so the
+              // field (the thing to do) leads and the disc is never the
+              // strongest object of an empty composer. Its waveform is drawn
+              // in full ink like every interface glyph (owner, 18 Nov 2026);
+              // the quiet comes from the fill, not from a grey mark.
+              "bg-secondary text-foreground hover:bg-selected active:bg-selected"
             : // With words, send: the ink disc, the one strong spot on the
               // composer (V3: graphite is the active control, ultramarine only
               // a small live presence). Stop and busy wear the same disc.

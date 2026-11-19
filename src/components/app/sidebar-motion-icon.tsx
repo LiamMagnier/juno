@@ -100,10 +100,18 @@ const ICONS: Record<SidebarMotionIconKind, IconComponent> = {
 
 /**
  * WHAT EACH MARK DOES UNDER THE POINTER is the family's business
- * (src/components/ui/icons.tsx, MOTION IS OPT-IN): a glyph articulates only
- * inside a row marked `.jicon-trigger.jicon-hover`, under a fine pointer. The
- * sidebar opts in its four low-frequency destinations (New chat, Projects,
- * Library, Customize); every other row, and every list, stays still.
+ * (alevr-glyphs.ts draws the gesture, signature.css §6 plays it): the pen in
+ * New chat writes, the lens tilts and settles, the folder's cover opens, the
+ * leaning book straightens, the sliders trade places, the bell swings, the
+ * panel's divider slides the way the panel will go. It plays when the row or
+ * button that owns the glyph is hovered by a fine pointer or reached by the
+ * keyboard, and that owner is the mechanism this sidebar already had: every
+ * NavRow and header button is a `.jicon-trigger`, a destination row also
+ * says `data-jicon-articulate`. Lists of chats and menus never move.
+ *
+ * The ink is the family's too: the box below draws in full ink whatever the
+ * control's label does (signature.css §10), except the bell, whose ink is its
+ * unread signal.
  */
 
 /**
@@ -131,9 +139,9 @@ export function SidebarMotionIcon({
   className?: string;
 }) {
   const Icon = ICONS[kind];
-  // The folder's closed-to-open change is the family drawing's own hover swap
-  // now (drawings.ts, `folder`), played only where the row opts in
-  // (.jicon-hover), so one glyph is drawn rather than two stacked.
+  // The folder's closed-to-open change is the drawing's own gesture now
+  // (alevr-glyphs.ts, `folder`: its cover falls open), so one glyph is drawn
+  // rather than two stacked.
   return (
     <span aria-hidden="true" className={cn("sidebar-motion-icon", `sidebar-motion-icon--${kind}`, DEFAULT_GLYPH_SIZE, className)}>
       <Icon focusable="false" className={cn("sidebar-motion-icon__glyph", DEFAULT_GLYPH_SIZE, className)} />

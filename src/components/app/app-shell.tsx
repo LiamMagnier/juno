@@ -681,13 +681,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <VerifyEmailBanner />
 
           {/* The phone's bar (the V3 gallery's MobileBar): plain 44 px icon
-              buttons in the third ink on the page itself, no bordered discs,
-              so the content's ground runs to the top of the screen. */}
+              buttons on the page itself, no bordered discs, so the content's
+              ground runs to the top of the screen. Full ink, like every
+              interface glyph (owner, 18 Nov 2026: "make them black"). */}
           <div className="relative z-40 flex shrink-0 items-center gap-1 px-2 pb-1 pt-[calc(0.5rem+env(safe-area-inset-top))] md:hidden">
             <Button
               variant="ghost"
               size="icon"
-              className="jicon-trigger size-11 shrink-0 rounded-control text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="jicon-trigger size-11 shrink-0 rounded-control text-foreground hover:bg-accent"
               onClick={() => setSidebarOpen(true)}
               aria-label="Open menu"
             >
@@ -711,7 +712,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Button
               variant="ghost"
               size="icon"
-              className="jicon-trigger ml-auto size-11 shrink-0 rounded-control text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="jicon-trigger ml-auto size-11 shrink-0 rounded-control text-foreground hover:bg-accent"
               onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
               aria-label="Search chats and projects"
             >
@@ -720,7 +721,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Button
               variant="ghost"
               size="icon"
-              className="jicon-trigger size-11 shrink-0 rounded-control text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="jicon-trigger size-11 shrink-0 rounded-control text-foreground hover:bg-accent"
               onClick={() => {
                 router.push("/chat");
                 window.dispatchEvent(new CustomEvent("juno:new-chat"));

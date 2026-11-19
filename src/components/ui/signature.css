@@ -127,6 +127,19 @@
 .sidebar-nav-glyph {
   color: hsl(var(--foreground));
 }
+/* The sidebar's own controls draw in full ink too (owner, 18 Nov 2026:
+   "make them black"): Hide sidebar, the drawer's close, a row's overflow
+   dots, the rail's product marks. SidebarMotionIcon's box carries the ink, so
+   a control that paints its label in the second ink still draws a black
+   glyph. The bell keeps its control's ink, because unseen notifications
+   lifting it to full ink is the bell's only signal (icons.tsx, Bell). A
+   disabled control keeps its muted ink. */
+.sidebar-motion-icon:not(.sidebar-motion-icon--notifications) {
+  color: hsl(var(--foreground));
+}
+:is(:disabled, [aria-disabled="true"], [data-disabled]) .sidebar-motion-icon {
+  color: inherit;
+}
 
 /* Send is the accent while there is something to send: the one primary
    action on the page, in the colour every primary takes (owner, 15 Nov 2026:
@@ -408,15 +421,37 @@ button[role="switch"][data-state="checked"] > span > span,
 }
 
 /* ── 6. The icons move (Alevr Line, alevr-glyphs.ts) ─────────────────────────
-   Each glyph names one gesture (`data-m`) and wraps the part that moves in
-   `.gm` / `.gm2`. The gesture plays while the control around it is under a
-   fine pointer: a chevron leans the way it points, a plus turns a quarter,
-   the gear turns one tooth, the bin lifts its lid, the copy sheet slides
-   forward, a check draws itself. Held gestures are transitions, so they ease
-   out in about 200ms and reverse from wherever they are when the pointer
-   leaves; the one-shots (spin, swing, wave, blink, pop, draw) are short
-   keyframes. Never on keyboard focus (hover only), never on touch, and off
-   under reduced motion: the glyph is the same drawing at rest. */
+   Owner, 18 Nov 2026: "real sleek motion design". Each drawing names one
+   gesture (`data-m`) and wraps what moves in `.gm` / `.gm2`, or `.gw` for a
+   row of parts that play in turn; `.gink`, `.gline` and `.gtrack` are
+   strokes that draw. The pen writes a short stroke, the lens tilts and
+   settles, the bell swings once, the plus turns a quarter, send lifts, the
+   panel slides its divider, the sliders trade places, the leaning book
+   straightens, the folder's cover opens.
+
+   WHO PLAYS IT. The control that owns the glyph, when a fine pointer is on
+   it or the keyboard reaches it (:focus-visible):
+     - a destination that opts in (`data-jicon-articulate`, or a link or
+       button inside a `="within"` region: the sidebar's places, an empty
+       state's actions);
+     - a control the family marks as the glyph's owner (`.jicon-trigger`);
+     - an icon button: a button or link that carries its name in
+       `aria-label` (the composer's +, the message actions, the header's
+       Share and More), or `[data-icon-host]`.
+   Never a menu row, an option or a tab (G46): a pointer crossing a menu or a
+   list must not set a column of glyphs moving with nothing changing behind
+   them. Never inside a disabled control, never under `.jicon-quiet`.
+
+   HOW IT MOVES. Held gestures are transitions: out on the slow rung with a
+   settle (--ease-out-back) or a strong ease-out for turns, back on the base
+   rung, reversing from wherever they are when the pointer leaves. One-shots
+   (beat, hop, swing, wave, dots, ripple, lines, draw) are keyframes that end
+   where they began. Only transform, opacity and stroke-dashoffset move;
+   every duration is a --dur-* rung and every keyframe's travel reads
+   --motion-shift. The whole section sits inside
+   `prefers-reduced-motion: no-preference` (the PostCSS twin carries that to
+   Settings › Motion), so a reader who asked for less sees the drawing at
+   rest and the control's own colour change, nothing that travels. */
 .ag .gd,
 .ag .gf {
   fill: currentColor;
@@ -425,9 +460,22 @@ button[role="switch"][data-state="checked"] > span > span,
 .ag .gdash {
   stroke-dasharray: 2.25 2.75;
 }
-.ag .gdraw {
+.ag .gdraw,
+.ag .gline {
   stroke-dasharray: 1;
   stroke-dashoffset: 0;
+}
+/* A pen's ink: one dash the length of the stroke and a longer gap, parked
+   off the path and transparent until the pen writes it. */
+.ag .gink {
+  stroke-dasharray: 1 2;
+  stroke-dashoffset: 1;
+  opacity: 0;
+}
+/* A slider's track: the gap around its knob is part of a dash pattern
+   (alevr-glyphs.ts, slider), placed by the offset. */
+.ag .gtrack {
+  stroke-dashoffset: var(--o0);
 }
 .ag .gm,
 .ag .gm2,
@@ -440,74 +488,157 @@ button[role="switch"][data-state="checked"] > span > span,
   from { stroke-dashoffset: 1; }
   to { stroke-dashoffset: 0; }
 }
-
-@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .ag .gm,
-  .ag .gm2 {
-    transition: transform 220ms var(--alv-ease-out);
-  }
-  .ag[data-m="spin"] .gm,
-  .ag[data-m="turn"] .gm,
-  .ag[data-m="ccw"] .gm,
-  .ag[data-m="cw"] .gm,
-  .ag[data-m="rot"] .gm {
-    transition-duration: 360ms;
-  }
-
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="r"] .gm { transform: translateX(1.5px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="l"] .gm { transform: translateX(-1.5px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="u"] .gm { transform: translateY(-1.5px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="d"] .gm { transform: translateY(1.5px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="ne"] .gm { transform: translate(1.25px, -1.25px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="rot"] .gm { transform: rotate(90deg); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="turn"] .gm { transform: rotate(45deg); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="spin"] .gm { transform: rotate(180deg); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="ccw"] .gm { transform: rotate(-120deg); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="cw"] .gm { transform: rotate(120deg); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="lid"] .gm { transform: translateY(-1.5px) rotate(-10deg); transform-origin: 5px 6.5px; }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="lift"] .gm { transform: translateY(-1.5px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shift"] .gm { transform: translate(-1px, -1px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shift"] .gm2 { transform: translate(1px, 1px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="tilt"] .gm { transform: rotate(-12deg); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="squeeze"] .gm { transform: translateY(1px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="squeeze"] .gm2 { transform: translateY(-1px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="grow"] .gm { transform: translate(1px, -1px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="grow"] .gm2 { transform: translate(-1px, 1px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shrink"] .gm { transform: translate(-1px, 1px); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="shrink"] .gm2 { transform: translate(1px, -1px); }
-
-  /* One-shots. */
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="wiggle"] .gm { animation: alv-wiggle 420ms var(--alv-ease-out); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="swing"] .gm { animation: alv-swing 560ms var(--alv-ease-out); transform-origin: 12px 4px; }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="pop"] .gm { animation: alv-pop 320ms var(--alv-ease-out); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="pop"]:not(:has(.gm)) { animation: alv-pop 320ms var(--alv-ease-out); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="blink"] .gm { animation: alv-blink 300ms var(--alv-ease-in-out); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="wave"] .gw { animation: alv-wave 520ms var(--alv-ease-in-out) calc(var(--i) * 60ms); }
-  :is(button, a, label, summary, [role^="menuitem"], [role="option"], [role="tab"], [role="link"], [data-icon-host]):hover .ag[data-m="draw"] .gdraw { animation: alv-draw 300ms var(--alv-ease-out); }
-}
-
 @keyframes alv-wiggle {
   0%, 100% { transform: rotate(0); }
-  30% { transform: rotate(-10deg); }
-  65% { transform: rotate(6deg); }
+  30% { transform: rotate(calc(-10deg * var(--motion-shift, 1))); }
+  65% { transform: rotate(calc(6deg * var(--motion-shift, 1))); }
 }
+/* The bell: one swing that dies away, and the clapper a beat behind it. */
 @keyframes alv-swing {
   0%, 100% { transform: rotate(0); }
-  20% { transform: rotate(14deg); }
-  45% { transform: rotate(-10deg); }
-  70% { transform: rotate(5deg); }
+  20% { transform: rotate(calc(14deg * var(--motion-shift, 1))); }
+  48% { transform: rotate(calc(-9deg * var(--motion-shift, 1))); }
+  74% { transform: rotate(calc(3.5deg * var(--motion-shift, 1))); }
+}
+@keyframes alv-clapper {
+  0%, 100% { transform: translateX(0); }
+  28% { transform: translateX(calc(-1.25px * var(--motion-shift, 1))); }
+  56% { transform: translateX(calc(1px * var(--motion-shift, 1))); }
+  82% { transform: translateX(calc(-0.35px * var(--motion-shift, 1))); }
 }
 @keyframes alv-pop {
   0%, 100% { transform: scale(1); }
-  45% { transform: scale(1.14); }
+  45% { transform: scale(calc(1 + 0.14 * var(--motion-shift, 1))); }
 }
 @keyframes alv-blink {
   0%, 100% { transform: scaleY(1); }
-  45% { transform: scaleY(0.1); }
+  45% { transform: scaleY(calc(1 - 0.9 * var(--motion-shift, 1))); }
 }
+/* A waveform's bars: down, then a little past rest, in turn. */
 @keyframes alv-wave {
   0%, 100% { transform: scaleY(1); }
-  40% { transform: scaleY(0.55); }
+  35% { transform: scaleY(calc(1 - 0.45 * var(--motion-shift, 1))); }
+  70% { transform: scaleY(calc(1 + 0.12 * var(--motion-shift, 1))); }
+}
+/* Activity's trace: one heartbeat, the peaks jump and settle. */
+@keyframes alv-beat {
+  0%, 100% { transform: scaleY(1); }
+  30% { transform: scaleY(calc(1 + 0.24 * var(--motion-shift, 1))); }
+  62% { transform: scaleY(calc(1 - 0.08 * var(--motion-shift, 1))); }
+}
+/* The agent behind steps up beside the one in front. */
+@keyframes alv-hop {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(calc(-2px * var(--motion-shift, 1))); }
+  72% { transform: translateY(calc(0.4px * var(--motion-shift, 1))); }
+}
+/* More's three dots, one after another. */
+@keyframes alv-dots {
+  0%, 100% { transform: translateY(0); }
+  45% { transform: translateY(calc(-1.75px * var(--motion-shift, 1))); }
+}
+/* Read aloud: the sound waves travel out from the speaker, inner first. */
+@keyframes alv-ripple {
+  0%, 100% { opacity: 1; transform: translateX(0); }
+  40% { opacity: 0.2; transform: translateX(calc(1.5px * var(--motion-shift, 1))); }
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  /* Coming back: on the base rung, from wherever the gesture got to. */
+  .ag .gm,
+  .ag .gm2 {
+    transition: transform var(--dur-base) var(--ease-out-soft);
+  }
+  .ag .gink {
+    transition:
+      stroke-dashoffset var(--dur-base) var(--ease-out-soft),
+      opacity var(--dur-fast) var(--ease-out-soft);
+  }
+  .ag .gtrack {
+    transition: stroke-dashoffset var(--dur-base) var(--ease-out-soft);
+  }
+
+  /* Going out: the slow rung, with a settle. Turns and the pen run on the
+     strong ease-out instead: a quarter turn that overshoots reads as a
+     wobble, and a pen that overshoots its stroke reads as a slip. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag :is(.gm, .gm2, .gtrack) {
+    transition-duration: var(--dur-slow);
+    transition-timing-function: var(--ease-out-back);
+  }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag:is([data-m="rot"], [data-m="turn"], [data-m="spin"], [data-m="ccw"], [data-m="cw"], [data-m="write"]) :is(.gm, .gm2, .gink) {
+    transition-duration: var(--dur-slow);
+    transition-timing-function: var(--ease-out-strong);
+  }
+
+  /* Held poses. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="r"] .gm { transform: translateX(1.5px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="l"] .gm { transform: translateX(-1.5px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="u"] .gm { transform: translateY(-2px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="d"] .gm { transform: translateY(1.75px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="ne"] .gm { transform: translate(1.25px, -1.25px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="rot"] .gm { transform: rotate(90deg); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="turn"] .gm { transform: rotate(45deg); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="spin"] .gm { transform: rotate(180deg); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="ccw"] .gm { transform: rotate(-120deg); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="cw"] .gm { transform: rotate(120deg); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="lid"] .gm { transform: translateY(-1.5px) rotate(-10deg); transform-origin: 5px 6.5px; }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="lift"] .gm { transform: translateY(-1.5px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="shift"] .gm { transform: translate(-1px, -1px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="shift"] .gm2 { transform: translate(1px, 1px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="tilt"] .gm { transform: rotate(-12deg); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="squeeze"] .gm { transform: translateY(1px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="squeeze"] .gm2 { transform: translateY(-1px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="grow"] .gm { transform: translate(1px, -1px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="grow"] .gm2 { transform: translate(-1px, 1px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="shrink"] .gm { transform: translate(-1px, 1px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="shrink"] .gm2 { transform: translate(1px, -1px); }
+  /* The pen writes: it travels along its stroke while the ink draws in behind its tip. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="write"] .gm { transform: translateX(2.75px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="write"] .gink { stroke-dashoffset: 0; opacity: 1; }
+  /* The folder's cover falls open from its bottom edge. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="open"] .gm { transform: skewX(-12deg) scale(0.94, 0.86); }
+  /* The leaning volume straightens up. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="lean"] .gm { transform: rotate(10deg); }
+  /* The sliders trade places: each knob travels and its track's gap goes with it. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="slide"] :is(.gm, .gm2) { transform: translateX(var(--kx)); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="slide"] .gtrack { stroke-dashoffset: var(--o1); }
+  /* Orbit's ring swings round the planet. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="orbit"] .gm { transform: rotate(-16deg); }
+  /* Code's brackets open. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="spread"] .gm { transform: translateX(-1.5px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="spread"] .gm2 { transform: translateX(1.5px); }
+  /* A panel's divider slides the way the panel will go. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="divide-l"] .gm { transform: translateX(-2.5px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="divide-r"] .gm { transform: translateX(2.5px); }
+  /* Stop gives under the pointer, the press before the press. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="press"] .gm { transform: scale(0.84); }
+  /* Copy: the two sheets come apart. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="peel"] .gm { transform: translate(1px, 1px); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="peel"] .gm2 { transform: translate(-1px, -1px); }
+
+  /* One-shots. */
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="wiggle"] .gm { animation: alv-wiggle var(--dur-slow) var(--ease-out-soft); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="swing"] .gm { animation: alv-swing var(--dur-slow) var(--ease-out-soft); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="swing"] .gm2 { animation: alv-clapper var(--dur-slow) var(--ease-out-soft); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="pop"] .gm { animation: alv-pop var(--dur-slow) var(--ease-out-soft); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="pop"]:not(:has(.gm)) { animation: alv-pop var(--dur-slow) var(--ease-out-soft); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="blink"] .gm { animation: alv-blink var(--dur-slow) var(--ease-in-out); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="wave"] .gw { animation: alv-wave var(--dur-slow) var(--ease-in-out) calc(var(--i) * 45ms); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="draw"] .gdraw { animation: alv-draw var(--dur-slow) var(--ease-out-strong); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="beat"] .gm { animation: alv-beat var(--dur-slow) var(--ease-out-soft); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="hop"] .gm { animation: alv-hop var(--dur-slow) var(--ease-out-soft); }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="dots"] .gw { animation: alv-dots var(--dur-base) var(--ease-out-soft) calc(var(--i) * 50ms) both; }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="ripple"] .gw { animation: alv-ripple var(--dur-slow) var(--ease-out-soft) calc(var(--i) * 60ms) both; }
+  :is(.jicon-trigger, [data-jicon-articulate]:not([data-jicon-articulate="within"]), [data-jicon-articulate="within"] :is(a, button), button[aria-label], a[aria-label], [role="button"][aria-label], [data-icon-host]):not(:disabled, [aria-disabled="true"], [data-disabled], .jicon-quiet, .jicon-quiet *, [role^="menuitem"], [role="option"], [role="tab"]):is(:hover, :focus-visible) .ag[data-m="lines"] .gline { animation: alv-draw var(--dur-base) var(--ease-out-strong) calc(var(--i) * 70ms) both; }
+}
+
+/* Copy confirms: when IconSwap brings a check in (copy → check), the check
+   draws itself rather than appearing. Under reduced motion it fades in with
+   the swap and is simply there. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-swap-arrived] .ag .gdraw {
+    animation: alv-draw var(--dur-slow) var(--ease-out-strong) both;
+  }
 }
 
 /* ── 8. The account sheet's head (user-menu.tsx) ─────────────────────────── */

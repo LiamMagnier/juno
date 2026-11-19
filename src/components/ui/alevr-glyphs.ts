@@ -9,24 +9,44 @@
  * composer), circles are 17 units, so a square, a circle and a page carry the
  * same weight next to each other in a menu column.
  *
+ * THE INTERFACE SET, DRAWN BY HAND (owner, 18 Nov 2026: "draw them by hand
+ * but better, like Claude did with their icons ... and make them black").
+ * The glyphs read all day (the sidebar's places, the composer's row, the
+ * message actions, the thread header) are drawn to DIRECTION.md §3 rather
+ * than the older 3 unit corner: an 18 unit live area, circles near 20 units
+ * so they weigh what a square weighs, a 2 unit corner on anything
+ * rectilinear, optical centre at y 12. Shared shapes are built once
+ * (`pencil`, `slider`, `ringedPlanet`, BUBBLE, PAGE, FOLDER_*), so the pen
+ * in New chat and the pen in Edit, or a folder and a folder with code in it,
+ * are the same drawing. Each part that moves is drawn as its own piece (the
+ * folder's cover apart from its back, the leaning book apart from the
+ * standing one), so the gesture is the object doing what it does rather than
+ * the whole mark wobbling.
+ *
  * THE LINE. One stroke, round caps and joins. Its width is set per rendered
- * size by the renderer (icons.tsx), so a 16 px glyph and a 20 px glyph both
- * paint a crisp line of about 1.4 and 1.5 device-independent pixels instead of
- * one scaled number. Points (the dot of an i, the grip) are filled circles.
+ * size by the renderer (icons.tsx), and at interface sizes signature.css §12
+ * pins it to one 1.5px non-scaling line. Points (the dot of an i, the grip)
+ * are filled circles; a fill otherwise means "on" (`on`).
  *
  * MOTION. Each drawing names one gesture (`m`) and wraps the part that moves
- * in `<g class="gm">` (a second part in `gm2`). The gesture plays while the
- * control around the glyph is under a fine pointer, eases out in about 200 ms
- * and reverses from wherever it is when the pointer leaves (transitions, not
- * keyframes, except for the one-shot gestures). The CSS lives in
- * signature.css §6 and is off under reduced motion.
+ * in `<g class="gm">` (a second part in `gm2`, a row that plays in turn in
+ * `gw`); `MO` / `M2O` pin a part's pivot where the object would really turn
+ * (the bell's crown, the thumb's wrist, the book's foot). Strokes that draw
+ * are `gdraw` (a check), `gline` (a page's text), `gink` (what a pen writes)
+ * and `gtrack` (a slider's track). The gesture plays when the control that
+ * owns the glyph is hovered by a fine pointer or reached by the keyboard;
+ * the CSS, and who counts as that control, is signature.css §6. It is off
+ * under reduced motion.
  */
 
 export type GlyphMotion =
   | "r" | "l" | "u" | "d" | "ne"
   | "rot" | "turn" | "spin" | "ccw" | "cw"
   | "lid" | "lift" | "shift" | "tilt" | "swing" | "wiggle"
-  | "pop" | "draw" | "blink" | "wave" | "squeeze" | "grow" | "shrink";
+  | "pop" | "draw" | "blink" | "wave" | "squeeze" | "grow" | "shrink"
+  // The hand-drawn interface set (owner, 18 Nov 2026), one gesture each:
+  | "write" | "beat" | "open" | "lean" | "slide" | "orbit" | "hop" | "spread"
+  | "divide-l" | "divide-r" | "press" | "peel" | "ripple" | "dots" | "lines";
 
 export type Glyph = {
   /** Inner SVG markup on the 24 unit grid. */
@@ -51,7 +71,68 @@ const M = (...parts: string[]) => `<g class="gm">${parts.join("")}</g>`;
 const M2 = (...parts: string[]) => `<g class="gm2">${parts.join("")}</g>`;
 /** A path that can draw itself in (check marks). */
 const DRAW = (d: string) => `<path class="gdraw" pathLength="1" d="${d}"/>`;
+/** The ink a pencil leaves as it writes: hidden at rest, drawn in by the `write` gesture. */
+const INK = (d: string) => `<path class="gink" pathLength="1" d="${d}"/>`;
+/** A moving part that turns about its own point rather than the centre of the grid. */
+const MO = (x: number, y: number, ...parts: string[]) => `<g class="gm" style="transform-origin:${x}px ${y}px">${parts.join("")}</g>`;
+const M2O = (x: number, y: number, ...parts: string[]) => `<g class="gm2" style="transform-origin:${x}px ${y}px">${parts.join("")}</g>`;
 const flipY = (inner: string) => `<g transform="matrix(1 0 0 -1 0 24)">${inner}</g>`;
+
+/** A coordinate to the hundredth, so generated paths stay short and stable. */
+const n2 = (v: number) => String(Math.round(v * 100) / 100);
+
+/**
+ * A pencil on the 45° diagonal, pointing down and to the left: its tip at
+ * (x, y), a cone `cone` long, `half` either side of its axis, a round end
+ * `length` from the tip. One construction, so the new-chat pen and the edit
+ * pen are the same object at two sizes.
+ */
+function pencil(x: number, y: number, length: number, half: number, cone: number, band?: number): string {
+  const s = Math.SQRT1_2;
+  const at = (a: number, b: number) => `${n2(x + (a + b) * s)} ${n2(y + (b - a) * s)}`;
+  const body = `M${x} ${y}L${at(cone, half)}L${at(length, half)}A${half} ${half} 0 0 0 ${at(length, -half)}L${at(cone, -half)}Z`;
+  // The ferrule: a line across the body where the eraser would sit, on the
+  // larger pen only (inside the new-chat square it closes up).
+  return band ? `${body}M${at(band, half)}L${at(band, -half)}` : body;
+}
+
+/**
+ * One slider: a track split around a ring. The split is a dash pattern
+ * rather than two segments, so the `slide` gesture moves the gap along the
+ * track (stroke-dashoffset, `--o0` to `--o1`) in step with the ring
+ * (`--kx`), and the track never has to be redrawn.
+ */
+function slider(y: number, x0: number, x1: number, knob: number, moved: number, r: number, part: "gm" | "gm2"): string {
+  const len = x1 - x0;
+  const gap = 2 * (r + 0.55);
+  const dash = len + gap;
+  const offset = (k: number) => n2(dash - (k - x0) + gap / 2);
+  return (
+    `<path class="gtrack" pathLength="${n2(len)}" style="stroke-dasharray:${n2(dash)} ${n2(gap)};--o0:${offset(knob)};--o1:${offset(moved)}" d="M${x0} ${y}H${x1}"/>` +
+    `<g class="${part}" style="--kx:${n2(moved - knob)}px">${C(knob, y, r)}</g>`
+  );
+}
+
+/**
+ * Orbit: a planet in a tilted ring. The ring is broken where it passes behind
+ * the planet and the planet is broken where the ring passes in front, so the
+ * mark reads as one object in depth with no fill and no mask.
+ */
+function ringedPlanet(planet: number, rx: number, ry: number, tilt: number): string {
+  const air = 1.25;
+  const back = Math.sqrt(((planet + air) ** 2 - ry ** 2) / (rx ** 2 - ry ** 2));
+  const front = Math.sqrt((planet ** 2 - ry ** 2) / (rx ** 2 - ry ** 2));
+  const ring = (t: number) => `${n2(12 + rx * Math.cos(t))} ${n2(12 + ry * Math.sin(t))}`;
+  const t1 = -Math.acos(back);
+  const t2 = -(Math.PI - Math.acos(back));
+  const ringPath = `M${ring(t1)}A${rx} ${ry} 0 1 1 ${ring(t2)}`;
+  const cross = Math.atan2(ry * Math.sqrt(1 - front ** 2), rx * front);
+  const g = 2.35 / planet;
+  const on = (a: number) => `${n2(12 + planet * Math.cos(a))} ${n2(12 + planet * Math.sin(a))}`;
+  const below = `M${on(cross + g)}A${planet} ${planet} 0 0 1 ${on(Math.PI - cross - g)}`;
+  const above = `M${on(Math.PI - cross + g)}A${planet} ${planet} 0 1 1 ${on(cross - g)}`;
+  return `<g transform="rotate(${tilt} 12 12)">${P(ringPath, below, above)}</g>`;
+}
 
 const dashed = (inner: string) => `<g class="gdash">${inner}</g>`;
 const wave = (...bars: string[]) => bars.map((d, i) => `<g class="gw" style="--i:${i}"><path d="${d}"/></g>`).join("");
@@ -80,49 +161,55 @@ function gear(n: number, Rt: number, r: number, tip: number, flank: number): str
 
 // --- shared silhouettes ------------------------------------------------------
 
-const BUBBLE = "M12 20a8 8 0 1 0-7-4.1L4 20l4.1-1A8 8 0 0 0 12 20Z";
-const PAGE = "M13.5 3.5H8a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3V9Z";
-const PAGE_FOLD = "M13.5 3.5V7a2 2 0 0 0 2 2H19";
-const FOLDER = "M3.5 7.5a3 3 0 0 1 3-3h2.9a2 2 0 0 1 1.4.6l1.4 1.3a2 2 0 0 0 1.4.6h4.9a3 3 0 0 1 3 3v6.5a3 3 0 0 1-3 3h-12a3 3 0 0 1-3-3Z";
+/** The speech bubble: a round body, the tail drawn as two soft curves to a point at the lower left. */
+const BUBBLE = "M7.8 18.87A8.4 8.4 0 1 0 4.11 14.47Q4.15 17.55 3.45 20.2Q5.8 20.05 7.8 18.87Z";
+const PAGE = "M13.75 3H7.5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7.75Z";
+const PAGE_FOLD = "M13.75 3v3.75a1 1 0 0 0 1 1h3.75";
+const FOLDER = "M3 7a2 2 0 0 1 2-2h3.7a2 2 0 0 1 1.45.62l1.2 1.26a2 2 0 0 0 1.45.62H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z";
+/** The folder's back (with its tab) and its front cover, drawn apart so the cover can open. */
+const FOLDER_BACK = "M5 20a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3.7a2 2 0 0 1 1.45.62l1.2 1.26a2 2 0 0 0 1.45.62H19a2 2 0 0 1 2 2v1.5";
+const FOLDER_FRONT = "M3 10h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z";
 const MONITOR = R(3, 4, 18, 12.5, 3) + P("M12 16.5V20", "M8 20h8");
 const CLOUD = "M7.5 19h9.25a4.25 4.25 0 0 0 .55-8.46A5.75 5.75 0 0 0 6.2 9.6 4.75 4.75 0 0 0 7.5 19Z";
 const SHIELD = "M12 3.5l7 2.6v5.2c0 4.5-2.9 7.7-7 9.2-4.1-1.5-7-4.7-7-9.2V6.1Z";
 const RING = C(12, 12, 8.5);
-const PENCIL = "M4.5 19.5l.9-4L15.6 5.3a2.1 2.1 0 0 1 3 0l.1.1a2.1 2.1 0 0 1 0 3L8.5 18.6Z";
 const LOOP_CCW = "M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 9";
 const PLAY = "M8 5.4v13.2a1 1 0 0 0 1.5.86l10.4-6.6a1 1 0 0 0 0-1.7L9.5 4.54A1 1 0 0 0 8 5.4Z";
 const STAR = "M12 3.8l2.45 5 5.5.8-3.98 3.88.94 5.48L12 16.36l-4.91 2.6.94-5.48L4.05 9.6l5.5-.8Z";
 const PIN = "M9.5 3.5h5M10.25 3.5v5.25L7.25 12.5v2h9.5v-2l-3-3.75V3.5";
-const THUMB = "M7.5 10.5L11 3.6a2.1 2.1 0 0 1 2.1 2.5l-.6 3.4h5.1a2.2 2.2 0 0 1 2.1 2.8l-1.6 5.9a2.2 2.2 0 0 1-2.1 1.6H7.5Z";
-const THUMB_CUFF = R(3.5, 10.5, 4, 9.5, 1.5);
+/** The hand of a thumbs-up: the thumb rises from the wrist, the knuckles step down to a flat palm. */
+const THUMB = "M7 10.5l3.6-6.6a2.1 2.1 0 0 1 3.75 1.6l-.85 3.75h4.75a2.2 2.2 0 0 1 2.13 2.75l-1.55 6.1A2.4 2.4 0 0 1 16.5 20H7Z";
+const THUMB_CUFF = R(3, 10, 4, 10, 1.5);
 const BOT = R(4.5, 8, 15, 11.5, 4) + P("M12 8V5") + D(12, 4.25, 1.25) + P("M2.75 12.5v3", "M21.25 12.5v3");
 
 // --- the drawings, by concept --------------------------------------------
 
 export const GLYPHS: Record<string, Glyph> = {
   // places
-  chat: { b: P(BUBBLE), m: "tilt" },
+  chat: { b: MO(3.45, 20.2, P(BUBBLE)), m: "tilt" },
   chats: { b: P("M8.5 8V6.5a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3V11a3 3 0 0 1-3 3h-.5", "M3.5 11a3 3 0 0 1 3-3h6.5a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3H9.5l-3.5 2.5V18A3 3 0 0 1 3.5 15Z"), m: "tilt" },
   "chat-question": { b: P(BUBBLE, "M9.75 9.75a2.25 2.25 0 1 1 3.1 2.08c-.5.22-.85.64-.85 1.17v.25") + D(12, 15.6, 0.95), m: "tilt" },
-  "new-chat": { b: P("M11 4H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-4") + M(P("M17.9 3.6a2 2 0 0 1 2.5 2.5l-.1.2-7.6 7.6-3.2.8.8-3.2 7.6-7.6Z")), m: "wiggle" },
-  code: { b: M(P("M8.5 7l-5 5 5 5")) + M2(P("M15.5 7l5 5-5 5")), m: "shift" },
+  "new-chat": { b: P("M11.25 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-4.75") + INK("M8.6 16.75h2.9") + M(P(pencil(9.25, 14.75, 11.4, 1.85, 2.7))), m: "write" },
+  code: { b: M(P("M8 7.5L3.5 12 8 16.5")) + M2(P("M16 7.5l4.5 4.5-4.5 4.5")), m: "spread" },
   design: { b: P("M5.5 14L12 3.5 18.5 14 12 20.5Z", "M12 3.5v7.25") + C(12, 12.5, 1.6), m: "wiggle" },
   library: {
-    // Two upright books with air between them and a third leaning on the
-    // pair; the old pair shared one edge, which drew a doubled stroke.
-    b: R(3.25, 4.5, 4, 15, 1.4) + R(9, 4.5, 4, 15, 1.4) + P("M15.1 5.6l2.4-.65a1.2 1.2 0 0 1 1.47.85l3 11.9a1.2 1.2 0 0 1-.86 1.46l-2.4.65a1.2 1.2 0 0 1-1.47-.85l-3-11.9a1.2 1.2 0 0 1 .86-1.46Z"),
-    on: F("M4.65 4.5h1.2c.77 0 1.4.63 1.4 1.4v12.2c0 .77-.63 1.4-1.4 1.4h-1.2c-.77 0-1.4-.63-1.4-1.4V5.9c0-.77.63-1.4 1.4-1.4Z") + F("M10.4 4.5h1.2c.77 0 1.4.63 1.4 1.4v12.2c0 .77-.63 1.4-1.4 1.4h-1.2c-.77 0-1.4-.63-1.4-1.4V5.9c0-.77.63-1.4 1.4-1.4Z") + F("M15.1 5.6l2.4-.65a1.2 1.2 0 0 1 1.47.85l3 11.9a1.2 1.2 0 0 1-.86 1.46l-2.4.65a1.2 1.2 0 0 1-1.47-.85l-3-11.9a1.2 1.2 0 0 1 .86-1.46Z"),
-    m: "lift",
+    // A volume standing and a second one leaning on it, a head band each.
+    // Two, not three: at 16 px the gap between three spines closed up and
+    // the shelf read as a barcode. The leaning one straightens under the
+    // pointer.
+    b: R(4.75, 3.5, 5.5, 17, 1.5) + P("M4.75 7.5h5.5") + MO(14, 20.5, `<g transform="rotate(-12.26 14 20.5)">${R(14, 4.25, 5.25, 16.25, 1.5)}${P("M14 8.25h5.25")}</g>`),
+    on: `<rect class="gf" x="4.75" y="3.5" width="5.5" height="17" rx="1.5"/>` + R(4.75, 3.5, 5.5, 17, 1.5) + `<g transform="rotate(-12.26 14 20.5)"><rect class="gf" x="14" y="4.25" width="5.25" height="16.25" rx="1.5"/>${R(14, 4.25, 5.25, 16.25, 1.5)}</g>`,
+    m: "lean",
   },
-  crew: { b: C(8, 9, 3) + C(16, 9, 3) + P("M2.75 19.5a5.25 5.25 0 0 1 10.5 0", "M13.4 15a5.25 5.25 0 0 1 7.85 4.5"), m: "lift" },
-  orbit: { b: C(12, 12, 5) + `<g transform="rotate(-22 12 12)">` + P("M2 12.75a10 3.4 0 0 0 20 0", "M2 12.75c0-1 1.05-1.9 2.9-2.6", "M22 12.75c0-1-1.05-1.9-2.9-2.6") + `</g>`, m: "turn" },
+  crew: { b: C(9, 8, 3.25) + P("M2.75 20a6.25 6.25 0 0 1 12.5 0") + M(C(17, 8.75, 2.5), P("M15.6 14.2a5 5 0 0 1 5.65 5.8")), m: "hop" },
+  orbit: { b: M(ringedPlanet(5.25, 10.25, 3.5, -22)), m: "orbit" },
   agent: { b: BOT + `<g class="gm">${D(9, 13.75, 1.25)}${D(15, 13.75, 1.25)}</g>`, m: "blink" },
 
   // call
-  mic: { b: M(R(9, 3, 6, 11.5, 3)) + P("M5.5 11a6.5 6.5 0 0 0 13 0", "M12 17.5V21"), m: "lift" },
+  mic: { b: M(R(8.75, 2.75, 6.5, 12, 3.25)) + P("M5 11a7 7 0 0 0 14 0", "M12 18v3"), m: "lift" },
   "mic-off": { b: SLASHED(R(9, 3, 6, 11.5, 3) + P("M5.5 11a6.5 6.5 0 0 0 13 0", "M12 17.5V21")) },
-  customize: { b: P("M4 7h8", "M17.5 7H20", "M4 17h2.5", "M12 17h8") + M(C(14.75, 7, 2.25)) + M2(C(9.25, 17, 2.25)), m: "shift" },
-  stop: { b: R(6, 6, 12, 12, 3), on: `<rect class="gf" x="6" y="6" width="12" height="12" rx="3"/>` },
+  customize: { b: slider(8, 3, 21, 14.5, 9.5, 2.6, "gm") + slider(16, 3, 21, 9.5, 14.5, 2.6, "gm2"), m: "slide" },
+  stop: { b: R(6, 6, 12, 12, 2.5), on: `<rect class="gf" x="6" y="6" width="12" height="12" rx="2.5"/>` },
   "end-call": { b: M(P("M3.4 13.6c4.7-4.3 12.5-4.3 17.2 0l-.5 2.3a1.2 1.2 0 0 1-1.5.9l-2.7-.8a1.2 1.2 0 0 1-.85-1.1v-1.6a9.5 9.5 0 0 0-6.1 0v1.6a1.2 1.2 0 0 1-.85 1.1l-2.7.8a1.2 1.2 0 0 1-1.5-.9Z")), m: "d" },
 
   // direction
@@ -133,7 +220,7 @@ export const GLYPHS: Record<string, Glyph> = {
   "chevrons-up-down": { b: M(P("M8 9.5l4-4 4 4")) + M2(P("M8 14.5l4 4 4-4")), m: "squeeze" },
   "arrow-left": { b: M(P("M19 12H5", "M11 6l-6 6 6 6")), m: "l" },
   "arrow-right": { b: M(P("M5 12h14", "M13 6l6 6-6 6")), m: "r" },
-  "arrow-up": { b: M(P("M12 19V5", "M6 11l6-6 6 6")), m: "u" },
+  "arrow-up": { b: M(P("M12 19.5V5", "M6.25 10.75L12 5l5.75 5.75")), m: "u" },
   "arrow-down": { b: M(P("M12 5v14", "M6 13l6 6 6-6")), m: "d" },
   "arrow-up-right": { b: M(P("M7 17L17 7", "M8.5 7H17v8.5")), m: "ne" },
   "arrow-up-line": { b: P("M5 4h14") + M(P("M12 20V9", "M7 13l5-5 5 5")), m: "u" },
@@ -154,17 +241,17 @@ export const GLYPHS: Record<string, Glyph> = {
   unfold: { b: P("M4.5 12h15") + M(P("M12 9V3.5", "M9 6.5l3-3 3 3")) + M2(P("M12 15v5.5", "M9 17.5l3 3 3-3")), m: "grow" },
   fold: { b: P("M4.5 12h15") + M(P("M12 3.5V9", "M9 6l3 3 3-3")) + M2(P("M12 20.5V15", "M9 18l3-3 3 3")), m: "shrink" },
   menu: { b: P("M4 6.5h16", "M4 12h16", "M4 17.5h16") },
-  more: { b: `<g class="gw" style="--i:0">${D(5.5, 12, 1.4)}</g><g class="gw" style="--i:1">${D(12, 12, 1.4)}</g><g class="gw" style="--i:2">${D(18.5, 12, 1.4)}</g>`, m: "wave" },
+  more: { b: `<g class="gw" style="--i:0">${D(5.5, 12, 1.5)}</g><g class="gw" style="--i:1">${D(12, 12, 1.5)}</g><g class="gw" style="--i:2">${D(18.5, 12, 1.5)}</g>`, m: "dots" },
   grip: { b: D(9, 6, 1.25) + D(15, 6, 1.25) + D(9, 12, 1.25) + D(15, 12, 1.25) + D(9, 18, 1.25) + D(15, 18, 1.25) },
-  sidebar: { b: R(3.5, 4.5, 17, 15, 3.5) + M(P("M9.5 4.5v15")), m: "l" },
-  "panel-right": { b: R(3.5, 4.5, 17, 15, 3.5) + M(P("M14.5 4.5v15")), m: "r" },
+  sidebar: { b: R(3, 4, 18, 16, 2) + M(P("M9 4v16")), m: "divide-l" },
+  "panel-right": { b: R(3, 4, 18, 16, 2) + M(P("M15 4v16")), m: "divide-r" },
 
   // actions
   plus: { b: M(P("M12 5v14", "M5 12h14")), m: "rot" },
   minus: { b: P("M5 12h14") },
   close: { b: M(P("M6.5 6.5l11 11", "M17.5 6.5l-11 11")), m: "rot" },
-  check: { b: DRAW("M5 12.5l4.5 4.5L19 7.5"), m: "draw" },
-  copy: { b: P("M15.5 8.5V6.5a3 3 0 0 0-3-3h-6a3 3 0 0 0-3 3v6a3 3 0 0 0 3 3h2") + M(R(8.5, 8.5, 12, 12, 3)), m: "shift" },
+  check: { b: DRAW("M4.75 12.75L9.5 17.5 19.25 7"), m: "draw" },
+  copy: { b: M2(P("M15.5 8.5V5.5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3")) + M(R(8.5, 8.5, 12, 12, 2)), m: "peel" },
   trash: { b: M(P("M4 6.5h16", "M9.5 6.5V5a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 5v1.5")) + P("M6 6.5l.85 11.7A2.5 2.5 0 0 0 9.35 20.5h5.3a2.5 2.5 0 0 0 2.5-2.3L18 6.5", "M10 10.5v6", "M14 10.5v6"), m: "lid" },
   archive: { b: M(R(3.5, 4, 17, 4.5, 1.75)) + P("M5 8.5v8.5a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3V8.5", "M10 12.5h4"), m: "lid" },
   unarchive: { b: R(3.5, 4, 17, 4.5, 1.75) + P("M5 8.5v8.5a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3V8.5") + M(P("M12 17.5v-5", "M9.75 14.5L12 12.25l2.25 2.25")), m: "u" },
@@ -174,19 +261,19 @@ export const GLYPHS: Record<string, Glyph> = {
   "file-upload": { b: P(PAGE, PAGE_FOLD) + M(P("M12 17.5v-6", "M9.5 14L12 11.5l2.5 2.5")), m: "u" },
   save: { b: P("M4 7a3 3 0 0 1 3-3h9.5L20 7.5V17a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3Z", "M8 4v3.5h6.5V4", "M8 20v-5h8v5"), m: "pop" },
   send: { b: M(P("M20.5 3.5l-10 10", "M20.5 3.5L14 20.5l-3.5-7-7-3.5Z")), m: "ne" },
-  share: { b: P("M8.5 9.5H7.5a3 3 0 0 0-3 3V17a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3v-4.5a3 3 0 0 0-3-3h-1") + M(P("M12 14V3.5", "M8.5 7L12 3.5 15.5 7")), m: "u" },
+  share: { b: P("M8 9.75H7a2 2 0 0 0-2 2v6.75a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6.75a2 2 0 0 0-2-2h-1") + M(P("M12 14.25V3.5", "M8.25 7.25L12 3.5l3.75 3.75")), m: "u" },
   printer: { b: P("M7 9V4.5h10V9", "M7 16.5H6a2.5 2.5 0 0 1-2.5-2.5v-2.5A2.5 2.5 0 0 1 6 9h12a2.5 2.5 0 0 1 2.5 2.5V14a2.5 2.5 0 0 1-2.5 2.5h-1") + M(R(7, 13.5, 10, 6.5, 1)), m: "d" },
-  search: { b: M(C(10.75, 10.75, 6.75) + P("M15.75 15.75L20 20")), m: "tilt" },
+  search: { b: MO(10.5, 10.5, C(10.5, 10.5, 7), P("M15.45 15.45l4.8 4.8")), m: "tilt" },
   research: { b: P("M4 5.5h16", "M4 10.5h5", "M4 15.5h5") + M(C(15, 14, 3.75) + P("M17.75 16.75L20.25 19.25")), m: "tilt" },
-  edit: { b: M(P(PENCIL, "M14 7l3 3")), m: "wiggle" },
+  edit: { b: INK("M4.4 21h3.1") + M(P(pencil(4.75, 19.25, 17.6, 2.05, 3.1, 13.6))), m: "write" },
   attach: { b: M(P("M19.5 11.5l-7.6 7.6a5 5 0 0 1-7.1-7.1l8.1-8.1a3.35 3.35 0 0 1 4.75 4.75l-7.95 7.95a1.7 1.7 0 0 1-2.4-2.4l7.3-7.3")), m: "tilt" },
 
   // files and folders
-  document: { b: P(PAGE, PAGE_FOLD, "M9 13h6", "M9 16.5h4") },
+  document: { b: P(PAGE, PAGE_FOLD) + `<path class="gline" pathLength="1" style="--i:0" d="M9 12.75h6"/><path class="gline" pathLength="1" style="--i:1" d="M9 16.25h4"/>`, m: "lines" },
   "file-code": { b: P(PAGE, PAGE_FOLD, "M10.5 12.25l-2 2 2 2", "M13.5 12.25l2 2-2 2") },
   "file-plus": { b: P(PAGE, PAGE_FOLD) + M(P("M12 11.5v6", "M9 14.5h6")), m: "rot" },
   zip: { b: P("M12 3l8 4.5v9L12 21l-8-4.5v-9Z", "M4 7.5l8 4.5 8-4.5", "M12 12v9", "M8 5.25l8 4.5"), m: "pop" },
-  folder: { b: P(FOLDER), m: "pop" },
+  folder: { b: P(FOLDER_BACK) + MO(3, 20, P(FOLDER_FRONT)), m: "open" },
   "folder-open": { b: P("M3.5 17V7.5a3 3 0 0 1 3-3h2.9a2 2 0 0 1 1.4.6l1.4 1.3a2 2 0 0 0 1.4.6H17a3 3 0 0 1 3 3v.5", "M5.35 19.5h11.9a2 2 0 0 0 1.9-1.4l1.55-5a1.8 1.8 0 0 0-1.7-2.35H7.9a2 2 0 0 0-1.9 1.4L3.5 19.5") },
   "folder-code": { b: P(FOLDER, "M10.25 11.25L8.5 13l1.75 1.75", "M13.75 11.25L15.5 13l-1.75 1.75") },
   "folder-lock": { b: P(FOLDER) + R(9.75, 12, 4.5, 3.5, 0.9) + P("M10.75 12v-.75a1.25 1.25 0 0 1 2.5 0V12") },
@@ -205,8 +292,8 @@ export const GLYPHS: Record<string, Glyph> = {
   film: { b: R(4, 3.5, 16, 17, 3) + P("M8 3.5v17", "M16 3.5v17", "M4 12h16", "M4 7.75h4", "M16 7.75h4", "M4 16.25h4", "M16 16.25h4") },
   video: { b: R(3, 6, 13, 12, 3) + M(P("M16 10.5l4.2-2.6a.5.5 0 0 1 .8.4v7.4a.5.5 0 0 1-.8.4L16 13.5")), m: "r" },
   music: { b: M(P("M9 18V6l11-2v12") + C(6.5, 18, 2.5) + C(17.5, 16, 2.5)), m: "tilt" },
-  voice: { b: wave("M4 10v4", "M8 6.5v11", "M12 3.5v17", "M16 7.5v9", "M20 10v4"), m: "wave" },
-  "read-aloud": { b: P("M4 9.5v5a1 1 0 0 0 1 1h2.5l4.2 3.4a.5.5 0 0 0 .8-.4V5.5a.5.5 0 0 0-.8-.4L7.5 8.5H5a1 1 0 0 0-1 1Z") + `<g class="gw" style="--i:0"><path d="M16 9a4.25 4.25 0 0 1 0 6"/></g><g class="gw" style="--i:1"><path d="M18.75 6.25a8.25 8.25 0 0 1 0 11.5"/></g>`, m: "wave" },
+  voice: { b: wave("M4 10v4", "M8 7v10", "M12 4v16", "M16 8v8", "M20 10.5v3"), m: "wave" },
+  "read-aloud": { b: P("M3.5 9.75v4.5a1.25 1.25 0 0 0 1.25 1.25H7.4l4.05 3.3a.65.65 0 0 0 1.05-.5V5.7a.65.65 0 0 0-1.05-.5L7.4 8.5H4.75A1.25 1.25 0 0 0 3.5 9.75Z") + `<g class="gw" style="--i:0"><path d="M16 9.25a4 4 0 0 1 0 5.5"/></g><g class="gw" style="--i:1"><path d="M18.75 6.5a8 8 0 0 1 0 11"/></g>`, m: "ripple" },
   play: { b: M(P(PLAY)), on: F(PLAY), m: "r" },
   pause: { b: R(6.5, 5, 3.5, 14, 1.25) + R(14, 5, 3.5, 14, 1.25), on: `<rect class="gf" x="6.5" y="5" width="3.5" height="14" rx="1.25"/><rect class="gf" x="14" y="5" width="3.5" height="14" rx="1.25"/>` },
   "pause-circle": { b: RING + P("M10 9v6", "M14 9v6") },
@@ -217,7 +304,7 @@ export const GLYPHS: Record<string, Glyph> = {
   // devices
   phone: { b: R(6.5, 3, 11, 18, 3) + P("M10.5 18h3") },
   tablet: { b: R(4.5, 3, 15, 18, 3) + P("M10.5 18h3") },
-  laptop: { b: R(4.5, 4.5, 15, 10.5, 2) + P("M2.5 19h19") },
+  laptop: { b: M(R(4.5, 5, 15, 10.5, 2)) + P("M2.5 19h19"), m: "lift" },
   computer: { b: MONITOR },
   "screen-share": { b: MONITOR + M(P("M12 13V8", "M9.5 10.5L12 8l2.5 2.5")), m: "u" },
   "screen-off": { b: SLASHED(MONITOR) },
@@ -267,7 +354,7 @@ export const GLYPHS: Record<string, Glyph> = {
   app: { b: M(P("M9 3v4", "M15 3v4")) + P("M6.5 7h11v3a5.5 5.5 0 0 1-11 0Z", "M12 15.5V21"), m: "u" },
   wrench: { b: M(P("M14.6 6.4a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.1-3.1a5.75 5.75 0 0 1-7.6 7.6l-6.4 6.4a2.1 2.1 0 0 1-3-3l6.4-6.4a5.75 5.75 0 0 1 7.6-7.6Z")), m: "wiggle" },
   settings: { b: M(P(gear(8, 9, 7, 9, 7))) + C(12, 12, 3), m: "turn" },
-  activity: { b: P("M3 12h3.5l2.5-7 5 14 2.5-7H21") },
+  activity: { b: M(P("M3 12h3.5l2.75-6.5 5.5 13 2.75-6.5H21")), m: "beat" },
 
   // status
   help: { b: RING + P("M9.6 9.6a2.4 2.4 0 1 1 3.3 2.25c-.5.2-.9.65-.9 1.2v.45") + D(12, 16.4, 0.95), m: "tilt" },
@@ -281,7 +368,7 @@ export const GLYPHS: Record<string, Glyph> = {
   loader: { b: P("M12 3.5a8.5 8.5 0 1 0 8.5 8.5") },
   circle: { b: RING, on: `<circle class="gf" cx="12" cy="12" r="8.5"/>` },
   "circle-dashed": { b: dashed(RING) },
-  square: { b: R(4.5, 4.5, 15, 15, 3.5), on: `<rect class="gf" x="4.5" y="4.5" width="15" height="15" rx="3.5"/>` },
+  square: { b: M(R(4.5, 4.5, 15, 15, 2.5)), on: M(`<rect class="gf" x="4.5" y="4.5" width="15" height="15" rx="2.5"/>`), m: "press" },
   upgrade: { b: RING + M(P("M12 16V8", "M8.5 11.5L12 8l3.5 3.5")), m: "u" },
   shield: { b: P(SHIELD) + DRAW("M9 12l2 2 4-4"), m: "draw" },
   "shield-alert": { b: P(SHIELD, "M12 8.5v4") + D(12, 15.5, 0.95) },
@@ -297,7 +384,7 @@ export const GLYPHS: Record<string, Glyph> = {
   "profile-edit": { b: C(10, 8, 3.5) + P("M3.5 20a6.5 6.5 0 0 1 9.25-5.9") + M(P("M18.6 13.4a1.4 1.4 0 0 1 2 2L16 20l-2.5.5.5-2.5Z")), m: "wiggle" },
   mail: { b: R(3.5, 5, 17, 14, 3) + M(P("M4.5 7l7.5 6 7.5-6")), m: "d" },
   inbox: { b: P("M3.5 13.5l2.55-7.1A2.75 2.75 0 0 1 8.65 4.5h6.7a2.75 2.75 0 0 1 2.6 1.9l2.55 7.1V17a2.5 2.5 0 0 1-2.5 2.5H6A2.5 2.5 0 0 1 3.5 17Z") + M(P("M3.5 13.5H8l1 2h6l1-2h4.5")), m: "d" },
-  bell: { b: M(P("M18 16V11a6 6 0 0 0-12 0v5l-1.5 2h15Z", "M10 20.5a2 2 0 0 0 4 0")), m: "swing" },
+  bell: { b: MO(12, 3, P("M5.25 16h13.5c-1-1.1-1.6-2.5-1.6-4.25V9a5.15 5.15 0 0 0-10.3 0v2.75c0 1.75-.6 3.15-1.6 4.25Z"), M2O(12, 3, P("M10 19a2.1 2.1 0 0 0 4 0"))), m: "swing" },
   megaphone: { b: M(P("M4 10v4a1 1 0 0 0 1 1h2.25l8.75 4.5V4.5L7.25 9H5a1 1 0 0 0-1 1Z", "M7.25 15l1 4.5h2.5", "M19.5 9.5v5")), m: "tilt" },
   broadcast: { b: D(12, 12, 1.6) + `<g class="gw" style="--i:0"><path d="M8.5 15.5a5 5 0 0 1 0-7"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></g><g class="gw" style="--i:1"><path d="M5.6 18.4a9 9 0 0 1 0-12.8"/><path d="M18.4 5.6a9 9 0 0 1 0 12.8"/></g>`, m: "wave" },
   citation: { b: P("M20.5 6H3.5", "M20.5 12H8.5", "M20.5 18H8.5", "M3.5 11v8") },
@@ -324,8 +411,8 @@ export const GLYPHS: Record<string, Glyph> = {
   pin: { b: M(P(PIN, "M12 14.5v6")), on: F("M10.25 3.5h3.5v5.25l3 3.75v2h-9.5v-2l3-3.75Z") + P("M9.5 3.5h5", "M12 14.5v6"), m: "tilt" },
   unpin: { b: SLASHED(P(PIN, "M12 14.5v6")) },
   bookmark: { b: M(P("M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v15.5L12 16.5l-6.5 4V5A1.5 1.5 0 0 1 7 3.5Z")), on: F("M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v15.5L12 16.5l-6.5 4V5A1.5 1.5 0 0 1 7 3.5Z"), m: "pop" },
-  "thumbs-up": { b: M(P(THUMB) + THUMB_CUFF), m: "tilt" },
-  "thumbs-down": { b: flipY(M(P(THUMB) + THUMB_CUFF)), m: "tilt" },
+  "thumbs-up": { b: MO(7, 20, P(THUMB) + THUMB_CUFF), on: MO(7, 20, F(THUMB) + P(THUMB) + `<rect class="gf" x="3" y="10" width="4" height="10" rx="1.5"/>` + THUMB_CUFF), m: "tilt" },
+  "thumbs-down": { b: flipY(MO(7, 20, P(THUMB) + THUMB_CUFF)), on: flipY(MO(7, 20, F(THUMB) + P(THUMB) + `<rect class="gf" x="3" y="10" width="4" height="10" rx="1.5"/>` + THUMB_CUFF)), m: "tilt" },
   eye: { b: P("M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z") + M(C(12, 12, 3)), m: "blink" },
   "eye-off": { b: SLASHED(P("M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z") + C(12, 12, 3)) },
   appearance: { b: M(P("M12 3l4.5 7.5h-9Z")) + C(7.5, 16.5, 4) + R(13, 12.5, 8, 8, 2), m: "turn" },
@@ -346,6 +433,13 @@ export const DISPLAY_OVERRIDES: Record<string, Glyph> = {
   SearchX: { b: C(10.75, 10.75, 6.75) + P("M15.75 15.75L20 20", "M8.75 8.75l4 4", "M12.75 8.75l-4 4") },
   MailWarning: { b: P("M20.5 12V8a3 3 0 0 0-3-3h-11a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3H13", "M4.5 7l7.5 6 7.5-6", "M18.5 14.5v3") + D(18.5, 20.25, 0.95) },
   BookmarkPlus: { b: M(P("M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v15.5L12 16.5l-6.5 4V5A1.5 1.5 0 0 1 7 3.5Z")) + P("M12 7.5v5", "M9.5 10h5"), m: "pop" },
-  JunoCode: { b: M(P("M8.5 7l-5 5 5 5")) + M2(P("M15.5 7l5 5-5 5")) + P("M13.5 5l-3 14"), m: "shift" },
+  JunoCode: { b: M(P("M8 7.5L3.5 12 8 16.5")) + M2(P("M16 7.5l4.5 4.5-4.5 4.5")) + P("M13.4 5l-2.8 14"), m: "spread" },
+  // One panel drawing, and the divider travels the way the panel will go:
+  // a control that opens the left panel slides it right, one that hides it
+  // slides it left, and the right panel's pair mirrors that.
+  PanelLeft: { ...GLYPHS.sidebar, m: "divide-r" },
+  PanelLeftOpen: { ...GLYPHS.sidebar, m: "divide-r" },
+  SidebarOpen: { ...GLYPHS.sidebar, m: "divide-r" },
+  PanelRightOpen: { ...GLYPHS["panel-right"], m: "divide-l" },
 };
 

@@ -73,7 +73,12 @@ export function IconSwap({
   return (
     <span aria-hidden="true" className={cn("relative inline-grid shrink-0 place-items-center", className)}>
       <span className={cn(FACE, swapped ? [HIDDEN, ease.leave] : [SHOWN, ease.arrive])}>{from}</span>
-      <span className={cn(FACE, swapped ? [SHOWN, ease.arrive] : [HIDDEN, ease.leave])}>{to}</span>
+      {/* `data-swap-arrived` marks the state face while it shows, so a mark
+          that confirms (copy's check) draws itself in as it arrives
+          (signature.css §6) instead of only fading up. */}
+      <span className={cn(FACE, swapped ? [SHOWN, ease.arrive] : [HIDDEN, ease.leave])} data-swap-arrived={swapped ? "" : undefined}>
+        {to}
+      </span>
     </span>
   );
 }
