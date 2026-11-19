@@ -1099,6 +1099,8 @@ if (!DB_URL) {
     const model = "anthropic:claude-sonnet-5-5";
     const turnModel = getModel(model)!.providerModel;
     const behaviours: Array<"accept-then-reset" | "429" | "answer"> = [];
+    /** The messages this test sends; a request asking one of them is the turn's own. */
+    const TURN_MESSAGES = new Set(["Hello?", "Hello again?"]);
     /** The turn's own requests (its model); background utility calls are answered and not counted. */
     const hits: string[] = [];
     const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -1107,12 +1109,28 @@ if (!DB_URL) {
       req.on("data", (chunk) => (raw += chunk));
       req.on("end", () => {
         let requested: unknown = null;
+        let asked = "";
         try {
-          requested = (JSON.parse(raw) as { model?: unknown }).model;
+          const body = JSON.parse(raw) as { model?: unknown; messages?: Array<{ role?: string; content?: unknown }> };
+          requested = body.model;
+          // What the request asks: its last user message, as text.
+          const last = [...(body.messages ?? [])].reverse().find((m) => m.role === "user");
+          const content = last?.content;
+          asked = typeof content === "string"
+            ? content
+            : Array.isArray(content)
+              ? content.map((part) => (part && typeof part === "object" && "text" in part ? String((part as { text: unknown }).text) : "")).join("")
+              : "";
         } catch {
           // Not JSON: not the turn's request.
         }
-        const turnRequest = requested === turnModel;
+        // The turn's own request asks the person's message itself. A
+        // background call can share the model: the moderation classifier
+        // walks to the turn's model when its first pick's answer is not a
+        // verdict, and it asks "User message to classify: …". Counting by
+        // model alone counted that call as a second turn request whenever it
+        // landed before the assertion, which is timing, not a retry.
+        const turnRequest = requested === turnModel && TURN_MESSAGES.has(asked.trim());
         if (turnRequest) hits.push(`${req.method} ${req.url}`);
         const behaviour = turnRequest ? behaviours.shift() : "answer";
         if (behaviour === "429") {
