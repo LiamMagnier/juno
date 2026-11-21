@@ -9,11 +9,8 @@ import { ProjectsGridSkeleton } from "@/components/projects/projects-grid-skelet
  * same grid (see ProjectsGridSkeleton), so the route and the data arrive as
  * one continuous placeholder.
  *
- * The header placeholder is drawn to this page's measured header, so the grid
- * does not move when the page arrives: a one-line lede on a desktop and on a
- * phone (measured, 24px at 1280 and on an iPhone 13, 17 Nov 2026), and
- * "New project" as a default Button on the heading's line (44px
- * on a touch screen against a 30px heading), so the lede starts under it.
+ * The lede fits one line on desktop and takes two on a 390px phone. The
+ * shared header skeleton reserves the touch height of the New project button.
  */
 export default function ProjectsLoading() {
   return (
