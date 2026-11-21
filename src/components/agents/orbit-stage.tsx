@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { intentPrefetch } from "@/lib/intent-prefetch";
-import { ArrowUpRight, Cloud, Laptop, Monitor, MoreHorizontal, Pause, Pin, Play } from "@/components/ui/icons";
+import { ArrowUpRight, Cloud, Laptop, MoreHorizontal, Pause, Pin, Play } from "@/components/ui/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
@@ -14,6 +14,7 @@ import { AgentPresence } from "./agent-presence";
 import { formatAgo, localStateSentence } from "./agent-bits";
 import { announceAgentsChanged, updateAgent } from "./agents-transport";
 import { toast } from "sonner";
+import { OrbitAgentActions } from "./orbit-agent-actions";
 
 /* One card per agent. The face stays the same size when the roster is filtered,
    and computer access has its own link outside the thread's hit target. */
@@ -99,10 +100,10 @@ function CrewTile({ agent, size, asked, href, machine, onChanged }: { agent: Cli
         className="orbit-agent-card"
       >
         <span className="orbit-agent-card__stage">
-        <span className="orbit-crew__face">
-          <AgentPresence avatar={agent.avatar} state={drawnState(agent)} size={size} gaze />
-        </span>
-        <ArrowUpRight className="orbit-agent-card__open size-4" aria-hidden="true" />
+          <span className="orbit-crew__face">
+            <AgentPresence avatar={agent.avatar} state={drawnState(agent)} size={size} gaze />
+          </span>
+          <ArrowUpRight className="orbit-agent-card__open size-4" aria-hidden="true" />
         </span>
         <span className="mt-3 max-w-full truncate text-body-lg font-medium leading-6 tracking-[-0.025em] text-foreground">
           {agent.name}
@@ -127,7 +128,7 @@ function CrewTile({ agent, size, asked, href, machine, onChanged }: { agent: Cli
         )}
         <span className="orbit-crew__when flex w-full items-center gap-2 text-caption text-muted-foreground"><MachineIcon className="size-3.5 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{machine.name}</span>{last ? <span className="tabular-nums">{last}</span> : null}</span>
       </Link>
-      {agent.computer && agent.computer.status !== "disabled" ? <Link href={`${href}?agent=computer`} className="orbit-agent-computer"><Monitor className="size-3.5" aria-hidden="true" />{agent.computer.status === "awake" ? "View computer" : "Open computer"}<ArrowUpRight className="ml-auto size-3" aria-hidden="true" /></Link> : null}
+      <OrbitAgentActions agent={agent} href={href} onChanged={onChanged} />
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={`More for ${agent.name}`}
