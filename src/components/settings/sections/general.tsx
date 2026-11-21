@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { KeyboardGroup } from "@/components/settings/sections/preferences";
 import { useApp } from "@/components/app/app-provider";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
+import { DesignsDialog } from "@/components/settings/designs-dialog";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { useSaveStates } from "@/components/settings/save-status";
 import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
@@ -211,9 +212,12 @@ function VisualStyleGroup() {
 
   return (
     <SettingsGroup title="Visual style" description="Mode and accent follow your account everywhere you sign in.">
-        <SettingBlock label="Mode" status={saves.status("theme")}>
-          <ThemeCards value={settings.theme} onChange={setThemePref} />
-        </SettingBlock>
+        <SettingRow label="Designs" description="Choose, save or share a look." control={<DesignsDialog />} />
+        <SettingRow
+          label="Mode"
+          status={saves.status("theme")}
+          control={<SegmentedControl appearance="plain" ariaLabel="Mode" value={settings.theme} options={MODE_CARDS} onChange={setThemePref} />}
+        />
         <SettingRow
           label="Accent color"
           description="Buttons, switches and selection. Indigo, the Alevr blue, is the default."
@@ -305,29 +309,6 @@ const MODE_CARDS: { value: ClientSettings["theme"]; label: string }[] = [
   { value: "dark", label: "Dark" },
 ];
 
-/** A thumbnail of the app in one mode: a sidebar, two lines of reply and a composer. */
-function ModeThumb({ tone }: { tone: "light" | "dark" }) {
-  const dark = tone === "dark";
-  return (
-    <span className={cn("flex h-full w-full", dark ? "bg-[#1b1b1d]" : "bg-[#fcfcfc]")}>
-      <span className={cn("flex w-[30%] flex-col gap-1 p-1.5", dark ? "bg-[#232326]" : "bg-[#f1f1f2]")}>
-        <span className={cn("h-1 w-3/4 rounded-full", dark ? "bg-white/25" : "bg-black/20")} />
-        <span className={cn("h-1 w-1/2 rounded-full", dark ? "bg-white/15" : "bg-black/10")} />
-        <span className={cn("h-1 w-2/3 rounded-full", dark ? "bg-white/15" : "bg-black/10")} />
-      </span>
-      <span className="flex flex-1 flex-col justify-between p-2">
-        <span className="flex flex-col gap-1">
-          <span className={cn("h-1 w-4/5 rounded-full", dark ? "bg-white/30" : "bg-black/25")} />
-          <span className={cn("h-1 w-3/5 rounded-full", dark ? "bg-white/20" : "bg-black/15")} />
-        </span>
-        <span className={cn("flex h-2.5 items-center justify-end rounded-micro border px-0.5", dark ? "border-white/15 bg-white/5" : "border-black/10 bg-white")}>
-          <span className="size-1.5 rounded-full bg-primary" />
-        </span>
-      </span>
-    </span>
-  );
-}
-
 /**
  * A visual choice: a thumbnail per option with its name under it, one radio
  * group with the roving tab stop. Mode, chat font and transcript width are all
@@ -386,30 +367,6 @@ function ChoiceCards<T extends string>({
         );
       })}
     </div>
-  );
-}
-
-function ThemeCards({ value, onChange }: { value: ClientSettings["theme"]; onChange: (v: ClientSettings["theme"]) => void }) {
-  return (
-    <ChoiceCards
-      label="Mode"
-      value={value}
-      onChange={onChange}
-      className="max-w-md grid-cols-3"
-      options={MODE_CARDS.map((mode) => ({
-        value: mode.value,
-        label: mode.label,
-        thumb:
-          mode.value === "system" ? (
-            <span className="absolute inset-0 flex">
-              <span className="relative w-1/2 overflow-hidden"><span className="absolute inset-0 w-[200%]"><ModeThumb tone="light" /></span></span>
-              <span className="relative w-1/2 overflow-hidden"><span className="absolute inset-0 -left-full w-[200%]"><ModeThumb tone="dark" /></span></span>
-            </span>
-          ) : (
-            <ModeThumb tone={mode.value} />
-          ),
-      }))}
-    />
   );
 }
 
@@ -511,7 +468,7 @@ function ReadingGroup() {
         description={MOTION_DESCRIPTION[motion]}
         wide
         control={
-          <SegmentedControl ariaLabel="Motion" value={motion} onChange={setMotion} options={MOTION_OPTIONS} className="w-full @[34rem]/pane:w-auto" />
+          <SegmentedControl appearance="plain" ariaLabel="Motion" value={motion} onChange={setMotion} options={MOTION_OPTIONS} className="w-full @[34rem]/pane:w-auto" />
         }
       />
     </SettingsGroup>

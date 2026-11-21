@@ -1,7 +1,11 @@
 /* Shared spacing and edges for the web workspace and public pages. */
 :root {
   --workspace-gap: 1rem;
+  --radius-composer: 30px;
 }
+
+:root[data-composer-shape="compact"] { --radius-composer: 24px; }
+:root[data-composer-shape="soft"] { --radius-composer: 36px; }
 
 @media (min-width: 768px) {
   .juno-content-panel {

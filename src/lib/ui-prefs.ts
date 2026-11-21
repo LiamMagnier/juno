@@ -20,6 +20,7 @@ import {
 } from "@/lib/voice-relay-protocol";
 
 export type ChatFont = "default" | "system" | "serif" | "mono";
+export type ComposerShape = "compact" | "standard" | "soft";
 export type TranscriptWidth = "narrow" | "medium" | "wide";
 /** System follows the OS; Reduced and Full override it either way (lib/motion-preference.ts). */
 export type MotionPref = MotionPreference;
@@ -29,6 +30,7 @@ export type { TouchReturn };
 
 export interface UiPrefs {
   chatFont: ChatFont;
+  composerShape: ComposerShape;
   transcriptWidth: TranscriptWidth;
   motion: MotionPref;
   sendKey: SendKey;
@@ -52,6 +54,7 @@ export interface UiPrefs {
 
 export const UI_PREF_DEFAULTS: UiPrefs = {
   chatFont: "default",
+  composerShape: "standard",
   transcriptWidth: "medium",
   motion: "system",
   sendKey: "enter",
@@ -68,6 +71,7 @@ export const UI_PREF_DEFAULTS: UiPrefs = {
 /** Preferences mirrored onto <html> (attribute name → pref key). */
 const HTML_ATTRS = {
   "data-chat-font": "chatFont",
+  "data-composer-shape": "composerShape",
   "data-transcript-width": "transcriptWidth",
   "data-motion": "motion",
   "data-code-wrap": "codeWrap",
@@ -84,6 +88,7 @@ function sanitize(raw: unknown): UiPrefs {
     if (allowed.includes(r[key] as UiPrefs[K])) out[key] = r[key] as UiPrefs[K];
   };
   pick("chatFont", ["default", "system", "serif", "mono"]);
+  pick("composerShape", ["compact", "standard", "soft"]);
   pick("transcriptWidth", ["narrow", "medium", "wide"]);
   pick("motion", ["system", "reduced", "full"]);
   pick("sendKey", ["enter", "mod-enter"]);
@@ -120,7 +125,11 @@ function applyToDocument(prefs: UiPrefs) {
 }
 
 export function writeUiPref<K extends keyof UiPrefs>(key: K, value: UiPrefs[K]) {
-  const next = { ...readUiPrefs(), [key]: value };
+  writeUiPrefs({ [key]: value });
+}
+
+export function writeUiPrefs(patch: Partial<UiPrefs>) {
+  const next = sanitize({ ...readUiPrefs(), ...patch });
   cache = next;
   try {
     window.localStorage.setItem(KEY, JSON.stringify(next));
