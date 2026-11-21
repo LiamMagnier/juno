@@ -525,7 +525,8 @@ export async function runSourceSync(input: SourceSyncInput): Promise<SourceSyncR
     return fail(error);
   }
 
-  const plan = planSourceSync(await port.items(), remote);
+  const existing = await port.items();
+  const plan = planSourceSync(existing, remote);
   let added = 0;
   let updated = 0;
   let removed = 0;
@@ -564,7 +565,18 @@ export async function runSourceSync(input: SourceSyncInput): Promise<SourceSyncR
   };
 
   for (const { item, file } of plan.update) await importOne(file, item);
-  for (const file of plan.add) await importOne(file, null);
+  const maxFiles = input.limits?.maxFiles ?? SOURCE_LIMITS.maxFiles;
+  let occupied = existing.length - removed;
+  for (const file of plan.add) {
+    if (stop) break;
+    // An incomplete walk retains unseen items, which still occupy slots.
+    if (occupied >= maxFiles) {
+      truncated = true;
+      break;
+    }
+    await importOne(file, null);
+    occupied += 1;
+  }
 
   const items = await port.items();
   const fileCount = items.filter((item) => item.state === "synced").length;

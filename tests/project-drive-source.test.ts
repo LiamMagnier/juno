@@ -432,3 +432,15 @@ test("Drive can flag a listing incomplete even when there is no next page", asyn
   const listing = await listDriveFolderTree(client, "root-folder", { includeSubfolders: true });
   assert.equal(listing.truncated, true);
 });
+
+test("a changing truncated folder stays within the per-source file ceiling", async () => {
+  const drive = fakeDrive(sampleTree());
+  const store = memoryPort(drive.client);
+  const input = { client: drive.client, source: folderSource, port: store.port, limits: { ...SOURCE_LIMITS, maxFiles: 1 } };
+  const first = await runSourceSync(input);
+  assert.deepEqual([first.fileCount, first.truncated], [1, true]);
+  drive.tree.set("new", { id: "new", name: "A.txt", mimeType: "text/plain", parent: "root-folder", version: 1, body: "New" });
+  const second = await runSourceSync(input);
+  assert.deepEqual([second.fileCount, second.added, second.truncated], [1, 0, true]);
+  assert.ok(store.items.has("brief"));
+});
