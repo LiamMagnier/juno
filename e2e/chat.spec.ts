@@ -121,6 +121,16 @@ test.describe("Chat workspace", () => {
     await expect(page.locator(".prose-juno").last()).toContainText(SUCCESS_TOKEN, { timeout: 30_000 });
     await expect(providerErrorSurface(page)).toHaveCount(0);
 
+    await page.goto("/chat");
+    await expect(composer(page)).toBeVisible();
+    // Simulate a browser that drops the animation callback. Opening a chat
+    // still goes through the normal link and commits a different route.
+    await page.evaluate(() => {
+      Object.defineProperty(document, "startViewTransition", {
+        configurable: true,
+        value: () => ({ finished: Promise.resolve() }),
+      });
+    });
     const sidebarToggle = page.getByRole("button", { name: "Open menu", exact: true });
     if (await sidebarToggle.isVisible()) await sidebarToggle.click();
     const sidebarLink = page.locator(`a[href="/chat/${conversationId}"]:visible`).first();
@@ -151,6 +161,68 @@ test.describe("Chat workspace", () => {
     } finally {
       await copiedTab.close();
     }
+  });
+
+  test("ending voice restores the composer while the transcript saves", async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "uses a synthetic Chromium microphone");
+    await page.evaluate(() => {
+      navigator.mediaDevices.getUserMedia = async () => {
+        const audio = new AudioContext();
+        const stream = audio.createMediaStreamDestination().stream;
+        const [track] = stream.getAudioTracks();
+        const stop = track.stop.bind(track);
+        track.stop = () => {
+          stop();
+          void audio.close();
+        };
+        return stream;
+      };
+    });
+    await page.route("**/api/voice/relay-token*", (route) => route.fulfill({
+      json: { token: "fixture", url: new URL("/qa-voice-relay", page.url()).href },
+    }));
+    const transcript = "A fixture line from the voice relay.";
+    await page.routeWebSocket(/\/qa-voice-relay\/\?token=fixture$/, (socket) => {
+      socket.onMessage((message) => {
+        if (typeof message !== "string" || JSON.parse(message).type !== "session.start") return;
+        socket.send(JSON.stringify({
+          type: "session.ready", provider: "gemini", thinking: false,
+          capabilities: { videoInput: false, trueS2S: true, needsClientTranscript: false, thinkingChoice: false, maxSessionSec: 600 },
+        }));
+        socket.send(JSON.stringify({ type: "transcript", role: "assistant", text: transcript, final: true }));
+      });
+    });
+    let releaseSave = () => {};
+    const saveResponse = new Promise<void>((resolve) => { releaseSave = resolve; });
+    await page.route("**/api/voice/transcript", async (route) => {
+      await saveResponse;
+      await route.fulfill({ json: { conversationId: "voice-save-fixture", messages: [] } });
+    });
+    await page.getByRole("button", { name: "Start voice conversation" }).click();
+    await expect(page.locator("main")).toContainText(transcript);
+    const end = page.getByRole("button", { name: "End the call" });
+    await expect(end).toBeVisible();
+    await end.evaluate((button) => {
+      const frame = button.closest(".voice-call-frame");
+      if (!frame) throw new Error("Voice composer frame is missing");
+      Object.defineProperty(frame, "startViewTransition", {
+        configurable: true,
+        value: () => ({ ready: Promise.resolve() }),
+      });
+    });
+
+    try {
+      const pending = page.waitForRequest("**/api/voice/transcript");
+      await end.click();
+      const save = await pending;
+      expect(save.postDataJSON()).toMatchObject({ turns: [{ role: "ASSISTANT", content: transcript }] });
+      await expect(end).toHaveCount(0);
+      await expect(composer(page)).toBeEditable();
+      await expect(page.getByText(/saving (your chat|voice transcript)/i)).toHaveCount(0);
+    } finally {
+      releaseSave();
+    }
+    await expect(page).toHaveURL(/\/chat\/voice-save-fixture$/);
   });
 
   test("saved chat context usage survives a reload", async ({ page }, testInfo) => {

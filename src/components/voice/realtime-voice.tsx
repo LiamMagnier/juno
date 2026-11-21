@@ -335,47 +335,17 @@ export function VoiceCallControls({
   );
 }
 
-type ScopedTransitionHost = HTMLElement & {
-  startViewTransition?: (update: () => void) => { ready: Promise<void> };
-};
-
-/**
- * End, in the composer's primary slot: the same size and place as Send, so
- * the hand already knows where it is, the only coloured control in a call,
- * and in the destructive role. It stays in that slot while a draft is typed:
- * Send appears beside it, never in its place (voice audit D6).
- *
- * LEAVING. The press hands the call back to the composer through an
- * element-scoped view transition on the call's frame, so the call row
- * cross-fades into the composer's own row on the exit rung, and only the
- * composer is touched: the thread stays live and clickable. Where scoped
- * transitions are missing the swap is immediate. Focus, which was on End,
- * goes to the field for a keyboard user (the draft is exactly as it was).
- *
- * `ended`: the call has already ended or failed, and the same button now
- * leaves voice mode. It keeps its face and place, and stops claiming to end a
- * call that is no longer there.
- */
+/** End or dismiss the call in the composer's primary slot. */
 export function VoiceCallEnd({ onClose, ended = false }: { onClose: () => void; ended?: boolean }) {
   const ref = React.useRef<HTMLButtonElement>(null);
   const close = () => {
-    const frame = (ref.current?.closest(".voice-call-frame") ?? null) as ScopedTransitionHost | null;
+    const frame = ref.current?.closest(".voice-call-frame");
     const keyboard = inputModality() === "keyboard";
-    const field = frame?.querySelector<HTMLElement>('[contenteditable="true"], textarea') ?? null;
-    const update = () => {
-      flushSync(onClose);
-      const active = document.activeElement;
-      if (keyboard && field?.isConnected && (!active || active === document.body)) field.focus({ preventScroll: true });
-    };
-    if (frame?.startViewTransition) {
-      try {
-        frame.startViewTransition(update).ready.catch(() => {});
-        return;
-      } catch {
-        /* no transition: switch at once */
-      }
-    }
-    update();
+    const field = frame?.querySelector<HTMLElement>('[contenteditable="true"], textarea');
+    // End audio and leave the call before any visual feedback runs.
+    flushSync(onClose);
+    const active = document.activeElement;
+    if (keyboard && field?.isConnected && (!active || active === document.body)) field.focus({ preventScroll: true });
   };
   return (
     <span className="voice-call-end inline-flex">
