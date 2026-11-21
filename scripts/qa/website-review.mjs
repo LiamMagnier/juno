@@ -7,7 +7,7 @@ import { expect } from '@playwright/test';
 const base = new URL(process.argv[2] || 'http://127.0.0.1:3000');
 assert(['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname), 'Use a local development server.');
 const output = path.resolve(process.argv[3] || 'test-results/website-review');
-const pages = ['projects', 'project', 'library', 'artifacts', 'connections', 'agents', 'automations', 'skills', 'instructions', 'memory', 'compare', 'code', 'settings', 'notifications', 'search'];
+const pages = ['projects', 'project', 'activity', 'library', 'artifacts', 'connections', 'agents', 'automations', 'skills', 'instructions', 'memory', 'compare', 'code', 'settings', 'notifications', 'search'];
 const browser = await chromium.launch({ executablePath: process.env.ORBIT_CHROMIUM || undefined, headless: true, args: ['--disable-features=BackForwardCache'] });
 const failures = [], captures = [], checks = [];
 const capture = async (page, file) => {
@@ -30,7 +30,7 @@ try {
         page.on('pageerror', error => failures.push(`${mode}/${route}: ${error.message}`));
       }
       await page.goto(new URL(route === 'project' ? '/dev/pages/project/p-atlas' : `/dev/pages?page=${route}`, base).href, { waitUntil: 'domcontentloaded', timeout: 120_000 });
-      await page.locator('#juno-main').waitFor({ state: 'attached' });
+      await page.locator('[data-page-root] #juno-main').waitFor({ state: 'attached' });
       await page.evaluate(() => document.fonts.ready);
       if (route === 'notifications' || route === 'search') await page.waitForTimeout(900);
       else await page.waitForTimeout(450);
@@ -81,7 +81,7 @@ try {
       await page.close();
       page = await context.newPage();
       await page.goto(new URL(`/dev/pages?page=${route}&state=${state}`, base).href, { waitUntil: 'domcontentloaded', timeout: 120_000 });
-      await page.locator('#juno-main').waitFor({ state: 'attached' });
+      await page.locator('[data-page-root] #juno-main').waitFor({ state: 'attached' });
       await page.waitForTimeout(550);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${route}/${state} overflows`);
       await capture(page, `states/${route}-${state}.png`);

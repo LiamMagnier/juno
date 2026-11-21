@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { expect } from '@playwright/test';
+import { expect as playwrightExpect } from '@playwright/test';
+
+const expect = playwrightExpect.configure({ timeout: 30_000 });
 
 const base = new URL(process.argv[2] || 'http://127.0.0.1:3000');
 if (!['localhost', '127.0.0.1', '[::1]'].includes(base.hostname)) throw new Error('Use a local development server.');
@@ -22,7 +24,10 @@ try {
     await page.goto(new URL(`/dev/agents?view=gallery&${query}`, base).href, { waitUntil: 'domcontentloaded', timeout: 120_000 });
     await page.locator('.orbit-workspace, [role="dialog"]').first().waitFor();
     await page.locator('[data-orbit-fixture-ready="true"]').waitFor({ state: 'attached' });
-    await page.evaluate(() => document.fonts.ready);
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
   };
   const cards = page.locator('.orbit-crew__agent');
   await visit('g=workspace');
@@ -110,4 +115,7 @@ try {
   assert.deepEqual(errors, [], 'no browser runtime errors');
   console.log('Orbit workspace: search, filters, drafts, keyboard, responsive themes, reduced motion, computer startup, failure, and access checks passed.');
   console.log(`Screenshots: ${output}`);
+} catch (error) {
+  if (errors.length) console.error('Browser errors:', errors);
+  throw error;
 } finally { await browser.close(); }

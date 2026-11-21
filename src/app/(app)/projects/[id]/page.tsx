@@ -308,7 +308,8 @@ export default function ProjectDetailPage() {
         setDrive({ enabled: false, configured: false, connected: false, accountLabel: null });
         return;
       }
-      const body = (await r.json()) as ProjectSourcesResponse;
+      const body = (await r.json()) as ProjectSourcesResponse | null;
+      if (!body || !Array.isArray(body.sources) || !body.drive) return;
       setSources(body.sources);
       setDrive(body.drive);
     } catch {
