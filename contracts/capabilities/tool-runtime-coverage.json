@@ -134,7 +134,7 @@
       }
     },
     {
-      "id": "openai:gpt-6-astra",
+      "id": "openai:gpt-6.2-astra",
       "provider": "openai",
       "adapter": "openai-responses",
       "vision": true,
@@ -159,7 +159,7 @@
       }
     },
     {
-      "id": "openai:gpt-6.1-sol",
+      "id": "openai:gpt-6.2-sol",
       "provider": "openai",
       "adapter": "openai-responses",
       "vision": true,
@@ -262,6 +262,31 @@
       "id": "openai:gpt-5.4-mini",
       "provider": "openai",
       "adapter": "openai-responses",
+      "vision": true,
+      "catalogAgenticTools": true,
+      "compatible": false,
+      "verdicts": {
+        "roundTrip": {
+          "verdict": "untested"
+        },
+        "parallel": {
+          "verdict": "untested"
+        },
+        "toolImages": {
+          "verdict": "untested"
+        },
+        "runCodeE2E": {
+          "verdict": "untested"
+        },
+        "skillE2E": {
+          "verdict": "untested"
+        }
+      }
+    },
+    {
+      "id": "google:gemini-4-neon",
+      "provider": "google",
+      "adapter": "gemini-native",
       "vision": true,
       "catalogAgenticTools": true,
       "compatible": false,
@@ -1321,7 +1346,7 @@
       }
     },
     {
-      "id": "qwen:qwen3.8-max",
+      "id": "qwen:qwen4-max",
       "provider": "qwen",
       "adapter": "openai-compatible",
       "vision": true,

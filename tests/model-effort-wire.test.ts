@@ -363,6 +363,8 @@ const SNAPSHOTS: Array<[string, ReasoningEffort | null, Raw]> = [
   ["moonshot:kimi-k3.1-pro", "max", { reasoning_effort: "max" }],
   ["moonshot:kimi-k3.1-pro-highspeed", "low", { reasoning_effort: "low" }],
   ["moonshot:kimi-k2.6", null, { thinking: { type: "disabled" } }],
+  ["qwen:qwen4-max", "high", { reasoning_effort: "high", enable_thinking: true }],
+  ["qwen:qwen4-max", null, { enable_thinking: false }],
   ["qwen:qwen3.8-max", "xhigh", { reasoning_effort: "xhigh", enable_thinking: true }],
   ["qwen:qwen3.8-max", null, { enable_thinking: false }],
   ["qwen:qwen3.7-plus", "medium", { enable_thinking: true, thinking_budget: 8192 }],

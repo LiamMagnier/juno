@@ -45,7 +45,7 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 ## Models
 
 <!-- coverage:models:start -->
-60 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
+61 current chat models; 0 compatible. Every other cell is untested until a live probe or acceptance run records evidence.
 
 | Model | Adapter | roundTrip | parallel | toolImages | runCodeE2E | skillE2E | Compatible |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -53,12 +53,13 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 | `anthropic:claude-opus-5-5` | anthropic-native | untested | untested | untested | untested | untested | no |
 | `anthropic:claude-sonnet-5-5` | anthropic-native | untested | untested | untested | untested | untested | no |
 | `anthropic:claude-haiku-5-5` | anthropic-native | untested | untested | untested | untested | untested | no |
-| `openai:gpt-6-astra` | openai-responses | untested | untested | untested | untested | untested | no |
-| `openai:gpt-6.1-sol` | openai-responses | untested | untested | untested | untested | untested | no |
+| `openai:gpt-6.2-astra` | openai-responses | untested | untested | untested | untested | untested | no |
+| `openai:gpt-6.2-sol` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-6-luna` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-6.1-terra` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-5.5-pro` | openai-responses | untested | untested | untested | untested | untested | no |
 | `openai:gpt-5.4-mini` | openai-responses | untested | untested | untested | untested | untested | no |
+| `google:gemini-4-neon` | gemini-native | untested | untested | untested | untested | untested | no |
 | `google:gemini-4-hydrogen` | gemini-native | untested | untested | untested | untested | untested | no |
 | `google:gemini-4-carbon` | gemini-native | untested | untested | untested | untested | untested | no |
 | `google:gemini-4-argon` | gemini-native | untested | untested | untested | untested | untested | no |
@@ -100,7 +101,7 @@ JSON as `catalogAgenticTools` for context, and never counts as evidence. The cap
 | `mimo:mimo-v2.6-pro` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mimo:mimo-v2.6-pro-ultraspeed` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `mimo:mimo-v2.6-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
-| `qwen:qwen3.8-max` | openai-compatible | untested | untested | untested | untested | untested | no |
+| `qwen:qwen4-max` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.7-plus` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.8-omni-flash` | openai-compatible | untested | untested | untested | untested | untested | no |
 | `qwen:qwen3.8-27b` | openai-compatible | untested | untested | untested | untested | untested | no |

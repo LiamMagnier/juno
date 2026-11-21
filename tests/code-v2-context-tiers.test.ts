@@ -157,7 +157,7 @@ test("Code catalogue: agentic chat models only, curated order first", () => {
 test("Code provider models carry tiers, efforts and one default", () => {
   const models = codeProviderModels();
   assert.equal(models.filter((m) => m.isDefault).length, 1);
-  const sol = models.find((m) => m.id === "openai:gpt-6.1-sol")!;
+  const sol = models.find((m) => m.id === "openai:gpt-6.2-sol")!;
   assert.equal(sol.contextTiers?.length, 2);
   assert.ok(sol.effortLevels?.includes("medium"));
   const anthropicOnly = codeProviderModels(MODEL_LIST, { provider: "anthropic" });
@@ -167,7 +167,7 @@ test("Code provider models carry tiers, efforts and one default", () => {
 
 test("the native manifest ships tiers and the Code flags", () => {
   const manifest = nativeModelCatalog([...MODEL_LIST, ...GEN_MODELS]);
-  const sol = manifest.models.find((m) => m.id === "openai:gpt-6.1-sol")!;
+  const sol = manifest.models.find((m) => m.id === "openai:gpt-6.2-sol")!;
   assert.deepEqual(sol.contextTiers?.map((t) => t.tokens), [272_000, 1_050_000]);
   assert.deepEqual(sol.code, { agentic: true, rank: 1 });
   const image = manifest.models.find((m) => m.modality === "image");
