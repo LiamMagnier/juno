@@ -24,6 +24,8 @@ test("Settings applies a preset and shares a saved design code", async ({ page }
   await designs.getByRole("button", { name: "Apply Blue reading room" }).click();
   await expect(designs.getByRole("status")).toHaveText("Applied Blue reading room.");
   await expect(page.locator("html")).toHaveAttribute("data-accent", "#2750bd");
+  await page.goto("/chat");
+  await expect(page.locator(".composer-surface:visible").first()).toHaveCSS("border-top-left-radius", "36px");
 });
 
 test("Orbit offers appearance and requires confirmation to remove an agent", async ({ page }) => {

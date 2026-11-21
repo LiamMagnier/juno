@@ -242,7 +242,7 @@ const config: Config = {
         // row's 36px discs (+, send) sit 10px in, so 18 + 10 = 28 is the
         // radius that nests them concentrically; at 24 the corner pinched
         // the send disc.
-        composer: "var(--radius-composer, 30px)",
+        composer: "28px",
         // Marketing stages only: the painted plates and product shots on the
         // front door (landing, download, auth art). Never inside the product.
         stage: "28px",

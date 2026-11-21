@@ -333,7 +333,7 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 @media (max-width: 640px) { .cv2-plan { margin: 0 6px -10px; } .cv2-plan-head { min-height: 44px; } }
 .cv2-cwrap { position: relative; padding: 0 32px 18px; }
 .cv2-cstack { display: flex; flex-direction: column; }
-.cv2-composer { position: relative; z-index: 2; background: hsl(var(--card)); border: 1px solid var(--cv2-edge); --cv2-composer-inset: .625rem; border-radius: theme("borderRadius.composer"); padding: .75rem var(--cv2-composer-inset) var(--cv2-composer-inset); transition: border-color var(--dur-fast, 120ms) var(--cv2-ease); }
+.cv2-composer { position: relative; z-index: 2; background: hsl(var(--card)); border: 1px solid var(--cv2-edge); --cv2-composer-inset: .625rem; border-radius: var(--web-composer-radius, 30px); padding: .75rem var(--cv2-composer-inset) var(--cv2-composer-inset); transition: border-color var(--dur-fast, 120ms) var(--cv2-ease); }
 .dark .cv2-composer { box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04); }
 .cv2-composer:focus-within { border-color: var(--cv2-edge-focus); }
 .cv2-composer.needs, .cv2-composer.needs:focus-within { border-color: hsl(var(--signal)); }
@@ -355,7 +355,7 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-send { position: relative; width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); margin-left: 2px; transition: opacity var(--dur-fast, 120ms) var(--cv2-ease), transform var(--dur-press, 90ms) var(--cv2-ease); }
 .cv2-send:active { transform: scale(0.94); }
 .cv2-send:disabled { opacity: 0.4; }
-.cv2-composer .cv2-send { border-radius: calc(theme("borderRadius.composer") - var(--cv2-composer-inset)); }
+.cv2-composer .cv2-send { border-radius: calc(var(--web-composer-radius, 30px) - var(--cv2-composer-inset)); }
 .cv2-send .glyph, .cv2-send .stop { transition: opacity 120ms var(--cv2-ease), transform 120ms var(--cv2-ease); }
 .cv2-send .stop { position: absolute; width: 10px; height: 10px; border-radius: 2.5px; background: currentColor; opacity: 0; transform: scale(0.6); }
 .cv2-send[data-mode="stop"] { background: hsl(var(--foreground)); color: hsl(var(--background)); }

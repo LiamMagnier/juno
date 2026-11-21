@@ -1,11 +1,13 @@
 /* Shared spacing and edges for the web workspace and public pages. */
 :root {
   --workspace-gap: 1rem;
-  --radius-composer: 30px;
+  --web-composer-radius: 30px;
 }
 
-:root[data-composer-shape="compact"] { --radius-composer: 24px; }
-:root[data-composer-shape="soft"] { --radius-composer: 36px; }
+:root[data-composer-shape="compact"] { --web-composer-radius: 24px; }
+:root[data-composer-shape="soft"] { --web-composer-radius: 36px; }
+
+.composer-surface { border-radius: var(--web-composer-radius, 30px); }
 
 @media (min-width: 768px) {
   .juno-content-panel {

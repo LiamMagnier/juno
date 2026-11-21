@@ -157,7 +157,7 @@ test("the settings loading page mirrors the settings window: left column, then t
   assert.ok(/aria-label="Close settings"/.test(page), "the real window has a close control");
   assert.ok(/fixed inset-0 z-modal/.test(page) && /fixed inset-0 z-modal/.test(loading), "both cover the window");
   assert.ok(/settings-scrim/.test(page) && /settings-scrim/.test(loading), "both dim the app behind");
-  const frame = "md:h-[min(48rem,calc(100dvh-2rem))] md:w-[min(62rem,calc(100vw-2rem))] md:flex-row md:rounded-composer";
+  const frame = "md:h-[min(48rem,calc(100dvh-2rem))] md:w-[min(62rem,calc(100vw-2rem))] md:flex-row md:rounded-panel";
   assert.ok(page.includes(frame) && loading.includes(frame), "both draw the same window");
   assert.ok(/md:w-\[15\.5rem\]/.test(page) && /md:w-\[15\.5rem\]/.test(loading), "both draw the 15.5rem left column");
   assert.ok(/max-w-\[42rem\]/.test(page) && /max-w-\[42rem\]/.test(loading), "both centre the pane at 42rem");
