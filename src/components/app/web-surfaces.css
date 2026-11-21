@@ -9,6 +9,16 @@
 
 .composer-surface { border-radius: var(--web-composer-radius, 30px); }
 
+/* Web menus respond on the fast rung. The native editor shares the menu
+   recipe and keeps its own transition settings. */
+.nest-menu:is([data-state="open"], [data-state="closed"]) {
+  --pop-shift: 2px;
+  animation-duration: var(--dur-fast);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nest-menu[data-state="open"] { --motion-scale-from: .99; }
+}
+
 @media (min-width: 768px) {
   .juno-content-panel {
     --frame-inset: .5rem;
