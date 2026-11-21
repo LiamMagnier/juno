@@ -8,7 +8,7 @@ import { ArrowDown } from "@/components/ui/icons";
 import { MessageItem } from "@/components/chat/message-item";
 import { TranscriptRail } from "@/components/chat/transcript-rail";
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
-import { useTranscriptWindow, VIRTUALIZE_AFTER } from "@/hooks/use-transcript-window";
+import { TRANSCRIPT_CONTENT_TOP, useTranscriptWindow, VIRTUALIZE_AFTER } from "@/hooks/use-transcript-window";
 import { useLatestHandler } from "@/hooks/use-latest-handler";
 import { shouldLoadOlder } from "@/lib/chat/history-client";
 import { countTranscriptRender, firstArrivalAfterHeld, placeInlineRuns } from "@/lib/chat/transcript-window";
@@ -378,8 +378,9 @@ export function MessageList(props: MessageListProps) {
         // as every other surface in the product (`.page-gutter`, globals.css):
         // bubbles' outer edges and the composer's edges are one line.
         // The answer bed measures from this same box to pin the newest turn.
+        style={{ paddingTop: TRANSCRIPT_CONTENT_TOP }}
         className={cn(
-          "page-gutter mx-auto w-full transcript-column pb-2 pt-2",
+          "page-gutter mx-auto w-full transcript-column pb-2",
           !entered && "motion-safe:animate-rise-in",
         )}
       >

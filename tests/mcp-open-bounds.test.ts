@@ -23,7 +23,7 @@ import { after, beforeEach, test } from "node:test";
 
 const audits: Array<{ status: string; error?: string }> = [];
 /** What the stubbed broker answers next; reset to an allowance before every test. */
-let authorization: Record<string, unknown> = { kind: "authorized", receiptId: "receipt" };
+let authorization: Record<string, unknown> | Error = { kind: "authorized", receiptId: "receipt" };
 const logged: Array<{ event: string; fields: Record<string, unknown> }> = [];
 const mod = Module as unknown as { _load: (request: string, parent: unknown, isMain: boolean) => unknown };
 const origLoad = mod._load;
@@ -37,7 +37,10 @@ mod._load = function (request: string, parent: unknown, isMain: boolean) {
   }
   if (request === "@/lib/action-approval-store") {
     return {
-      authorizeExternalAction: async () => authorization,
+      authorizeExternalAction: async () => {
+        if (authorization instanceof Error) throw authorization;
+        return authorization;
+      },
       completeExternalAction: async () => undefined,
     };
   }
@@ -415,4 +418,18 @@ test("the chat path asks for the bounded, cached open, and a dropped connector b
   assert.match(runTurn, /sendActivity\(connectorUnavailableRow\(\{ label, reason: state \}\)\);/);
   const mcp = read("src/lib/mcp.ts");
   assert.equal((mcp.match(/toolListVersion: toolListVersionOf\(/g) ?? []).length, 5, "every connector getActiveConnectors returns carries its version");
+});
+
+test("a thrown connector broker settles the attempt as failed without storing its error", async () => {
+  const server = await mcpServer("ok");
+  const toolset = await openMcpToolset([connector("alpha", server)], ctx);
+  const failure = new Error("internal approval-store diagnostic");
+  authorization = failure;
+  try {
+    await assert.rejects(toolset.execute("alpha__search", {}, undefined, "call-1"), (error) => error === failure);
+    assert.deepEqual(audits, [{ status: "failed", error: "Authorization did not complete, so nothing ran." }]);
+    assert.equal(server.counts["tools/call"] ?? 0, 0);
+  } finally {
+    await toolset.close();
+  }
 });

@@ -21,12 +21,12 @@ import "@/components/chat/incognito.css";
  * with a close button), so the thing you pressed is the thing that answers,
  * and pressing it again is how you leave.
  *
- *   Off: a quiet 36px circle, the same rung as Share beside it, the mark in
+ *   Off: a 36px control, the same rung as Share beside it, the mark in
  *   outline at full ink.
- *   On: a solid ink pill that names the mode, the mark in its filled cut. The
- *   mark keeps its place at the pill's right end, so it plays its gesture
- *   where the eye already is, and the word grows in to its left. The pill
- *   takes the circle's place in one frame (width never tweens, D27); its
+ *   On: a tinted control that names the mode, the mark in its filled cut. The
+ *   mark keeps its place at the control's end, so it plays its gesture
+ *   where the eye already is, and the word grows in to its left. The label
+ *   joins the glyph in one frame (width never tweens, D27); its
  *   fill, ink and word cross-fade in.
  *
  * The mark plays one gesture per change (incognito.css): on, the hat settles
@@ -66,12 +66,12 @@ export function PrivateChatToggle({
           disabled={disabled}
           onClick={onToggle}
           className={cn(
-            "hit-44 relative inline-flex h-9 items-center justify-center gap-2 rounded-full text-ui font-medium outline-none",
+            "hit-44 relative inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-control text-ui font-medium outline-none",
             "transition-[background-color,color,transform] duration-base ease-out-soft active:scale-[0.97] active:duration-press",
             "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             "disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-colors motion-reduce:active:scale-100",
             active
-              ? "bg-foreground pl-3.5 pr-2.5 text-background hover:bg-foreground/90"
+              ? "bg-foreground/10 ps-3 pe-[9px] text-foreground ring-1 ring-inset ring-foreground/10 hover:bg-foreground/15"
               : "w-9 text-foreground hover:bg-accent"
           )}
         >
@@ -83,7 +83,7 @@ export function PrivateChatToggle({
           <IncognitoGlyph on={active} size={18} gesture={gesture} />
         </button>
       </TooltipTrigger>
-      <TooltipContent>{active ? "Leave incognito" : "Incognito chat"}</TooltipContent>
+      <TooltipContent side="bottom" align="end">{active ? "Leave incognito" : "Incognito chat"}</TooltipContent>
     </Tooltip>
   );
 }

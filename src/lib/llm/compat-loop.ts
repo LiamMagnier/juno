@@ -30,18 +30,18 @@
  * never sent; Grok searches on Responses (`responses-loop.ts`).
  */
 
+import { callIdIssuer } from "@/lib/llm/tool-round";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { structuredOutputNote } from "@/lib/llm/compat-loop.prompt";
 import {
   outputTextFor,
-  stampCallId,
   toolSourceFor,
   turnSignal,
   type ToolSource,
 } from "@/lib/llm/openai-shared";
 import type { AdapterRequest, ProviderTransport } from "@/lib/llm/types";
 import type { McpFunctionTool, McpToolset } from "@/lib/mcp";
-import { reasoningCaps } from "@/lib/model-metrics";
+import { qwenUsesReasoningEffort, reasoningCaps } from "@/lib/model-metrics";
 import { providerRequestModel } from "@/lib/model-request";
 import { toolCapabilitiesFor, type ModelToolCapabilities } from "@/lib/model-tools";
 import type { ModelInfo } from "@/lib/models";
@@ -179,7 +179,7 @@ export function compatReasoningFields(model: ModelInfo, effort: ReasoningEffort 
     out.enable_thinking = alwaysThinks ? true : !!qwenEffort;
     // The 3.8 line takes reasoning_effort low|medium|xhigh, and a
     // thinking_budget alongside it is an error; older lines take the budget.
-    if (qwenEffort && id.includes("qwen3.8")) out.reasoning_effort = qwenEffort;
+    if (qwenEffort && qwenUsesReasoningEffort(id)) out.reasoning_effort = qwenEffort;
     else if (qwenEffort) {
       out.thinking_budget = { minimal: 1024, low: 2048, medium: 8192, high: 24000, xhigh: 32000, max: 38000 }[qwenEffort];
     }
@@ -563,7 +563,7 @@ export async function* runCompatLoop(opts: CompatLoopInput): AsyncGenerator<LlmE
   // because each request is billed on its own and re-sends the conversation.
   const turnUsage = emptyCompatUsage();
   let sawTokens = false;
-  const stampedIds = new Set<string>();
+  const issueCallId = callIdIssuer(req.batch);
   let round = 0;
   let lastFinish: string | undefined;
 
@@ -630,9 +630,10 @@ export async function* runCompatLoop(opts: CompatLoopInput): AsyncGenerator<LlmE
     // A call the host streamed without an id is still a call: it gets
     // `jc_<round>_<index>`, and that id goes back on the wire (RC-13).
     const calls = finalizeToolCalls(toolCalls).map((call, index) => {
-      const ids = stampCallId(call.id || undefined, round, index, req.batch?.seenCallIds, stampedIds);
+      const providerCallId = call.id?.trim() ? call.id : undefined;
+      const callId = issueCallId(providerCallId, round, index);
       const name = shape.wire.fromWire.get(call.name) ?? call.name;
-      return { ...call, name, wireName: call.name, index, ...ids, wireId: ids.providerCallId ?? ids.callId };
+      return { ...call, name, wireName: call.name, index, callId, ...(providerCallId ? { providerCallId } : {}), wireId: providerCallId ?? callId };
     });
     const dispatch =
       !!source && shouldRunToolRound({ hasTools: true, isFinalRound: step.final, callCount: calls.length, finishReason });

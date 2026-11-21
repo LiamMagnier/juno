@@ -848,50 +848,61 @@ export async function openMcpToolset(
        * model then reasons from. Stop aborts the signal, which resolves the wait
        * as a refusal.
        */
-      const authorization = await authorizeExternalAction({
-        userId: ctx.userId,
-        surface: ctx.surface ?? "chat",
-        sessionId: ctx.sessionId ?? brokerSessionId,
-        conversationId: ctx.conversationId ?? null,
-        projectId: ctx.projectId ?? null,
-        connectorId: route.connectorId,
-        connectorLabel: route.label,
-        toolName: route.toolName,
-        functionName: toolName,
-        annotations: route.annotations,
-        args,
-        callId: callId ?? `${toolName}:${nextCallOrdinal()}`,
-        provenance: {
-          source: ctx.conversationId ? `conversation:${ctx.conversationId}` : `session:${ctx.sessionId ?? brokerSessionId}`,
-          sourceKind: "model_tool_call",
-          // The model composed these arguments, and by this point in a tool loop
-          // it has already read connector output — untrusted text that can try
-          // to steer the next call. Treat every model-authored argument as
-          // untrusted rather than only the ones we can prove tainted.
-          derivedFromUntrusted: true,
-        },
-        signal,
-        onApprovalRequest: composeApprovalCallbacks(ctx.onApprovalRequest, opts?.onApprovalRequest),
-        unattended: ctx.unattended,
-      });
-
-      if (authorization.kind === "refused") {
-        await settleToolInvocation(auditId, { status: "failed", error: authorization.reason });
-        // The receipt's verdict travels with the refusal: a declined or
-        // expired approval is not a tool error, on the row or to the model.
-        return {
-          ...toolExecution(label, `Action not permitted: ${authorization.reason}`, false),
-          ...refusalStatusFields(authorization.status),
-        };
-      }
-      if (authorization.kind === "replay") {
-        await settleToolInvocation(auditId, {
-          status: authorization.failed ? "failed" : "executed",
-          error: authorization.failed ? authorization.result : undefined,
+      let receiptId: string | null;
+      let answered = false;
+      try {
+        const authorization = await authorizeExternalAction({
+          userId: ctx.userId,
+          surface: ctx.surface ?? "chat",
+          sessionId: ctx.sessionId ?? brokerSessionId,
+          conversationId: ctx.conversationId ?? null,
+          projectId: ctx.projectId ?? null,
+          connectorId: route.connectorId,
+          connectorLabel: route.label,
+          toolName: route.toolName,
+          functionName: toolName,
+          annotations: route.annotations,
+          args,
+          callId: callId ?? `${toolName}:${nextCallOrdinal()}`,
+          provenance: {
+            source: ctx.conversationId ? `conversation:${ctx.conversationId}` : `session:${ctx.sessionId ?? brokerSessionId}`,
+            sourceKind: "model_tool_call",
+            // The model composed these arguments, and by this point in a tool loop
+            // it has already read connector output — untrusted text that can try
+            // to steer the next call. Treat every model-authored argument as
+            // untrusted rather than only the ones we can prove tainted.
+            derivedFromUntrusted: true,
+          },
+          signal,
+          onApprovalRequest: composeApprovalCallbacks(ctx.onApprovalRequest, opts?.onApprovalRequest),
+          unattended: ctx.unattended,
         });
-        // A replay hands back the stored result of the ORIGINAL dispatch, whose
-        // duration belonged to that attempt and is not re-measured here.
-        return toolExecution(label, authorization.result, !authorization.failed);
+        answered = true;
+
+        if (authorization.kind === "refused") {
+          await settleToolInvocation(auditId, { status: "failed", error: authorization.reason });
+          // The receipt's verdict travels with the refusal: a declined or
+          // expired approval is not a tool error, on the row or to the model.
+          return {
+            ...toolExecution(label, `Action not permitted: ${authorization.reason}`, false),
+            ...refusalStatusFields(authorization.status),
+          };
+        }
+        if (authorization.kind === "replay") {
+          await settleToolInvocation(auditId, {
+            status: authorization.failed ? "failed" : "executed",
+            error: authorization.failed ? authorization.result : undefined,
+          });
+          // A replay hands back the stored result of the ORIGINAL dispatch, whose
+          // duration belonged to that attempt and is not re-measured here.
+          return toolExecution(label, authorization.result, !authorization.failed);
+        }
+        receiptId = authorization.receiptId;
+      } catch (error) {
+        if (!answered) {
+          await settleToolInvocation(auditId, { status: "failed", error: "Authorization did not complete, so nothing ran." });
+        }
+        throw error;
       }
 
       // Authorised: the dispatcher's row turns to running and the tool's timer
@@ -910,7 +921,7 @@ export async function openMcpToolset(
         // audit trail is true and the dispatcher does not cache it as success.
         if (result.isError) {
           await settleToolInvocation(auditId, { status: "failed", error: result.text, durationMs });
-          await completeExternalAction({ userId: ctx.userId, receiptId: authorization.receiptId, ok: false, result: result.text });
+          await completeExternalAction({ userId: ctx.userId, receiptId, ok: false, result: result.text });
           return toolExecution(label, `Tool error: ${result.text}`, false, durationMs);
         }
         await settleToolInvocation(auditId, { status: "executed", durationMs });
@@ -919,7 +930,7 @@ export async function openMcpToolset(
         // holding the untruncated text would hand a replayed call more than the
         // first attempt got — and one holding the prefix without the notice
         // would hand it the silent version.
-        await completeExternalAction({ userId: ctx.userId, receiptId: authorization.receiptId, ok: true, result: result.text });
+        await completeExternalAction({ userId: ctx.userId, receiptId, ok: true, result: result.text });
         return toolExecution(label, result.text, true, durationMs);
       } catch (err) {
         // An error message is the connector's text too, and nothing bounds it:
@@ -928,7 +939,7 @@ export async function openMcpToolset(
         const detail = truncateConnectorResult(err instanceof Error ? err.message : String(err)).text;
         const durationMs = Date.now() - startedAt;
         await settleToolInvocation(auditId, { status: "failed", error: detail, durationMs });
-        await completeExternalAction({ userId: ctx.userId, receiptId: authorization.receiptId, ok: false, result: detail });
+        await completeExternalAction({ userId: ctx.userId, receiptId, ok: false, result: detail });
         return toolExecution(label, `Tool error: ${detail}`, false, durationMs);
       }
     },

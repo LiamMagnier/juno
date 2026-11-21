@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   ArrowRight,
+  BookOpen,
   ChevronRight,
   CornerDownRight,
   ExternalLink,
@@ -179,6 +180,10 @@ export function ProjectKnowledgePanel({
 
   return (
     <aside aria-label="Project knowledge" className={cn("pj pj-panel overflow-hidden rounded-card", className)} style={style}>
+      <div className="pj-context-header">
+        <BookOpen className="size-[18px]" aria-hidden="true" />
+        <h2>Project context</h2>
+      </div>
       {coverUrl && (
         <div className="group/cover relative aspect-[16/5] w-full overflow-hidden bg-muted">
           {/* eslint-disable-next-line @next/next/no-img-element */}

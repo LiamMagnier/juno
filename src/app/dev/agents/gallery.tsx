@@ -306,7 +306,7 @@ function host(overrides: Record<string, unknown>) {
 }
 const HOSTS = [
   host({}),
-  host({ id: "host-air", deviceId: "dev-air", displayName: "Liam’s MacBook Air", state: "offline", activeRunCount: 0, allowsComputerUse: false }),
+  host({ id: "host-air", deviceId: "dev-air", displayName: "Demo laptop", state: "offline", activeRunCount: 0, allowsComputerUse: false }),
 ];
 
 function useFetchShim() {
@@ -316,6 +316,7 @@ function useFetchShim() {
     const preview = new URLSearchParams(window.location.search);
     let computerStatus = preview.get("computer") ?? "asleep";
     let startReads = 0;
+    let confirmedTask: string | null = null;
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const path = new URL(url, window.location.origin).pathname;
@@ -329,6 +330,7 @@ function useFetchShim() {
         if (preview.get("access") === "denied") return json({ computer: null, access: { ok: false, reason: "server_off", message: "Computers aren’t available on this server.", upgradePlan: null } });
         if (init?.method === "POST") {
           const action = JSON.parse(String(init.body)).action;
+          if (preview.get("wakeOnly") === "1" && action === "enable") return json({ message: "Starting the computer should leave its task permissions alone." }, 409);
           if (preview.get("start") === "fail" && action === "wake") return json({ error: "unavailable", message: "The computer host is unavailable. Try again shortly." }, 503);
           computerStatus = action === "wake" ? "starting" : action === "sleep" ? "asleep" : action === "enable" ? "asleep" : "disabled";
           startReads = 0;
@@ -337,7 +339,20 @@ function useFetchShim() {
           // This gallery tests lifecycle feedback without opening a real VNC session.
           if (startReads > 1) computerStatus = "error";
         }
-        return json({ computer: { ...DETAILS["agent-mira"].computer, enabled: computerStatus !== "disabled", status: computerStatus }, access: { ok: true, reason: null, message: null, upgradePlan: null } });
+        return json(
+          { computer: { ...DETAILS["agent-mira"].computer, enabled: computerStatus !== "disabled", status: computerStatus }, access: { ok: true, reason: null, message: null, upgradePlan: null } },
+          init?.method === "POST" && computerStatus === "starting" ? 202 : 200
+        );
+      }
+      if (/^\/api\/agents\/[^/]+\/tasks$/.test(path) && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { title?: string; goal?: string; idempotencyKey?: string; confirmExpensive?: boolean };
+        if (!body.title || !body.goal || !body.idempotencyKey) return json({ message: "A task needs a title and goal." }, 400);
+        if (preview.get("task") === "confirm" && !body.confirmExpensive) {
+          confirmedTask = body.idempotencyKey;
+          return json({ error: "confirm_expensive", estimatedCostMicroUsd: 120000, message: "This will cost about $0.12 of your usage window. Start it?" }, 409);
+        }
+        if (body.confirmExpensive && confirmedTask !== body.idempotencyKey) return json({ message: "This confirmation does not match the task." }, 409);
+        return json({ conversationId: "conv-mira", sessionId: "fixture-task" }, 201);
       }
       const detail = path.match(/^\/api\/agents\/([^/]+)$/);
       if (detail) return json(DETAILS[detail[1]] ?? DETAILS["agent-mira"]);

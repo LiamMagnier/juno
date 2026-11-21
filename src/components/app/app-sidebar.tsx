@@ -2462,7 +2462,7 @@ function NavRow({
   const router = useRouter();
   const cls = cn(
     navRowClass(collapsed, !!active),
-    "jicon-trigger",
+    "jicon-trigger workspace-nav-row",
     // While its popover is open the row wears the selected fill, as the More
     // trigger and the account row do for theirs.
     Trigger && "sidebar-row-selected-on-open data-[state=open]:text-foreground"

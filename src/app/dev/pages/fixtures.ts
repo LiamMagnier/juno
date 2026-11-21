@@ -47,7 +47,7 @@ export const CONVERSATIONS: ClientConversation[] = [
 
 export function bootstrap(): AppBootstrap {
   return {
-    user: { id: "fixture-user", name: "Liam Magnier", email: "liam@example.com", image: null },
+    user: { id: "fixture-user", name: "Demo Account", email: "demo@example.com", image: null },
     settings: {
       theme: "system",
       accent: "coral",
@@ -104,6 +104,7 @@ export const PROJECTS = [
   {
     id: "p-atlas",
     name: "Atlas launch",
+    description: "Launch plans, interviews, and technical research for the Atlas sync engine.",
     instructions: "We are shipping Atlas, a sync engine for field teams. Answer as a staff engineer on the team; prefer Postgres and TypeScript.",
     updatedAt: ago(2),
     conversationCount: 14,

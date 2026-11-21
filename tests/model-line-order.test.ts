@@ -11,16 +11,16 @@ import { sortModelsForDisplay } from "@/lib/model-metrics";
 
 const ids = (models: { id: string }[]) => models.map((m) => m.id);
 
-test("Gemini 4 lists Carbon, then Argon, then Hydrogen (owner, 16 Nov 2026)", () => {
+test("Gemini 4 keeps Carbon and Argon first, followed by Neon and Hydrogen", () => {
   const gemini4 = MODEL_LIST.filter((m) => m.provider === "google" && /^google:gemini-4-/.test(m.id));
-  assert.deepEqual(ids(sortModelsForDisplay(gemini4)), ["google:gemini-4-carbon", "google:gemini-4-argon", "google:gemini-4-hydrogen"]);
-  // Whatever order they arrive in: Hydrogen is the newest release, which a date sort put first.
-  assert.deepEqual(ids(sortModelsForDisplay([...gemini4].reverse())), ["google:gemini-4-carbon", "google:gemini-4-argon", "google:gemini-4-hydrogen"]);
+  assert.deepEqual(ids(sortModelsForDisplay(gemini4)), ["google:gemini-4-carbon", "google:gemini-4-argon", "google:gemini-4-neon", "google:gemini-4-hydrogen"]);
+  // Arrival order and release date leave the four product positions intact.
+  assert.deepEqual(ids(sortModelsForDisplay([...gemini4].reverse())), ["google:gemini-4-carbon", "google:gemini-4-argon", "google:gemini-4-neon", "google:gemini-4-hydrogen"]);
 });
 
 test("Gemini 4 still leads Google's current text models, above Gemini 3.x", () => {
   const google = sortModelsForDisplay(MODEL_LIST.filter((m) => m.provider === "google" && (m.modality ?? "chat") === "chat" && m.status === "current"));
-  assert.deepEqual(ids(google).slice(0, 3), ["google:gemini-4-carbon", "google:gemini-4-argon", "google:gemini-4-hydrogen"]);
+  assert.deepEqual(ids(google).slice(0, 4), ["google:gemini-4-carbon", "google:gemini-4-argon", "google:gemini-4-neon", "google:gemini-4-hydrogen"]);
 });
 
 test("Anthropic's lines keep Fable, Opus, Sonnet, Haiku", () => {

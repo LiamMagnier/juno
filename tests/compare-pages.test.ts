@@ -7,6 +7,7 @@ import { modelRequiredPlan, PLANS } from "../src/lib/plans";
 import { tokenRate } from "../src/lib/pricing";
 import { displayPrice } from "../src/lib/price-display";
 import {
+  comparisonSlugs,
   findPair,
   findings,
   MODEL_PAIRS,
@@ -39,9 +40,17 @@ describe("public model comparisons", () => {
       assert.equal(findPair(p.slug), p);
       assert.notEqual(p.a, p.b);
     }
-    assert.equal(findPair("claude-opus-5-5-vs-gpt-6-1-sol")?.use, "general");
-    assert.equal(findPair("claude-opus-5-5-vs-gpt-6-1-sol-for-coding")?.use, "coding");
-    assert.equal(findPair("claude-opus-5-5-vs-gpt-6-1-sol-for-writing")?.use, "writing");
+    for (const [use, suffix] of [["general", ""], ["coding", "-for-coding"], ["writing", "-for-writing"]]) {
+      const current = `claude-opus-5-5-vs-gpt-6-2-sol${suffix}`;
+      const previous = `claude-opus-5-5-vs-gpt-6-1-sol${suffix}`;
+      assert.equal(findPair(current)?.use, use);
+      assert.equal(findPair(current)?.b, "openai:gpt-6.2-sol");
+      assert.equal(findPair(previous)?.use, use);
+      assert.equal(findPair(previous)?.b, "openai:gpt-6.1-sol");
+      assert.ok(comparisonSlugs().includes(previous), `${previous} remains a real static page`);
+    }
+    assert.equal(findPair("claude-opus-5-5-vs-gpt-6-2-astra")?.b, "openai:gpt-6.2-astra");
+    assert.equal(findPair("claude-opus-5-5-vs-gpt-6-astra")?.b, "openai:gpt-6-astra");
     assert.equal(findPair("not-a-pair"), undefined);
   });
 

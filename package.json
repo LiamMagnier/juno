@@ -182,7 +182,7 @@
     "katex": "^0.18.11",
     "lucide-react": "^1.22.0",
     "metal-fx": "^2.0.11",
-    "next": "^15.5.28",
+    "next": "^15.5.29",
     "next-auth": "^5.0.0-beta.32",
     "next-themes": "^0.4.0",
     "openai": "^6.45.0",
@@ -221,7 +221,7 @@
     "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.0",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^15.5.28",
+    "eslint-config-next": "^15.5.29",
     "postcss": "8.5.26",
     "prisma": "^6.0.0",
     "tailwindcss": "^3.4.0",
@@ -235,7 +235,10 @@
     "postcss": "$postcss",
     "sharp": "0.35.5",
     "uuid": "11.1.1",
-    "katex": "$katex"
+    "katex": "$katex",
+    "@prisma/config": {
+      "effect": "3.22.1"
+    }
   },
   "engines": {
     "node": ">=24.0.0 <25"

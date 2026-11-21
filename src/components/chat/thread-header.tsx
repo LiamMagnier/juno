@@ -8,14 +8,14 @@ export function ThreadHeader({ title, project, actions, className }: {
   className?: string;
 }) {
   return (
-    <header className={cn("relative z-20 hidden shrink-0 items-center gap-3 px-4 md:flex", title ? "h-14" : "h-11", className)}>
+    <header className={cn("conversation-header relative z-20 hidden shrink-0 items-center gap-3 md:flex", title ? "min-h-14" : "min-h-11", className)}>
       {title ? (
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h1 className="min-w-0 shrink text-ui font-semibold tracking-tight text-foreground">{title}</h1>
           {project}
         </div>
       ) : <div className="flex-1" />}
-      <div className="ms-auto flex shrink-0 items-center gap-1">{actions}</div>
+      <div className="ms-auto flex shrink-0 items-center">{actions}</div>
     </header>
   );
 }

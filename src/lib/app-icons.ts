@@ -18,7 +18,6 @@
  * should wear, and which shapes survive 14–18px — outlives any one set.
  */
 import {
-  Activity,
   AlertCircle,
   ArrowUpRight,
   BadgeCheck,
@@ -38,7 +37,6 @@ import {
   Component,
   FileText,
   FileUp,
-  Folder,
   Frame,
   GitBranch,
   GitPullRequest,
@@ -57,6 +55,8 @@ import {
   JunoCode,
   JunoDesign,
   JunoLibrary,
+  JunoProjects,
+  JunoActivity,
   JunoAgents,
   JunoOrbit,
   Minus,
@@ -182,7 +182,7 @@ export const AppIcons = {
    *  the concept is still named in the shell and in the native apps. */
   research: Telescope,
   artifacts: Layers3,
-  projects: Folder,
+  projects: JunoProjects,
   assistants: Bot,
   /** Agents — Juno's own drawing (`JunoAgents`): a face, the pebble body and
    *  rounded-square eyes every agent is drawn with, so the destination wears
@@ -210,7 +210,7 @@ export const AppIcons = {
    *  pulse line: things happening now, not a bell (that is the inbox of what
    *  already happened). The native apps draw their `chartLine` case, the
    *  nearest shipped drawing, stated as `nativeIcon` in the shell contract. */
-  activity: Activity,
+  activity: JunoActivity,
   /** The web reaches Settings from the user menu rather than the rail, and draws
    *  it with this same mark (`user-menu.tsx`) — a six-toothed gear that turns
    *  a little under the pointer. It lives here because the native apps *do*

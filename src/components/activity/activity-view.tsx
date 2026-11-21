@@ -184,7 +184,7 @@ export function ActivityBody({
         ) : (
           groups.map((group) => (
             <section key={group.state} aria-labelledby={`activity-group-${group.state}`} className="mb-6 last:mb-0">
-              <header className="flex items-baseline gap-2 px-1 pb-1.5">
+              <header className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-1 pb-2">
                 <h2 id={`activity-group-${group.state}`} className={cn("flex items-center gap-1.5 text-label font-medium", STATUS_INK[group.state])}>
                   <ActivityStatusMark state={group.state} />
                   {ACTIVITY_COPY.states[group.state]}
@@ -192,9 +192,9 @@ export function ActivityBody({
                     {counts?.[group.state] ?? group.items.length}
                   </span>
                 </h2>
-                <p className="min-w-0 truncate text-micro text-muted-foreground">{ACTIVITY_COPY.hints[group.state]}</p>
+                <p className="min-w-0 text-caption text-muted-foreground">{ACTIVITY_COPY.hints[group.state]}</p>
               </header>
-              <ul className="divide-y divide-border/60 overflow-hidden rounded-card border border-border/70 bg-background">
+              <ul className="divide-y divide-border/60 overflow-hidden rounded-panel border border-border/70 bg-card">
                 {group.items.map((item) => (
                   <ActivityRow key={item.id} item={item} now={now} onChanged={onChanged} />
                 ))}
@@ -255,7 +255,7 @@ export function ActivityRow({ item, now, onChanged }: { item: ActivityItem; now:
 
   return (
     <li
-      className="group relative flex flex-col gap-2 px-3 py-2.5 transition-colors duration-fast hover:bg-accent/50 focus-within:bg-accent/50 sm:flex-row sm:items-center sm:gap-3 motion-safe:animate-rise-in"
+      className="group relative flex flex-col gap-2 px-4 py-3 transition-colors duration-fast hover:bg-accent/50 focus-within:bg-accent/50 sm:flex-row sm:items-center sm:gap-3 motion-safe:animate-rise-in"
       onPointerEnter={() => setActive(true)}
       onPointerLeave={() => setActive(false)}
     >
@@ -358,7 +358,7 @@ export function ActivitySkeleton() {
       {[3, 2].map((rows, group) => (
         <div key={group} className="space-y-1.5">
           <Skeleton className="ml-1 h-3.5 w-24" />
-          <div className="divide-y divide-border/60 rounded-card border border-border/70">
+          <div className="divide-y divide-border/60 rounded-panel border border-border/70">
             {Array.from({ length: rows }, (_, i) => (
               <div key={i} className="flex items-center gap-2.5 px-3 py-3">
                 <Skeleton className="size-3 rounded-full" />

@@ -382,14 +382,15 @@ test("the header skeleton can draw a three-line phone lede", () => {
   assert.match(header, /\{phoneLedeLines === 3 && <Skeleton className="h-5 w-1\/2 rounded-xs @\[40rem\]\/page:hidden" \/>\}/);
 });
 
-test("a button action puts the skeleton's lede under the heading row, as the header does", () => {
+test("the header and its skeleton use the same responsive heading, lede and action layout", () => {
   const header = read("src/components/app/app-page-header.tsx");
-  assert.match(header, /actions\?: boolean \| "button";/);
-  // The button is the real one's box: 44px on touch, 6px down from 40rem.
-  assert.match(header, /actions === "button" && "coarse:h-11 @\[40rem\]\/page:mt-1\.5"/);
-  // Its lede follows the row; any other action leaves the lede in the heading's column.
-  assert.match(header, /\{actions !== "button" && ledeBars\}\s*<\/div>/);
-  assert.match(header, /<\/div>\s*\{actions === "button" && ledeBars\}\s*<\/div>/);
+  const [live, skeleton] = header.split("export function AppPageHeaderSkeleton");
+  const css = read("src/components/app/web-surfaces.css");
+  assert.match(skeleton, /actions\?: boolean \| "button";/);
+  assert.match(skeleton, /actions === "button" && "coarse:h-11"/);
+  assert.match(live, /app-section-heading-row[\s\S]*app-section-lede[\s\S]*<\/div>\s*\{actions && <div className="app-section-heading-actions"/);
+  assert.match(skeleton, /app-section-heading-row[\s\S]*\{ledeBars\}\s*<\/div>\s*\{actions && \(\s*<div className="app-section-heading-actions"/);
+  assert.match(css, /@container page \(min-width: 40rem\)\s*\{\s*\.app-section-heading-row:has\(> \.app-section-heading-actions\)\s*\{\s*grid-template-columns:/);
 });
 
 test("every Needs you ask keeps the kebab's slot on a touch screen, an agent's included", () => {
@@ -408,7 +409,6 @@ test("the account avatar without a photo is a monogram in the second ink, lighte
 
 test("the Projects route skeleton is drawn to the Projects header", () => {
   const loading = read("src/app/(app)/projects/loading.tsx");
-  // Measured (17 Nov 2026, the shorter lede): 24px at 1280 and 24px on an
-  // iPhone 13, one line each; "New project" is a default Button.
-  assert.match(loading, /<AppPageHeaderSkeleton headingWidth="w-56" ledeLines=\{1\} phoneLedeLines=\{1\} actions="button" \/>/);
+  // The Projects lede wraps to two lines at 390px in Chromium.
+  assert.match(loading, /<AppPageHeaderSkeleton headingWidth="w-56" ledeLines=\{1\} phoneLedeLines=\{2\} actions="button" \/>/);
 });

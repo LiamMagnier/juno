@@ -14,8 +14,8 @@
  * count nothing. The estimate errs high, so the meter fills a little early
  * rather than late.
  *
- * The capacity is enforced where files arrive in bulk, a Drive folder's sync
- * (drive-source.ts), which stops adding files when it is reached and says so.
+ * Drive syncs enforce this capacity when committing files (drive-source-store.ts),
+ * using the live knowledge remaining after any attachment replacement.
  */
 
 export const PROJECT_KNOWLEDGE_CAPACITY_TOKENS = 1_000_000;

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { SMOKE_CONTEXT_DIRECTIVE, SMOKE_CONTEXT_INPUT_TOKENS } from "../src/lib/chat/turn/model-streams";
 import { composer } from "./helpers";
 
 const SUCCESS_TOKEN = process.env.E2E_SUCCESS_TOKEN ?? "JUNO_HEALTHY_CHAT_OK";
@@ -158,29 +159,34 @@ test.describe("Chat workspace", () => {
     await sendSuccessfulTurn(page, prompt);
     await expect(page).toHaveURL(/\/chat\/[a-z0-9]+/i);
 
-    const meter = page.getByRole("button", { name: `${expectedInput} Context usage`, exact: true });
-    const details = page.getByRole("dialog", { name: "Context usage" });
-    const inputUsage = details.locator("dl > div").filter({ hasText: "Input tokens" }).locator("dd");
+    const meter = page.getByRole("button", { name: /^Context: .* of the model's window used$/ });
+    const details = page.getByRole("dialog", { name: "Context window" });
+    const inputUsage = details.locator("dl > div").filter({ has: page.getByText("Input", { exact: true }) }).locator("dd");
     await meter.click();
     await expect(inputUsage).toHaveText(expectedInput);
     await expect(details.getByText("Cache hits", { exact: true })).toHaveCount(0);
 
     await page.reload();
-    await meter.click();
+    // The reload can paint the server-rendered button before it handles clicks.
+    await expect(async () => {
+      if ((await meter.getAttribute("aria-expanded")) !== "true") await meter.click();
+      await expect(details).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
     await expect(inputUsage).toHaveText(expectedInput);
     await page.screenshot({ path: testInfo.outputPath("desktop-context.png"), animations: "disabled" });
   });
 
   test("context opens as a phone sheet and returns keyboard focus", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 580 });
-    const prompt = `Mobile context probe: reply with ${SUCCESS_TOKEN}.`;
+    const prompt = `Mobile context probe ${SMOKE_CONTEXT_DIRECTIVE}: reply with ${SUCCESS_TOKEN}.`;
     await sendSuccessfulTurn(page, prompt);
-    const meter = page.getByRole("button", { name: /Context usage/ });
+    const meter = page.getByRole("button", { name: /^Context: .* of the model's window used$/ });
     await meter.focus();
     await page.keyboard.press("Enter");
-    const details = page.getByRole("dialog", { name: "Context usage" });
+    const details = page.getByRole("dialog", { name: "Context window" });
     await expect(details).toHaveAttribute("data-side", "bottom");
-    await expect(details.getByRole("button", { name: "Close context usage" })).toBeVisible();
+    await expect(details.getByRole("button", { name: "Close context window" })).toBeVisible();
+    await expect(details.locator("dd").first()).toHaveText(SMOKE_CONTEXT_INPUT_TOKENS.toLocaleString("en-US"));
     await page.screenshot({ path: testInfo.outputPath("phone-context.png"), animations: "disabled" });
     await page.keyboard.press("Escape");
     await expect(details).toHaveCount(0);
@@ -191,6 +197,7 @@ test.describe("Chat workspace", () => {
     await page.setViewportSize({ width: 320, height: 430 });
     const model = page.getByRole("button", { name: /^Model:/ });
     await model.click();
+    await page.getByRole("dialog", { name: "Thinking" }).getByRole("button", { name: /^Change model/ }).click();
     const picker = page.getByRole("dialog", { name: "Models" });
     const search = picker.getByRole("combobox", { name: "Search models" });
     await expect(search).toBeInViewport();
@@ -214,6 +221,7 @@ test.describe("Chat workspace", () => {
     const model = page.getByRole("button", { name: /^Model:/ });
     await model.focus();
     await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Thinking" }).getByRole("button", { name: /^Change model/ }).press("Enter");
     const picker = page.getByRole("dialog", { name: "Models" });
     const search = picker.getByRole("combobox", { name: "Search models" });
     await search.fill("qwen3.7 flash");

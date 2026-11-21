@@ -7,9 +7,10 @@ import { expect } from '@playwright/test';
 const base = new URL(process.argv[2] || 'http://127.0.0.1:3000');
 assert(['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname), 'Use a local development server.');
 const output = path.resolve(process.argv[3] || 'test-results/website-review');
-const pages = ['projects', 'project', 'library', 'artifacts', 'connections', 'agents', 'automations', 'skills', 'instructions', 'memory', 'compare', 'code', 'settings', 'notifications', 'search'];
+const pages = ['projects', 'project', 'activity', 'library', 'artifacts', 'connections', 'agents', 'automations', 'skills', 'instructions', 'memory', 'compare', 'code', 'settings', 'notifications', 'search'];
 const browser = await chromium.launch({ executablePath: process.env.ORBIT_CHROMIUM || undefined, headless: true, args: ['--disable-features=BackForwardCache'] });
 const failures = [], captures = [], checks = [];
+const fixtureNetwork = context => context.route('**/api/**', route => route.fulfill({ status: 401, json: { error: 'unauthorized' } }));
 const capture = async (page, file) => {
   await page.screenshot({ path: path.join(output, file), animations: 'disabled', style: 'nextjs-portal { visibility: hidden; }' });
   captures.push(file);
@@ -18,34 +19,93 @@ try {
   for (const mode of ['desktop-light', 'desktop-dark', 'mobile-light', 'mobile-dark']) {
     await mkdir(path.join(output, mode), { recursive: true });
     const context = await browser.newContext({ viewport: mode.startsWith('mobile') ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, isMobile: mode.startsWith('mobile'), hasTouch: mode.startsWith('mobile'), colorScheme: mode.endsWith('dark') ? 'dark' : 'light', reducedMotion: 'reduce' });
+    await fixtureNetwork(context);
     let page = await context.newPage();
-    page.setDefaultTimeout(25_000);
+    page.setDefaultTimeout(90_000);
     let route = '';
     page.on('pageerror', error => failures.push(`${mode}/${route}: ${error.message}`));
     for (route of pages) {
       if (route !== pages[0]) {
         await page.close();
         page = await context.newPage();
-        page.setDefaultTimeout(25_000);
+        page.setDefaultTimeout(90_000);
         page.on('pageerror', error => failures.push(`${mode}/${route}: ${error.message}`));
       }
       await page.goto(new URL(route === 'project' ? '/dev/pages/project/p-atlas' : `/dev/pages?page=${route}`, base).href, { waitUntil: 'domcontentloaded', timeout: 120_000 });
-      await page.locator('#juno-main').waitFor({ state: 'attached' });
+      await page.locator('[data-page-root] #juno-main').waitFor({ state: 'attached' });
       await page.evaluate(() => document.fonts.ready);
       if (route === 'notifications' || route === 'search') await page.waitForTimeout(900);
       else await page.waitForTimeout(450);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
       if (overflow) failures.push(`${mode}/${route}: horizontal document overflow`);
       if (mode.startsWith('mobile') && route === 'projects') {
-        for (const tile of await page.locator('.pj-tile').all()) {
+        const describedTiles = page.locator('.pj-tile').filter({ has: page.locator('p.line-clamp-2') });
+        await describedTiles.first().waitFor({ state: 'visible' });
+        const tiles = await describedTiles.all();
+        assert(tiles.length > 0, 'Project descriptions are missing from the fixture');
+        for (const tile of tiles) {
           const actions = await tile.locator('.pj-actions').boundingBox();
-          const excerpt = await tile.locator('p.mt-1').boundingBox();
-          if (actions && excerpt) assert(excerpt.y >= actions.y + actions.height - 1, 'Project actions cover the description');
+          const excerpt = await tile.locator('p.line-clamp-2').boundingBox();
+          assert(actions && excerpt, 'Project description and actions must render');
+          assert(excerpt.y >= actions.y + actions.height - 1, 'Project actions cover the description');
         }
         checks.push(`${mode}: project actions clear the description`);
       }
       await capture(page, `${mode}/${route}.png`);
       console.log(`${mode}/${route}`);
+      if (route === 'projects' && mode.endsWith('light')) {
+        const list = page.getByRole('list', { name: 'Projects', exact: true });
+        const listButton = page.getByRole('button', { name: 'List view', exact: true });
+        const gridButton = page.getByRole('button', { name: 'Grid view', exact: true });
+        const tile = list.locator('.pj-tile').first();
+        const gridHeight = (await tile.boundingBox())?.height;
+        await listButton.click();
+        await expect(listButton).toHaveAttribute('aria-pressed', 'true');
+        await expect(list).toHaveAttribute('data-layout', 'list');
+        assert((await tile.boundingBox())?.height < gridHeight, 'List mode should be denser');
+        await capture(page, `${mode}/projects-list.png`);
+        await gridButton.click();
+        await expect(list).toHaveAttribute('data-layout', 'grid');
+        checks.push(`${mode}: projects switch between grid and denser list`);
+      }
+      if (route === 'project' && mode.endsWith('light')) {
+        const knowledge = page.getByRole('complementary', { name: 'Project knowledge' });
+        const settings = page.getByRole('heading', { name: 'Settings', exact: true, level: 1 });
+        if (mode.startsWith('mobile')) {
+          const context = page.getByRole('button', { name: /^Project context/ });
+          await expect(context).toHaveAttribute('aria-expanded', 'false');
+          await expect(knowledge).toBeHidden();
+          const firstChat = page.locator('.pj-workspace-history').getByRole('link', { name: /Why the sync worker drops cursors/ });
+          await expect(firstChat).toBeInViewport();
+          const folders = page.getByRole('heading', { name: /^Folders/ });
+          assert((await firstChat.boundingBox()).y < (await folders.boundingBox()).y, 'Recent chats precede folders');
+          await context.focus();
+          await context.press('Enter');
+          await expect(context).toHaveAttribute('aria-expanded', 'true');
+          await expect(knowledge).toBeVisible();
+          await capture(page, `${mode}/project-context.png`);
+          await context.press('Enter');
+          await expect(knowledge).toBeHidden();
+          await page.getByRole('button', { name: 'Project actions' }).click();
+          await expect(page.getByRole('menuitem', { name: 'New chat', exact: true })).toBeVisible();
+          await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+        } else {
+          await expect(knowledge).toBeVisible();
+          await page.getByRole('button', { name: 'Settings', exact: true }).click();
+        }
+        await expect(settings).toBeVisible();
+        await capture(page, `${mode}/project-settings.png`);
+        if (mode.startsWith('mobile')) {
+          await page.goto(new URL('/dev/pages/project/p-atlas?tab=sources', base).href, { waitUntil: 'domcontentloaded' });
+          await expect(knowledge).toBeVisible();
+          await page.setViewportSize({ width: 320, height: 740 });
+          await page.goto(new URL('/dev/pages/project/p-atlas?tab=work', base).href, { waitUntil: 'domcontentloaded' });
+          const activity = page.getByRole('radiogroup', { name: 'Project activity' });
+          await expect(activity.getByRole('radio')).toHaveCount(4);
+          assert(await activity.evaluate((tabs) => tabs.scrollWidth <= tabs.clientWidth + 1 && tabs.getBoundingClientRect().right <= innerWidth), 'Four activity tabs fit at 320px');
+        }
+        checks.push(`${mode}: project context, recent chats and settings access`);
+      }
     }
     if (mode === 'desktop-light') {
       for (const [routeName, label, query] of [['projects','Search projects','Atlas'], ['library','Search the library','Pricing'], ['connections','Search apps','GitHub']]) {
@@ -74,6 +134,7 @@ try {
   }
   // Empty, loading and failure states are real components fed deterministic data.
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  await fixtureNetwork(context);
   let page = await context.newPage();
   await mkdir(path.join(output, 'states'), { recursive: true });
   for (const state of ['empty', 'loading', 'error']) {
@@ -81,7 +142,7 @@ try {
       await page.close();
       page = await context.newPage();
       await page.goto(new URL(`/dev/pages?page=${route}&state=${state}`, base).href, { waitUntil: 'domcontentloaded', timeout: 120_000 });
-      await page.locator('#juno-main').waitFor({ state: 'attached' });
+      await page.locator('[data-page-root] #juno-main').waitFor({ state: 'attached' });
       await page.waitForTimeout(550);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${route}/${state} overflows`);
       await capture(page, `states/${route}-${state}.png`);

@@ -5,7 +5,7 @@ import { Activity, ChevronRight, FileText, Globe, Plug, Terminal, Wrench } from 
 import type { ToolCallRecord } from "@/types/run";
 import { cn } from "@/lib/utils";
 
-export const receiptChip = "inline-flex min-h-7 min-w-0 items-center gap-1.5 rounded-full bg-secondary px-2.5 text-ui text-foreground";
+export const receiptChip = "inline-flex min-h-7 min-w-0 items-center gap-1.5 conversation-receipt px-2.5 text-ui text-foreground";
 
 type Receipt = { label: string; Icon: ComponentType<{ className?: string }> };
 
@@ -64,7 +64,7 @@ export function TurnReceipt({ calls, fallback, duration, memory, expanded, contr
           )}
           {more > 0 && <span className={receiptChip} aria-label={`${more} more`} translate="no">+{more}</span>}
           <span className="sr-only">, run details</span>
-          <ChevronRight aria-hidden="true" className={cn("size-3.5 shrink-0 text-muted-foreground motion-safe:transition-transform motion-safe:duration-base max-sm:hidden", expanded && "rotate-90")} />
+          <ChevronRight aria-hidden="true" className={cn("size-3.5 shrink-0 text-muted-foreground motion-safe:transition-transform motion-safe:duration-base", expanded && "rotate-90")} />
         </button>
       )}
       {memory}

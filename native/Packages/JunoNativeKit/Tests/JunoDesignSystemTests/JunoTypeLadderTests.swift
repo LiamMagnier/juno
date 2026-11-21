@@ -23,17 +23,17 @@ final class JunoTypeLadderTests: XCTestCase {
 
     /// §8.2 with errata 8 applied: `bodyLarge` is ×1.6. Graphite (docs/design/
     /// direction-2026-11) sets `ui` at 13.5 on a 20px line. P1 (spec
-    /// D16, §3.5) sets page-title at 500, raises `caption` from 11 to 12/1.4 and
+    /// D16, §3.5) raises `caption` from 11 to 12/1.4 and
     /// aliases the retired `micro` to it, so no rung is under the 12pt floor.
     private let ladder: [Expected] = [
         Expected(rung: .display(size: 32), generated: JunoGeneratedType.display, size: 32, lineHeight: 1.08, tracking: -0.02, weight: .regular, face: .serif, name: "display"),
-        Expected(rung: .pageTitle, generated: JunoGeneratedType.pageTitle, size: 32, lineHeight: 1.08, tracking: -0.03, weight: .medium, face: .sans, name: "pageTitle"),
+        Expected(rung: .pageTitle, generated: JunoGeneratedType.pageTitle, size: 28, lineHeight: 1.15, tracking: -0.01, weight: .regular, face: .sans, name: "pageTitle"),
         Expected(rung: .title, generated: JunoGeneratedType.title, size: 22, lineHeight: 1.25, tracking: -0.012, weight: .semibold, face: .sans, name: "title"),
         Expected(rung: .heading, generated: JunoGeneratedType.heading, size: 18, lineHeight: 1.3, tracking: -0.006, weight: .semibold, face: .sans, name: "heading"),
         Expected(rung: .bodyLarge, generated: JunoGeneratedType.bodyLg, size: 17, lineHeight: 1.6, tracking: 0, weight: .regular, face: .sans, name: "bodyLarge"),
-        Expected(rung: .reading, generated: JunoGeneratedType.reading, size: 16, lineHeight: 1.7, tracking: 0, weight: .regular, face: .sans, name: "reading"),
+        Expected(rung: .reading, generated: JunoGeneratedType.reading, size: 16, lineHeight: 1.6, tracking: 0, weight: .regular, face: .sans, name: "reading"),
         Expected(rung: .body, generated: JunoGeneratedType.body, size: 15, lineHeight: 1.6, tracking: 0, weight: .regular, face: .sans, name: "body"),
-        Expected(rung: .prose, generated: JunoGeneratedType.reading, size: 16, lineHeight: 1.7, tracking: 0, weight: .regular, face: .sans, name: "prose"),
+        Expected(rung: .prose, generated: JunoGeneratedType.reading, size: 16, lineHeight: 1.6, tracking: 0, weight: .regular, face: .sans, name: "prose"),
         Expected(rung: .ui, generated: JunoGeneratedType.ui, size: 13.5, lineHeight: 20.0 / 13.5, tracking: 0, weight: .regular, face: .sans, name: "ui"),
         Expected(rung: .label, generated: JunoGeneratedType.label, size: 12, lineHeight: 1.4, tracking: 0.01, weight: .medium, face: .sans, name: "label"),
         Expected(rung: .caption, generated: JunoGeneratedType.caption, size: 12, lineHeight: 1.4, tracking: 0, weight: .regular, face: .sans, name: "caption"),
@@ -105,10 +105,10 @@ final class JunoTypeLadderTests: XCTestCase {
         XCTAssertEqual(JunoType.displaySize(forColumnWidth: 1024), 48, accuracy: 0.05)
         XCTAssertEqual(JunoType.displaySize(forColumnWidth: 1600), 48, accuracy: 0.01)
 
-        XCTAssertEqual(JunoType.pageTitle(columnWidth: 400).size, 32, accuracy: 0.01)
-        XCTAssertEqual(JunoType.pageTitle(columnWidth: 640).size, 32, accuracy: 0.01)
-        XCTAssertEqual(JunoType.pageTitle(columnWidth: 1024).size, 44, accuracy: 0.01)
-        XCTAssertEqual(JunoType.pageTitle(columnWidth: 2000).size, 44, accuracy: 0.01)
+        XCTAssertEqual(JunoType.pageTitle(columnWidth: 400).size, 28, accuracy: 0.01)
+        XCTAssertEqual(JunoType.pageTitle(columnWidth: 640).size, 28, accuracy: 0.01)
+        XCTAssertEqual(JunoType.pageTitle(columnWidth: 1024).size, 32, accuracy: 0.01)
+        XCTAssertEqual(JunoType.pageTitle(columnWidth: 2000).size, 32, accuracy: 0.01)
     }
 
     /// A rung resolves to its size, multiplied by the reader's text size.
@@ -122,7 +122,7 @@ final class JunoTypeLadderTests: XCTestCase {
             XCTAssertEqual(scaled.pointSize, expected.size * 1.25, accuracy: 0.01, expected.name)
         }
         XCTAssertEqual(EnvironmentValues().junoTextScale, 1)
-        XCTAssertEqual(JunoType.pageTitle.trackingPoints(atSize: 32), -0.96, accuracy: 0.0001)
+        XCTAssertEqual(JunoType.pageTitle.trackingPoints(atSize: 32), -0.32, accuracy: 0.0001)
     }
 
     /// Variants keep everything but what they change.

@@ -62,3 +62,11 @@ export function geminiFrontierRate(at: Date | number = Date.now()): TokenPrice {
   const t = typeof at === "number" ? at : at.getTime();
   return t < GEMINI_FRONTIER_INTRO_ENDS_AT ? GEMINI_FRONTIER_INTRO_RATE : GEMINI_FRONTIER_STANDARD_RATE;
 }
+
+// OpenAI pricing: GPT-6.2 Ultrafast is 3× through February 28, 2027 Pacific
+// time, then switches to the listed 6× rate at midnight PST (08:00 UTC).
+export function openAIUltraFastIntroMultiplier(providerModel: string, at: Date | number): number | null {
+  if (!/^gpt-6\.2-(astra|sol)$/.test(providerModel)) return null;
+  const timestamp = typeof at === "number" ? at : at.getTime();
+  return timestamp < Date.UTC(2027, 2, 1, 8) ? 3 : null;
+}

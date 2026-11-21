@@ -1,6 +1,6 @@
 import "server-only";
 import { after } from "next/server";
-import type { Plan } from "@prisma/client";
+import type { Plan, ProjectSource } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getConnector, isConnectorConfigured } from "@/lib/connectors";
 import { firstPartyAccessToken } from "@/lib/first-party-connectors/tokens";
@@ -9,19 +9,22 @@ import { resolveActionPolicy } from "@/lib/action-approval-store";
 import { CloudFileError, fetchCloudFile } from "@/lib/cloud-files/drives";
 import { CLOUD_IMPORT_CEILING_MB, CLOUD_IMPORT_ORIGIN } from "@/lib/cloud-files/shared";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
-import { persistAttachment } from "@/lib/attachment-store";
-import { LibraryQuotaExceededError } from "@/lib/library";
+import { buildObjectKey, deleteObject, putObject } from "@/lib/storage";
+import { scheduleIngest } from "@/lib/knowledge";
+import { assertLibraryCapacity, libraryCapacity, lockedLibraryCapacity, LibraryQuotaExceededError } from "@/lib/library";
 import { tombstoneAttachment } from "@/lib/library-removal";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { isCloudAttachEnabled } from "@/lib/env";
 import {
   readDriveTarget,
+  projectDriveFetch,
   runSourceSync,
   sourceErrorMessage,
   classifyDriveFailure,
   SourceSyncError,
   type DriveListedFile,
+  type DriveTarget,
   type SourceItemRecord,
   type SourceSyncPort,
   type SourceSyncResult,
@@ -75,7 +78,7 @@ export async function openDrive(userId: string, signal?: AbortSignal): Promise<F
   if (await driveBlocked(userId)) throw new SourceSyncError("forbidden", "Google Drive is blocked in Settings › Apps.");
   const token = await firstPartyAccessToken(userId, PROVIDER);
   if (!token) throw new SourceSyncError("reconnect", "Reconnect Google Drive to continue.");
-  return new FirstPartyClient(PROVIDER, token, fetch, signal);
+  return new FirstPartyClient(PROVIDER, token, projectDriveFetch(fetch), signal);
 }
 
 export async function listProjectSources(userId: string, projectId: string): Promise<ProjectSourceView[]> {
@@ -92,24 +95,28 @@ export async function listProjectSources(userId: string, projectId: string): Pro
     },
   });
   const leaseCutoff = Date.now() - SYNC_LEASE_MS;
-  return rows.map((row) => ({
-    id: row.id,
-    provider: "google-drive",
-    kind: row.kind === "file" ? "file" : "folder",
-    externalId: row.externalId,
-    name: row.name,
-    includeSubfolders: row.includeSubfolders,
-    state: row.state as ProjectSourceView["state"],
-    syncing: row.syncClaimedAt !== null && row.syncClaimedAt.getTime() > leaseCutoff,
-    errorCode: row.errorCode as ProjectSourceView["errorCode"],
-    error: row.error,
-    fileCount: row.fileCount,
-    skippedCount: row.skippedCount,
-    truncated: row.truncated,
-    lastSyncedAt: row.lastSyncedAt?.toISOString() ?? null,
-    lastAttemptAt: row.lastAttemptAt?.toISOString() ?? null,
-    skipped: row.items.map((item) => ({ name: item.path ? `${item.path}/${item.name}` : item.name, error: item.error ?? "" })),
-  }));
+  return rows.map((row) => {
+    const syncing = row.syncClaimedAt !== null && row.syncClaimedAt.getTime() > leaseCutoff;
+    const interrupted = row.state === "syncing" && !syncing;
+    return {
+      id: row.id,
+      provider: "google-drive",
+      kind: row.kind === "file" ? "file" : "folder",
+      externalId: row.externalId,
+      name: row.name,
+      includeSubfolders: row.includeSubfolders,
+      state: interrupted ? "error" : row.state as ProjectSourceView["state"],
+      syncing,
+      errorCode: interrupted ? "provider_error" : row.errorCode as ProjectSourceView["errorCode"],
+      error: interrupted ? sourceErrorMessage("provider_error", row.name) : row.error,
+      fileCount: row.fileCount,
+      skippedCount: row.skippedCount,
+      truncated: row.truncated,
+      lastSyncedAt: row.lastSyncedAt?.toISOString() ?? null,
+      lastAttemptAt: row.lastAttemptAt?.toISOString() ?? null,
+      skipped: row.items.map((item) => ({ name: item.path ? `${item.path}/${item.name}` : item.name, error: item.error ?? "" })),
+    };
+  });
 }
 
 export interface DrivePick {
@@ -130,7 +137,7 @@ export async function addDriveSources(
   includeSubfolders: boolean,
 ): Promise<{ sourceIds: string[] }> {
   const client = await openDrive(userId, AbortSignal.timeout(30_000));
-  const sourceIds: string[] = [];
+  const targets: DriveTarget[] = [];
   for (const pick of picks) {
     let target;
     try {
@@ -139,15 +146,28 @@ export async function addDriveSources(
       throw classifyDriveFailure(error, "that item");
     }
     if (target.trashed) throw new SourceSyncError("not_found", sourceErrorMessage("not_found", target.name));
-    const kind = target.isFolder ? "folder" : "file";
-    const row = await prisma.projectSource.upsert({
-      where: { projectId_provider_externalId: { projectId, provider: PROVIDER, externalId: target.id }, userId },
-      create: { userId, projectId, provider: PROVIDER, kind, externalId: target.id, name: target.name, includeSubfolders },
-      update: { name: target.name, kind, includeSubfolders },
-      select: { id: true },
-    });
-    sourceIds.push(row.id);
+    targets.push(target);
   }
+
+  const sourceIds = await prisma.$transaction(async (tx) => {
+    // Serialize batches for this project so overlapping picks can upsert in
+    // either order without taking source row locks in opposite orders.
+    const projects = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "Project" WHERE "id" = ${projectId} AND "userId" = ${userId} FOR NO KEY UPDATE`;
+    if (!projects.length) throw new SourceSyncError("not_found", "Not found.");
+    const ids: string[] = [];
+    for (const target of targets) {
+      const kind = target.isFolder ? "folder" : "file";
+      const row = await tx.projectSource.upsert({
+        where: { projectId_provider_externalId: { projectId, provider: PROVIDER, externalId: target.id }, userId },
+        create: { userId, projectId, provider: PROVIDER, kind, externalId: target.id, name: target.name, includeSubfolders },
+        update: { name: target.name, kind, includeSubfolders },
+        select: { id: true },
+      });
+      ids.push(row.id);
+    }
+    return ids;
+  });
   scheduleSourceSync(userId, sourceIds);
   return { sourceIds };
 }
@@ -159,28 +179,34 @@ export async function addDriveSources(
  */
 export async function removeProjectSource(userId: string, projectId: string, sourceId: string): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
-    const source = await tx.projectSource.findFirst({ where: { id: sourceId, userId, projectId }, select: { id: true } });
-    if (!source) return false;
+    const rows = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "ProjectSource"
+      WHERE "id" = ${sourceId} AND "userId" = ${userId} AND "projectId" = ${projectId}
+      FOR UPDATE`;
+    if (!rows.length) return false;
     const items = await tx.projectSourceItem.findMany({ where: { userId, sourceId }, select: { attachmentId: true } });
     for (const item of items) {
       if (!item.attachmentId) continue;
-      const attachment = await tx.attachment.findFirst({ where: { id: item.attachmentId, userId, deletedAt: null }, select: { id: true } });
-      if (attachment) await tombstoneAttachment(tx, userId, attachment);
+      await tombstoneById(tx, userId, projectId, item.attachmentId);
     }
     await tx.projectSource.deleteMany({ where: { id: sourceId, userId } });
     return true;
   }, { timeout: 30_000, maxWait: 10_000 });
 }
 
-/** Knowledge tokens the project already holds (indexed counts where known, estimates otherwise). */
-async function projectKnowledgeTokens(userId: string, projectId: string): Promise<number> {
-  const files = await prisma.attachment.findMany({
-    where: { userId, projectId, deletedAt: null, fileName: { not: "__cover__" } },
+type SourceTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/** Only live knowledge counts, excluding the attachment being atomically replaced. */
+async function projectKnowledgeTokens(
+  tx: SourceTransaction, userId: string, projectId: string, replacingId?: string,
+): Promise<number> {
+  const files = await tx.attachment.findMany({
+    where: { userId, projectId, deletedAt: null, fileName: { not: "__cover__" }, ...(replacingId ? { id: { not: replacingId } } : {}) },
     select: { id: true, size: true, mimeType: true },
   });
   if (!files.length) return 0;
-  const documents = await prisma.knowledgeDocument.findMany({
-    where: { userId, attachmentId: { in: files.map((file) => file.id) }, deletedAt: null, supersededById: null },
+  const documents = await tx.knowledgeDocument.findMany({
+    where: { userId, projectId, attachmentId: { in: files.map((file) => file.id) }, deletedAt: null, supersededById: null },
     select: { attachmentId: true, tokenCount: true },
   });
   const tokens = new Map(documents.map((document) => [document.attachmentId, document.tokenCount]));
@@ -191,15 +217,45 @@ function itemRecord(row: { id: string; externalId: string; version: string; atta
   return { id: row.id, externalId: row.externalId, version: row.version, attachmentId: row.attachmentId, state: row.state === "skipped" ? "skipped" : "synced", name: row.name, path: row.path };
 }
 
-async function tombstoneById(userId: string, attachmentId: string) {
-  await prisma.$transaction(async (tx) => {
-    const attachment = await tx.attachment.findFirst({ where: { id: attachmentId, userId, deletedAt: null }, select: { id: true } });
-    if (attachment) await tombstoneAttachment(tx, userId, attachment);
-  });
+async function tombstoneById(tx: SourceTransaction, userId: string, projectId: string, attachmentId: string) {
+  const attachment = await tx.attachment.findFirst({ where: { id: attachmentId, userId, projectId, deletedAt: null }, select: { id: true } });
+  if (attachment) await tombstoneAttachment(tx, userId, attachment);
 }
 
 /** The port drive-source.ts runs a sync through, on Prisma and the upload pipeline. */
-function prismaPort(userId: string, projectId: string, sourceId: string, client: FirstPartyClient, plan: Plan): SourceSyncPort {
+function prismaPort(source: ProjectSource, claimedAt: Date, client: FirstPartyClient, plan: Plan, signal: AbortSignal): SourceSyncPort {
+  const { id: sourceId, userId, projectId } = source;
+  // A stale worker can finish a download, but only the current lease holder may
+  // mutate the mirror. The source row also serializes commits against removal.
+  function withCurrentSource<T>(mutate: (tx: SourceTransaction) => Promise<T>): Promise<T> {
+    signal.throwIfAborted();
+    return prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "ProjectSource"
+        WHERE "id" = ${sourceId} AND "userId" = ${userId} AND "syncClaimedAt" = ${claimedAt}
+        FOR UPDATE`;
+      signal.throwIfAborted();
+      if (!rows.length) throw new SourceSyncError("provider_error", "The sync no longer holds this source.");
+      return mutate(tx);
+    });
+  }
+  function saveItem(tx: SourceTransaction, file: DriveListedFile, attachmentId: string | null, error: string | null) {
+    const data = {
+      name: file.name,
+      mimeType: file.mimeType,
+      path: file.path,
+      version: file.version,
+      attachmentId,
+      state: attachmentId ? "synced" : "skipped",
+      error,
+    };
+    return tx.projectSourceItem.upsert({
+      where: { sourceId_externalId: { sourceId, externalId: file.id }, userId },
+      create: { userId, sourceId, externalId: file.id, ...data },
+      update: data,
+    });
+  }
+
   const maxUploadMb = PLANS[plan].maxUploadMb;
   const ceilingBinds = maxUploadMb > CLOUD_IMPORT_CEILING_MB;
   const limits = {
@@ -213,60 +269,67 @@ function prismaPort(userId: string, projectId: string, sourceId: string, client:
       const rows = await prisma.projectSourceItem.findMany({ where: { userId, sourceId } });
       return rows.map(itemRecord);
     },
-    async importFile(file: DriveListedFile) {
+    async importFile(file, previous) {
+      signal.throwIfAborted();
       const fetched = await fetchCloudFile(client, { id: file.id }, limits);
-      // The upload gate, unchanged: type, size, magic bytes, the stored type.
+      const size = fetched.bytes.byteLength;
       const planned = planAttachmentUpload({
         declaredMime: fetched.mimeType,
         fileName: fetched.fileName,
-        size: fetched.bytes.byteLength,
+        size,
         bytes: fetched.bytes,
         maxUploadMb,
       });
       if (!planned.ok) throw new CloudFileError(planned.error.code, planned.error.status, planned.error.message);
+
+      const { fileName, kind, storedMime: mimeType, storedContentType, contentDisposition, extractedText } = planned.plan;
+      const replacingId = previous?.attachmentId ?? undefined;
+      const storageKey = buildObjectKey(userId, fileName);
+      const fileData = { fileName, kind, mimeType, size, storageKey, extractedText, origin: CLOUD_IMPORT_ORIGIN, parserState: "queued" };
+      const addedTokens = estimateKnowledgeTokens({ size, mimeType });
+      let attachmentId: string;
+      let uploadStarted = false;
       try {
-        // `projectId` is what makes it knowledge: persistAttachment schedules
-        // the project index for it, and every chat in the project reads it.
-        const attachment = await persistAttachment({
-          userId,
-          plan,
-          bytes: fetched.bytes,
-          planned: planned.plan,
-          conversationId: null,
-          projectId,
-          origin: CLOUD_IMPORT_ORIGIN,
+        assertLibraryCapacity(await libraryCapacity(userId, plan, size, replacingId));
+        signal.throwIfAborted();
+        uploadStarted = true;
+        await putObject(storageKey, fetched.bytes, storedContentType, contentDisposition);
+        attachmentId = await withCurrentSource(async (tx) => {
+          // The Library quota lock also serializes capacity reads across
+          // different Drive sources for the same project owner.
+          assertLibraryCapacity(await lockedLibraryCapacity(tx, userId, plan, size, replacingId));
+          const used = await projectKnowledgeTokens(tx, userId, projectId, replacingId);
+          if (used + addedTokens > PROJECT_KNOWLEDGE_CAPACITY_TOKENS) {
+            throw new SourceSyncError("capacity", sourceErrorMessage("capacity", source.name));
+          }
+          signal.throwIfAborted();
+          const created = await tx.attachment.create({ data: { userId, projectId, ...fileData } });
+          await tx.attachmentVersion.create({ data: { attachmentId: created.id, version: created.version, ...fileData } });
+          await saveItem(tx, file, created.id, null);
+          if (replacingId) await tombstoneById(tx, userId, projectId, replacingId);
+          return created.id;
         });
-        return { attachmentId: attachment.id, bytes: attachment.size, mimeType: attachment.mimeType };
       } catch (error) {
+        if (uploadStarted) await deleteObject(storageKey).catch(() => undefined);
         if (error instanceof LibraryQuotaExceededError) throw new CloudFileError("LIBRARY_QUOTA_EXCEEDED", 413, "Library storage limit reached.");
         throw error;
       }
+
+      scheduleIngest({ userId, projectId, attachmentId, fileName, mimeType, bytes: fetched.bytes });
     },
-    async saveItem(file, outcome) {
-      const data = {
-        name: file.name,
-        mimeType: file.mimeType,
-        path: file.path,
-        version: file.version,
-        attachmentId: outcome.attachmentId,
-        state: outcome.state,
-        error: outcome.error,
-      };
-      await prisma.projectSourceItem.upsert({
-        where: { sourceId_externalId: { sourceId, externalId: file.id }, userId },
-        create: { userId, sourceId, externalId: file.id, ...data },
-        update: data,
+    async skipItem(file, error) {
+      await withCurrentSource((tx) => saveItem(tx, file, null, error));
+    },
+    async removeItem(item) {
+      await withCurrentSource(async (tx) => {
+        if (item.attachmentId) await tombstoneById(tx, userId, projectId, item.attachmentId);
+        await tx.projectSourceItem.deleteMany({ where: { id: item.id, userId, sourceId } });
       });
     },
-    async removeItem(item: SourceItemRecord) {
-      if (item.attachmentId) await tombstoneById(userId, item.attachmentId);
-      await prisma.projectSourceItem.deleteMany({ where: { id: item.id, userId } });
-    },
-    async removeAttachment(attachmentId: string) {
-      await tombstoneById(userId, attachmentId);
-    },
-    async relabelItem(item: SourceItemRecord, file: DriveListedFile) {
-      await prisma.projectSourceItem.updateMany({ where: { id: item.id, userId }, data: { name: file.name, path: file.path } });
+    async relabelItem(item, file) {
+      await withCurrentSource((tx) => tx.projectSourceItem.updateMany({
+        where: { id: item.id, userId, sourceId }, data: { name: file.name, path: file.path },
+      }));
     },
   };
 }
@@ -282,19 +345,21 @@ export async function syncProjectSource(userId: string, sourceId: string): Promi
     where: {
       id: sourceId,
       userId,
-      OR: [{ syncClaimedAt: null }, { syncClaimedAt: { lt: new Date(now.getTime() - SYNC_LEASE_MS) } }],
+      OR: [{ syncClaimedAt: null }, { syncClaimedAt: { lte: new Date(now.getTime() - SYNC_LEASE_MS) } }],
     },
     data: { syncClaimedAt: now, lastAttemptAt: now, state: "syncing" },
   });
   if (claimed.count !== 1) return null;
 
   let result: SourceSyncResult | null = null;
-  const source = await prisma.projectSource.findFirst({ where: { id: sourceId, userId } });
+  let source: ProjectSource | null = null;
   try {
+    source = await prisma.projectSource.findFirst({ where: { id: sourceId, userId, syncClaimedAt: now } });
     if (!source) return null;
+    const signal = AbortSignal.timeout(SYNC_BUDGET_MS);
     let client: FirstPartyClient;
     try {
-      client = await openDrive(userId, AbortSignal.timeout(SYNC_BUDGET_MS));
+      client = await openDrive(userId, signal);
     } catch (error) {
       const failure = classifyDriveFailure(error, source.name);
       result = {
@@ -312,12 +377,10 @@ export async function syncProjectSource(userId: string, sourceId: string): Promi
       return result;
     }
     const plan = await getUserPlan(userId);
-    const used = await projectKnowledgeTokens(userId, source.projectId);
     result = await runSourceSync({
       client,
       source: { kind: source.kind === "file" ? "file" : "folder", externalId: source.externalId, name: source.name, includeSubfolders: source.includeSubfolders },
-      port: prismaPort(userId, source.projectId, sourceId, client, plan),
-      remainingTokens: PROJECT_KNOWLEDGE_CAPACITY_TOKENS - used,
+      port: prismaPort(source, now, client, plan, signal),
     });
     return result;
   } catch (error) {
@@ -339,9 +402,9 @@ export async function syncProjectSource(userId: string, sourceId: string): Promi
     // The listing reached Drive (whatever the files then did) → it counts as a
     // sync. A source Drive refused keeps the time of its last good one.
     const listed = result !== null && (result.state === "ready" || result.errorCode === "capacity" || result.errorCode === "library_full");
-    await prisma.projectSource
+    const settled = await prisma.projectSource
       .updateMany({
-        where: { id: sourceId, userId },
+        where: { id: sourceId, userId, syncClaimedAt: now },
         data: {
           syncClaimedAt: null,
           ...(result
@@ -359,7 +422,7 @@ export async function syncProjectSource(userId: string, sourceId: string): Promi
         },
       })
       .catch(() => undefined);
-    if (result && (result.added || result.updated || result.removed)) {
+    if (settled?.count && result && (result.added || result.updated || result.removed)) {
       // The project's own `updatedAt` is its "last activity" on the list.
       await prisma.project.updateMany({ where: { id: source?.projectId ?? "", userId }, data: { updatedAt: new Date() } }).catch(() => undefined);
     }
@@ -410,13 +473,16 @@ export async function dueSourceIds(userId: string, projectId: string, now: numbe
     where: {
       userId,
       projectId,
-      syncClaimedAt: null,
-      AND: [
-        { OR: [{ lastAttemptAt: null }, { lastAttemptAt: { lt: staleBefore } }] },
-        // A source waiting on the person (a reconnect, a missing connection)
-        // is not retried on every view; Sync now and the next connect do it.
-        // Spelled with an explicit null branch: NOT IN is never true of NULL.
-        { OR: [{ errorCode: null }, { errorCode: { notIn: ["not_connected", "reconnect"] } }] },
+      OR: [
+        { syncClaimedAt: { lte: new Date(now - SYNC_LEASE_MS) } },
+        {
+          syncClaimedAt: null,
+          AND: [
+            { OR: [{ lastAttemptAt: null }, { lastAttemptAt: { lt: staleBefore } }] },
+            // An idle source waiting on the person is retried by Sync now.
+            { OR: [{ errorCode: null }, { errorCode: { notIn: ["not_connected", "reconnect"] } }] },
+          ],
+        },
       ],
     },
     select: { id: true },

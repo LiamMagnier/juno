@@ -1,5 +1,5 @@
 import type { ModelInfo } from "@/lib/models";
-import { geminiFrontierRate, geminiFlashRate, isGeminiPromoFrontier, isGeminiPromoFlash } from "@/lib/scheduled-prices";
+import { geminiFrontierRate, geminiFlashRate, isGeminiPromoFrontier, isGeminiPromoFlash, openAIUltraFastIntroMultiplier } from "@/lib/scheduled-prices";
 import { OFFICIAL_RATES, type OfficialRateEntry } from "@/lib/model-rates.generated";
 
 /**
@@ -455,10 +455,10 @@ export function supportsFastMode(model: ModelInfo): boolean {
  * inferred: OpenAI serves it on GPT-6 Astra and GPT-6.1 Sol at 6x standard,
  * and a guess here would put a 6x premium in front of a model that rejects it.
  */
-export function ultraFastMultiplier(model: ModelInfo): number | null {
+export function ultraFastMultiplier(model: ModelInfo, at: Date | number = Date.now()): number | null {
   const official = officialRate(model);
   if (!official?.ultrafast) return null;
-  return Math.round((official.ultrafast.input / official.input) * 100) / 100;
+  return openAIUltraFastIntroMultiplier(model.providerModel, at) ?? Math.round((official.ultrafast.input / official.input) * 100) / 100;
 }
 
 /** Whether this model can be served on the Ultrafast tier. */
@@ -478,10 +478,15 @@ export function resolveFastMode(model: ModelInfo, req: { fastMode?: boolean; ult
 }
 
 /** Input / output rate multiples for a request's serving tier. */
-function speedMultipliers(model: ModelInfo, fastMode: FastMode): { input: number; output: number } {
+function speedMultipliers(model: ModelInfo, fastMode: FastMode, at: Date | number): { input: number; output: number } {
   if (!fastMode) return { input: 1, output: 1 };
   const official = officialRate(model);
-  const tier = fastMode === "ultrafast" && official?.ultrafast ? official.ultrafast : official?.fast;
+  if (fastMode === "ultrafast" && official?.ultrafast) {
+    const intro = openAIUltraFastIntroMultiplier(model.providerModel, at);
+    if (intro !== null) return { input: intro, output: intro };
+    return { input: official.ultrafast.input / official.input, output: official.ultrafast.output / official.output };
+  }
+  const tier = official?.fast;
   if (official && tier) return { input: tier.input / official.input, output: tier.output / official.output };
   const m = fastModeMultiplier(model) ?? 1;
   return { input: m, output: m };
@@ -507,7 +512,7 @@ export function qwenExplicitCacheModel(model: Pick<ModelInfo, "provider" | "prov
  */
 export function tokenRate(model: ModelInfo, fastMode: FastMode = false, at: Date | number = Date.now()): TokenRate {
   const raw = baseRate(model, at);
-  const speed = speedMultipliers(model, fastMode);
+  const speed = speedMultipliers(model, fastMode, at);
   const rate = computedRate(model, raw.input * speed.input, raw.output * speed.output);
   const official = officialRate(model);
   if (!official) return rate;

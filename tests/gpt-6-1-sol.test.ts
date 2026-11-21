@@ -27,15 +27,16 @@ function model(id: string): ModelInfo {
   return resolved;
 }
 
-test("GPT-6.1 Sol is the current Sol and resolves to itself", () => {
+test("GPT-6.1 Sol remains selectable as an older Sol and resolves to itself", () => {
   const listed = MODEL_LIST.find((entry) => entry.id === "openai:gpt-6.1-sol");
   assert.ok(listed, "GPT-6.1 Sol is in the picker's catalog");
-  assert.equal(listed.status, "current");
+  assert.equal(listed.status, "legacy");
+  assert.equal(model("openai:gpt-6.1-sol").id, listed.id);
   assert.equal(listed.family, "gpt");
   assert.equal(listed.contextWindow, 1_050_000);
   assert.equal(listed.vision, true);
   assert.equal(listed.reasoning, true);
-  assert.equal(model("openai:gpt-6-sol").status, "legacy", "GPT-6 Sol steps down for 6.1");
+  assert.equal(model("openai:gpt-6-sol").status, "legacy", "the first Sol stays an older model");
 });
 
 test("it is routed to the Responses API with the documented wire id", () => {

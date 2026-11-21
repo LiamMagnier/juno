@@ -20,8 +20,8 @@ const GAP = 24;
  */
 export const VIRTUALIZE_AFTER = 24;
 const BOTTOM_SLOP = 24;
-/** The content box's top padding (`pt-6` in message-list.tsx), for rows the window has not mounted. */
-const CONTENT_TOP = 24;
+/** The content box's top padding, shared with the transcript it measures. */
+export const TRANSCRIPT_CONTENT_TOP = 8;
 
 /** Keep rich message renderers bounded; measurements include inline runs/media. */
 export function useTranscriptWindow(
@@ -117,7 +117,7 @@ export function useTranscriptWindow(
           // The question left the transcript (a branch or an edit above it).
           pinnedKeyRef.current = null;
         } else {
-          turnTop = table.offsets[index] + CONTENT_TOP;
+          turnTop = table.offsets[index] + TRANSCRIPT_CONTENT_TOP;
           turnHeight = table.offsets[index + 1] - table.offsets[index];
         }
       }
@@ -153,7 +153,7 @@ export function useTranscriptWindow(
       }
       // A large wheel/Home gesture can land in an unmounted spacer before
       // React paints the next window. Never reuse the previous viewport's row.
-      readerAnchorRef.current ??= transcriptAnchor(layoutRef.current, el.scrollTop - 24);
+      readerAnchorRef.current ??= transcriptAnchor(layoutRef.current, el.scrollTop - TRANSCRIPT_CONTENT_TOP);
     }
     setViewport((prev) => Math.abs(prev.top - el.scrollTop) < 0.5 && prev.height === el.clientHeight ? prev : { top: el.scrollTop, height: el.clientHeight });
   }, []);
@@ -253,7 +253,7 @@ export function useTranscriptWindow(
       let changed = false;
       // Capture from the OLD height table, before applying a whole resize
       // batch. Re-estimating rows above the reader must not move their line.
-      const anchor = readerAnchorRef.current ?? transcriptAnchor(layoutRef.current, el.scrollTop - 24);
+      const anchor = readerAnchorRef.current ?? transcriptAnchor(layoutRef.current, el.scrollTop - TRANSCRIPT_CONTENT_TOP);
       if (widthRef.current !== el.clientWidth) {
         widthRef.current = el.clientWidth;
         measurements.current.clear();
@@ -300,7 +300,7 @@ export function useTranscriptWindow(
     // changing height.
     const prepended = priorFirst !== undefined && layout.keys[0] !== priorFirst && (layout.indexByKey.get(priorFirst) ?? 0) > 0;
     if (prepended && !followsRef.current && !targetRef.current) {
-      pendingAnchor.current ??= readerAnchorRef.current ?? transcriptAnchor(previous, el.scrollTop - 24);
+      pendingAnchor.current ??= readerAnchorRef.current ?? transcriptAnchor(previous, el.scrollTop - TRANSCRIPT_CONTENT_TOP);
     }
     // A turn started (a send, a regenerate, a resend): pin its question. The
     // follow below then travels to the end, which the bed makes the pin.
@@ -324,7 +324,8 @@ export function useTranscriptWindow(
     } else if (followsRef.current) {
       follow(!mountedRef.current);
     } else if (pendingAnchor.current) {
-      writeTop(anchoredTranscriptTop(layout, pendingAnchor.current, el.scrollTop) + 24);
+      const top = anchoredTranscriptTop(layout, pendingAnchor.current, el.scrollTop - TRANSCRIPT_CONTENT_TOP);
+      writeTop(top + TRANSCRIPT_CONTENT_TOP);
       pendingAnchor.current = null;
     }
     mountedRef.current = true;
@@ -336,7 +337,7 @@ export function useTranscriptWindow(
     // this on every step. Measure them here, before paint, and hold the line
     // the layout put on screen.
     if (!followsRef.current && !targetRef.current) {
-      const intended = transcriptAnchor(layout, el.scrollTop - 24);
+      const intended = transcriptAnchor(layout, el.scrollTop - TRANSCRIPT_CONTENT_TOP);
       let measured = false;
       for (const [element, key] of observedRows.current) {
         if (measurements.current.has(key)) continue;
@@ -389,7 +390,7 @@ export function useTranscriptWindow(
     dispatch("scroll-away");
     pendingAnchor.current = null;
     targetRef.current = messageId;
-    const top = Math.max(0, layout.offsets[index] + 24 - el.clientHeight / 2);
+    const top = Math.max(0, layout.offsets[index] + TRANSCRIPT_CONTENT_TOP - el.clientHeight / 2);
     writeTop(top);
     setViewport({ top, height: el.clientHeight });
     bump();
@@ -437,9 +438,11 @@ export function useTranscriptWindow(
   const heldAnchor = !followsRef.current && !targetRef.current
     ? pendingAnchor.current ?? (prepended ? readerAnchorRef.current : null)
     : null;
-  const viewTop = heldAnchor ? anchoredTranscriptTop(layout, heldAnchor, viewport.top) + 24 : viewport.top;
+  const viewTop = heldAnchor
+    ? anchoredTranscriptTop(layout, heldAnchor, viewport.top - TRANSCRIPT_CONTENT_TOP) + TRANSCRIPT_CONTENT_TOP
+    : viewport.top;
   const top = Number.isFinite(viewTop) ? viewTop : Math.max(0, layout.total - viewport.height);
-  const range = windowed ? transcriptWindow(layout, Math.max(0, top - 24), viewport.height) : { start: 0, end: messages.length };
+  const range = windowed ? transcriptWindow(layout, Math.max(0, top - TRANSCRIPT_CONTENT_TOP), viewport.height) : { start: 0, end: messages.length };
   const indices = mountedTranscriptIndices(range, [
     // The streaming leaf stays mounted when the reader looks back through history.
     last?.streaming ? messages.length - 1 : undefined,

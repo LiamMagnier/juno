@@ -26,6 +26,7 @@ import { toolCapabilitiesFor } from "@/lib/model-tools";
 interface Expected {
   id: string;
   providerModel: string;
+  status?: "legacy";
   family: string;
   adapter: ReturnType<typeof providerAdapterFor>;
   url: string;
@@ -41,11 +42,12 @@ const NEW_MODELS: Expected[] = [
   },
   // Every OpenAI model is served through Responses (SPEC §5.2): GPT-6 Sol and
   // Luna call tools on /chat/completions only at effort "none". GPT-6 Sol was
-  // itself superseded on 2026-09-29 by GPT-6.1 Sol, which leads the Sol line
-  // now (its own contract is pinned in gpt-6-1-sol.test.ts).
+  // itself superseded on 2026-09-29 by GPT-6.1 Sol. GPT-6.2 Sol now leads
+  // the family; the September release remains available under its wire id.
   {
     id: "openai:gpt-6.1-sol",
     providerModel: "gpt-6.1-sol",
+    status: "legacy",
     family: "gpt",
     adapter: "openai-responses",
     url: "https://api.openai.com/v1/responses",
@@ -78,8 +80,8 @@ test("each new model is selectable and resolves to itself, not to a migration ta
   for (const expected of NEW_MODELS) {
     const listed = MODEL_LIST.find((entry) => entry.id === expected.id);
     assert.ok(listed, `${expected.id} is in the picker's catalog`);
-    assert.equal(listed.status, "current", `${expected.id} is the current row of its family`);
-    assert.equal(listed.family, expected.family, `${expected.id} leads ${expected.family}`);
+    assert.equal(listed.status, expected.status ?? "current", `${expected.id} has its expected catalog status`);
+    assert.equal(listed.family, expected.family, `${expected.id} stays in ${expected.family}`);
     assert.notEqual(listed.comingSoon, true, `${expected.id} is routable`);
     assert.equal(listed.modality, "chat");
     assert.ok(listed.vision, `${expected.id} takes images`);
@@ -137,16 +139,16 @@ test("the models each one replaced stay routable under their own ids", () => {
   assert.equal(model("openai:gpt-5.6-terra").family, model("openai:gpt-6.1-terra").family);
 });
 
-test("stored ids that pointed at a Sol tier land on the current Sol, GPT-6.1 Sol", () => {
+test("stored ids that pointed at a Sol tier land on the current Sol, GPT-6.2 Sol", () => {
   for (const alias of ["openai:gpt-5.6", "openai:gpt-5.5-thinking", "openai:o1-preview"]) {
-    assert.equal(RETIRED_MODELS[alias], "openai:gpt-6.1-sol", alias);
-    assert.equal(model(alias).id, "openai:gpt-6.1-sol", `${alias} routes to GPT-6.1 Sol`);
+    assert.equal(RETIRED_MODELS[alias], "openai:gpt-6.2-sol", alias);
+    assert.equal(model(alias).id, "openai:gpt-6.2-sol", `${alias} routes to GPT-6.2 Sol`);
   }
   // Read from the curated row (or, once models:sync has moved it, from
   // RETIRED_MODELS): after its date, resolving the id already lands on the heir.
   for (const retiring of ["openai:gpt-5", "openai:o3", "openai:o1", "openai:gpt-4-turbo"]) {
     const row = CURATED_CHAT_MODELS.find((m) => m.id === retiring);
-    assert.equal(row ? row.replacedBy : RETIRED_MODELS[retiring], "openai:gpt-6.1-sol", `${retiring} retires into GPT-6.1 Sol`);
+    assert.equal(row ? row.replacedBy : RETIRED_MODELS[retiring], "openai:gpt-6.2-sol", `${retiring} retires into GPT-6.2 Sol`);
   }
 });
 

@@ -2606,7 +2606,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
         // In incognito the cluster is the toggle alone (everything else in it
         // is gated on `!privateMode`), and it stays visible: it is the "on"
         // state and the way out (private-chat-toggle.tsx).
-        "flex items-center gap-1.5",
+        "conversation-actions flex items-center gap-1",
         (sidePanelOpen || thoughtOpenId) && "hidden"
       )}
     >
@@ -2790,7 +2790,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             )}
           >
             <div className={cn("min-h-0 overflow-hidden", !privateMode && "pointer-events-none")}>
-              <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/60 px-4 text-ui text-muted-foreground sm:px-5">
+              <div className="conversation-header flex h-11 shrink-0 items-center justify-between border-b border-border/60 text-ui text-muted-foreground">
                 {forkedFrom ? (
                   <div className="inline-flex min-w-0 items-center gap-2 font-medium">
                     <GitFork className="size-4 shrink-0 text-primary" />
@@ -3341,9 +3341,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
         </div>
       )}
 
-      {/* Nothing about computers when they are off on this server
-          (`agent.computer` is null then), even for a `?agent=computer` link. */}
-      {agent && !privateMode && agent.computer ? (
+      {agent && !privateMode && (agent.computer || agentPanelTab === "computer") ? (
         <AgentComputerOverlay agent={agent} open={agentPanelTab === "computer"} onClose={() => setAgentTab(null)} />
       ) : null}
 

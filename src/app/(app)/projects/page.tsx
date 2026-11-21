@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Search } from "@/components/ui/icons";
+import { LayoutGrid, List, Plus, Search } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
@@ -34,6 +34,7 @@ import {
 import { MOVE_REFUSAL_MESSAGES, type DeleteChildrenMode, type MoveRefusal } from "@/lib/projects/project-tree";
 import { PROJECT_SORT_OPTIONS, visibleProjects, type ProjectFilter, type ProjectSort } from "@/lib/projects/project-view";
 import { ProjectDetailsDialog } from "@/components/projects/project-details-dialog";
+import { Pressable } from "@/components/ui/pressable";
 
 interface ProjectItem extends FolderProject {
   instructions: string;
@@ -82,6 +83,7 @@ export default function ProjectsPage() {
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<ProjectFilter>("all");
   const [sortBy, setSortBy] = React.useState<ProjectSort>("activity");
+  const [layout, setLayout] = React.useState<"grid" | "list">("grid");
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [createBusy, setCreateBusy] = React.useState(false);
@@ -297,12 +299,6 @@ export default function ProjectsPage() {
   const empty = !loading && all.length === 0;
   const topCount = all.filter(isTop).length;
   const pinnedCount = all.filter((p) => p.starred).length;
-  // The most recently touched project wears the presence trajectory, here and on the map.
-  const liveId = React.useMemo(() => {
-    let best: ProjectItem | null = null;
-    for (const p of all) if (!best || p.updatedAt > best.updatedAt) best = p;
-    return best?.id ?? null;
-  }, [all]);
   const deletingChildren = deleting ? childrenOf.get(deleting.id) ?? [] : [];
   const deletingParent = deleting?.parentId ? all.find((p) => p.id === deleting.parentId) : undefined;
 
@@ -314,29 +310,29 @@ export default function ProjectsPage() {
   );
 
   return (
-    <AppPage measure="wide">
+    <AppPage measure="wide" contentClassName="pj-projects-page">
       <AppPageHeader
         heading="Projects"
-        lede={empty || error ? undefined : "Chats, instructions and knowledge, kept together."}
+        lede={empty || error ? undefined : "Pick up a conversation or give new work its own files and instructions."}
         actions={empty || error ? undefined : newProject}
       />
 
       {!loading && !empty && !error && (
-        <div className="flex flex-wrap items-center gap-2 [animation-fill-mode:backwards] motion-safe:animate-rise-in">
+        <div className="pj-toolbar" role="group" aria-label="Project browsing controls">
           <SearchField
             value={query}
             onValueChange={setQuery}
             label="Search projects"
             placeholder="Search projects and folders"
-            className="w-full @[40rem]/page:w-auto @[40rem]/page:min-w-64 @[40rem]/page:flex-1"
+            className="min-w-0"
           />
           {searching && <span className="sr-only" role="status">{shown.length} of {all.length} projects</span>}
-          <div className="flex w-full items-center gap-2 @[40rem]/page:w-auto">
+          <div className="pj-toolbar-filters">
             <SegmentedControl
               value={filter}
               onChange={setFilter}
               ariaLabel="Filter projects"
-              className="flex-1 @[40rem]/page:flex-none"
+              className="min-w-0"
               // All counts what All shows: the top level. It counted folders
               // too, so it said 12 over a grid of 8 tiles, and on a phone it
               // is the only count on screen. Pinned lists every level, so it
@@ -347,7 +343,7 @@ export default function ProjectsPage() {
               ]}
             />
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as ProjectSort)}>
-              <SelectTrigger className="min-w-0 flex-1 @[40rem]/page:w-44 @[40rem]/page:flex-none" aria-label="Sort projects">
+              <SelectTrigger className="min-w-0" aria-label="Sort projects">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -358,6 +354,14 @@ export default function ProjectsPage() {
                 ))}
               </SelectContent>
             </Select>
+            <div className="pj-layout-control" role="group" aria-label="Project layout">
+              <Pressable kind="icon" size="sm" aria-label="Grid view" title="Grid view" aria-pressed={layout === "grid"} selected={layout === "grid"} onClick={() => setLayout("grid")}>
+                <LayoutGrid className="size-4" aria-hidden="true" />
+              </Pressable>
+              <Pressable kind="icon" size="sm" aria-label="List view" title="List view" aria-pressed={layout === "list"} selected={layout === "list"} onClick={() => setLayout("list")}>
+                <List className="size-4" aria-hidden="true" />
+              </Pressable>
+            </div>
           </div>
         </div>
       )}
@@ -396,7 +400,7 @@ export default function ProjectsPage() {
           }
         />
       ) : (
-        <ul className="pj pj-grid mt-6 grid gap-3 @[30rem]/page:grid-cols-2 @[42rem]/page:gap-4 @[64rem]/page:grid-cols-3" aria-label="Projects">
+        <ul className="pj pj-grid pj-project-results" data-layout={layout} aria-label="Projects">
           {shown.map((p, i) => (
             <li key={p.id} className="min-w-0">
               <ProjectTile
@@ -404,7 +408,6 @@ export default function ProjectsPage() {
                 folders={filtering ? [] : childrenOf.get(p.id) ?? []}
                 pathLabel={filtering && !isTop(p) ? `In ${pathOf(all, p.id)}` : undefined}
                 allProjects={all}
-                live={p.id === liveId}
                 index={i}
                 onToggleStar={() => toggleStar(p)}
                 onRename={() => setNameDialog({ mode: "rename", project: p })}

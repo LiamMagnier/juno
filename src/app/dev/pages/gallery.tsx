@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { ActivityView } from "@/components/activity/activity-view";
+import type { ActivityItem } from "@/lib/activity/model";
 import { AppProvider } from "@/components/app/app-provider";
 import { AppShell } from "@/components/app/app-shell";
 import LibraryPage from "@/app/(app)/library/page";
@@ -41,6 +43,18 @@ import type { PageName, PageState } from "./pages";
 
 const json = (body: unknown, status = 200) =>
   Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
+
+function activityFixture(): ActivityItem[] {
+  const now = Date.now();
+  const common = {
+    kind: "work", conversationId: null, runId: null, canStop: false, agent: null,
+    startedAt: new Date(now - 4 * 60_000).toISOString(), updatedAt: new Date(now).toISOString(),
+  } as const;
+  return [
+    { ...common, id: "work:approval", sourceId: "approval", title: "Send the renewal brief", state: "needs_you", need: "approval", status: "waiting_approval", needSummary: "Approve sending the renewal brief.", href: "/activity" },
+    { ...common, id: "work:running", sourceId: "running", title: "Compare workspace pricing", state: "running", need: null, status: "running", needSummary: null, href: "/activity" },
+  ];
+}
 
 /**
  * The routes the pages read, answered from fixtures. `state` decides what the
@@ -99,6 +113,10 @@ function route(path: string, url: URL, method: string, state: PageState, page: P
 
   if (path === "/api/projects") return shell ? json({ projects: PROJECTS }) : own({ projects: PROJECTS }, { projects: [] });
   if (path.startsWith("/api/projects/") && path.endsWith("/memory")) return json(PROJECT_MEMORY);
+  if (/^\/api\/projects\/[^/]+\/sources$/.test(path)) {
+    if (new URLSearchParams(window.location.search).get("sources") === "invalid") return json({ unavailable: true });
+    return json({ sources: [], drive: { enabled: false, configured: false, connected: false, accountLabel: null } });
+  }
   if (path.startsWith("/api/projects/")) {
     // A folder answers as one (breadcrumbs, inherited instructions); any
     // other id answers as Atlas, the project that holds folders.
@@ -134,6 +152,8 @@ function route(path: string, url: URL, method: string, state: PageState, page: P
     ];
     return own({ items: items.filter((item) => item.title.toLowerCase().includes(q)), nextCursor: null }, { items: [], nextCursor: null });
   }
+  if (path === "/api/activity/counts") return json({ counts: { needs_you: 1, running: 1, ready: 0, blocked: 0 } });
+  if (path === "/api/activity") return own({ items: activityFixture(), nextCursor: null }, { items: [], nextCursor: null });
   if (path === "/api/approvals/grants") return own({ grants: [] }, { grants: [] });
   if (path === "/api/settings") return json({ settings: { ...bootstrap().settings, actionApprovalPolicy: "ask_for_any_change", blockedConnectors: [], lockdownMode: false } });
   if (/^\/api\/attachments\/[^/]+\/preview$/.test(path)) return json({ text: "Development fixture.\nThis document preview uses sample content for visual review.", thumbnailUrl: null });
@@ -211,6 +231,8 @@ function Opener({ page }: { page: PageName }) {
 
 function Page({ page }: { page: PageName }) {
   switch (page) {
+    case "activity":
+      return <ActivityView />;
     case "library":
       return <LibraryPage />;
     case "projects":

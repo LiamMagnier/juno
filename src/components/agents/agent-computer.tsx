@@ -214,10 +214,6 @@ export function AgentComputerOverlay({
   const run = async (action: "wake" | "reset" | "sleep") => {
     if (busy) return;
     setBusy(action);
-    if (action === "wake" && status === "disabled") {
-      const enabled = await session.action("enable");
-      if (!enabled || enabled.kind !== "ok") { setBusy(null); return; }
-    }
     const res = await session.action(action);
     setBusy(null);
     if (res?.kind === "failed") toast.error(res.message);

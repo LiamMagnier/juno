@@ -5,10 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { intentPrefetch } from "@/lib/intent-prefetch";
 import { openWithViewTransition } from "@/lib/view-transition";
-import { MessageSquare, Plus, Pin, PinOff, FolderInput, Search } from "@/components/ui/icons";
+import { MessageSquare, Pin, PinOff, FolderInput, Search } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchField } from "@/components/ui/search-field";
 import { Pressable } from "@/components/ui/pressable";
 import {
   DropdownMenu,
@@ -40,7 +40,6 @@ interface ProjectChatListProps {
   /** Opens the Move to… picker for this chat. Rows also drag onto folders. */
   onRequestMove?: (chat: ProjectConversationItem) => void;
   onDeleteChat?: (chat: ProjectConversationItem) => void;
-  onNewChat: () => void;
   className?: string;
 }
 
@@ -50,16 +49,15 @@ export function ProjectChatList({
   onTogglePin,
   onRequestMove,
   onDeleteChat,
-  onNewChat,
   className,
 }: ProjectChatListProps) {
   const [query, setQuery] = React.useState("");
+  const search = query.trim().toLowerCase();
 
-  const filtered = React.useMemo(() => {
-    if (!query.trim()) return conversations;
-    const q = query.toLowerCase();
-    return conversations.filter((c) => c.title.toLowerCase().includes(q));
-  }, [conversations, query]);
+  const filtered = React.useMemo(
+    () => search ? conversations.filter((c) => c.title.toLowerCase().includes(search)) : conversations,
+    [conversations, search],
+  );
 
   const pinned = filtered.filter((c) => c.pinned);
   const unpinned = filtered.filter((c) => !c.pinned);
@@ -67,37 +65,19 @@ export function ProjectChatList({
   const rowProps = { currentProjectId: projectId, onTogglePin, onRequestMove, onDeleteChat };
 
   return (
-    <div className={cn("space-y-4", className)}>
-      {/* One row at every width, every control 36px (44 on touch): the field
-          fills the row up to New chat. Its count appears only while a search
-          is narrowing the list, inside the field beside what was typed. */}
-      <div className="flex items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
+    <div className={cn("space-y-3", className)}>
+      {conversations.length > 0 && (
+        <>
+          <SearchField
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onValueChange={setQuery}
             placeholder="Search chats…"
-            aria-label="Search chats in this project"
-            className={cn("pl-9", query.trim() && "pr-16")}
+            label="Search chats in this project"
+            className="pj-chat-search"
           />
-          {query.trim() && (
-            <span
-              aria-live="polite"
-              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-caption tabular-nums text-muted-foreground motion-safe:animate-fade-in"
-            >
-              {filtered.length} of {conversations.length}
-            </span>
-          )}
-        </div>
-        <Button type="button" variant="secondary" onClick={onNewChat} className="shrink-0">
-          <Plus className="size-4" aria-hidden="true" />
-          New chat
-        </Button>
-      </div>
+          <span role="status" className="sr-only">{search ? `${filtered.length} of ${conversations.length} chats` : ""}</span>
+        </>
+      )}
 
       {filtered.length === 0 ? (
         <EmptyState
@@ -123,7 +103,7 @@ export function ProjectChatList({
         // on the column's edge, as the Sources list's do. They used to hang
         // 40px into the margin from @4xl, but the tab panel clips there, so
         // every row on a desktop project page showed half a speech bubble.
-        <div className="-mx-3 space-y-5">
+        <div className="-mx-3 space-y-3">
           {pinned.length > 0 && (
             <section aria-label="Pinned chats">
               <SectionLabel label="Pinned" count={pinned.length} />
@@ -207,7 +187,7 @@ function ChatRow({
         onClick={(event) => openWithViewTransition(event, router, `/chat/${chat.id}`)}
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
       >
-        <span className="truncate text-ui font-medium tracking-[-0.006em] text-foreground">{chat.title}</span>
+        <span className="line-clamp-2 break-words text-ui font-medium tracking-[-0.006em] text-foreground">{chat.title}</span>
         {/* On the hover fill the quiet ink steps to its on-fill twin, which
             holds 4.5:1 there (spec §3.1). */}
         <span className="pj-annot group-hover:text-muted-on-fill">

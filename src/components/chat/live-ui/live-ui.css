@@ -23,9 +23,10 @@
    surfaces and 8 (control) for controls: nothing inside competes with the
    outer curve. */
 .live-card {
-  border-radius: 16px;
+  border-radius: var(--web-panel-radius, 16px);
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
+  box-shadow: 0 2px 8px hsl(var(--shadow-ink) / .035);
 }
 .dark .live-card {
   border-color: hsl(0 0% 100% / 0.09);
@@ -38,7 +39,7 @@
   width: fit-content;
   align-items: center;
   gap: 0.375rem;
-  border-radius: 999px;
+  border-radius: 7px;
   padding: 0.125rem 0.5rem 0.125rem 0.4375rem;
   font-size: 0.6875rem;
   font-weight: 600;

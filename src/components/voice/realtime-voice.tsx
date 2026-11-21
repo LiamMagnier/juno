@@ -290,7 +290,7 @@ export function VoiceCallControls({
                 "coarse:size-11 coarse:justify-center coarse:p-0"
               )}
             >
-              <ActionIcons.refresh className="size-4" aria-hidden="true" />
+              <ActionIcons.refresh className="size-4.5" aria-hidden="true" />
               <span className="coarse:sr-only">{restart}</span>
             </button>
           </span>
@@ -322,7 +322,7 @@ export function VoiceCallControls({
                 label="Share your screen"
                 tooltip={voice.screenSharing ? "Stop sharing" : "Share screen"}
               >
-                <IconSwap swapped={voice.screenSharing} from={<MonitorUp className="size-4" />} to={<MonitorX className="size-4" />} />
+                <IconSwap swapped={voice.screenSharing} from={<MonitorUp className="size-4.5" />} to={<MonitorX className="size-4.5" />} />
               </CallButton>
             </span>
           )}
@@ -392,7 +392,7 @@ export function VoiceCallEnd({ onClose, ended = false }: { onClose: () => void; 
               "motion-reduce:active:scale-100 coarse:size-11"
             )}
           >
-            <CallEnd className="size-5" />
+            <CallEnd className="size-4.5" />
           </button>
         </TooltipTrigger>
         <TooltipContent>{ended ? "Close voice" : "End call"}</TooltipContent>

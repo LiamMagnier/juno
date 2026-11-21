@@ -163,12 +163,12 @@ public struct JunoType: Equatable, Sendable {
         fluidSize(JunoGeneratedType.display, width: width)
     }
 
-    /// A page's `<h1>`: SF 26 semibold, −0.02em, ×1.15. Page headers, Upgrade,
+    /// A page's `<h1>`: SF 28 regular, −0.01em, ×1.15. Page headers, Upgrade,
     /// onboarding, "You're incognito". Mark the text `.isHeader`.
     public static let pageTitle = JunoType(JunoGeneratedType.pageTitle, textStyle: .title)
 
     /// ``pageTitle`` at the web's fluid size for a content column of `width`
-    /// points: 26 at 640, 32 at 1024.
+    /// points: 28 at 640, 32 at 1024.
     public static func pageTitle(columnWidth width: CGFloat) -> JunoType {
         JunoType(
             JunoGeneratedType.pageTitle,
