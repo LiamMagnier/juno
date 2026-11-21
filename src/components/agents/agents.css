@@ -79,8 +79,10 @@
   .orbit-filters > button { padding-inline: 7px; min-height: 44px; }
 }
 @container page (max-width: 22rem) {
-  .orbit-workspace-nav { gap: 0; }
-  .orbit-workspace-nav a { gap: .25rem; padding-inline: .375rem; }
+  .orbit-workspace-nav { flex-wrap: nowrap; gap: 0; overflow-x: auto; scrollbar-width: none; }
+  .orbit-workspace-nav a { flex: 0 0 auto; gap: .25rem; padding-inline: .25rem; outline-offset: -2px; }
+  .orbit-attention { margin-block-end: 1rem; }
+  .orbit-grid { row-gap: 1rem; }
 }
 @media (width < 768px) {
   .orbit-filters { flex-wrap: nowrap; }

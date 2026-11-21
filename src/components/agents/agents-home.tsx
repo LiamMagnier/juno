@@ -467,7 +467,7 @@ function DescribeAgent({
         ) : value.trim() ? (
           `${name} will take this on. It asks before sending, paying or deleting anything.`
         ) : (
-          "It asks before sending, paying or deleting anything."
+          "Asks before sending, paying, or deleting."
         )}
       </p>
     </form>
