@@ -402,7 +402,7 @@ export function PlusMenu({
           // The panel arrives from the right and the root list comes back from
           // the left. `animate-stage-in` multiplies its travel by
           // --motion-shift, so reduced motion gets the fade without the slide.
-          <div className="animate-stage-in" style={{ "--stage-dx": "12px" } as React.CSSProperties}>
+          <div className="animate-stage-in [animation-duration:var(--dur-fast)]" style={{ "--stage-dx": "4px" } as React.CSSProperties}>
             <DropdownMenuItem data-menu-back aria-label="Back to Add" className={plusMenuRowClass} onSelect={(event) => { event.preventDefault(); back(); }}>
               {/* 16px and no ink stated — the row recipe's glyph, like every
                   other row in this menu (it was a 14px outlier). */}
@@ -414,8 +414,8 @@ export function PlusMenu({
         ) : (
           <div
             key={compact ? "root" : undefined}
-            className={compact ? "animate-stage-in" : undefined}
-            style={compact ? ({ "--stage-dx": "-12px" } as React.CSSProperties) : undefined}
+            className={compact ? "animate-stage-in [animation-duration:var(--dur-fast)]" : undefined}
+            style={compact ? ({ "--stage-dx": "-4px" } as React.CSSProperties) : undefined}
           >
             {sections
               .filter((section) => section.length > 0)

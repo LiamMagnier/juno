@@ -26,6 +26,10 @@ test("Settings applies a preset and shares a saved design code", async ({ page }
   await expect(page.locator("html")).toHaveAttribute("data-accent", "#2750bd");
   await page.goto("/chat");
   await expect(page.locator(".composer-surface:visible").first()).toHaveCSS("border-top-left-radius", "36px");
+  await page.getByRole("button", { name: /^Add files and more/ }).click();
+  const menu = page.getByRole("menu", { name: /^Add files and more/ });
+  await expect(menu).toHaveCSS("animation-duration", "0.12s");
+  await expect(menu.getByRole("menuitem", { name: "From Library" })).toBeVisible();
 });
 
 test("Orbit offers appearance and requires confirmation to remove an agent", async ({ page }) => {

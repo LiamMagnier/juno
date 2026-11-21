@@ -866,14 +866,10 @@
 .cmenu.cmenu[data-side="right"] { --cm-dy: 0px; --cm-dx: -4px; }
 .cmenu.cmenu[data-side="left"] { --cm-dy: 0px; --cm-dx: 4px; }
 
-/* Open 160 on the expo decelerate, from the trigger (transform-origin is
-   Radix's popper origin); close faster, 120, opacity and a 0.98 settle only.
-   Menus open tens of times a day, so the motion is just enough to say where
-   the menu came from. The contents used to trail the shell by 70ms
-   (`cmenu-fill`), which made every menu feel a beat late; they now arrive
-   with it. */
+/* Keep the root and flyouts on the shared fast rung. Items are usable
+   immediately and travel only a few pixels with their frame. */
 .cmenu.cmenu[data-state="open"] {
-  animation: cmenu-in 160ms var(--cm-ease) both;
+  animation: cmenu-in var(--dur-fast) var(--cm-ease) both;
 }
 .cmenu.cmenu[data-state="closed"] {
   animation: cmenu-out var(--dur-fast) var(--ease-out-soft) both;
@@ -881,7 +877,7 @@
 @keyframes cmenu-in {
   from {
     opacity: 0;
-    transform: translate(var(--cm-dx), var(--cm-dy)) scale(0.96);
+    transform: translate(var(--cm-dx), var(--cm-dy)) scale(0.99);
   }
 }
 @keyframes cmenu-out {
@@ -1087,7 +1083,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .cmenu.cmenu[data-state="open"] {
-    animation: cmenu-fade var(--dur-exit) linear both;
+    animation: cmenu-fade var(--dur-fast) linear both;
   }
   .cmenu.cmenu[data-state="closed"] {
     animation: cmenu-fade var(--dur-fast) linear reverse both;
