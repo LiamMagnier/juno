@@ -36,13 +36,14 @@ function withoutComments(source: string): string {
 
 test("the sidebar exposes Library, Artifacts, Apps and Skills as separate destinations", () => {
   const sidebar = withoutComments(SIDEBAR);
-  const start = sidebar.indexOf('aria-label="Primary"');
+  const start = sidebar.indexOf('const workspaceShortcuts = [');
   assert.ok(start >= 0);
-  const primary = sidebar.slice(start, sidebar.indexOf("</nav>", start));
+  const primary = sidebar.slice(start, sidebar.indexOf("] as const;", start));
   const hrefs = [...primary.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(hrefs, ["/activity", "/projects", "/library", "/artifacts", "/connections", "/skills", "/code/customize", "/customize"]);
-  assert.match(primary, /label: FEATURE_NAMES\.library\.label, active: pathname === "\/library" \}/);
-  assert.match(primary, /label: FEATURE_NAMES\.artifacts\.label, active: pathname\?\.startsWith\("\/artifacts"\)/);
+  assert.deepEqual(hrefs, ["/library", "/artifacts", "/connections", "/skills"]);
+  assert.match(primary, /label: FEATURE_NAMES\.library\.label, active: pathname === "\/library", codeOnly: true/);
+  assert.match(sidebar, /workspaceShortcuts\.filter\(\(item\) => !\("codeOnly" in item\) \|\| isCode\)/);
+  assert.match(primary, /label: "Artifacts", active: pathname\?\.startsWith\("\/artifacts"\)/);
 
   // Nowhere else in the column either: not a pinned row, not the rail.
   assert.ok(!sidebar.includes('"/design"'), "no sidebar row links to /design");

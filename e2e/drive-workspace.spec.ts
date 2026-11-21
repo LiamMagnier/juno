@@ -57,6 +57,7 @@ test("a project retries a failed Drive check and adds a picked folder", async ({
   });
   await page.route(`**/api/projects/${project.id}/sources/drive?*`, (route) => route.fulfill({ json: { entries: [entries.folder], nextCursor: null } }));
   await page.goto(`/projects/${project.id}?tab=sources`);
+  await expect(page.getByRole("button", { name: "New chat in project" })).toBeVisible();
   await page.getByRole("button", { name: "Add knowledge" }).first().click();
   await page.getByRole("menuitem", { name: "Google Drive file or folder" }).click();
   const picker = page.getByRole("dialog", { name: "Add from Google Drive" });
@@ -82,4 +83,11 @@ test("Code's starting points preserve drafts and the shared sidebar exposes work
   await expect(primary.getByRole("link", { name: "Artifacts" })).toHaveAttribute("href", "/artifacts");
   await expect(primary.getByRole("link", { name: "Apps & plugins" })).toHaveAttribute("href", "/connections");
   await expect(primary.getByRole("link", { name: "Skills" })).toHaveAttribute("href", "/skills");
+
+  const recent = page.getByRole("region", { name: "Recent sessions" });
+  await recent.getByRole("link", { name: /QA · Code session/ }).click();
+  await page.getByRole("button", { name: "Find in this session", exact: true }).click();
+  const finder = page.getByRole("dialog", { name: "Find in this session" });
+  await finder.getByRole("textbox", { name: "Find in this session" }).fill("health check route");
+  await expect(finder.getByRole("option", { name: /Add a health check route/ })).toBeVisible();
 });

@@ -812,6 +812,23 @@ export function AppSidebar({
     root.scrollTo({ top, behavior: reduceMotion ? "auto" : "smooth" });
   }, [activeConversationId, collapsed, mounted, reduceMotion]);
 
+  // The shared shell destinations keep their cross-platform order. Direct
+  // tools and Library access from Code are shortcuts specific to the web.
+  const primaryDestinations = isCode ? ([
+    { href: "/code/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: pathname === "/code/customize" },
+  ] as const) : ([
+    { href: "/activity", kind: "activity", label: FEATURE_NAMES.activity.label, active: pathname === "/activity" },
+    { href: "/projects", kind: "projects", label: FEATURE_NAMES.projects.label, active: pathname === "/projects" },
+    { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" },
+    { href: "/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: pathname?.startsWith("/customize") || pathname?.startsWith("/automations") },
+  ] as const);
+  const workspaceShortcuts = [
+    { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library", codeOnly: true },
+    { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname?.startsWith("/artifacts") },
+    { href: "/connections", kind: "connections", label: "Apps & plugins", active: pathname?.startsWith("/connections") },
+    { href: "/skills", kind: "skills", label: "Skills", active: pathname?.startsWith("/skills") },
+  ] as const;
+
   const sidebarProjects = React.useMemo(
     () =>
       [...projects]
@@ -1387,19 +1404,7 @@ export function AppSidebar({
         )}
         aria-label="Primary"
       >
-        {([
-          ...(isCode ? [] : [
-            { href: "/activity", kind: "activity", label: FEATURE_NAMES.activity.label, active: pathname === "/activity" },
-            { href: "/projects", kind: "projects", label: FEATURE_NAMES.projects.label, active: pathname === "/projects" },
-          ] as const),
-          { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" },
-          { href: "/artifacts", kind: "artifacts", label: FEATURE_NAMES.artifacts.label, active: pathname?.startsWith("/artifacts") },
-          { href: "/connections", kind: "connections", label: "Apps & plugins", active: pathname?.startsWith("/connections") },
-          { href: "/skills", kind: "skills", label: "Skills", active: pathname?.startsWith("/skills") },
-          isCode
-            ? { href: "/code/customize", kind: "customize" as const, label: FEATURE_NAMES.customize.label, active: pathname === "/code/customize" }
-            : { href: "/customize", kind: "customize" as const, label: FEATURE_NAMES.customize.label, active: pathname?.startsWith("/customize") || pathname?.startsWith("/automations") },
-        ] as const).map((item) => (
+        {[...primaryDestinations, ...workspaceShortcuts.filter((item) => !("codeOnly" in item) || isCode)].map((item) => (
           <NavRow
             key={item.href}
             collapsed={collapsed}
@@ -1837,7 +1842,7 @@ export function AppSidebar({
 
                     {!needsYouOnly && sidebarProjects.length > 0 && (
                       <Section
-                        label={currentProjectId ? "Project shortcuts" : "Pinned projects"}
+                        label="Project shortcuts"
                         isCollapsed={sectionCollapsed.projects}
                         onToggleCollapse={() => toggleSection("projects")}
                         action={

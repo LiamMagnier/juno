@@ -30,7 +30,7 @@ export function useDriveBrowser(endpoint: string, enabled: boolean) {
   const parent = path[path.length - 1];
 
   React.useEffect(() => {
-    const timer = window.setTimeout(() => setSearch(query.trim()), 250);
+    const timer = window.setTimeout(() => setSearch(query.trim().slice(0, 200)), 250);
     return () => window.clearTimeout(timer);
   }, [query]);
 

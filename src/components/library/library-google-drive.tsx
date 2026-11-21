@@ -24,18 +24,18 @@ const connectHref = `/api/connectors/google-drive/connect?return=${encodeURIComp
 export function LibraryGoogleDrive({ connectError }: { connectError: string | null }) {
   const browser = useDriveBrowser(endpoint, true);
   const { entries, error, setError, loading, loadingMore, cursor, pageError, load, search, parent, enter } = browser;
-  const [importing, setImporting] = React.useState<Set<string>>(new Set());
+  const [importing, setImporting] = React.useState<string | null>(null);
   const [imported, setImported] = React.useState<Set<string>>(new Set());
   const [failures, setFailures] = React.useState<Record<string, string>>({});
-  const pending = React.useRef(new Set<string>());
+  const pending = React.useRef(false);
   const reconnect = error?.code === "connector_reconnect";
   const needsConnect = reconnect || error?.code === "connector_not_connected";
   const unavailable = error?.code === "not_enabled" || error?.code === "not_configured";
 
   async function importFile(entry: DriveBrowseEntry) {
-    if (pending.current.has(entry.id) || imported.has(entry.id)) return;
-    pending.current.add(entry.id);
-    setImporting(new Set(pending.current));
+    if (pending.current || imported.has(entry.id)) return;
+    pending.current = true;
+    setImporting(entry.id);
     setFailures((previous) => ({ ...previous, [entry.id]: "" }));
     try {
       const response = await fetch(`${endpoint}/attach`, {
@@ -55,8 +55,8 @@ export function LibraryGoogleDrive({ connectError }: { connectError: string | nu
     } catch {
       setFailures((previous) => ({ ...previous, [entry.id]: "Couldn’t import this file. Check your connection and try again." }));
     } finally {
-      pending.current.delete(entry.id);
-      setImporting(new Set(pending.current));
+      pending.current = false;
+      setImporting(null);
     }
   }
 
@@ -103,7 +103,7 @@ export function LibraryGoogleDrive({ connectError }: { connectError: string | nu
                           <span className="block truncate text-ui font-medium" title={entry.name}>{entry.name}</span>
                           <span className="block text-caption text-muted-foreground">{entry.unavailable ?? (entry.size !== null && formatBytes(entry.size))}</span>
                         </div>
-                        {!entry.unavailable && <Button type="button" variant="secondary" size="sm" loading={importing.has(entry.id)} disabled={imported.has(entry.id)}
+                        {!entry.unavailable && <Button type="button" variant="secondary" size="sm" loading={importing === entry.id} disabled={importing !== null || imported.has(entry.id)}
                           aria-label={`Import ${entry.name}`} onClick={() => void importFile(entry)}>{imported.has(entry.id) ? "Imported" : "Import"}</Button>}
                         <Button variant="ghost" size="icon-sm" asChild>
                           <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${entry.name} in Google Drive`} title="Open in Google Drive"><ArrowUpRight className="size-4" aria-hidden="true" /></a>
