@@ -41,8 +41,8 @@ import { OrbitComputers, RunsOnChip, runsOnInput, type RunsOn } from "./orbit-co
  * Orbit, the agents home (docs/rework/brand/ORBIT_SYSTEM.md; design V3 crew
  * scenes; critique 1).
  *
- * Requests for attention appear first. The composer and computer status sit
- * before the roster so starting work and checking where it runs are close.
+ * Requests for attention appear first. The composer sits above the roster.
+ * Computers sit beside it when there is room and below the roster on phones.
  *
  * One object per agent and each fact once (docs/design/AGENTS.md §4.3): no
  * second list of the same agents, no status pills or dots.
@@ -174,24 +174,29 @@ export function AgentsHome({
         </section>
       ) : null}
 
-      <div className="orbit-start">
-        <section ref={composerSection} aria-label={`New ${AGENT_NOUN.singular}`} className="min-w-0">
+      <div className="orbit-grid">
+        <section ref={composerSection} aria-label={`New ${AGENT_NOUN.singular}`} className="orbit-start min-w-0">
           {canHire || !hiring ? <DescribeAgent team={ordered} autoFocus={focusComposer} starter={starter} hosts={hosts} /> : <AgentsUpgrade gate={hiring} kept />}
         </section>
+
+        <section aria-labelledby="orbit-crew" className="orbit-roster min-w-0">
+          <div className="orbit-section-heading">
+            <h2 id="orbit-crew">Your agents</h2>
+            <div className="orbit-search">
+              <Search className="size-4 shrink-0" aria-hidden="true" />
+              <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search agents" placeholder="Search agents" />
+              {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear agent search"><X className="size-4" aria-hidden="true" /></button>}
+            </div>
+          </div>
+          <div className="orbit-filters workspace-filter-rail" role="group" aria-label="Filter agents">
+            {filters.map(({ value, label, count }) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}<span>{count}</span></button>)}
+          </div>
+          <p className="sr-only" role="status">{visible.length} {visible.length === 1 ? "agent" : "agents"} shown</p>
+          {visible.length ? <OrbitCrew agents={visible} asked={asked} hrefOf={agentHref} machineOf={machineOf} onChanged={refresh} /> : <div className="orbit-no-results"><Search className="size-5 text-muted-foreground" aria-hidden="true" /><p>No agents match this view.</p><Button type="button" variant="link" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</Button></div>}
+        </section>
+
         <OrbitComputers agents={ordered} hosts={hosts} onRetry={retryHosts} onChanged={refresh} />
       </div>
-
-      <section aria-labelledby="orbit-crew" className="orbit-roster">
-        <div className="orbit-section-heading">
-          <h2 id="orbit-crew">Your agents</h2>
-          <div className="orbit-search"><Search className="size-4 shrink-0" aria-hidden="true" /><input type="search" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search agents" placeholder="Find an agent or task…" />{query ? <button type="button" onClick={() => setQuery("")} aria-label="Clear agent search"><X className="size-3.5" /></button> : null}</div>
-        </div>
-        <div className="orbit-filters workspace-filter-rail" role="group" aria-label="Filter agents">
-          {filters.map(({ value, label, count }) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}<span>{count}</span></button>)}
-        </div>
-        <p className="sr-only" role="status">{visible.length} {visible.length === 1 ? "agent" : "agents"} shown</p>
-        {visible.length ? <OrbitCrew agents={visible} asked={asked} hrefOf={agentHref} machineOf={machineOf} onChanged={refresh} /> : <div className="orbit-no-results"><Search className="size-5 text-muted-foreground" aria-hidden="true" /><p>No agents match this view.</p><Button type="button" variant="link" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</Button></div>}
-      </section>
 
       {canHire ? <OrbitCapabilities onChoose={chooseStarter} /> : null}
     </AppPage>

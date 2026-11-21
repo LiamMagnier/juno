@@ -166,15 +166,15 @@ export function SettingsPane({
       id={tabpanel ? settingsPanelId(section) : undefined}
       aria-labelledby={tabpanel ? settingsTabId(section) : headingId}
     >
-      {showDesigns && (
-        <Button type="button" variant="ghost" size="sm" className="-ms-2 mb-3 gap-2 text-muted-foreground" aria-label="Back to General" onClick={() => {
-          restoreBrowseFocus.current = true;
-          setDesignsOpen(false);
-        }}>
-          <ArrowLeft className="size-4 rtl:rotate-180" aria-hidden="true" /> General
-        </Button>
-      )}
       <SettingsPaneHeader
+        action={showDesigns ? (
+          <Button type="button" variant="ghost" size="sm" className="gap-2 text-muted-foreground" aria-label="Back to General" onClick={() => {
+            restoreBrowseFocus.current = true;
+            setDesignsOpen(false);
+          }}>
+            <ArrowLeft className="size-4 rtl:rotate-180" aria-hidden="true" /> General
+          </Button>
+        ) : undefined}
         title={
           <span key={section} id={headingId} ref={showDesigns ? designsHeading : undefined} tabIndex={showDesigns ? -1 : undefined} className={cn("block", switched && "motion-safe:animate-fade-in")}>
             {showDesigns ? "Designs" : meta.label}

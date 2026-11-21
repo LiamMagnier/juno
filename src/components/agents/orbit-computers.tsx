@@ -235,7 +235,7 @@ export function OrbitComputers({
   };
 
   return (
-    <section aria-labelledby="orbit-computers">
+    <section className="orbit-machines" aria-labelledby="orbit-computers">
       <div className="orbit-label">
         <h2 id="orbit-computers">
           Computers

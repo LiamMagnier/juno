@@ -81,6 +81,20 @@ test("Orbit offers appearance and requires confirmation to remove an agent", asy
 test.describe("narrow workspace", () => {
   test.use({ viewport: { width: 320, height: 675 }, hasTouch: true });
 
+  test("shows the Orbit composer and first agent before the computer list", async ({ page }) => {
+    await page.route("**/api/agents", (route) => route.fulfill({ json: { agents: AGENTS } }));
+    await page.goto("/agents");
+    const heading = page.getByRole("heading", { name: "Orbit", exact: true });
+    const create = page.getByRole("button", { name: "New agent", exact: true });
+    await expect(heading).toBeVisible();
+    await expect(create).toBeVisible();
+    const titleY = (await heading.boundingBox())!.y;
+    expect(Math.abs((await create.boundingBox())!.y - titleY)).toBeLessThan(12);
+    await expect(page.getByRole("textbox", { name: "What should a new agent take care of?" })).toBeInViewport();
+    await expect(page.getByRole("button", { name: `More for ${AGENTS[0].name}` })).toBeInViewport();
+    await expect(page.getByRole("heading", { name: "Computers", exact: true })).not.toBeInViewport();
+  });
+
   test("shows a viewport-width Add sheet and returns focus on dismissal", async ({ page }) => {
     await page.goto("/chat");
     const trigger = page.getByRole("button", { name: /^Add files and more/ });

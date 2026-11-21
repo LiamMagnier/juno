@@ -220,12 +220,13 @@ export function SettingBlock({
  * the section is FOR (not a list of the groups under it, which name
  * themselves). The lede is optional: a caller with nothing to add passes none.
  */
-export function SettingsPaneHeader({ title, lede }: { title: React.ReactNode; lede?: React.ReactNode }) {
+export function SettingsPaneHeader({ title, lede, action }: { title: React.ReactNode; lede?: React.ReactNode; action?: React.ReactNode }) {
+  const heading = <h2 className="text-balance font-sans text-title font-medium text-foreground">{title}</h2>;
   return (
     // The app pages' header (app-page-header.tsx): the display serif at the
     // page-title rung over the homepage's construction, drawn once.
-    <header className="relative isolate mb-10">
-      <h2 className="text-balance font-sans text-title font-medium text-foreground">{title}</h2>
+    <header className={cn("relative isolate", action ? "mb-6" : "mb-10")}>
+      {action ? <div className="flex flex-wrap items-center justify-between gap-x-3">{heading}{action}</div> : heading}
       {lede && <p className="mt-2 max-w-[34rem] text-pretty text-body text-muted-foreground">{lede}</p>}
     </header>
   );

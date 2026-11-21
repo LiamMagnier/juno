@@ -137,7 +137,7 @@ export function DesignsView() {
                   aria-hidden="true"
                   className={cn("flex h-12 items-center justify-center gap-1 rounded-inner border border-black/10 sm:h-16", preset.theme === "dark" ? "bg-neutral-900" : "bg-neutral-100")}
                 >
-                  <span className={cn("flex h-6 w-3/5 items-center justify-end border px-1", preset.theme === "dark" ? "border-white/15 bg-white/10" : "border-black/10 bg-white", preset.composerShape === "soft" ? "rounded-full" : "rounded-control")}>
+                  <span className={cn("flex h-6 w-3/5 items-center justify-end border px-1", preset.theme === "dark" ? "border-white/15 bg-white/10" : "border-black/10 bg-white", { compact: "rounded-sm", standard: "rounded-control", soft: "rounded-full" }[preset.composerShape])}>
                     <span className="size-3 rounded-full" style={{ backgroundColor: designColor(preset) }} />
                   </span>
                 </span>
