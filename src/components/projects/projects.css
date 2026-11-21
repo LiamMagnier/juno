@@ -285,6 +285,18 @@
 .pj-context-body[data-open="false"],
 .pj-context-header { display: none; }
 
+@container page (width < 56rem) {
+  @media (prefers-reduced-motion: no-preference) {
+    .pj-context-body[data-open="true"] {
+      animation: pj-context-in var(--dur-fast) var(--ease-out-soft) backwards;
+    }
+  }
+}
+
+@keyframes pj-context-in {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+
 .pj-context-header,
 .pj-history-heading {
   align-items: center;

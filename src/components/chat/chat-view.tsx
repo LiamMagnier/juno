@@ -2784,7 +2784,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             // the tab order: `inert` takes it out (as dictation-swap does).
             inert={!privateMode}
             className={cn(
-              "relative z-30 grid transition-[grid-template-rows,opacity] duration-slow ease-out-soft",
+              "relative z-30 grid transition-[grid-template-rows,opacity] duration-base ease-out-soft motion-reduce:transition-none",
               privateMode ? "grid-rows-[1fr] opacity-100 pointer-events-auto" : "grid-rows-[0fr] opacity-0 pointer-events-none",
               !forkedFrom && "md:hidden"
             )}

@@ -4,12 +4,9 @@
  * bottom sheet below 640px). Imported once, by the root layout: the tests
  * load those components without a CSS loader.
  *
- * Motion, on the house ladder: a sheet rises on the drawer curve over the
- * slow rung (it travels its own height, further than a dialog's pop) and
- * leaves on the accelerate at the base rung, about 0.65 of the way in. The
- * keyframes multiply their travel by --motion-shift, so the reduced tier
- * keeps a fade and drops the travel. A finger-driven move is direct
- * manipulation and is never animated over; only the settle after release is.
+ * A short rise makes the heading readable early even on tall sheets. Exit
+ * travels less than entry. The reduced tier keeps the fade and drops travel.
+ * Finger-driven motion is direct, with animation only after release.
  */
 
 /* ——— The gesture protocol (data-gesture, set by sheet-gesture.ts) ——————— */
@@ -48,15 +45,14 @@ html[data-sheet-pull="settle"] [data-swipe-scrim][data-sheet-pull-target] {
 
 @keyframes ui-sheet-rise {
   from {
-    /* Travel when motion is on; a fade when the reduced tier zeroes it. */
-    opacity: var(--motion-shift, 1);
-    transform: translate3d(0, calc(100% * var(--motion-shift, 1)), 0);
+    opacity: 0;
+    transform: translate3d(0, calc(clamp(1.25rem, 18%, 3rem) * var(--motion-shift, 1)), 0);
   }
 }
 @keyframes ui-sheet-sink {
   to {
-    opacity: var(--motion-shift, 1);
-    transform: translate3d(0, calc(100% * var(--motion-shift, 1)), 0);
+    opacity: 0;
+    transform: translate3d(0, calc(clamp(.75rem, 8%, 1.5rem) * var(--motion-shift, 1)), 0);
   }
 }
 
@@ -74,10 +70,10 @@ html[data-sheet-pull="settle"] [data-swipe-scrim][data-sheet-pull-target] {
 }
 
 .ui-sheet[data-side="bottom"][data-state="open"] {
-  animation: ui-sheet-rise var(--dur-slow) var(--ease-drawer) both;
+  animation: ui-sheet-rise var(--dur-base) var(--ease-drawer) both;
 }
 .ui-sheet[data-side="bottom"][data-state="closed"] {
-  animation: ui-sheet-sink var(--dur-base) var(--ease-in) both;
+  animation: ui-sheet-sink var(--dur-exit) var(--ease-in) both;
 }
 
 /* The grabber: a pill to see, a wider strip to catch a mouse or pen (a
@@ -143,10 +139,10 @@ html[data-sheet-pull="settle"] [data-swipe-scrim][data-sheet-pull-target] {
     max-height: calc(100dvh - var(--sheet-keyboard, 0px) - env(safe-area-inset-top, 0px) - 1.5rem);
   }
   .ui-dialog.ui-dialog[data-phone-sheet][data-state="open"] {
-    animation: ui-sheet-rise var(--dur-slow) var(--ease-drawer) both;
+    animation: ui-sheet-rise var(--dur-base) var(--ease-drawer) both;
   }
   .ui-dialog.ui-dialog[data-phone-sheet][data-state="closed"] {
-    animation: ui-sheet-sink var(--dur-base) var(--ease-in) both;
+    animation: ui-sheet-sink var(--dur-exit) var(--ease-in) both;
   }
   .ui-dialog[data-phone-sheet] > .ui-sheet-grabber {
     display: block;
