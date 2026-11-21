@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Folder, Pin, Plus, Settings } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { AppPageHeader } from "@/components/app/app-page";
+import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { ProjectBreadcrumbs, type ProjectDrag } from "@/components/projects/project-folders";
 import { ProjectDetailsDialog } from "@/components/projects/project-details-dialog";
@@ -137,6 +138,12 @@ export function ProjectWorkspaceHeader({
               <IconSwap swapped={isStarred} from={<Pin className="size-4" />} to={<Pin weight="fill" className="size-4" />} />
             </Pressable>
 
+            {onOpenSettings && (
+              <Button variant="outline" onClick={onOpenSettings}>
+                <Settings className="size-4" aria-hidden="true" /> Settings
+              </Button>
+            )}
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Pressable kind="icon" size="lg" aria-label="Project actions" title="Project actions">
@@ -160,12 +167,6 @@ export function ProjectWorkspaceHeader({
                   <DropdownMenuItem onSelect={onMove}>
                     <Folder className="size-4" aria-hidden="true" />
                     <span>Move to…</span>
-                  </DropdownMenuItem>
-                )}
-                {onOpenSettings && (
-                  <DropdownMenuItem onSelect={onOpenSettings}>
-                    <Settings className="size-4" aria-hidden="true" />
-                    <span>Settings</span>
                   </DropdownMenuItem>
                 )}
                 {menuExtras && (

@@ -151,10 +151,10 @@ export function AppPageHeader({
 
       <div className="app-section-heading-row">
         <div className="min-w-0">
-          <h1 className="app-page-title ed-rise min-w-0 text-balance text-page-title" style={{ ["--i" as string]: 0 }}>{heading}</h1>
-          {lede && <p className="ed-rise mt-2 max-w-prose text-pretty text-body text-muted-foreground" style={{ ["--i" as string]: 1 }}>{lede}</p>}
+          <h1 className="app-page-title min-w-0 text-balance text-page-title">{heading}</h1>
+          {lede && <p className="app-section-lede mt-2 max-w-prose text-pretty text-body text-muted-foreground">{lede}</p>}
         </div>
-        {actions && <div className="app-section-heading-actions ed-rise" style={{ ["--i" as string]: 2 }}>{actions}</div>}
+        {actions && <div className="app-section-heading-actions">{actions}</div>}
       </div>
     </header>
   );
@@ -254,7 +254,7 @@ export function AppPageHeaderSkeleton({
       )}
       <div className="app-section-heading-row">
         <div className="min-w-0">
-          <Skeleton className={cn("h-[1.08em] max-w-full text-page-title", headingWidth)} />
+          <Skeleton className={cn("app-section-title-placeholder h-[1.08em] max-w-full text-page-title", headingWidth)} />
           {ledeBars}
         </div>
         {actions && (
@@ -283,7 +283,7 @@ export function AppPageHeaderSkeleton({
  */
 function SkeletonLede({ ledeLines, phoneLedeLines }: { ledeLines: 1 | 2; phoneLedeLines: 1 | 2 | 3 }) {
   return (
-    <div className="mt-2 max-w-prose space-y-1.5">
+    <div className="app-section-lede mt-2 max-w-prose space-y-1.5">
       <Skeleton
         className={cn(
           "w-full rounded-xs",

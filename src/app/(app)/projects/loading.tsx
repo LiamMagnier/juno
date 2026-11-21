@@ -17,8 +17,8 @@ import { ProjectsGridSkeleton } from "@/components/projects/projects-grid-skelet
  */
 export default function ProjectsLoading() {
   return (
-    <AppPage measure="wide">
-      <AppPageHeaderSkeleton headingWidth="w-56" ledeLines={1} phoneLedeLines={1} actions="button" />
+    <AppPage measure="wide" contentClassName="pj-projects-page">
+      <AppPageHeaderSkeleton headingWidth="w-56" ledeLines={1} phoneLedeLines={2} actions="button" />
       <ProjectsGridSkeleton />
     </AppPage>
   );

@@ -8,9 +8,9 @@ export type ProjectSort = "activity" | "name" | "created";
 export type ProjectFilter = "all" | "pinned";
 
 export const PROJECT_SORT_OPTIONS: ReadonlyArray<{ value: ProjectSort; label: string }> = [
-  { value: "activity", label: "Recent activity" },
+  { value: "activity", label: "Activity" },
   { value: "name", label: "Name" },
-  { value: "created", label: "Date created" },
+  { value: "created", label: "Created" },
 ];
 
 export interface ProjectListEntry {

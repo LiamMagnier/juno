@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { intentPrefetch } from "@/lib/intent-prefetch";
 import { ChevronRight, CornerDownRight, Folder, MessageSquare, Pin, PinOff, Plus, Search } from "@/components/ui/icons";
-import { ActionIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
@@ -635,7 +635,6 @@ export function ProjectTile({
   pathLabel,
   allProjects,
   compact = false,
-  live: _live = false,
   index = 0,
   onToggleStar,
   onRename,
@@ -652,8 +651,6 @@ export function ProjectTile({
   /** The whole tree, so a drop can be checked before it lands. */
   allProjects: readonly FolderProject[];
   compact?: boolean;
-  /** The most recently touched project: its cover carries the presence trajectory. */
-  live?: boolean;
   /** Its place in the grid (the entrance and the cover's draw-on follow it). */
   index?: number;
   onToggleStar?: () => void;
@@ -803,27 +800,31 @@ export function ProjectTile({
     <article
       {...drop}
       {...dragSourceProps({ kind: "project", id: p.id })}
-      className="pj-tile nest-card nest-p-1 group/tile relative flex h-full flex-col"
+      className="pj-tile pj-tile-project group/tile relative flex h-full flex-col"
+      data-has-cover={p.coverUrl ? "" : undefined}
       style={{ ["--i" as string]: Math.min(index, 11) }}
     >
       {/* Only a cover someone uploaded. The generated dot-matrix vignette
           was decoration standing in for content (7 Nov 2026). */}
       {p.coverUrl && (
-        <div className="pj-cover relative aspect-[16/7] w-full overflow-hidden rounded-inner">
+        <div className="pj-cover relative aspect-[16/7] w-full overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={p.coverUrl} alt="" className="pj-cover-art size-full object-cover" draggable={false} />
         </div>
       )}
 
-      <div className={cn("flex flex-1 flex-col px-3 pb-3", p.coverUrl ? "pt-3.5" : "pt-3")}>
-        <div className={cn(!p.coverUrl && hasActions && "min-h-7 pr-16 coarse:min-h-10 coarse:pr-24")}>
+      <div className="pj-tile-body">
+        <span className="pj-kind-mark" aria-hidden="true">
+          <AppIcons.projects className="size-[18px]" motion="none" />
+        </span>
+        <div className="pj-tile-heading min-w-0">
           {pathLabel && <p className="pj-annot mb-1 break-words">{pathLabel}</p>}
           {nameLink}
+          {excerpt && <p className="mt-1 line-clamp-2 text-pretty text-ui text-muted-foreground">{excerpt}</p>}
         </div>
-        {excerpt && <p className="mt-1 line-clamp-2 text-pretty text-ui text-muted-foreground">{excerpt}</p>}
 
         {folders.length > 0 && (
-          <p className="relative z-[1] mt-3 flex min-w-0 items-center gap-1.5 text-ui text-muted-foreground">
+          <p className="pj-tile-folders relative z-[1] flex min-w-0 items-center gap-1.5 text-ui text-muted-foreground">
             <Folder className="size-3.5 shrink-0" aria-hidden="true" />
             <span className="shrink-0 text-foreground">{plural(folders.length, "folder")}</span>
             <span className="shrink-0 text-ink-tertiary" aria-hidden="true">·</span>
@@ -848,23 +849,14 @@ export function ProjectTile({
         {/* Counts on the left, the age on the right: when a narrow tile has
             no room for both, the age drops to its own line whole, rather than
             the line being cut or a dot left hanging at its end. */}
-        <p className="pj-annot mt-auto flex flex-wrap items-baseline justify-between gap-x-3 pt-4">
+        <p className="pj-annot pj-tile-meta">
           <span>{metaLine(meta.slice(0, 2))}</span>
           {activity && <span>{metaLine([activity])}</span>}
         </p>
       </div>
 
-      {hasActions && p.starred && (
-        <span
-          className="pj-pinned pointer-events-none absolute right-3 top-3 z-[2] grid size-7 place-items-center text-muted-foreground coarse:hidden"
-          aria-hidden="true"
-        >
-          <Pin motion="none" weight="fill" className="size-3.5" />
-        </span>
-      )}
-
       {actions && (
-        <div className="pj-actions absolute right-3 top-3 z-[2] flex items-center gap-0.5 rounded-full p-0.5">
+        <div className={cn("pj-actions z-[2] flex items-center gap-0.5", p.coverUrl && "pj-actions-on-cover")}>
           {actions}
         </div>
       )}

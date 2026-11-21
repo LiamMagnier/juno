@@ -20,7 +20,7 @@ export default function ProjectLoading() {
     // full-bleed during the load and snapped inward to 64rem the moment the
     // project arrived: a placeholder that reserves the wrong column reserves
     // nothing, and it reads as a layout bug rather than as a load.
-    <AppPage measure="wide" role="status" aria-label="Loading project">
+    <AppPage measure="wide" contentClassName="pj-projects-page" role="status" aria-label="Loading project">
       <ProjectPageSkeleton />
     </AppPage>
   );

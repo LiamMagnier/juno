@@ -81,6 +81,212 @@
 .pj-tile[data-drop="refuse"] { opacity: 0.55; }
 .pj-tile[data-dragging] { opacity: 0.4; }
 
+.pj-projects-page {
+  max-width: 72rem;
+  --web-page-title-size: clamp(2.375rem, 3.65cqi, 3.5rem);
+}
+
+.pj-toolbar {
+  display: grid;
+  align-items: center;
+  gap: .625rem 1rem;
+  padding: .625rem;
+  border: 1px solid hsl(var(--foreground) / .09);
+  border-radius: var(--web-panel-radius);
+  background: hsl(var(--foreground) / .025);
+}
+
+.pj-toolbar-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) auto;
+  align-items: center;
+  gap: .5rem;
+}
+
+.pj-layout-control {
+  display: flex;
+  align-items: center;
+  gap: .125rem;
+  padding: .125rem;
+  border: 1px solid hsl(var(--foreground) / .1);
+  border-radius: var(--web-control-radius);
+}
+
+.pj-layout-control [aria-pressed="true"] {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  box-shadow: 0 0 0 1px hsl(var(--foreground) / .08);
+}
+
+@container page (min-width: 46rem) {
+  .pj-toolbar {
+    position: sticky;
+    z-index: 3;
+    top: .5rem;
+    grid-template-columns: minmax(12rem, 1fr) auto;
+    background: color-mix(in srgb, hsl(var(--background)) 97%, hsl(var(--foreground)));
+  }
+  .pj-toolbar-filters { grid-template-columns: auto minmax(9.5rem, auto) auto; }
+}
+
+.pj-project-results {
+  display: grid;
+  gap: .875rem;
+  margin-top: 1.125rem;
+}
+
+@container page (min-width: 33rem) {
+  .pj-project-results[data-layout="grid"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container page (min-width: 66rem) {
+  .pj-project-results[data-layout="grid"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.pj-tile-project { overflow: clip; scroll-margin-top: 4.5rem; }
+.pj-project-results[data-layout="grid"] .pj-tile-project { min-height: 10.5rem; }
+
+.pj-tile-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: .75rem;
+  padding: 1rem;
+}
+
+.pj-kind-mark {
+  display: grid;
+  width: 2.375rem;
+  aspect-ratio: 1;
+  flex: none;
+  place-items: center;
+  border: 1px solid hsl(var(--presence) / .12);
+  border-radius: var(--web-control-radius);
+  background: hsl(var(--presence) / .07);
+  color: hsl(var(--presence-ink));
+}
+.pj-tile-project[data-has-cover] .pj-kind-mark { display: none; }
+.pj-project-results[data-layout="list"] .pj-tile-project[data-has-cover] .pj-kind-mark { display: grid; }
+
+.pj-tile-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .25rem .75rem;
+  margin-top: auto;
+  padding-top: .625rem;
+  border-top: 1px solid var(--pj-hair);
+}
+
+.pj-tile-project .pj-actions {
+  position: absolute;
+  inset: .875rem .875rem auto auto;
+  border-radius: var(--web-control-radius);
+  color: hsl(var(--muted-foreground));
+}
+
+.pj-tile-project .pj-actions [aria-pressed="true"] { color: hsl(var(--presence-ink)); }
+.pj-tile-project .pj-actions-on-cover { background: hsl(var(--card)); }
+
+.pj-project-results[data-layout="list"] .pj-tile-body {
+  display: grid;
+  grid-template-columns: 2.375rem minmax(0, 1fr);
+  gap: .375rem .75rem;
+  align-items: center;
+}
+.pj-project-results[data-layout="list"] .pj-kind-mark { grid-column: 1; grid-row: 1; }
+.pj-project-results[data-layout="list"] .pj-tile-heading {
+  grid-column: 2;
+  grid-row: 1;
+  padding-inline-end: 4rem;
+}
+.pj-project-results[data-layout="list"] .pj-tile-folders { grid-column: 2; }
+.pj-project-results[data-layout="list"] .pj-tile-meta { grid-column: 2; }
+.pj-project-results[data-layout="list"] .pj-cover { display: none; }
+
+@container page (min-width: 38rem) {
+  .pj-project-results[data-layout="list"] .pj-tile-body {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(8rem, auto);
+    align-items: center;
+    gap: .375rem .875rem;
+    padding-inline-end: 6rem;
+  }
+  .pj-project-results[data-layout="list"] .pj-kind-mark { grid-row: span 2; }
+  .pj-project-results[data-layout="list"] .pj-tile-heading { padding-inline-end: 0; }
+  .pj-project-results[data-layout="list"] .pj-tile-folders { grid-column: 2; grid-row: 2; }
+  .pj-project-results[data-layout="list"] .pj-tile-meta {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .pj-project-results[data-layout="list"] .pj-actions {
+    inset-block-start: 50%;
+    translate: 0 -50%;
+  }
+}
+
+.pj-workspace-grid { display: grid; gap: 1.5rem; }
+.pj-workspace-main { min-width: 0; }
+.pj-workspace-context {
+  min-width: 0;
+  scroll-margin-block-start: 1rem;
+  border-radius: var(--web-panel-radius);
+}
+
+.pj-composer-card {
+  padding: clamp(.75rem, 1.75cqi, 1.25rem);
+  border: 1px solid hsl(var(--presence) / .16);
+  border-radius: var(--web-panel-radius);
+  background: hsl(var(--presence) / .035);
+}
+
+.pj-composer-heading,
+.pj-context-header,
+.pj-history-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem 1rem;
+}
+
+.pj-composer-heading,
+.pj-history-heading { justify-content: space-between; margin-bottom: .75rem; }
+
+.pj-composer-heading h2,
+.pj-context-header h2,
+.pj-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -.012em;
+}
+
+.pj-knowledge-jump {
+  padding-block: .45rem;
+  color: hsl(var(--presence-ink));
+  font-size: .8125rem;
+  text-underline-offset: .2em;
+}
+.pj-knowledge-jump:is(:hover, :focus-visible) { text-decoration: underline; }
+.pj-workspace-history { margin-top: 2rem; }
+.pj-context-header {
+  justify-content: flex-start;
+  padding: .875rem 1rem;
+  border-bottom: 1px solid var(--pj-hair);
+  background: hsl(var(--foreground) / .025);
+}
+.pj-context-header svg { color: hsl(var(--presence-ink)); }
+
+@container page (min-width: 56rem) {
+  .pj-workspace-grid { grid-template-columns: minmax(0, 1fr) minmax(18rem, 32%); gap: 2rem; align-items: start; }
+  .pj-workspace-context { position: sticky; top: 1rem; }
+  .pj-knowledge-jump { display: none; }
+}
+
 /* The cover plate: a recessed tone the drawing sits in, with an inner
    hairline so an uploaded image keeps an edge on either ground. */
 .pj-cover {
@@ -94,29 +300,9 @@
 /* A folder's plate is half the height of a project's, so its dots are finer. */
 .pj-cover-art-sm .pj-cover-dots { --dots-pitch: 2.6px; }
 
-/* Pin and menu: a small capsule over the cover's corner, surfaced on hover or
-   focus, always there on touch. Opaque card fill and a hairline (D15: no
-   frosted glass in product chrome). A pinned tile shows the filled pin alone
-   at rest, in the same spot, and hands it over to the capsule. */
-.pj-actions {
-  background: hsl(var(--card));
-  box-shadow: 0 0 0 1px var(--pj-line);
-  opacity: 0;
-  transform: scale(0.97);
-  transition:
-    opacity var(--dur-fast) var(--ease-out-soft),
-    transform var(--dur-fast) var(--ease-out-soft);
-}
-.pj-tile:hover .pj-actions,
-.pj-tile:focus-within .pj-actions,
-.pj-actions:has([data-state="open"]) { opacity: 1; transform: none; }
 .pj-pinned { transition: opacity var(--dur-fast) var(--ease-out-soft); }
 .pj-tile:hover .pj-pinned,
 .pj-tile:focus-within .pj-pinned { opacity: 0; }
-@media (pointer: coarse) {
-  .pj-actions { opacity: 1; transform: none; }
-}
-
 @media (prefers-reduced-motion: no-preference) {
   /* The grid arrives in reading order on the tile stagger, starting on the
      first frame and capped at the shared maximum, so the ninth tile is not
@@ -126,11 +312,13 @@
     animation: pj-arrive var(--dur-base) var(--ease-out-expo) backwards;
     animation-delay: calc(min(var(--i, 0), 3) * var(--stagger-tile) / 2);
   }
+  .pj-toolbar,
+  .pj-composer-card { animation: pj-arrive var(--dur-base) var(--ease-out-expo) backwards; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pj-actions, .pj-pinned { transition: none; }
+  .pj-tile, .pj-pinned { transition: none; }
 }
-@keyframes pj-arrive { from { opacity: 0; transform: translateY(4px); } }
+@keyframes pj-arrive { from { opacity: 0; transform: translateY(5px); } }
 
 /* A folder inside a project: one compact card, not a second cover plate. The
    card is 12 with a 6px frame, so the glyph's well takes 6 (12 - 6). */

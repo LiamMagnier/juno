@@ -883,7 +883,7 @@ export default function ProjectDetailPage() {
   }
   if (!data) {
     return (
-      <AppPage measure="wide" role="status" aria-label="Loading project">
+      <AppPage measure="wide" contentClassName="pj-projects-page" role="status" aria-label="Loading project">
         <ProjectPageSkeleton />
       </AppPage>
     );
@@ -922,9 +922,6 @@ export default function ProjectDetailPage() {
 
   const header = (
     <ProjectWorkspaceHeader
-      // Stacked, the column's own gap spaces the header from the composer;
-      // beside the panel the header keeps its usual margin.
-      className="order-1 mb-0 @[40rem]/page:mb-0 @4xl/page:mb-7"
       project={{ ...data.project, description }}
       isStarred={isStarred}
       onToggleStar={toggleProjectStar}
@@ -962,16 +959,16 @@ export default function ProjectDetailPage() {
   );
 
   return (
-    <AppPage measure="wide">
+    <AppPage measure="wide" contentClassName="pj-projects-page">
       <div className={cn(view !== "overview" && "hidden")}>
-        <div className="flex flex-col gap-6 @4xl/page:grid @4xl/page:grid-cols-[minmax(0,1fr)_20rem] @4xl/page:items-start @4xl/page:gap-10 @6xl/page:grid-cols-[minmax(0,1fr)_22rem]">
-          {/* Below the split this column is `contents`, so the panel can sit
-              between the composer and the chats; at the split it is the
-              left track. */}
-          <div className="contents @4xl/page:block @4xl/page:min-w-0">
-            {header}
-
-            <div className="order-2">
+        {header}
+        <div className="pj-workspace-grid">
+          <div className="pj-workspace-main">
+            <section className="pj-composer-card" aria-labelledby="pj-start-chat">
+              <div className="pj-composer-heading">
+                <h2 id="pj-start-chat">New chat</h2>
+                <a className="pj-knowledge-jump" href="#project-knowledge">Project knowledge</a>
+              </div>
               <Composer
                 conversationId={null}
                 frame="inline"
@@ -991,16 +988,16 @@ export default function ProjectDetailPage() {
                     : "Start a chat in this project…"
                 }
               />
-            </div>
+            </section>
 
-            <div className="order-4 @4xl/page:mt-10">
+            <div className="pj-workspace-history">
               {/* Folders: the projects inside this one, as compact cards that
                   are drop targets. Shown when there are some; making one is in
                   the actions menu, with the project's other filing verbs. */}
               {isOwner && folders.length > 0 && (
                 <section className="pj mb-10" aria-labelledby="pj-folders-title">
                   <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-                    <h2 id="pj-folders-title" className="flex items-baseline gap-2 text-ui font-semibold text-foreground">
+                      <h2 id="pj-folders-title" className="pj-section-title flex items-baseline gap-2">
                       Folders
                       <span className="text-caption font-normal tabular-nums text-muted-foreground">{folders.length}</span>
                     </h2>
@@ -1029,9 +1026,10 @@ export default function ProjectDetailPage() {
                 </section>
               )}
 
-              <section aria-label="In this project">
-                <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-                  {listOptions.length > 1 ? (
+              <section aria-labelledby="pj-history-title">
+                <div className="pj-history-heading">
+                  <h2 id="pj-history-title" className="pj-section-title">{listOptions.length > 1 ? "Project activity" : "Chats"}</h2>
+                  {listOptions.length > 1 && (
                     <SegmentedControl
                       size="sm"
                       columns="content"
@@ -1040,8 +1038,6 @@ export default function ProjectDetailPage() {
                       ariaLabel="Show"
                       options={listOptions}
                     />
-                  ) : (
-                    <h2 className="text-ui font-semibold text-foreground">Chats</h2>
                   )}
                 </div>
 
@@ -1083,8 +1079,10 @@ export default function ProjectDetailPage() {
           </div>
 
           <div
+            id="project-knowledge"
+            tabIndex={-1}
             className={cn(
-              "order-3 rounded-card @4xl/page:order-none @4xl/page:sticky @4xl/page:top-4",
+              "pj-workspace-context",
               dropping && "ring-2 ring-presence/60"
             )}
             onDragOver={(event) => {
