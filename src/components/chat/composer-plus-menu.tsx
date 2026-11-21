@@ -114,21 +114,13 @@ export type PlusMenuSection = PlusMenuItem[];
  */
 export const plusMenuRowClass = cn(menuRowClass, "min-h-9");
 
-/**
- * How a menu arrives (REFINEMENT_BRIEF: ~180ms, so the nearest rung, exit;
- * .97 → 1 from the trigger side, on the homepage's ease). The shell's own
- * `animate-pop-in` already anchors to the trigger (`origin-popper`) and drifts
- * toward it; this tightens it to the brief's numbers at the call site. The
- * scale is set under `motion-safe` only, so the reduced tier keeps its
- * identity scale and gets the fade alone.
- * Exported so the account menu arrives the same way.
- */
+/** The composer and account menus use the shared fast popover timing. */
 export const menuEntranceClass =
-  "motion-safe:[--motion-scale-from:0.97] " +
-  "data-[state=open]:[animation-duration:var(--dur-exit)] data-[state=open]:[animation-timing-function:var(--ease-out-expo)]";
+  "motion-safe:[--motion-scale-from:0.99] " +
+  "data-[state=open]:[animation-duration:var(--dur-fast)] data-[state=open]:[animation-timing-function:var(--ease-out-soft)]";
 
 /** The hairline between groups, inset to the rows' text edge rather than run to the shell. */
-export const menuInsetSeparatorClass = "mx-2.5 my-1.5 bg-foreground/[0.08]";
+export const menuInsetSeparatorClass = "mx-2 my-1 bg-border/70";
 
 /** The 16px glyph slot at the head of a row. */
 export function PlusMenuGlyph({ icon: Icon, className }: { icon: IconComponent; className?: string }) {
@@ -380,7 +372,7 @@ export function PlusMenu({
         // edge fades, rather than being cut off).
         align="start"
         side="top"
-        sideOffset={8}
+        sideOffset={6}
         avoidCollisions
         collisionPadding={COMPOSER_MENU_COLLISION_PADDING}
         data-opened-by={openedBy}
@@ -410,7 +402,7 @@ export function PlusMenu({
           // The panel arrives from the right and the root list comes back from
           // the left. `animate-stage-in` multiplies its travel by
           // --motion-shift, so reduced motion gets the fade without the slide.
-          <div className="animate-stage-in" style={{ "--stage-dx": "12px" } as React.CSSProperties}>
+          <div className="animate-stage-in [animation-duration:var(--dur-fast)]" style={{ "--stage-dx": "4px" } as React.CSSProperties}>
             <DropdownMenuItem data-menu-back aria-label="Back to Add" className={plusMenuRowClass} onSelect={(event) => { event.preventDefault(); back(); }}>
               {/* 16px and no ink stated — the row recipe's glyph, like every
                   other row in this menu (it was a 14px outlier). */}
@@ -422,8 +414,8 @@ export function PlusMenu({
         ) : (
           <div
             key={compact ? "root" : undefined}
-            className={compact ? "animate-stage-in" : undefined}
-            style={compact ? ({ "--stage-dx": "-12px" } as React.CSSProperties) : undefined}
+            className={compact ? "animate-stage-in [animation-duration:var(--dur-fast)]" : undefined}
+            style={compact ? ({ "--stage-dx": "-4px" } as React.CSSProperties) : undefined}
           >
             {sections
               .filter((section) => section.length > 0)

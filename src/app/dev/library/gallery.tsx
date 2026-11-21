@@ -326,7 +326,7 @@ function HomeUploads() {
           </li>
         ))}
       </ul>
-      <div role="table" aria-label="Uploads" className="-mx-2.5 mt-8 flex flex-col">
+      <div role="table" aria-label="Uploads" className="-mx-2.5 mt-8 flex flex-col @container/library">
         <LibraryRowHead />
         {uploads.map((upload) => (
           <UploadRow key={upload.localId} upload={upload} onRetry={() => retry(upload.localId)} onDismiss={() => dismiss(upload.localId)} />

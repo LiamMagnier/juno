@@ -371,6 +371,8 @@ export interface FileActions {
    * and downloads anything else.
    */
   onPreview?: (item: LibraryItem) => void;
+  onInspectArtifact?: (entry: LibraryEntry, opener: HTMLAnchorElement) => void;
+  inspectedKey?: string;
 }
 
 /**
@@ -384,6 +386,16 @@ export function previewOnClick(file: LibraryItem | undefined, onPreview: FileAct
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     onPreview(file);
+  };
+}
+
+function entryOpenHandler(entry: LibraryEntry, actions: FileActions) {
+  const inspect = actions.onInspectArtifact;
+  if (entry.made?.kind !== "artifact" || !inspect) return previewOnClick(entry.file, actions.onPreview);
+  return (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    inspect(entry, event.currentTarget);
   };
 }
 
@@ -459,22 +471,19 @@ export function EntryMenu({ entry, actions, className }: { entry: LibraryEntry; 
 /* —————————————————————————————— Grid tile —————————————————————————————— */
 
 /**
- * The tile's frame: one quiet card (`surface-raised`, 12) holding its preview
- * inset by `p-1` (4), so the preview's corners are `rounded-control` (8), the
- * concentric radius, and the meta's text sits 12px in from the card's edge,
- * the same inset as its bottom. Hover lifts a pixel and takes the hairline to
- * foreground 12%; press settles to .99. Reduced motion keeps only the tone.
+ * The preview inherits the card's radius minus its 4 px inset. Selection
+ * and hover use tone, keeping the grid still while browsing.
  */
 const TILE =
-  "group/tile surface-raised relative flex h-full min-w-0 flex-col rounded-card p-1 transition-[transform,border-color,box-shadow] duration-[160ms] ease-out-soft hover:-translate-y-px hover:border-foreground/[0.12] hover:shadow-raised-lg active:translate-y-0 active:scale-[0.99] active:duration-press motion-reduce:transition-[border-color] motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100 dark:hover:border-white/[0.12]";
-/** The inset preview well: the page ground, 8px corners, its 1px hairline drawn ABOVE the picture (::after) so an image cannot cover it. */
+  "group/tile nest-card nest-p-1 relative flex h-full min-w-0 flex-col border border-border/70 bg-card p-1 transition-colors duration-fast ease-out-soft hover:bg-accent/35 data-[inspected]:border-ring";
+/** The preview follows the same inset as the tile’s padding. */
 const PREVIEW =
-  "relative aspect-[4/3] overflow-hidden rounded-control bg-background after:pointer-events-none after:absolute after:inset-0 after:rounded-control after:shadow-[inset_0_0_0_1px_hsl(var(--foreground)/0.06)] dark:after:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]";
+  "relative aspect-[4/3] overflow-hidden rounded-inner bg-muted/40";
 
 export function EntryTile({ entry, actions }: { entry: LibraryEntry; actions: FileActions }) {
   const when = libraryWhen(entry.at);
   const external = Boolean(entry.file || entry.made?.kind === "deliverable");
-  const preview = previewOnClick(entry.file, actions.onPreview);
+  const preview = entryOpenHandler(entry, actions);
   return (
     /*
      * ONE CARD PER ITEM (owner: "the way the name, date and icons are placed
@@ -484,12 +493,13 @@ export function EntryTile({ entry, actions }: { entry: LibraryEntry; actions: Fi
      * tile. Every tile is the same size: a 4:3 preview and a fixed two-line
      * meta, and no problem line (owner).
      */
-    <div className={TILE}>
+    <div className={TILE} data-inspected={actions.inspectedKey === entry.key ? "" : undefined}>
       <a
         href={entry.href}
         {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
         aria-label={`Open ${entry.title}, ${entry.type}, ${when}`}
-        aria-haspopup={preview ? "dialog" : undefined}
+        aria-haspopup={entry.file && preview ? "dialog" : undefined}
+        aria-current={actions.inspectedKey === entry.key ? true : undefined}
         onClick={preview}
         className="absolute inset-0 z-[1] rounded-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       />
@@ -684,11 +694,11 @@ export function UploadRow({ upload, onRetry, onDismiss }: { upload: LibraryUploa
           )}
         </span>
       </span>
-      <span role="cell" className="hidden truncate @[48rem]/page:block">{kindLabel({ fileName: upload.fileName, kind: upload.kind })}</span>
-      <span role="cell" className="hidden min-w-0 @[48rem]/page:block">You</span>
-      <span role="cell" className="hidden min-w-0 @[48rem]/page:block" />
+      <span role="cell" className="hidden truncate @[48rem]/library:block">{kindLabel({ fileName: upload.fileName, kind: upload.kind })}</span>
+      <span role="cell" className="hidden min-w-0 @[48rem]/library:block">You</span>
+      <span role="cell" className="hidden min-w-0 @[48rem]/library:block" />
       <span role="cell" className="text-right tabular-nums" />
-      <span role="cell" className="hidden text-right tabular-nums @[48rem]/page:block">{formatBytes(upload.size)}</span>
+      <span role="cell" className="hidden text-right tabular-nums @[48rem]/library:block">{formatBytes(upload.size)}</span>
       <span role="cell" className="flex justify-end">
         <CancelUpload upload={upload} onDismiss={onDismiss} />
       </span>
@@ -700,18 +710,18 @@ export function UploadRow({ upload, onRetry, onDismiss }: { upload: LibraryUploa
 
 /** Name · kind · added by · from · changed · size · actions, on one template with its header. */
 export const LIBRARY_ROW_GRID =
-  "grid grid-cols-[minmax(0,1fr)_auto_2rem] items-center gap-x-4 @[48rem]/page:grid-cols-[minmax(0,2.4fr)_6rem_7.5rem_minmax(0,1.6fr)_5.5rem_4.5rem_2rem]";
+  "grid grid-cols-[minmax(0,1fr)_auto_2rem] items-center gap-x-4 @[48rem]/library:grid-cols-[minmax(0,2.4fr)_6rem_7.5rem_minmax(0,1.6fr)_5.5rem_4.5rem_2rem]";
 
 export function LibraryRowHead() {
   return (
     <div role="row" className={cn(LIBRARY_ROW_GRID, "mb-1 h-9 border-b border-foreground/[0.07] px-2.5 text-caption font-medium text-muted-foreground dark:border-white/[0.07]")}>
       {/* pl-11: the 32px icon column + 12px gap, so "Name" stands over the names, not the icons. */}
       <span role="columnheader" className="pl-11">Name</span>
-      <span role="columnheader" className="hidden @[48rem]/page:block">Kind</span>
-      <span role="columnheader" className="hidden @[48rem]/page:block">Added by</span>
-      <span role="columnheader" className="hidden @[48rem]/page:block">From</span>
+      <span role="columnheader" className="hidden @[48rem]/library:block">Kind</span>
+      <span role="columnheader" className="hidden @[48rem]/library:block">Added by</span>
+      <span role="columnheader" className="hidden @[48rem]/library:block">From</span>
       <span role="columnheader" className="text-right">Changed</span>
-      <span role="columnheader" className="hidden text-right @[48rem]/page:block">Size</span>
+      <span role="columnheader" className="hidden text-right @[48rem]/library:block">Size</span>
       <span role="columnheader">
         <span className="sr-only">Actions</span>
       </span>
@@ -721,7 +731,7 @@ export function LibraryRowHead() {
 
 export function EntryRow({ entry, actions }: { entry: LibraryEntry; actions: FileActions }) {
   const external = Boolean(entry.file || entry.made?.kind === "deliverable");
-  const preview = previewOnClick(entry.file, actions.onPreview);
+  const preview = entryOpenHandler(entry, actions);
   return (
     <div
       role="row"
@@ -738,7 +748,8 @@ export function EntryRow({ entry, actions }: { entry: LibraryEntry; actions: Fil
           <a
             href={entry.href}
             {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
-            aria-haspopup={preview ? "dialog" : undefined}
+            aria-haspopup={entry.file && preview ? "dialog" : undefined}
+            aria-current={actions.inspectedKey === entry.key ? true : undefined}
             onClick={preview}
             title={entry.title}
             className="truncate text-ui leading-5 text-foreground underline-offset-[3px] hover:underline hover:decoration-border"
@@ -747,11 +758,11 @@ export function EntryRow({ entry, actions }: { entry: LibraryEntry; actions: Fil
           </a>
         </span>
       </span>
-      <span role="cell" className="hidden truncate @[48rem]/page:block">{entry.type}</span>
-      <span role="cell" className="hidden min-w-0 @[48rem]/page:flex">
+      <span role="cell" className="hidden truncate @[48rem]/library:block">{entry.type}</span>
+      <span role="cell" className="hidden min-w-0 @[48rem]/library:flex">
         {entry.made?.agent ? <MadeBy entry={entry} /> : <span>{entry.file ? "You" : PRODUCT_NAME}</span>}
       </span>
-      <span role="cell" className="hidden min-w-0 @[48rem]/page:block">
+      <span role="cell" className="hidden min-w-0 @[48rem]/library:block">
         {entry.conversationId ? (
           <Link href={`/chat/${encodeURIComponent(entry.conversationId)}`} className="block truncate underline-offset-[3px] hover:text-foreground hover:underline hover:decoration-border">
             Open the chat
@@ -761,7 +772,7 @@ export function EntryRow({ entry, actions }: { entry: LibraryEntry; actions: Fil
         )}
       </span>
       <span role="cell" className="text-right tabular-nums">{libraryWhen(entry.at)}</span>
-      <span role="cell" className="hidden text-right tabular-nums @[48rem]/page:block">
+      <span role="cell" className="hidden text-right tabular-nums @[48rem]/library:block">
         {entry.file ? formatBytes(entry.file.size) : ""}
       </span>
       <span role="cell" className="flex justify-end">

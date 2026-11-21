@@ -684,7 +684,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               buttons on the page itself, no bordered discs, so the content's
               ground runs to the top of the screen. Full ink, like every
               interface glyph (owner, 18 Nov 2026: "make them black"). */}
-          <div className="relative z-40 flex shrink-0 items-center gap-1 px-2 pb-1 pt-[calc(0.5rem+env(safe-area-inset-top))] md:hidden">
+          <div className="workspace-mobile-toolbar relative z-40 shrink-0 md:hidden">
             <Button
               variant="ghost"
               size="icon"
@@ -692,7 +692,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onClick={() => setSidebarOpen(true)}
               aria-label="Open menu"
             >
-              <Menu className="size-5" />
+              <Menu className="size-[18px]" />
             </Button>
             {/* Where the page has no title of its own (a new chat), the bar
                 names the product with its lockup, as the sidebar and the
@@ -712,11 +712,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Button
               variant="ghost"
               size="icon"
-              className="jicon-trigger ml-auto size-11 shrink-0 rounded-control text-foreground hover:bg-accent"
+              className="jicon-trigger size-11 shrink-0 rounded-control text-foreground hover:bg-accent"
               onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
               aria-label="Search chats and projects"
             >
-              <SidebarMotionIcon kind="search" className="size-5" />
+              <SidebarMotionIcon kind="search" className="size-[18px]" />
             </Button>
             <Button
               variant="ghost"
@@ -729,7 +729,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label="New chat"
               data-new-chat-trigger=""
             >
-              <MessageSquarePlus className="size-5" />
+              <MessageSquarePlus className="size-[18px]" />
             </Button>
           </div>
 

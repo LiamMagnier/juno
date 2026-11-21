@@ -14,7 +14,7 @@ export default function SettingsLoading() {
   return (
     <div role="status" aria-label="Loading settings" className="settings-layer fixed inset-0 z-modal md:flex md:items-center md:justify-center">
       <div aria-hidden="true" className="settings-scrim absolute inset-0 hidden md:block" />
-      <div className="settings-window relative flex h-full w-full flex-col overflow-hidden bg-background md:h-[min(48rem,calc(100dvh-2rem))] md:w-[min(62rem,calc(100vw-2rem))] md:flex-row md:rounded-composer">
+      <div className="settings-window relative flex h-full w-full flex-col overflow-hidden bg-background md:h-[min(48rem,calc(100dvh-2rem))] md:w-[min(62rem,calc(100vw-2rem))] md:flex-row md:rounded-panel">
       {/* No gap of its own, as the page's column has none: its 2px between
           each part set every row 5.6px low. */}
       <div className="settings-rail-col flex shrink-0 flex-col px-3 pb-3 pt-3 md:h-full md:w-[15.5rem] md:pt-4">

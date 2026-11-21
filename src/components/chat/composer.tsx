@@ -317,9 +317,10 @@ interface ComposerProps {
   /** The live voice provider accepts image frames. Files ride with the turn as
    * resolved text either way, so this gates pictures alone. */
   voiceCanSeeImages?: boolean;
-  /** Temporarily block edits/submission without turning the primary action into
-   * the normal chat Stop button (voice image conversion/transcript saving). */
+  /** Block submission without turning the primary action into Stop. */
   sendLocked?: boolean;
+  /** Freeze the field while an existing draft is still being processed. */
+  draftLocked?: boolean;
   /**
    * One quiet line under the docked field: the "can make mistakes" notice, or
    * what is different about this chat (a fork, incognito). The caller owns the
@@ -573,6 +574,7 @@ function ComposerImpl({
   voiceActive = false,
   voiceCanSeeImages = true,
   sendLocked = false,
+  draftLocked = false,
   footnote,
   selectedProjectId = null,
   onPickProject,
@@ -3485,10 +3487,9 @@ function ComposerImpl({
                   onKeyDown={onKeyDown}
                   onPaste={onPaste}
                   // Live through a generation: the draft for the next message is
-                  // typed while the reply streams (see `sendBlocked`). Only a hard
-                  // send lock takes the field away. Preflight owns a revision,
-                  // so the next draft can be written while it is checking.
-                  disabled={sendLocked}
+                  // typed while a reply streams or a voice transcript saves.
+                  // Only an operation that owns this draft freezes the field.
+                  disabled={draftLocked}
                   /*
                    * NO PLACEHOLDER WHILE A MARK IS IN THE LINE: on a phone the
                    * mark and the hint would split one line and the prompt would

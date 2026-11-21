@@ -128,6 +128,20 @@ function callerTimeZone(): { timeZone: string } | Record<string, never> {
   }
 }
 
+// The default script policy allows the deployed processor from this origin.
+// Register it once on the context already unlocked by the user's gesture.
+const micWorklets = new WeakMap<AudioContext, Promise<void>>();
+function loadMicWorklet(context: AudioContext): Promise<void> {
+  const loaded = micWorklets.get(context);
+  if (loaded) return loaded;
+  const loading = context.audioWorklet.addModule("/audio/juno-mic-tap.js").catch((error: unknown) => {
+    micWorklets.delete(context);
+    throw error;
+  });
+  micWorklets.set(context, loading);
+  return loading;
+}
+
 export interface RealtimeUsage {
   audioInSec: number;
   audioOutSec: number;
@@ -327,6 +341,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const wsRef = React.useRef<WebSocket | null>(null);
   const micCtxRef = React.useRef<AudioContext | null>(null);
   const micStreamRef = React.useRef<MediaStream | null>(null);
+  const micSourceRef = React.useRef<MediaStreamAudioSourceNode | null>(null);
   const micNodeRef = React.useRef<AudioWorkletNode | null>(null);
   const micAnalyserRef = React.useRef<AnalyserNode | null>(null);
   const playCtxRef = React.useRef<AudioContext | null>(null);
@@ -339,6 +354,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
    * second or more — the light peaked on words not yet spoken and went dark
    * mid-sentence.
    */
+  const playOutputRef = React.useRef<MediaStream | null>(null);
   const playBusRef = React.useRef<GainNode | null>(null);
   const playAnalyserRef = React.useRef<AnalyserNode | null>(null);
   const playSamplesRef = React.useRef<Float32Array<ArrayBuffer> | null>(null);
@@ -411,6 +427,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const screenStreamRef = React.useRef<MediaStream | null>(null);
   const screenVideoRef = React.useRef<HTMLVideoElement | null>(null);
   const generationRef = React.useRef(0);
+  const tokenRequestRef = React.useRef<AbortController | null>(null);
   // Provider switches keep the same browser WebSocket generation. Track them
   // separately so an image still being converted cannot land in the provider
   // selected after that conversion began.
@@ -734,6 +751,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
 
   /** Release every browser resource owned by the current generation. */
   const releaseResources = React.useCallback(() => {
+    tokenRequestRef.current?.abort();
+    tokenRequestRef.current = null;
     clientTranscriptActiveRef.current = false;
     if (speechRestartTimerRef.current != null) window.clearTimeout(speechRestartTimerRef.current);
     speechRestartTimerRef.current = null;
@@ -757,9 +776,10 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       micNodeRef.current.disconnect();
     }
     micNodeRef.current = null;
+    micSourceRef.current?.disconnect();
+    micSourceRef.current = null;
     for (const track of micStreamRef.current?.getTracks() ?? []) track.stop();
     micStreamRef.current = null;
-    void micCtxRef.current?.close().catch(() => {});
     micCtxRef.current = null;
     micAnalyserRef.current = null;
 
@@ -769,9 +789,9 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     playAnalyserRef.current = null;
     playSamplesRef.current = null;
     setAudioStreams((prev) => (prev.mic || prev.output ? { mic: null, output: null } : prev));
-    void playCtxRef.current?.close().catch(() => {});
+    for (const track of playOutputRef.current?.getTracks() ?? []) track.stop();
+    playOutputRef.current = null;
     playCtxRef.current = null;
-    playAnalyserRef.current = null;
     speakingRef.current = false;
     providerTurnActiveRef.current = false;
     echoCancellationRef.current = null;
@@ -842,7 +862,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     };
   }, []);
 
-  const startMic = React.useCallback(async (generation: number) => {
+  const startMic = React.useCallback(async (generation: number, ctx: AudioContext) => {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
@@ -853,33 +873,14 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     micStreamRef.current = stream;
     echoCancellationRef.current =
       stream.getAudioTracks()[0]?.getSettings().echoCancellation ?? null;
-    const ctx = new AudioContext();
     micCtxRef.current = ctx;
-    await ctx.resume();
-
-    // Inline worklet: forwards Float32 frames to the main thread.
-    const workletSrc = `
-      class JunoMicTap extends AudioWorkletProcessor {
-        process(inputs) {
-          const ch = inputs[0]?.[0];
-          if (ch) this.port.postMessage(ch.slice(0));
-          return true;
-        }
-      }
-      registerProcessor("juno-mic-tap", JunoMicTap);
-    `;
-    const url = URL.createObjectURL(new Blob([workletSrc], { type: "application/javascript" }));
-    try {
-      await ctx.audioWorklet.addModule(url);
-    } finally {
-      URL.revokeObjectURL(url);
-    }
+    await loadMicWorklet(ctx);
     if (generationRef.current !== generation) {
       for (const track of stream.getTracks()) track.stop();
-      await ctx.close().catch(() => {});
       throw new DOMException("Voice start was superseded", "AbortError");
     }
     const source = ctx.createMediaStreamSource(stream);
+    micSourceRef.current = source;
     const micAnalyser = ctx.createAnalyser();
     micAnalyser.fftSize = 512;
     micAnalyser.smoothingTimeConstant = 0.35;
@@ -1174,11 +1175,9 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       history?: VoiceHistoryEntry[],
       opts?: VoiceCallOptions
     ) => {
-      // The glow analyses the call's streams on voice-glow's own page-wide
-      // AudioContext. Wake it here, still inside the click that started the
-      // call: Safari only lets a context start in a gesture, and a suspended
-      // one reads silence, leaving the light flat for the whole call.
-      getAudioContext();
+      // Use the context already unlocked by the caller's gesture for both
+      // capture and playback, including after an asynchronous relay request.
+      const playContext = getAudioContext();
       const generation = ++generationRef.current;
       providerEpochRef.current += 1;
       // Re-entry from the reconnect timer keeps the visible "reconnecting"
@@ -1221,6 +1220,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       setDelegate(null);
       setUsage(null);
       try {
+        if (!playContext) throw new Error("This browser does not support realtime audio.");
         const memory = memoryRef.current;
         const conversationId = conversationRef.current;
         const tools = toolsRef.current;
@@ -1240,7 +1240,11 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
               }
             : {}),
         }).toString();
-        const res = await fetch(query ? `/api/voice/relay-token?${query}` : "/api/voice/relay-token");
+        const tokenRequest = new AbortController();
+        tokenRequestRef.current = tokenRequest;
+        const res = await fetch(query ? `/api/voice/relay-token?${query}` : "/api/voice/relay-token", {
+          signal: AbortSignal.any([tokenRequest.signal, AbortSignal.timeout(15_000)]),
+        });
         const data = (await res.json().catch(() => ({}))) as {
           token?: string;
           url?: string;
@@ -1252,6 +1256,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
         // "budget_exceeded" used to be what the call said.
         if (!res.ok || !data.token || !data.url) throw new Error(voiceStartErrorCopy(data.error, data.message));
         if (generationRef.current !== generation) return;
+        tokenRequestRef.current = null;
 
         const avail = data.providers && typeof data.providers === "object" ? { ...data.providers } : null;
         // MiniMax uses the browser's Web Speech captions as its input channel.
@@ -1265,7 +1270,6 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           target = fallback;
         }
 
-        const playContext = new AudioContext({ sampleRate: PLAYBACK_SAMPLE_RATE });
         playCtxRef.current = playContext;
         const bus = playContext.createGain();
         bus.connect(playContext.destination);
@@ -1278,6 +1282,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           const tap = playContext.createMediaStreamDestination();
           bus.connect(tap);
           output = tap.stream;
+          playOutputRef.current = output;
         } catch {
           /* no MediaStream output here: the glow falls back to the level getter */
         }
@@ -1285,11 +1290,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
         playAnalyserRef.current = analyser;
         playSamplesRef.current = new Float32Array(analyser.fftSize);
         await playContext.resume();
-        if (generationRef.current !== generation) {
-          await playContext.close().catch(() => {});
-          return;
-        }
-        await startMic(generation);
+        if (generationRef.current !== generation) return;
+        await startMic(generation, playContext);
         if (generationRef.current !== generation) return;
         setAudioStreams({ mic: micStreamRef.current, output });
 

@@ -107,6 +107,7 @@ export function SegmentedControl<T extends string>({
   optionClassName,
   columns = "equal",
   size = "md",
+  appearance = "default",
 }: {
   value: T;
   onChange: (value: T) => void;
@@ -135,6 +136,7 @@ export function SegmentedControl<T extends string>({
    * edge and 3px from the bottom, its hairline grazing the track's.
    */
   size?: SegmentedSize;
+  appearance?: "default" | "plain";
 }) {
   const metrics = SEGMENTED_METRICS[size];
   const refs = React.useRef<Partial<Record<T, HTMLButtonElement | null>>>({});
@@ -228,7 +230,7 @@ export function SegmentedControl<T extends string>({
               "motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] motion-reduce:active:scale-100",
               labelHidden ? metrics.iconSegment : cn("gap-1.5 text-ui", metrics.segment),
               selected
-                ? "text-foreground"
+                ? cn("text-foreground", appearance === "plain" && "bg-card ring-1 ring-inset ring-border/70")
                 : // A faint wash names the target under the pointer — far below
                   // the thumb's own contrast, so it reads as "you can press here",
                   // not as a second selected state.
@@ -236,7 +238,7 @@ export function SegmentedControl<T extends string>({
               optionClassName,
             )}
           >
-            {selected && (
+            {selected && appearance !== "plain" && (
               <motion.span
                 layoutId={thumbId}
                 aria-hidden="true"

@@ -11,8 +11,11 @@ let availabilityCache: {
   expiresAt: number;
 } | null = null;
 
+let availabilityRequest: { provider: ComputerProvider; result: Promise<boolean> } | null = null;
+
 export function resetComputerProviderCache(): void {
   availabilityCache = null;
+  availabilityRequest = null;
 }
 
 export function computerProvider(): ComputerProvider | null {
@@ -38,7 +41,7 @@ export function computerProvider(): ComputerProvider | null {
 export async function isAgentComputerConfigured(): Promise<boolean> {
   const provider = computerProvider();
   if (!provider) {
-    availabilityCache = null;
+    resetComputerProviderCache();
     return false;
   }
 
@@ -51,20 +54,18 @@ export async function isAgentComputerConfigured(): Promise<boolean> {
     return availabilityCache.ok;
   }
 
-  try {
-    const res = await provider.available();
-    availabilityCache = {
-      providerName: provider.name,
-      ok: res.ok,
-      expiresAt: now + 60_000,
-    };
-    return res.ok;
-  } catch {
-    availabilityCache = {
-      providerName: provider.name,
-      ok: false,
-      expiresAt: now + 60_000,
-    };
-    return false;
-  }
+  if (availabilityRequest?.provider === provider) return availabilityRequest.result;
+
+  const result = Promise.resolve().then(() => provider.available()).then(
+    (response) => response.ok,
+    () => false,
+  ).then((ok) => {
+    if (availabilityRequest?.result === result) {
+      availabilityCache = { providerName: provider.name, ok, expiresAt: Date.now() + 60_000 };
+      availabilityRequest = null;
+    }
+    return ok;
+  });
+  availabilityRequest = { provider, result };
+  return result;
 }

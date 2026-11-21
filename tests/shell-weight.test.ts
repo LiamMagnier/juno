@@ -138,8 +138,10 @@ test("a conversation does not load realtime voice until voice is opened", () => 
 
 test("the voice engine still wakes audio inside the click that opened it", () => {
   const view = readFileSync(join(root, "src/components/chat/chat-view.tsx"), "utf8");
-  // Wake the shared AudioContext before waiting for the chunk (Safari).
-  assert.match(view, /getAudioContext\(\);\s+setVoiceOpen\(true\);/);
+  const openVoice = view.slice(view.indexOf("const openVoice = React.useCallback("), view.indexOf("const closeVoice = React.useCallback("));
+  // The audio context and the cancellation guard are set in the click, before
+  // waiting for the voice chunk. Safari's gesture unlock cannot move into it.
+  assert.match(openVoice, /getAudioContext\(\);\s+voiceOpenRef\.current = true;\s+setVoiceOpen\(true\);[\s\S]*?void loadVoice\(\)\.then\(/);
   // A chunk that cannot load closes voice and says so.
   assert.match(view, /toast\.error\("Voice couldn’t load\. Check your connection and try again\."\)/);
   // Closed, or a new chat, while it loaded: nothing starts.

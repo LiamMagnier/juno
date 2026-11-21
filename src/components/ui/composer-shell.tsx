@@ -104,7 +104,7 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
       ref={ref}
       data-frame={frame}
       data-kbd-focus={ring ? "" : undefined}
-      className={cn("composer-surface relative flex w-full flex-col rounded-composer", className)}
+      className={cn("composer-surface relative flex w-full flex-col", className)}
       {...props}
     >
       {/* `@container`, so what is inside the composer can be sized by the

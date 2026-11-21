@@ -220,7 +220,8 @@ export function OrbitComputers({
 }) {
   const macs = hosts.kind === "ok" ? hosts.hosts : [];
   const cloudAgents = agents.filter((agent) => agent.executionTarget !== "mac");
-  const awake = cloudAgents.filter((agent) => agent.computer?.enabled && agent.computer.status === "running").length;
+  const desktopConfigured = cloudAgents.some((agent) => agent.computer != null);
+  const awake = cloudAgents.filter((agent) => agent.computer?.enabled && agent.computer.status === "awake").length;
 
   const move = async (agent: ClientAgent, to: RunsOn, label: string) => {
     const outcome = await updateAgent(agent.id, runsOnInput(to));
@@ -252,9 +253,9 @@ export function OrbitComputers({
         <MachineRow
           kind="cloud"
           name={CLOUD_LABEL}
-          status="Always on"
-          detail={awake > 0 ? `${awake} awake` : null}
-          presence="online"
+          status={desktopConfigured ? (awake > 0 ? `${awake} awake` : "Starts on demand") : "Desktop not available"}
+          detail={null}
+          presence={awake > 0 ? "online" : "off"}
           agents={cloudAgents}
           move={
             <MoveHere
@@ -273,7 +274,7 @@ export function OrbitComputers({
               kind="mac"
               name={host.displayName}
               status={presence === "busy" && host.activeRunCount > 0 ? `${host.activeRunCount} running` : PRESENCE_WORDS[presence]}
-              detail={presence === "off" ? null : host.allowsComputerUse ? "screen control" : "files and browser"}
+              detail={presence === "off" ? "Turn on Work in the Mac app" : host.allowsComputerUse ? "screen control" : "files and browser"}
               presence={presence}
               agents={agentsOnHost(agents, host, macs)}
               move={
@@ -327,7 +328,7 @@ function ConnectMac() {
         <span className="min-w-0 flex-1">
           <span className="block text-ui font-medium leading-5 text-foreground">Connect your Mac</span>
           <span className="block text-pretty text-caption leading-4 text-muted-foreground">
-            {`Agents work in your real apps and files, and ask first. Install ${PRODUCT_NAME} for Mac and turn on Work.`}
+            {`Use your own computer without renting a cloud desktop. Install ${PRODUCT_NAME} for Mac and turn on Work.`}
           </span>
         </span>
         <ChevronRight className="orbit-row__go size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

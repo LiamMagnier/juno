@@ -12,6 +12,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileVersionsDialog, RenameFileDialog } from "./library-dialogs";
 import { LibraryQuickLook } from "./library-quick-look";
+import { LibraryArtifactInspector } from "./library-artifact-inspector";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { LibraryDropOverlay, useFileDrop } from "./library-drop-zone";
 import {
   EntryRow,
@@ -200,6 +202,13 @@ export function LibraryHome() {
   const [renameTarget, setRenameTarget] = React.useState<LibraryItem | null>(null);
   const [versionsTarget, setVersionsTarget] = React.useState<LibraryItem | null>(null);
   const [previewTarget, setPreviewTarget] = React.useState<LibraryItem | null>(null);
+  const [inspected, setInspected] = React.useState<LibraryEntry | null>(null);
+  const inspectOpener = React.useRef<HTMLAnchorElement | null>(null);
+  const inlineInspector = useMediaQuery("(min-width: 72rem)");
+  const closeInspector = () => {
+    setInspected(null);
+    window.requestAnimationFrame(() => inspectOpener.current?.focus({ preventScroll: true }));
+  };
   const fileInput = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -237,6 +246,11 @@ export function LibraryHome() {
     onVersions: setVersionsTarget,
     onDelete: (item) => files.deleteItems([item]),
     onPreview: setPreviewTarget,
+    inspectedKey: inspected?.key,
+    onInspectArtifact: (entry, opener) => {
+      inspectOpener.current = opener;
+      setInspected(entry);
+    },
   };
 
   const visibleFiles = (files.items ?? []).filter((file) => {
@@ -336,6 +350,7 @@ export function LibraryHome() {
             onChange={setShow}
             ariaLabel="Show"
             columns="content"
+            className="workspace-filter-rail"
             options={[
               { value: "all", label: "All" },
               { value: "made", label: FEATURE_NAMES.artifacts.label },
@@ -343,9 +358,9 @@ export function LibraryHome() {
               { value: "media", label: "Media" },
             ]}
           />
-          <div className="flex w-full min-w-0 items-center justify-end gap-2 @[40rem]/page:w-auto @[40rem]/page:flex-none">
+          <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 @[40rem]/page:flex @[40rem]/page:w-auto @[40rem]/page:flex-none @[40rem]/page:justify-end">
             {show === "files" ? (
-              <Button variant="ghost" asChild className="hidden px-3 font-normal text-muted-foreground hover:text-foreground @[40rem]/page:inline-flex">
+              <Button variant="ghost" asChild className="col-span-2 row-start-2 min-h-11 justify-self-start px-3 font-normal text-muted-foreground hover:text-foreground @[40rem]/page:min-h-0">
                 <Link href="/library?view=files">Manage files</Link>
               </Button>
             ) : null}
@@ -354,7 +369,7 @@ export function LibraryHome() {
               onValueChange={setQuery}
               label="Search the library"
               busy={searching}
-              className="flex-1 @[40rem]/page:w-64 @[40rem]/page:flex-none"
+              className="min-w-0 @[40rem]/page:w-64 @[40rem]/page:flex-none"
             />
             <SegmentedControl
               value={view}
@@ -408,104 +423,112 @@ export function LibraryHome() {
           </p>
         ) : null}
 
-        {pending ? (
-          <LibrarySkeleton view={view} />
-        ) : failedOutright ? (
-          <div className="grid min-h-[min(48vh,28rem)] place-items-center">
-            <EmptyState
-              tone="error"
-              icon={StatusIcons.error}
-              title="Your Library didn’t load"
-              description="Nothing was changed. Check your connection and try again."
-              action={
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    made.reload();
-                    void files.reload();
-                  }}
-                >
-                  Try again
+        <div className={cn("grid min-w-0 gap-6", inspected && inlineInspector && "grid-cols-[minmax(0,1fr)_minmax(17rem,22rem)] items-start")}>
+          <div className="min-w-0 @container/library">
+            {pending ? (
+              <LibrarySkeleton view={view} />
+            ) : failedOutright ? (
+              <div className="grid min-h-[min(48vh,28rem)] place-items-center">
+                <EmptyState
+                  tone="error"
+                  icon={StatusIcons.error}
+                  title="Your Library didn’t load"
+                  description="Nothing was changed. Check your connection and try again."
+                  action={
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        made.reload();
+                        void files.reload();
+                      }}
+                    >
+                      Try again
+                    </Button>
+                  }
+                />
+              </div>
+            ) : empty ? (
+              <div className="grid min-h-[min(48vh,28rem)] place-items-center">
+              {q ? (
+                <EmptyState
+                  icon={Search}
+                  title={`Nothing called “${q}”`}
+                  description="Search looks at the names of your files and of what was made. Try a client, a month or a number."
+                  action={
+                    <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
+                      Clear search
+                    </Button>
+                  }
+                />
+              ) : (
+                <EmptyState
+                  icon={Upload}
+                  title={show === "files" ? "No files yet" : show === "media" ? "No media yet" : "Your Library starts here"}
+                  description={`Files you upload or share in chats, and the documents, decks and sites ${PRODUCT_NAME} makes, collect here. Drop files anywhere on this page to add them, up to ${limitMb} MB each.`}
+                  action={
+                    <>
+                      <Button size="sm" variant="secondary" onClick={() => fileInput.current?.click()}>
+                        <Upload className="size-4" aria-hidden="true" />
+                        Upload files
+                      </Button>
+                      <Button variant="ghost" size="sm" asChild className="text-muted-foreground">
+                        <Link href="/chat">Start a chat</Link>
+                      </Button>
+                    </>
+                  }
+                />
+              )}
+              </div>
+            ) : view === "grid" ? (
+              <ul
+                aria-label={FEATURE_NAMES.library.label}
+                className={cn(GRID, inspected && inlineInspector && "@[40rem]/page:grid-cols-2 @[56rem]/page:grid-cols-2")}
+              >
+                {pendingUploads.map((upload) => (
+                  <li key={upload.localId} className="min-w-0">
+                    <UploadTile upload={upload} onRetry={() => uploads.retry(upload.localId)} onDismiss={() => uploads.dismiss(upload.localId)} />
+                  </li>
+                ))}
+                {entries.map((entry, index) => (
+                  <li key={entry.key} className="min-w-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]" style={staggerDelay(index, "tight")}>
+                    <EntryTile entry={entry} actions={actions} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div role="table" aria-label={FEATURE_NAMES.library.label} className="-mx-2.5 flex flex-col">
+                <LibraryRowHead />
+                {pendingUploads.map((upload) => (
+                  <UploadRow key={upload.localId} upload={upload} onRetry={() => uploads.retry(upload.localId)} onDismiss={() => uploads.dismiss(upload.localId)} />
+                ))}
+                {entries.map((entry) => (
+                  <EntryRow key={entry.key} entry={entry} actions={actions} />
+                ))}
+              </div>
+            )}
+
+            {hasMore && !pending ? (
+              <div ref={sentinel} className="mt-6 flex justify-center">
+                <Button variant="ghost" size="sm" className="text-muted-foreground" loading={loadingMore} onClick={() => loadMoreRef.current()}>
+                  Load more
                 </Button>
-              }
-            />
+              </div>
+            ) : null}
+
+            {!pending && !empty && !failedOutright && (count !== null || files.storage) ? (
+              <p className="mt-6 border-t border-foreground/[0.07] pt-4 text-caption tabular-nums text-muted-foreground dark:border-white/[0.07]">
+                {count !== null ? `${count} ${count === 1 ? "item" : "items"}` : null}
+                {count !== null && files.storage ? ", " : null}
+                {files.storage ? `${formatBytes(files.storage.usedBytes)} of ${formatBytes(files.storage.quotaBytes)} used` : null}
+              </p>
+            ) : null}
+
           </div>
-        ) : empty ? (
-          <div className="grid min-h-[min(48vh,28rem)] place-items-center">
-          {q ? (
-            <EmptyState
-              icon={Search}
-              title={`Nothing called “${q}”`}
-              description="Search looks at the names of your files and of what was made. Try a client, a month or a number."
-              action={
-                <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
-                  Clear search
-                </Button>
-              }
-            />
-          ) : (
-            <EmptyState
-              icon={Upload}
-              title={show === "files" ? "No files yet" : show === "media" ? "No media yet" : "Your Library starts here"}
-              description={`Files you upload or share in chats, and the documents, decks and sites ${PRODUCT_NAME} makes, collect here. Drop files anywhere on this page to add them, up to ${limitMb} MB each.`}
-              action={
-                <>
-                  <Button size="sm" variant="secondary" onClick={() => fileInput.current?.click()}>
-                    <Upload className="size-4" aria-hidden="true" />
-                    Upload files
-                  </Button>
-                  <Button variant="ghost" size="sm" asChild className="text-muted-foreground">
-                    <Link href="/chat">Start a chat</Link>
-                  </Button>
-                </>
-              }
-            />
+          {inspected && (
+            <LibraryArtifactInspector key={inspected.key} entry={inspected} inline={inlineInspector} onClose={closeInspector} />
           )}
-          </div>
-        ) : view === "grid" ? (
-          <ul
-            aria-label={FEATURE_NAMES.library.label}
-            className={GRID}
-          >
-            {pendingUploads.map((upload) => (
-              <li key={upload.localId} className="min-w-0">
-                <UploadTile upload={upload} onRetry={() => uploads.retry(upload.localId)} onDismiss={() => uploads.dismiss(upload.localId)} />
-              </li>
-            ))}
-            {entries.map((entry, index) => (
-              <li key={entry.key} className="min-w-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]" style={staggerDelay(index, "tight")}>
-                <EntryTile entry={entry} actions={actions} />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div role="table" aria-label={FEATURE_NAMES.library.label} className="-mx-2.5 flex flex-col motion-safe:animate-rise-in">
-            <LibraryRowHead />
-            {pendingUploads.map((upload) => (
-              <UploadRow key={upload.localId} upload={upload} onRetry={() => uploads.retry(upload.localId)} onDismiss={() => uploads.dismiss(upload.localId)} />
-            ))}
-            {entries.map((entry) => (
-              <EntryRow key={entry.key} entry={entry} actions={actions} />
-            ))}
-          </div>
-        )}
-
-        {hasMore && !pending ? (
-          <div ref={sentinel} className="mt-6 flex justify-center">
-            <Button variant="ghost" size="sm" className="text-muted-foreground" loading={loadingMore} onClick={() => loadMoreRef.current()}>
-              Load more
-            </Button>
-          </div>
-        ) : null}
-
-        {!pending && !empty && !failedOutright && (count !== null || files.storage) ? (
-          <p className="mt-6 border-t border-foreground/[0.07] pt-4 text-caption tabular-nums text-muted-foreground dark:border-white/[0.07]">
-            {count !== null ? `${count} ${count === 1 ? "item" : "items"}` : null}
-            {count !== null && files.storage ? ", " : null}
-            {files.storage ? `${formatBytes(files.storage.usedBytes)} of ${formatBytes(files.storage.quotaBytes)} used` : null}
-          </p>
-        ) : null}
+        </div>
 
         <RenameFileDialog item={renameTarget} onOpenChange={(open) => !open && setRenameTarget(null)} onRename={files.renameItem} />
         <FileVersionsDialog item={versionsTarget} onOpenChange={(open) => !open && setVersionsTarget(null)} onRestored={() => void files.reload()} />
@@ -534,9 +557,9 @@ function LibrarySkeleton({ view }: { view: "grid" | "list" }) {
   return (
     <div role="status" aria-label="Loading your Library" className={GRID}>
       {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-        <div key={i} className="surface-raised flex flex-col rounded-card p-1">
+        <div key={i} className="nest-card nest-p-1 flex flex-col border border-border/70 bg-card p-1">
           {/* 12 − 4 = 8: concentric inside the p-1 card. */}
-          <Skeleton className="aspect-[4/3] w-full rounded-control" />
+          <Skeleton className="aspect-[4/3] w-full rounded-inner" />
           <div className="flex flex-col gap-0.5 px-2 pb-2 pt-2.5">
             <span className="flex h-5 items-center"><Skeleton className="h-3.5 w-3/4" /></span>
             <span className="flex h-5 items-center"><Skeleton className="h-3 w-1/3" /></span>

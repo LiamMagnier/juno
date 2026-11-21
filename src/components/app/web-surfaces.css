@@ -1,20 +1,31 @@
 /* Shared spacing and edges for the web workspace and public pages. */
 :root {
-  --web-panel-radius: 16px;
-  --web-control-radius: 10px;
-  --web-page-title-size: clamp(2.125rem, 3.225cqi, 2.875rem);
+  --workspace-gap: 1rem;
+  --web-composer-radius: 30px;
 }
 
-.juno-content-panel {
-  --web-surface-edge: hsl(var(--foreground) / .085);
+:root[data-composer-shape="compact"] { --web-composer-radius: 24px; }
+:root[data-composer-shape="soft"] { --web-composer-radius: 36px; }
+
+.composer-surface { border-radius: var(--web-composer-radius, 30px); }
+
+/* Web menus respond on the fast rung. The native editor shares the menu
+   recipe and keeps its own transition settings. */
+.nest-menu:is([data-state="open"], [data-state="closed"]) {
+  --pop-shift: 2px;
+  animation-duration: var(--dur-fast);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nest-menu[data-state="open"] { --motion-scale-from: .99; }
 }
 
 @media (min-width: 768px) {
   .juno-content-panel {
-    margin-block: 8px;
-    margin-inline-end: 8px;
-    border-radius: var(--web-panel-radius);
-    box-shadow: 0 0 0 1px var(--web-surface-edge), 0 3px 16px hsl(var(--shadow-ink) / .035);
+    --frame-inset: .5rem;
+    margin-block: var(--frame-inset);
+    margin-inline-end: var(--frame-inset);
+    border-radius: theme("borderRadius.panel");
+    box-shadow: 0 0 0 1px hsl(var(--border) / .65);
   }
 }
 
@@ -24,7 +35,7 @@
 
 .app-section-heading-row {
   display: grid;
-  gap: .875rem 1.5rem;
+  gap: .75rem var(--workspace-gap);
 }
 
 .app-section-heading-actions {
@@ -47,15 +58,6 @@
   }
 }
 
-.app-page-content .app-page-title,
-.app-section-header .app-page-title,
-.app-section-header .app-section-title-placeholder {
-  font-size: var(--web-page-title-size);
-  line-height: 1.08;
-  letter-spacing: -.038em;
-  font-optical-sizing: auto;
-}
-
 .app-section-lede {
   max-width: 56ch;
   line-height: 1.55;
@@ -67,14 +69,69 @@
 
 .app-section-header .app-section-heading-row > div { min-width: 0; }
 
+@media (width < 768px) {
+  .app-main-canvas {
+    --workspace-safe-start: env(safe-area-inset-left, 0px);
+    --workspace-safe-end: env(safe-area-inset-right, 0px);
+  }
+
+  .app-main-canvas:dir(rtl) {
+    --workspace-safe-start: env(safe-area-inset-right, 0px);
+    --workspace-safe-end: env(safe-area-inset-left, 0px);
+  }
+
+  .workspace-mobile-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: .25rem;
+    padding-block: calc(.25rem + env(safe-area-inset-top, 0px)) .25rem;
+    padding-inline: max(.375rem, var(--workspace-safe-start)) max(.375rem, var(--workspace-safe-end));
+    border-block-end: 1px solid hsl(var(--border) / .7);
+    background: hsl(var(--background));
+  }
+
+  .app-main-canvas :is(.page-gutter, .app-page-content) {
+    padding-inline: max(var(--page-gutter), var(--workspace-safe-start)) max(var(--page-gutter), var(--workspace-safe-end));
+  }
+
+  .app-main-canvas .app-page-content {
+    padding-block-end: calc(2rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-section-heading-row {
+    row-gap: .625rem;
+  }
+
+  .app-section-heading-actions :is(button, a[role="button"]) {
+    min-block-size: 2.75rem;
+  }
+
+  .app-main-canvas .conversation-header {
+    padding-inline: max(1rem, var(--workspace-safe-start)) max(.375rem, var(--workspace-safe-end));
+  }
+
+  .workspace-filter-rail {
+    min-inline-size: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-padding-inline: .375rem;
+    scrollbar-width: none;
+  }
+
+  .workspace-filter-rail :is(button, [role="tab"]) {
+    min-block-size: 2.75rem;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .app-section-heading-row .app-page-title,
   .app-section-heading-row .app-section-lede,
   .app-section-heading-row .app-section-heading-actions {
     animation: web-heading-enter var(--dur-base) var(--ease-out-expo) backwards;
   }
-  .app-section-heading-row .app-section-lede { animation-delay: 25ms; }
-  .app-section-heading-row .app-section-heading-actions { animation-delay: 50ms; }
+  .app-section-heading-row .app-section-lede { animation-delay: calc(var(--stagger-tile) / 2); }
+  .app-section-heading-row .app-section-heading-actions { animation-delay: var(--stagger-tile); }
 }
 
 @keyframes web-heading-enter {
@@ -97,35 +154,17 @@
 }
 
 .conversation-receipt {
-  border: 1px solid hsl(var(--foreground) / .08);
-  border-radius: var(--web-control-radius);
-  background: hsl(var(--foreground) / .035);
+  background: hsl(var(--muted) / .55);
 }
 
 .conversation-receipt[aria-expanded="true"] {
-  border-color: hsl(var(--foreground) / .15);
   background: hsl(var(--accent));
 }
 
 .conversation-user-bubble {
-  border: 1px solid hsl(var(--foreground) / .065);
-  border-radius: var(--web-panel-radius);
-  border-end-end-radius: calc(var(--web-panel-radius) / 2);
+  border-radius: theme("borderRadius.bubble");
+  border-end-end-radius: theme("borderRadius.bubble-tuck");
   background: hsl(var(--user-bubble));
-}
-
-[data-juno-chat-root] .composer-surface {
-  border-radius: var(--web-panel-radius);
-}
-
-/* The signed-out pages use the same control and panel edges. */
-.alevr-public .alevr-public-action,
-.alevr-auth .field-well {
-  border-radius: var(--web-control-radius);
-}
-
-.alevr-public :is(.alevr-public-media, .alv-access-panel) {
-  border-radius: var(--web-panel-radius);
 }
 
 .alevr-public :is(.alv-lede, .alevr-document-main p) {

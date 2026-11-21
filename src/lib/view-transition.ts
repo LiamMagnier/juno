@@ -76,14 +76,22 @@ export function withViewTransition(
   if (options.dir) root.dataset.vtDir = options.dir;
   else delete root.dataset.vtDir;
   running = true;
+  let result: Promise<void> | undefined;
+  const run = () => {
+    result ??= Promise.resolve().then(update).then(() => undefined);
+    return result;
+  };
   let transition: ViewTransition;
   try {
-    transition = document.startViewTransition(update);
+    transition = document.startViewTransition(run);
   } catch {
     clear();
-    return Promise.resolve(update()).then(() => undefined);
+    return run();
   }
-  return transition.finished.catch(() => undefined).finally(clear);
+  // A skipped transition can finish without applying its update.
+  return transition.finished.catch(() => undefined).then(() => {
+    if (!result) return run();
+  }).finally(clear);
 }
 
 /** Called by PageTransition when a pathname has committed. */

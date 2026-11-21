@@ -3,8 +3,8 @@
  * the composer (realtime-voice.tsx, voice-call-chip.tsx). The edge light is
  * Tailwind on its own layers (voice-composer-glow.tsx).
  *
- * Motion is on the house ladder (DIRECTION.md §7): entrances on base (220)
- * with a --stagger-tile (45ms) stagger, the word on fast (120), exits a rung faster on ease-in.
+ * Motion is on the house ladder (DIRECTION.md §7): the controls and state word
+ * enter on the fast rung (120ms), with a short travel distance.
  * Every travelling or scaling keyframe reads --motion-shift and
  * --motion-scale-from, which the reduced tier pins to 0 and 1 (globals.css),
  * so reduced motion keeps the fades and the colour and loses the travel.
@@ -37,11 +37,10 @@
 
 /* Each part of the call row arrives from the voice button it was opened
    with: the controls slide a few pixels leftward out of the End disc, the
-   nearest first, and the chip rises in on the left. One beat, about 300ms
-   from first to last. */
+   nearest first. */
 .voice-call-part {
-  animation: voice-part-in var(--dur-base) var(--ease-out-soft) both;
-  animation-delay: calc(var(--voice-i, 0) * var(--stagger-tile, 45ms));
+  animation: voice-part-in var(--dur-fast) var(--ease-out-soft) both;
+  animation-delay: calc(var(--voice-i, 0) * var(--stagger-tile) / 2);
 }
 .voice-call-end {
   animation: voice-end-in var(--dur-fast) var(--ease-out-expo) both;

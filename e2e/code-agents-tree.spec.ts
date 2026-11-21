@@ -52,6 +52,16 @@ test("the tree walks by keyboard and selecting a node shows its controls", async
   await page.keyboard.press("ArrowRight");
   await expect(tree.getByRole("treeitem", { name: /^Hook audit,/ })).toHaveCount(1);
 
+  // Closing an ancestor of the selected helper leaves a visible tab stop.
+  const helper = tree.getByRole("treeitem", { name: /^Hook audit,/ });
+  await helper.focus();
+  await page.keyboard.press("Enter");
+  await worker2.locator(":scope > .cv2-anode > .cv2-atwisty").click();
+  await expect(helper).toHaveCount(0);
+  await expect(worker2).toBeFocused();
+  await expect(tree.locator('[role="treeitem"][tabindex="0"]')).toHaveCount(1);
+  await page.keyboard.press("ArrowRight");
+
   // Enter selects: the detail follows, with its controls and the steer box.
   await page.keyboard.press("Enter");
   await expect(worker2).toHaveAttribute("aria-selected", "true");

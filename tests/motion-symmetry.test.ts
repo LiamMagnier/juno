@@ -75,7 +75,12 @@ test("view transitions: list to thread and docked to fullscreen canvas", () => {
   assert.match(css, /@keyframes vt-page-in \{ from \{ opacity: 0; transform: translateY\(calc\(4px \* var\(--motion-shift, 1\)\)\); \} \}/);
   assert.match(css, /html\[data-vt\="thread"\]::view-transition-old\(app-page\) \{\s*animation: vt-page-out var\(--dur-fast\) var\(--ease-in\) both;/);
   assert.match(css, /::view-transition-group\(canvas-panel\)/);
-  assert.match(read("src/components/app/app-sidebar.tsx"), /openWithViewTransition\(event, router, `\/chat\/\$\{conversation\.id\}`\)/);
+  // Recents and project-folder rows must let Next navigate even when the
+  // browser cannot run a transition callback (hidden document, stale snapshot).
+  const sidebar = withoutComments(read("src/components/app/app-sidebar.tsx"));
+  assert.match(sidebar, /href=\{`\/chat\/\$\{conversation\.id\}`\}\s+onNavigate=\{onNavigate\}/);
+  assert.match(sidebar, /href=\{`\/chat\/\$\{c\.id\}`\}\s+onNavigate=\{onNavigate\}/);
+  assert.doesNotMatch(sidebar, /openWithViewTransition/);
   assert.match(read("src/components/projects/project-chat-list.tsx"), /openWithViewTransition\(event, router, `\/chat\/\$\{chat\.id\}`\)/);
   const canvas = read("src/components/canvas/canvas-panel.tsx");
   assert.match(canvas, /withViewTransition\("canvas", \(\) => flushSync\(onToggleFullscreen\), \{ dir: fullscreen \? "close" : "open" \}\)/);
@@ -123,4 +128,32 @@ test("without the API the update simply runs, and modified clicks keep the link"
   assert.deepEqual(click({ button: 1 }), { took: false, prevented: false, pushed: [] });
   // No API here: the Link navigates as it always did.
   assert.deepEqual(click(), { took: false, prevented: false, pushed: [] });
+});
+
+test("a skipped transition still applies its update once", async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "document");
+  let updateAfterSkip: (() => Promise<void>) | undefined;
+  const dataset: Record<string, string> = {};
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      documentElement: { dataset },
+      startViewTransition: (update: () => Promise<void>) => {
+        updateAfterSkip = update;
+        return { finished: Promise.resolve() };
+      },
+    },
+  });
+  try {
+    let updates = 0;
+    await withViewTransition("canvas", () => { updates++; });
+    assert.equal(updates, 1);
+    await updateAfterSkip?.();
+    assert.equal(updates, 1);
+    assert.equal(viewTransitionActive(), false);
+    assert.deepEqual(dataset, {});
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "document", previous);
+    else Reflect.deleteProperty(globalThis, "document");
+  }
 });

@@ -7,7 +7,7 @@ import nextDynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ContinueOnMenu } from "@/components/chat/continue-on-menu";
-import { GitFork, GripVertical } from "@/components/ui/icons";
+import { CallEnd, GitFork, GripVertical } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
@@ -17,6 +17,7 @@ import { ThreadHeader, threadProjectClass } from "@/components/chat/thread-heade
 import { useSplitPane } from "@/hooks/use-split-pane";
 // Type only: realtime voice is downloaded when voice is first opened
 // (lazy-realtime-voice.tsx), never with the conversation.
+import type { VoiceCallParts } from "@/components/voice/realtime-voice";
 import type { VoiceTurnResult } from "@/hooks/use-realtime-voice";
 import { useLazyRealtimeVoice } from "@/components/chat/lazy-realtime-voice";
 import { getAudioContext } from "@/lib/audio-context";
@@ -2176,7 +2177,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
   );
 
   const openVoice = React.useCallback(() => {
-    if (privateMode || chat.isBusy || chat.pendingClarification || voiceSavingRef.current || voiceSaveError) return;
+    if (privateMode || voiceOpenRef.current || chat.isBusy || chat.pendingClarification || voiceSavingRef.current || voiceSaveError) return;
     closeArtifact();
     setComposerQuote(null);
     realtimeVoice.clearTranscript();
@@ -2188,6 +2189,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     // the engine may still be downloading: wake the shared context now, as
     // the hook's own `start` does, rather than after the wait.
     getAudioContext();
+    voiceOpenRef.current = true;
     setVoiceOpen(true);
     const history = chat.messages
       .filter((message) => (message.role === "USER" || message.role === "ASSISTANT") && message.content.trim())
@@ -2201,6 +2203,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       if (!realtimeVoice) {
         if (voiceSessionIdRef.current === sessionId) {
           voiceSessionIdRef.current = null;
+          voiceOpenRef.current = false;
           setVoiceOpen(false);
           toast.error("Voice couldn’t load. Check your connection and try again.");
         }
@@ -2241,6 +2244,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       .map((line) => ({ ...line, final: true }));
     const sessionId = voiceSessionIdRef.current ?? crypto.randomUUID();
     realtimeVoice.end();
+    voiceOpenRef.current = false;
     setVoiceOpen(false);
     if (privateMode || finalized.length === 0) {
       realtimeVoice.clearTranscript();
@@ -2277,6 +2281,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
           headers: { "Content-Type": "application/json" },
           body: savePayload,
           keepalive,
+          signal: AbortSignal.timeout(30_000),
         });
         const data = (await response.json().catch(() => ({}))) as { conversationId?: string; messages?: ClientMessage[]; error?: string };
         if (!response.ok || !data.conversationId || !data.messages) throw new Error(data.error ?? "Couldn’t save the voice transcript.");
@@ -2323,7 +2328,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       } catch (err) {
         const message = err instanceof Error ? err.message : "The voice transcript could not be saved.";
         setVoiceSaveError(message);
-        toast.error("Voice transcript not saved yet. Retry or discard it below.");
+        if (voiceSaveDetachedRef.current) toast.error("An earlier voice transcript could not be saved.");
       } finally {
         voiceSavingRef.current = false;
         setVoiceSaving(false);
@@ -2351,80 +2356,78 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
     </p>
   ) : null;
 
-  const voiceSaveNotice = voiceSaving || voiceSaveError ? (
-    <div
-      role={voiceSaveError ? "alert" : "status"}
-      aria-live="polite"
-      className={cn(
-        "mx-auto mb-2 flex w-[calc(100%-1rem)] max-w-2xl items-center gap-3 rounded-field border px-3 py-2 text-ui shadow-soft sm:w-full",
-        // Both states now sit on the floating rung. They were on two different
-        // grounds — a 5% destructive tint and `bg-background/85` behind a blur —
-        // and on the #000 page those resolve to ~2.5% and ~0% lightness, so a
-        // notice that floats over the transcript had the transcript showing
-        // through it. The tone is carried by the border and the icon disc, which
-        // is where it was legible in the first place.
-        voiceSaveError
-          ? "border-destructive/40 bg-popover text-foreground"
-          : "border-border/70 bg-popover text-muted-foreground"
-      )}
-    >
-      {/* One fixed 28px leading slot for both states. Saving showed a bare 16px
-          spinner and failing showed a 28px disc, so the row's text jumped 12px
-          sideways at the exact moment the user was reading it. The error glyph
-          was also a literal "!" character — a text baseline inside a circle
-          never optically centres, and it is the one mark here not drawn from the
-          icon set. */}
-      <span
-        aria-hidden
-        className={cn(
-          "flex size-7 shrink-0 items-center justify-center rounded-full",
-          voiceSaving ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"
-        )}
-      >
-        {voiceSaving ? <GalaxyMark phase="working" size={16} /> : <StatusIcons.error className="size-4" />}
-      </span>
+  const voiceSaveNotice = voiceSaveError ? (
+    <div role="alert" className="mx-auto mb-2 flex max-w-2xl items-center gap-3 border-t border-border px-3 py-2 text-ui">
+      <StatusIcons.error aria-hidden="true" className="size-4 shrink-0 text-destructive-ink" />
       <div className="min-w-0 flex-1">
-        <p className="font-medium text-foreground">{voiceSaving ? "Saving voice transcript…" : "Voice transcript isn’t saved yet"}</p>
-        {voiceSaveError && <p className="mt-0.5 truncate text-caption text-muted-foreground">{voiceSaveError}</p>}
+        <p className="font-medium">Voice transcript couldn’t be saved</p>
+        <p className="text-caption text-muted-foreground">{voiceSaveError}</p>
       </div>
-      {voiceSaveError && (
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            onClick={closeVoice}
-            className="pressable inline-flex h-9 items-center gap-1.5 rounded-control px-2.5 text-caption font-medium text-primary hover:bg-primary/10 coarse:h-11 coarse:px-3"
-          >
-            <ActionIcons.refresh className="size-3.5" />
-            Retry
-          </button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Pressable
-                kind="icon"
-                size="lg"
-                onClick={discardFailedVoiceSave}
-                aria-label="Discard unsaved voice transcript"
-                // danger-hover overrides the default accent fill: this one deletes.
-                // It does that on its own — the selector is doubled (globals.css)
-                // precisely so it outranks a variant's hover utility — so the
-                // `hover:bg-transparent` that used to ride along here never painted
-                // and only made it look as though two rules were fighting.
-                className="danger-hover"
-              >
-                <ActionIcons.delete className="size-3.5" />
-              </Pressable>
-            </TooltipTrigger>
-            <TooltipContent>Discard unsaved voice transcript</TooltipContent>
-          </Tooltip>
-        </div>
-      )}
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={closeVoice}
+          className="pressable inline-flex h-9 items-center gap-1.5 rounded-control px-2.5 text-caption font-medium text-primary hover:bg-primary/10 coarse:h-11 coarse:px-3"
+        >
+          <ActionIcons.refresh className="size-3.5" />
+          Retry
+        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Pressable
+              kind="icon"
+              size="lg"
+              onClick={discardFailedVoiceSave}
+              aria-label="Discard unsaved voice transcript"
+              // danger-hover overrides the default accent fill: this one deletes.
+              // It does that on its own — the selector is doubled (globals.css)
+              // precisely so it outranks a variant's hover utility — so the
+              // `hover:bg-transparent` that used to ride along here never painted
+              // and only made it look as though two rules were fighting.
+              className="danger-hover"
+            >
+              <ActionIcons.delete className="size-3.5" />
+            </Pressable>
+          </TooltipTrigger>
+          <TooltipContent>Discard unsaved voice transcript</TooltipContent>
+        </Tooltip>
+      </div>
     </div>
   ) : null;
-
 
   // Stable identities for the composer, which is memoised (composer.tsx): it
   // used to re-render — all 3,000 lines of it — on every streamed token,
   // because these arrived as fresh closures each time (PERFORMANCE.md).
+  const voiceCall: VoiceCallParts | undefined = voiceOpen
+    ? voiceUi
+      ? voiceUi.voiceCallParts({ voice: realtimeVoice, onClose: closeVoice, speakerName: agent?.name })
+      : {
+          state: "connecting",
+          status: (
+            <span role="status" className="flex items-center gap-2 text-ui text-muted-foreground">
+              <GalaxyMark phase="working" size={16} /> Connecting…
+            </span>
+          ),
+          controls: null,
+          end: (
+            <button
+              type="button"
+              onClick={closeVoice}
+              aria-label="Cancel voice"
+              className="grid size-9 place-items-center rounded-full bg-destructive text-destructive-foreground coarse:size-11"
+            >
+              <CallEnd className="size-4" />
+            </button>
+          ),
+          stream: null,
+          processing: false,
+          paused: true,
+          tone: "muted",
+          level: () => 0,
+          levels: { you: () => 0, alevr: () => 0 },
+        }
+    : undefined;
+
   const onComposerSend = useLatestHandler(sendFromComposer);
   const onSubmitClarification = useLatestHandler((answers: Parameters<typeof chat.resolvePendingClarification>[0]) => chat.resolvePendingClarification(answers));
   const onSkipClarification = useLatestHandler(() => chat.resolvePendingClarification([], true));
@@ -2540,7 +2543,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       onSubmitClarification={onSubmitClarification}
       onSkipClarification={onSkipClarification}
       onCancelClarification={chat.cancelPendingClarification}
-      voiceCall={voiceOpen && voiceUi ? voiceUi.voiceCallParts({ voice: realtimeVoice, onClose: closeVoice, speakerName: agent?.name }) : undefined}
+      voiceCall={voiceCall}
       onOpenVoiceMode={!privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? (planAllowsVoice ? onOpenVoice : nudgeVoiceUpgrade) : undefined}
       quotaReached={quotaReached}
       freeAllowanceUsed={freeAllowanceUsed}
@@ -2563,12 +2566,11 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       voiceActive={voiceOpen}
       voiceCanSeeImages={realtimeVoice.capabilities?.videoInput ?? true}
       sendLocked={voiceSaving || !!voiceSaveError || voiceTurnSending}
+      draftLocked={!!voiceSaveError || voiceTurnSending}
       placeholder={
         privateMode
           ? "Ask anything"
-          : voiceSaving
-            ? "Saving voice transcript…"
-            : voiceSaveError
+          : voiceSaveError
               ? "Retry or discard the unsaved voice transcript above."
               : voiceTurnSending
                 ? "Sending this voice turn…"
@@ -2784,7 +2786,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
             // the tab order: `inert` takes it out (as dictation-swap does).
             inert={!privateMode}
             className={cn(
-              "relative z-30 grid transition-[grid-template-rows,opacity] duration-slow ease-out-soft",
+              "relative z-30 grid transition-[grid-template-rows,opacity] duration-base ease-out-soft motion-reduce:transition-none",
               privateMode ? "grid-rows-[1fr] opacity-100 pointer-events-auto" : "grid-rows-[0fr] opacity-0 pointer-events-none",
               !forkedFrom && "md:hidden"
             )}

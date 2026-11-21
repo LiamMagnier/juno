@@ -254,3 +254,20 @@ test("a call opens on Gemini unless the caller picked another provider", async (
   );
   assert.match(nativeProtocol, /static let productionDefault: Self = \.gemini/);
 });
+
+
+test("the mic processor uses a same-origin asset and the gesture-unlocked context", () => {
+  const processor = readFileSync(new URL("../public/audio/juno-mic-tap.js", import.meta.url), "utf8");
+  assert.match(processor, /registerProcessor\("juno-mic-tap", JunoMicTap\)/);
+  assert.match(voiceHook, /audioWorklet\.addModule\("\/audio\/juno-mic-tap\.js"\)/);
+  assert.match(voiceHook, /const playContext = getAudioContext\(\)/);
+  assert.match(voiceHook, /startMic\(generation, playContext\)/);
+  assert.doesNotMatch(voiceHook, /createObjectURL|new AudioContext/);
+});
+
+test("ending voice leaves transcript saving in the background and still handles failures", () => {
+  assert.doesNotMatch(chatView, /Saving voice transcript/);
+  assert.match(chatView, /const voiceSaveNotice = voiceSaveError \?/);
+  assert.match(chatView, /\/api\/voice\/transcript/);
+  assert.match(chatView, /Discard unsaved voice transcript/);
+});

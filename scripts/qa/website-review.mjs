@@ -38,6 +38,14 @@ try {
       else await page.waitForTimeout(450);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
       if (overflow) failures.push(`${mode}/${route}: horizontal document overflow`);
+      if (mode.startsWith('mobile')) {
+        const buttons = page.locator('.workspace-mobile-toolbar > button');
+        await expect(buttons).toHaveCount(3);
+        for (const button of await buttons.all()) {
+          const bounds = await button.boundingBox();
+          assert(bounds && bounds.width >= 44 && bounds.height >= 44, `${route}: toolbar actions need 44 px targets`);
+        }
+      }
       if (mode.startsWith('mobile') && route === 'projects') {
         const describedTiles = page.locator('.pj-tile').filter({ has: page.locator('p.line-clamp-2') });
         await describedTiles.first().waitFor({ state: 'visible' });
@@ -53,6 +61,14 @@ try {
       }
       await capture(page, `${mode}/${route}.png`);
       console.log(`${mode}/${route}`);
+      if (route === 'library' && mode === 'mobile-light') {
+        await page.getByRole('radio', { name: 'Files', exact: true }).click();
+        const manage = page.getByRole('link', { name: 'Manage files' });
+        await expect(manage).toBeInViewport();
+        await expect(manage).toHaveAttribute('href', '/library?view=files');
+        await capture(page, `${mode}/library-manage-files.png`);
+        checks.push(`${mode}: Manage files is reachable from Library`);
+      }
       if (route === 'projects' && mode.endsWith('light')) {
         const list = page.getByRole('list', { name: 'Projects', exact: true });
         const listButton = page.getByRole('button', { name: 'List view', exact: true });
@@ -101,7 +117,7 @@ try {
           await page.setViewportSize({ width: 320, height: 740 });
           await page.goto(new URL('/dev/pages/project/p-atlas?tab=work', base).href, { waitUntil: 'domcontentloaded' });
           const activity = page.getByRole('radiogroup', { name: 'Project activity' });
-          await expect(activity.getByRole('radio')).toHaveCount(4);
+          await expect(activity.getByRole('radio')).toHaveCount(4, { timeout: 30_000 });
           assert(await activity.evaluate((tabs) => tabs.scrollWidth <= tabs.clientWidth + 1 && tabs.getBoundingClientRect().right <= innerWidth), 'Four activity tabs fit at 320px');
         }
         checks.push(`${mode}: project context, recent chats and settings access`);
