@@ -23,7 +23,7 @@
    surfaces and 8 (control) for controls: nothing inside competes with the
    outer curve. */
 .live-card {
-  border-radius: var(--web-panel-radius, 16px);
+  border-radius: theme("borderRadius.card");
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   box-shadow: 0 2px 8px hsl(var(--shadow-ink) / .035);

@@ -254,7 +254,7 @@ export function AppPageHeaderSkeleton({
       )}
       <div className="app-section-heading-row">
         <div className="min-w-0">
-          <Skeleton className={cn("app-section-title-placeholder h-[1.08em] max-w-full text-page-title", headingWidth)} />
+          <Skeleton className={cn("app-section-title-placeholder h-[1.15em] max-w-full text-page-title", headingWidth)} />
           {ledeBars}
         </div>
         {actions && (

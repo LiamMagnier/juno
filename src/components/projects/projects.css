@@ -60,7 +60,7 @@
    the drop). */
 .pj-tile {
   border: 1px solid var(--pj-hair);
-  border-radius: var(--web-panel-radius, 18px);
+  border-radius: theme("borderRadius.card");
   background: hsl(var(--card));
   transition:
     border-color var(--dur-fast) var(--ease-out-soft),
@@ -83,17 +83,13 @@
 
 .pj-projects-page {
   max-width: 72rem;
-  --web-page-title-size: clamp(2.375rem, 3.65cqi, 3.5rem);
 }
 
 .pj-toolbar {
   display: grid;
   align-items: center;
   gap: .625rem 1rem;
-  padding: .625rem;
-  border: 1px solid hsl(var(--foreground) / .09);
-  border-radius: var(--web-panel-radius);
-  background: hsl(var(--foreground) / .025);
+
 }
 
 .pj-toolbar-filters {
@@ -107,9 +103,14 @@
   display: flex;
   align-items: center;
   gap: .125rem;
-  padding: .125rem;
-  border: 1px solid hsl(var(--foreground) / .1);
-  border-radius: var(--web-control-radius);
+  --layout-inset: .125rem;
+  padding: var(--layout-inset);
+  border-radius: theme("borderRadius.field");
+  background: hsl(var(--muted));
+}
+
+.pj-layout-control button {
+  border-radius: calc(theme("borderRadius.field") - var(--layout-inset));
 }
 
 .pj-layout-control [aria-pressed="true"] {
@@ -124,7 +125,8 @@
     z-index: 3;
     top: .5rem;
     grid-template-columns: minmax(12rem, 1fr) auto;
-    background: color-mix(in srgb, hsl(var(--background)) 97%, hsl(var(--foreground)));
+    background: hsl(var(--background));
+    padding-block: .25rem;
   }
   .pj-toolbar-filters { grid-template-columns: auto minmax(9.5rem, auto) auto; }
 }
@@ -162,7 +164,7 @@
   flex: none;
   place-items: center;
   border: 1px solid hsl(var(--presence) / .12);
-  border-radius: var(--web-control-radius);
+  border-radius: theme("borderRadius.control");
   background: hsl(var(--presence) / .07);
   color: hsl(var(--presence-ink));
 }
@@ -183,7 +185,7 @@
 .pj-tile-project .pj-actions {
   position: absolute;
   inset: .875rem .875rem auto auto;
-  border-radius: var(--web-control-radius);
+  border-radius: theme("borderRadius.control");
   color: hsl(var(--muted-foreground));
 }
 
@@ -271,7 +273,7 @@
   align-items: center;
   gap: .625rem;
   padding-inline: .25rem;
-  border-radius: var(--web-control-radius);
+  border-radius: theme("borderRadius.control");
   color: hsl(var(--foreground));
   font-size: .875rem;
   font-weight: 500;
