@@ -18,6 +18,10 @@ const capture = (page, name) => page.screenshot({ path: path.join(output, name),
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' });
   context.setDefaultTimeout(60_000);
+  // A fixture owns its API through its fetch shim. Requests before it mounts
+  // and the shell's EventSource belong to a signed-out browser.
+  await context.route('**/api/**', route => route.fulfill({ status: 401, json: { error: 'unauthorized' } }));
+  await context.route('**/chat/conv-mira*', route => route.fulfill({ status: 204 }));
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
   const visit = async query => {

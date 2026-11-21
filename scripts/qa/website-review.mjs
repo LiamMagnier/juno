@@ -10,6 +10,7 @@ const output = path.resolve(process.argv[3] || 'test-results/website-review');
 const pages = ['projects', 'project', 'activity', 'library', 'artifacts', 'connections', 'agents', 'automations', 'skills', 'instructions', 'memory', 'compare', 'code', 'settings', 'notifications', 'search'];
 const browser = await chromium.launch({ executablePath: process.env.ORBIT_CHROMIUM || undefined, headless: true, args: ['--disable-features=BackForwardCache'] });
 const failures = [], captures = [], checks = [];
+const fixtureNetwork = context => context.route('**/api/**', route => route.fulfill({ status: 401, json: { error: 'unauthorized' } }));
 const capture = async (page, file) => {
   await page.screenshot({ path: path.join(output, file), animations: 'disabled', style: 'nextjs-portal { visibility: hidden; }' });
   captures.push(file);
@@ -18,6 +19,7 @@ try {
   for (const mode of ['desktop-light', 'desktop-dark', 'mobile-light', 'mobile-dark']) {
     await mkdir(path.join(output, mode), { recursive: true });
     const context = await browser.newContext({ viewport: mode.startsWith('mobile') ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, isMobile: mode.startsWith('mobile'), hasTouch: mode.startsWith('mobile'), colorScheme: mode.endsWith('dark') ? 'dark' : 'light', reducedMotion: 'reduce' });
+    await fixtureNetwork(context);
     let page = await context.newPage();
     page.setDefaultTimeout(90_000);
     let route = '';
@@ -74,6 +76,7 @@ try {
   }
   // Empty, loading and failure states are real components fed deterministic data.
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  await fixtureNetwork(context);
   let page = await context.newPage();
   await mkdir(path.join(output, 'states'), { recursive: true });
   for (const state of ['empty', 'loading', 'error']) {
