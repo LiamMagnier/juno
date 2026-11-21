@@ -448,7 +448,7 @@ function DescribeAgent({
                 void create(value);
               }
             }}
-            placeholder={EXAMPLES[0]}
+            placeholder="Draft replies to new emails…"
             aria-label={`What should a new ${AGENT_NOUN.singular} take care of?`}
             className={composerFieldClass}
           />
