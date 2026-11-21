@@ -2566,6 +2566,7 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
       voiceActive={voiceOpen}
       voiceCanSeeImages={realtimeVoice.capabilities?.videoInput ?? true}
       sendLocked={voiceSaving || !!voiceSaveError || voiceTurnSending}
+      draftLocked={!!voiceSaveError || voiceTurnSending}
       placeholder={
         privateMode
           ? "Ask anything"
