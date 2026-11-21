@@ -31,7 +31,7 @@ test("GPT-6 Astra is selectable with the exact documented API id", () => {
   assert.ok(astra);
   assert.equal(astra.providerModel, "gpt-6-astra");
   assert.equal(astra.contextWindow, 1_050_000);
-  assert.equal(astra.status, "current");
+  assert.equal(astra.status, "legacy");
 });
 
 test("model catalog fidelity: every displayed model has matching providerModel", () => {

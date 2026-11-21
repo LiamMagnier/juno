@@ -487,10 +487,8 @@ export function modelGeneration(name: string): number | null {
  *  version number or ship out of order, keyed `provider:family`:
  *  - Anthropic: Fable, Opus, Sonnet, Haiku, whatever the numbers say (Opus 4.8
  *    against Sonnet 5).
- *  - Google's Gemini 4 lines: Carbon, Argon, Hydrogen (owner, 16 Nov 2026).
- *    All three are generation 4; Hydrogen shipped a month after the others,
- *    so the release date put it first, and the graded intelligence then put
- *    Argon above Carbon: the picker read Hydrogen, Argon, Carbon.
+ *  - Google's Gemini 4 lines: Carbon, Argon, Neon and Hydrogen. Neon enters
+ *    between Argon and Hydrogen and preserves the existing order of those lines.
  *  A line absent from the map keeps the generation, date and power order. */
 const LINE_RANK: Record<string, number> = {
   "anthropic:fable": 0,
@@ -499,7 +497,8 @@ const LINE_RANK: Record<string, number> = {
   "anthropic:haiku": 3,
   "google:carbon": 0,
   "google:argon": 1,
-  "google:hydrogen": 2,
+  "google:neon": 2,
+  "google:hydrogen": 3,
 };
 
 export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {

@@ -1441,25 +1441,6 @@ enum ModelPickerWebFixtures {
             price: JunoModelPrice(inputPerMillion: 0.95, outputPerMillion: 4)
         ),
         JunoModelDescriptor(
-            id: "google:gemini-4-neon",
-            providerID: "google",
-            providerName: "Google · Gemini",
-            displayName: "Gemini 4 Neon",
-            summary: "Google’s fast frontier model for multimodal reasoning, coding, and knowledge work.",
-            modality: .chat,
-            isLegacy: false,
-            released: "2026-11",
-            contextWindowTokens: 1048576,
-            speedGrade: 7,
-            intelligenceGrade: 9,
-            capabilities: [.reasoning, .vision, .search, .tools],
-            thinking: JunoThinkingLadder(stops: [.init(id: "low", label: "Low", accessibilityLabel: "Low"), .init(id: "medium", label: "Medium", accessibilityLabel: "Medium"), .init(id: "high", label: "High", accessibilityLabel: "High"), .init(id: "xhigh", label: "Extra high", accessibilityLabel: "Extra high")], modelName: "Gemini 4 Neon", fastModeRateMultiplier: nil, defaultStopID: "high"),
-            unavailabilityReason: nil,
-            deprecationNote: nil,
-            retiresOn: nil,
-            price: JunoModelPrice(inputPerMillion: 3, outputPerMillion: 15)
-        ),
-        JunoModelDescriptor(
             id: "google:gemini-4-carbon",
             providerID: "google",
             providerName: "Google · Gemini",
@@ -1496,6 +1477,25 @@ enum ModelPickerWebFixtures {
             deprecationNote: nil,
             retiresOn: nil,
             price: JunoModelPrice(inputPerMillion: 2, outputPerMillion: 10)
+        ),
+        JunoModelDescriptor(
+            id: "google:gemini-4-neon",
+            providerID: "google",
+            providerName: "Google · Gemini",
+            displayName: "Gemini 4 Neon",
+            summary: "Google’s fast frontier model for multimodal reasoning, coding, and knowledge work.",
+            modality: .chat,
+            isLegacy: false,
+            released: "2026-11",
+            contextWindowTokens: 1048576,
+            speedGrade: 7,
+            intelligenceGrade: 9,
+            capabilities: [.reasoning, .vision, .search, .tools],
+            thinking: JunoThinkingLadder(stops: [.init(id: "low", label: "Low", accessibilityLabel: "Low"), .init(id: "medium", label: "Medium", accessibilityLabel: "Medium"), .init(id: "high", label: "High", accessibilityLabel: "High"), .init(id: "xhigh", label: "Extra high", accessibilityLabel: "Extra high")], modelName: "Gemini 4 Neon", fastModeRateMultiplier: nil, defaultStopID: "high"),
+            unavailabilityReason: nil,
+            deprecationNote: nil,
+            retiresOn: nil,
+            price: JunoModelPrice(inputPerMillion: 3, outputPerMillion: 15)
         ),
         JunoModelDescriptor(
             id: "google:gemini-4-hydrogen",
