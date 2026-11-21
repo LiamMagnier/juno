@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { KeyboardGroup } from "@/components/settings/sections/preferences";
 import { useApp } from "@/components/app/app-provider";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
-import { DesignsDialog } from "@/components/settings/designs-dialog";
+import { Button } from "@/components/ui/button";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { useSaveStates } from "@/components/settings/save-status";
 import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
@@ -142,7 +142,7 @@ const CustomPickerButton = React.forwardRef<
 });
 
 /** Mode, accent and text size: the account's look, then this device's scale. */
-function VisualStyleGroup() {
+function VisualStyleGroup({ onBrowseDesigns, browseRef }: { onBrowseDesigns: () => void; browseRef: React.Ref<HTMLButtonElement> }) {
   const { settings, setSettings } = useApp();
   const { setTheme } = useTheme();
   const save = useSettingsSave();
@@ -212,7 +212,7 @@ function VisualStyleGroup() {
 
   return (
     <SettingsGroup title="Visual style" description="Mode and accent follow your account everywhere you sign in.">
-        <SettingRow label="Designs" description="Choose, save or share a look." control={<DesignsDialog />} />
+        <SettingRow label="Designs" description="Choose, save or share a look." control={<Button type="button" ref={browseRef} variant="secondary" size="sm" onClick={onBrowseDesigns}>Browse designs</Button>} />
         <SettingRow
           label="Mode"
           status={saves.status("theme")}
@@ -487,10 +487,10 @@ function ReadingGroup() {
  * the rows beside it). The contract already sends `appearance` here, as the
  * Mac does.
  */
-export function GeneralSection() {
+export function GeneralSection({ onBrowseDesigns, browseRef }: { onBrowseDesigns: () => void; browseRef: React.Ref<HTMLButtonElement> }) {
   return (
     <>
-      <VisualStyleGroup />
+      <VisualStyleGroup onBrowseDesigns={onBrowseDesigns} browseRef={browseRef} />
       <ReadingGroup />
       <KeyboardGroup />
       <LanguageGroup />

@@ -41,12 +41,8 @@ import { OrbitComputers, RunsOnChip, runsOnInput, type RunsOn } from "./orbit-co
  * Orbit, the agents home (docs/rework/brand/ORBIT_SYSTEM.md; design V3 crew
  * scenes; critique 1).
  *
- * What needs you leads (every attention item the same object, saying what is
- * needed and who asked), then your crew: one tile per agent, its live face at
- * a size where form and state both read, its name in the serif, its role, and
- * its state in words (colour and pose never carry it alone). Below them, a
- * new agent starts by saying what it should take care of; the agent then sets
- * itself up in conversation.
+ * Requests for attention appear first. The composer sits above the roster.
+ * Computers sit beside it when there is room and below the roster on phones.
  *
  * One object per agent and each fact once (docs/design/AGENTS.md §4.3): no
  * second list of the same agents, no status pills or dots.
@@ -132,11 +128,10 @@ export function AgentsHome({
 
   const attention = ordered.filter(needsYou);
   const asked = new Set(attention.map((agent) => agent.id));
-  const working = ordered.filter(agentIsWorking).length;
   const visible = filterRoster(ordered, query, filter);
   const filters: { value: RosterFilter; label: string; count: number }[] = [
     { value: "all", label: "All agents", count: ordered.length },
-    { value: "working", label: "Working", count: working },
+    { value: "working", label: "Working", count: ordered.filter(agentIsWorking).length },
     { value: "attention", label: "Needs you", count: attention.length },
     { value: "paused", label: "Paused", count: ordered.filter((a) => a.status === "paused").length },
   ];
@@ -149,17 +144,18 @@ export function AgentsHome({
       <AppPageHeader
         heading={BRAND.orbit.label}
         className={cn(TITLE_FINISH, "orbit-heading")}
-        actions={<>{canHire ? <Button type="button" onClick={focusNewAgent}><Plus className="size-4" aria-hidden="true" />New agent</Button> : null}<Button variant="outline" asChild><Link href="/connections">Connections<ArrowRight className="size-3.5" aria-hidden="true" /></Link></Button></>}
+        actions={canHire ? <Button type="button" onClick={focusNewAgent}><Plus className="size-4" aria-hidden="true" />New agent</Button> : undefined}
       />
 
       <nav aria-label="Orbit workspace" className="orbit-workspace-nav">
-        <Link href="/activity"><Workflow className="size-4.5" aria-hidden="true" /><span>Activity and approvals</span></Link>
-        <Link href="/automations"><CalendarClock className="size-4.5" aria-hidden="true" /><span>Automations</span></Link>
+        <Link href="/activity"><Workflow className="size-4" aria-hidden="true" />Activity</Link>
+        <Link href="/automations"><CalendarClock className="size-4" aria-hidden="true" />Automations</Link>
+        <Link href="/connections">Connections<ArrowRight className="size-4" aria-hidden="true" /></Link>
       </nav>
 
       {attention.length > 0 ? (
         <section aria-labelledby="orbit-needs-you" className="orbit-attention">
-          <h2 id="orbit-needs-you" className="mb-3 flex items-center gap-2 text-ui font-medium text-foreground">
+          <h2 id="orbit-needs-you" className="orbit-label">
             {FEATURE_NAMES.needsYou.label}
             {/* A count only when there is more than one card to count. */}
             {attention.length > 1 ? (
@@ -168,7 +164,7 @@ export function AgentsHome({
               </span>
             ) : null}
           </h2>
-          <ul className="grid gap-3 @[40rem]/page:grid-cols-2">
+          <ul className="overflow-hidden rounded-card border border-border divide-y divide-border">
             {attention.map((agent, index) => (
               <li key={agent.id} className={RISE} style={stagger(1 + index)}>
                 <Attention agent={agent} />
@@ -178,27 +174,30 @@ export function AgentsHome({
         </section>
       ) : null}
 
-      {/* The crew: one tile per agent, its live face, who it is and what it
-          is doing (orbit-stage.tsx). The list a keyboard and a screen reader
-          use; it is named aloud, and on screen only under the cards. */}
-      <section aria-labelledby="orbit-crew" className="mt-6">
-        <div className="orbit-section-heading">
-          <div><h2 id="orbit-crew">Your crew</h2>{working > 0 && <p>{working} {working === 1 ? "agent working" : "agents working"}</p>}</div>
-          <div className="orbit-search"><Search className="size-4 shrink-0" aria-hidden="true" /><input type="search" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search agents" placeholder="Find an agent or task…" />{query ? <button type="button" onClick={() => setQuery("")} aria-label="Clear agent search"><X className="size-3.5" /></button> : null}</div>
-        </div>
-        <div className="orbit-filters workspace-filter-rail" role="group" aria-label="Filter agents">
-          {filters.map(({ value, label, count }) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}<span>{count}</span></button>)}
-        </div>
-        <p className="sr-only" role="status">{visible.length} {visible.length === 1 ? "agent" : "agents"} shown</p>
-        {visible.length ? <OrbitCrew agents={visible} asked={asked} hrefOf={agentHref} machineOf={machineOf} onChanged={refresh} /> : <div className="orbit-no-results"><Search className="size-5 text-muted-foreground" aria-hidden="true" /><p>No agents match this view.</p><Button type="button" variant="link" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</Button></div>}
-      </section>
+      <div className="orbit-grid">
+        <section ref={composerSection} aria-label={`New ${AGENT_NOUN.singular}`} className="orbit-start min-w-0">
+          {canHire || !hiring ? <DescribeAgent team={ordered} autoFocus={focusComposer} starter={starter} hosts={hosts} /> : <AgentsUpgrade gate={hiring} kept />}
+        </section>
 
-      <div className="mt-7 grid items-start gap-7 @[60rem]/page:grid-cols-[minmax(0,1fr)_20rem]">
-      <section ref={composerSection} aria-label={`New ${AGENT_NOUN.singular}`} className={cn("orbit-new-agent", RISE)} style={stagger(Math.min(ordered.length, 6) + 3)}>
-        {canHire || !hiring ? <DescribeAgent team={ordered} autoFocus={focusComposer} starter={starter} hosts={hosts} /> : <AgentsUpgrade gate={hiring} kept />}
-      </section>
-      <OrbitComputers agents={ordered} hosts={hosts} onRetry={retryHosts} onChanged={refresh} />
+        <section aria-labelledby="orbit-crew" className="orbit-roster min-w-0">
+          <div className="orbit-section-heading">
+            <h2 id="orbit-crew">Your agents</h2>
+            <div className="orbit-search">
+              <Search className="size-4 shrink-0" aria-hidden="true" />
+              <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search agents" placeholder="Search agents" />
+              {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear agent search"><X className="size-4" aria-hidden="true" /></button>}
+            </div>
+          </div>
+          <div className="orbit-filters workspace-filter-rail" role="group" aria-label="Filter agents">
+            {filters.map(({ value, label, count }) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}<span>{count}</span></button>)}
+          </div>
+          <p className="sr-only" role="status">{visible.length} {visible.length === 1 ? "agent" : "agents"} shown</p>
+          {visible.length ? <OrbitCrew agents={visible} asked={asked} hrefOf={agentHref} machineOf={machineOf} onChanged={refresh} /> : <div className="orbit-no-results"><Search className="size-5 text-muted-foreground" aria-hidden="true" /><p>No agents match this view.</p><Button type="button" variant="link" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</Button></div>}
+        </section>
+
+        <OrbitComputers agents={ordered} hosts={hosts} onRetry={retryHosts} onChanged={refresh} />
       </div>
+
       {canHire ? <OrbitCapabilities onChoose={chooseStarter} /> : null}
     </AppPage>
   );
@@ -240,9 +239,8 @@ export function Attention({ agent }: { agent: ClientAgent }) {
     <Link
       href={href}
       className={cn(
-        "orbit-attention-card group/attn relative flex h-full flex-col items-start gap-3 rounded-card border border-foreground/[0.08] bg-card p-4",
-        "transition-[border-color,background-color,transform] duration-fast ease-out-soft hover:border-foreground/[0.14] hover:bg-accent/40 active:scale-[.995] motion-reduce:active:scale-100",
-        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
+        "orbit-attention-card orbit-row flex items-center gap-3 px-3.5 py-2.5",
+        "focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
       )}
     >
       <span className="w-full min-w-0 flex-1">
@@ -251,12 +249,12 @@ export function Attention({ agent }: { agent: ClientAgent }) {
           <span className={blocked ? "font-medium text-destructive-ink" : undefined}>{attentionLead(agent)}</span>
           {when ? <span className="whitespace-nowrap">{` · ${when}`}</span> : null}
         </span>
-        <span className="mt-0.5 line-clamp-2 text-pretty text-body font-medium leading-6 text-foreground">{where ?? sentence}</span>
+        <span className="line-clamp-2 text-pretty text-ui font-medium leading-5 text-foreground">{where ?? sentence}</span>
         {where && !generic ? <span className="mt-0.5 block text-pretty text-ui leading-5 text-muted-foreground">{sentence}</span> : null}
       </span>
-      <span className="mt-auto inline-flex shrink-0 items-center gap-1.5 text-ui font-medium text-foreground transition-[gap] duration-fast ease-out-soft group-hover/attn:gap-2.5 motion-reduce:transition-none">
-        {blocked ? "See what’s needed" : "Answer"}
-        <ArrowRight className="size-3.5" aria-hidden="true" />
+      <span className="inline-flex shrink-0 items-center gap-1.5 text-ui font-medium text-foreground">
+        <span className="sr-only @[28rem]/page:not-sr-only">{blocked ? "See what’s needed" : "Answer"}</span>
+        <ArrowRight className="orbit-row__go size-4" aria-hidden="true" />
       </span>
     </Link>
   );
@@ -429,7 +427,7 @@ function DescribeAgent({
         void create(value);
       }}
     >
-      <h2 id="orbit-new-agent" className="mb-3 text-ui font-medium">What should a new agent take care of?</h2>
+      <h2 id="orbit-new-agent" className="orbit-label">Start an agent</h2>
       {/* The chat composer itself, so starting an agent feels like starting
           a chat: same surface, radius, field and send disc. The machine it
           will work on sits where the chat keeps its context chips. */}
@@ -450,7 +448,7 @@ function DescribeAgent({
                 void create(value);
               }
             }}
-            placeholder={EXAMPLES[0]}
+            placeholder="Draft replies to new emails…"
             aria-label={`What should a new ${AGENT_NOUN.singular} take care of?`}
             className={composerFieldClass}
           />
@@ -469,7 +467,7 @@ function DescribeAgent({
         ) : value.trim() ? (
           `${name} will take this on. It asks before sending, paying or deleting anything.`
         ) : (
-          "It asks before sending, paying or deleting anything."
+          "Asks before sending, paying, or deleting."
         )}
       </p>
     </form>
