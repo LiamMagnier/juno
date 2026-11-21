@@ -65,16 +65,22 @@ if (!DB_URL) {
     throw new Error(`unexpected request ${url.href}`);
   };
 
+  let onPut: (() => Promise<void>) | undefined;
+  let signedIn: { id: string } | null = null;
   const objects = new Map<string, Uint8Array>();
   const afterQueue: Array<() => unknown> = [];
   test.before(async () => {
     const server = await import("next/server");
     mock.module("next/server", { namedExports: { ...server, after: (task: () => unknown) => void afterQueue.push(task) } });
+    mock.module("@/lib/session", { namedExports: { getCurrentUser: async () => signedIn } });
     const storage = await import("@/lib/storage");
     mock.module("@/lib/storage", {
       namedExports: {
         ...storage,
-        putObject: async (key: string, body: Uint8Array) => void objects.set(key, new Uint8Array(body)),
+        putObject: async (key: string, body: Uint8Array) => {
+          objects.set(key, new Uint8Array(body));
+          await onPut?.();
+        },
         deleteObject: async (key: string) => void objects.delete(key),
         getObjectBytes: async (key: string) => ({ bytes: objects.get(key) ?? new Uint8Array(), contentType: "application/octet-stream" }),
         getViewUrl: async (key: string) => `/api/files/${key}`,
@@ -99,6 +105,7 @@ if (!DB_URL) {
     const other = await db.user.create({ data: { email: `sources-${randomUUID()}@example.invalid` } });
     t.after(async () => {
       globalThis.fetch = originalFetch;
+      objects.clear();
       await db.user.deleteMany({ where: { id: { in: [owner.id, other.id] } } });
       await db.$disconnect();
     });
@@ -182,4 +189,214 @@ if (!DB_URL) {
     assert.equal(await db.projectSourceItem.count({ where: { sourceId } }), 0);
     assert.equal(await db.attachment.count({ where: { userId: owner.id, projectId: project.id, deletedAt: null } }), 0);
   });
+
+  function latch() {
+    let release!: () => void;
+    const promise = new Promise<void>((resolve) => { release = resolve; });
+    return { promise, resolve: release };
+  }
+
+  async function fixture(t: import("node:test").TestContext, fetcher = fakeGoogle) {
+    reset();
+    const { prismaUnguarded: db } = await import("@/lib/prisma");
+    const { encryptSecret } = await import("@/lib/crypto");
+    const store = await import("@/lib/projects/drive-source-store");
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetcher;
+    const owner = await db.user.create({ data: { email: `sources-${randomUUID()}@example.invalid` } });
+    const project = await db.project.create({ data: { userId: owner.id, name: "Atlas" } });
+    await db.connection.create({ data: { userId: owner.id, provider: "google-drive", accessToken: encryptSecret("fixture") } });
+    t.after(async () => {
+      globalThis.fetch = originalFetch;
+      onPut = undefined;
+      signedIn = null;
+      afterQueue.length = 0;
+      objects.clear();
+      await db.user.deleteMany({ where: { id: owner.id } });
+      await db.$disconnect();
+    });
+    return { db, store, owner, project };
+  }
+
+  test("adding picks validates the entire batch before filing any source", async (t) => {
+    const { db, store, owner, project } = await fixture(t);
+    await assert.rejects(store.addDriveSources(owner.id, project.id, [
+      { id: "folder1", kind: "folder" },
+      { id: "missing", kind: "file" },
+    ], true), /no longer in Google Drive/);
+    assert.equal(await db.projectSource.count({ where: { projectId: project.id } }), 0);
+    assert.equal(afterQueue.length, 0);
+  });
+
+  test("an expired lease stops reporting busy and is eligible for automatic recovery", async (t) => {
+    const { db, store, owner, project } = await fixture(t);
+    const { sourcesBusy } = await import("@/lib/projects/project-sources-shared");
+    const { sourceIds: [id] } = await store.addDriveSources(owner.id, project.id, [{ id: "brief1", kind: "file" }], true);
+    const old = new Date(Date.now() - 6 * 60_000);
+    const syncing = { state: "syncing", syncClaimedAt: old, lastAttemptAt: old, errorCode: "reconnect" };
+    await db.projectSource.update({ where: { id }, data: syncing });
+    const rows = await store.listProjectSources(owner.id, project.id);
+    assert.equal(sourcesBusy(rows), false);
+    assert.equal(rows[0].errorCode, "provider_error");
+    assert.deepEqual(await store.dueSourceIds(owner.id, project.id), [id]);
+  });
+
+  test("removing a source during upload leaves no live attachment or unattached object", async (t) => {
+    const { db, store, owner, project } = await fixture(t);
+    const { sourceIds: [id] } = await store.addDriveSources(owner.id, project.id, [{ id: "brief1", kind: "file" }], true);
+    const uploading = latch();
+    const resume = latch();
+    onPut = async () => {
+      uploading.resolve();
+      await resume.promise;
+    };
+    const before = new Set(objects.keys());
+    const syncing = store.syncProjectSource(owner.id, id);
+    await Promise.race([
+      uploading.promise,
+      syncing.then(() => { throw new Error("Sync finished before it reached the upload"); }),
+    ]);
+    try {
+      assert.equal(await store.removeProjectSource(owner.id, project.id, id), true);
+    } finally {
+      resume.resolve();
+      await syncing;
+    }
+    assert.equal(await db.attachment.count({ where: { userId: owner.id, projectId: project.id, deletedAt: null } }), 0);
+    assert.deepEqual(new Set(objects.keys()), before);
+  });
+
+  test("a superseded sync can neither write attachments nor clear the successor’s lease", async (t) => {
+    const { db, store, owner, project } = await fixture(t);
+    const { sourceIds: [id] } = await store.addDriveSources(owner.id, project.id, [{ id: "brief1", kind: "file" }], true);
+    const successor = new Date(Date.now() + 1000);
+    onPut = async () => { await db.projectSource.update({ where: { id }, data: { syncClaimedAt: successor } }); };
+    await store.syncProjectSource(owner.id, id);
+    assert.equal((await db.projectSource.findUniqueOrThrow({ where: { id } })).syncClaimedAt?.getTime(), successor.getTime());
+    assert.equal(await db.attachment.count({ where: { userId: owner.id, projectId: project.id, deletedAt: null } }), 0);
+  });
+
+  test("the Drive picker rejects an invalid folder before contacting Drive", async (t) => {
+    let driveCalls = 0;
+    const { owner, project } = await fixture(t, async (...args) => {
+      driveCalls += 1;
+      return fakeGoogle(...args);
+    });
+    signedIn = owner;
+    const { GET } = await import("@/app/api/projects/[id]/sources/drive/route");
+    const response = await GET(new Request("https://app.example.invalid/?parent=bad%20folder"), { params: Promise.resolve({ id: project.id }) });
+    assert.equal(response.status, 400);
+    assert.equal(driveCalls, 0);
+  });
+
+  test("adding Library files rejects a partly unavailable selection atomically", async (t) => {
+    const { db, store, owner, project } = await fixture(t);
+    const { sourceIds: [id] } = await store.addDriveSources(owner.id, project.id, [{ id: "brief1", kind: "file" }], true);
+    await store.syncProjectSource(owner.id, id);
+    const original = await db.attachment.findFirstOrThrow({ where: { projectId: project.id } });
+    signedIn = owner;
+    const { POST } = await import("@/app/api/projects/[id]/knowledge/library/route");
+    const response = await POST(new Request("https://app.example.invalid/", {
+      method: "POST", body: JSON.stringify({ attachmentIds: [original.id, "missing"] }),
+    }), { params: Promise.resolve({ id: project.id }) });
+    assert.equal(response.status, 404);
+    assert.equal(await db.attachment.count({ where: { projectId: project.id, deletedAt: null } }), 1);
+  });
+  test("the picker retries Drive quota responses with a short Retry-After", async (t) => {
+    let calls = 0;
+    const { owner, project } = await fixture(t, async (...args) => {
+      if (++calls === 1) {
+        return Response.json({ error: { errors: [{ reason: "userRateLimitExceeded" }] } }, {
+          status: 403, headers: { "Retry-After": "0" },
+        });
+      }
+      return fakeGoogle(...args);
+    });
+    signedIn = owner;
+    const { GET } = await import("@/app/api/projects/[id]/sources/drive/route");
+    const response = await GET(new Request("https://app.example.invalid/?parent=folder1"), { params: Promise.resolve({ id: project.id }) });
+    assert.equal(response.status, 200);
+    assert.equal(calls, 2);
+  });
+
+  test("a long Retry-After is returned as rate limited without an immediate retry", async (t) => {
+    let calls = 0;
+    const { owner, project } = await fixture(t, async () => {
+      calls += 1;
+      return Response.json({ error: { errors: [{ reason: "rateLimitExceeded" }] } }, {
+        status: 403, headers: { "Retry-After": "60" },
+      });
+    });
+    signedIn = owner;
+    const { GET } = await import("@/app/api/projects/[id]/sources/drive/route");
+    const response = await GET(new Request("https://app.example.invalid/?parent=folder1"), { params: Promise.resolve({ id: project.id }) });
+    assert.equal(response.status, 429);
+    assert.equal((await response.json()).code, "rate_limited");
+    assert.equal(calls, 1);
+  });
+
+  test("a Drive import cannot cross the project’s remaining knowledge capacity", async (t) => {
+    const { db, store, owner, project } = await fixture(t);
+    await db.attachment.create({ data: {
+      userId: owner.id, projectId: project.id, kind: "FILE", fileName: "existing.txt",
+      mimeType: "text/plain", size: 3_999_996, storageKey: "existing-fixture",
+    } });
+    const { sourceIds: [id] } = await store.addDriveSources(owner.id, project.id, [{ id: "brief1", kind: "file" }], true);
+    const result = await store.syncProjectSource(owner.id, id);
+    assert.equal(result?.errorCode, "capacity");
+    assert.equal(result?.added, 0);
+    assert.equal(await db.attachment.count({ where: { projectId: project.id, deletedAt: null } }), 1);
+  });
+
+  test("all project source and Library routes require the project owner", async (t) => {
+    const { store, owner, project } = await fixture(t);
+    const { sourceIds: [sourceId] } = await store.addDriveSources(owner.id, project.id, [{ id: "brief1", kind: "file" }], true);
+    const sources = await import("@/app/api/projects/[id]/sources/route");
+    const picker = await import("@/app/api/projects/[id]/sources/drive/route");
+    const source = await import("@/app/api/projects/[id]/sources/[sourceId]/route");
+    const library = await import("@/app/api/projects/[id]/knowledge/library/route");
+    const params = { params: Promise.resolve({ id: project.id, sourceId }) };
+    for (const [user, status] of [[null, 401], [{ id: "another-account" }, 404]] as const) {
+      signedIn = user;
+      for (const route of [sources.GET, sources.POST, picker.GET, source.POST, source.DELETE, library.POST]) {
+        const response = await route(new Request("https://app.example.invalid/"), params);
+        assert.equal(response.status, status);
+      }
+    }
+  });
+
+  test("concurrent Drive clients share one OAuth refresh", async (t) => {
+    const refreshStarted = latch();
+    const finishRefresh = latch();
+    let refreshes = 0;
+    let reads = 0;
+    const { db, store, owner } = await fixture(t, async (input, init) => {
+      if (new URL(String(input)).hostname === "oauth2.googleapis.com") {
+        refreshes += 1;
+        refreshStarted.resolve();
+        await finishRefresh.promise;
+        return Response.json({ access_token: "refreshed-fixture", refresh_token: "rotated-fixture", expires_in: 3600 });
+      }
+      assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer refreshed-fixture");
+      reads += 1;
+      return fakeGoogle(input, init);
+    });
+    const { encryptSecret } = await import("@/lib/crypto");
+    await db.connection.update({
+      where: { userId_provider: { userId: owner.id, provider: "google-drive" } },
+      data: { expiresAt: new Date(0), refreshToken: encryptSecret("previous-fixture") },
+    });
+    const first = store.openDrive(owner.id);
+    await Promise.race([
+      refreshStarted.promise,
+      first.then(() => { throw new Error("Drive opened before refreshing"); }),
+    ]);
+    const second = store.openDrive(owner.id);
+    finishRefresh.resolve();
+    const clients = await Promise.all([first, second]);
+    await Promise.all(clients.map((client) => client.json("/drive/v3/files/brief1")));
+    assert.equal(refreshes, 1);
+    assert.equal(reads, 2);
+  });
+
 }

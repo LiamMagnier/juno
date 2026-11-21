@@ -35,14 +35,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
 
+  const picked = [...new Set(parsed.data.attachmentIds)];
+  const missingSelection = new Error("Library selection is incomplete");
   const clones = await prisma.$transaction(async (tx) => {
-    const { clones: made } = await cloneLibraryAttachments(tx, user.id, parsed.data.attachmentIds);
+    const { clones: made } = await cloneLibraryAttachments(tx, user.id, picked);
+    if (made.length !== picked.length) throw missingSelection;
     for (const clone of made) {
       await tx.attachment.update({ where: { id: clone.id, userId: user.id }, data: { projectId: id, parserState: "queued" } });
     }
     return made.map((clone) => ({ ...clone, projectId: id, parserState: "queued" }));
+  }).catch((error: unknown) => {
+    if (error === missingSelection) return null;
+    throw error;
   });
-  if (clones.length === 0) return NextResponse.json({ error: "Those files aren’t in your Library any more." }, { status: 404 });
+  if (!clones) return NextResponse.json({ error: "Some selected files aren’t in your Library any more." }, { status: 404 });
 
   after(async () => {
     for (const clone of clones) {
