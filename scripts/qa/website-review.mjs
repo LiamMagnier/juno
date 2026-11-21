@@ -69,15 +69,42 @@ try {
         checks.push(`${mode}: projects switch between grid and denser list`);
       }
       if (route === 'project' && mode.endsWith('light')) {
-        await expect(page.getByRole('heading', { name: 'Project context' })).toBeVisible();
+        const knowledge = page.getByRole('complementary', { name: 'Project knowledge' });
+        const settings = page.getByRole('heading', { name: 'Settings', exact: true, level: 1 });
         if (mode.startsWith('mobile')) {
-          await page.getByRole('link', { name: 'Project knowledge', exact: true }).click();
-          await expect(page.locator('#project-knowledge')).toBeInViewport();
+          const context = page.getByRole('button', { name: /^Project context/ });
+          await expect(context).toHaveAttribute('aria-expanded', 'false');
+          await expect(knowledge).toBeHidden();
+          const firstChat = page.locator('.pj-workspace-history').getByRole('link', { name: /Why the sync worker drops cursors/ });
+          await expect(firstChat).toBeInViewport();
+          const folders = page.getByRole('heading', { name: /^Folders/ });
+          assert((await firstChat.boundingBox()).y < (await folders.boundingBox()).y, 'Recent chats precede folders');
+          await context.focus();
+          await context.press('Enter');
+          await expect(context).toHaveAttribute('aria-expanded', 'true');
+          await expect(knowledge).toBeVisible();
+          await capture(page, `${mode}/project-context.png`);
+          await context.press('Enter');
+          await expect(knowledge).toBeHidden();
+          await page.getByRole('button', { name: 'Project actions' }).click();
+          await expect(page.getByRole('menuitem', { name: 'New chat', exact: true })).toBeVisible();
+          await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+        } else {
+          await expect(knowledge).toBeVisible();
+          await page.getByRole('button', { name: 'Settings', exact: true }).click();
         }
-        await page.getByRole('button', { name: 'Settings', exact: true }).click();
-        await expect(page.getByRole('heading', { name: 'Settings', exact: true, level: 1 })).toBeVisible();
+        await expect(settings).toBeVisible();
         await capture(page, `${mode}/project-settings.png`);
-        checks.push(`${mode}: project context and direct settings access`);
+        if (mode.startsWith('mobile')) {
+          await page.goto(new URL('/dev/pages/project/p-atlas?tab=sources', base).href, { waitUntil: 'domcontentloaded' });
+          await expect(knowledge).toBeVisible();
+          await page.setViewportSize({ width: 320, height: 740 });
+          await page.goto(new URL('/dev/pages/project/p-atlas?tab=work', base).href, { waitUntil: 'domcontentloaded' });
+          const activity = page.getByRole('radiogroup', { name: 'Project activity' });
+          await expect(activity.getByRole('radio')).toHaveCount(4);
+          assert(await activity.evaluate((tabs) => tabs.scrollWidth <= tabs.clientWidth + 1 && tabs.getBoundingClientRect().right <= innerWidth), 'Four activity tabs fit at 320px');
+        }
+        checks.push(`${mode}: project context, recent chats and settings access`);
       }
     }
     if (mode === 'desktop-light') {

@@ -5,7 +5,7 @@ import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRight, ImageOff, ImagePlus, Loader2, Maximize2, Plus } from "@/components/ui/icons";
+import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, ImageOff, ImagePlus, Loader2, Maximize2, Plus } from "@/components/ui/icons";
 import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,8 +88,8 @@ const SOURCE_POLL_MS = 2_500;
  * the work on the left, what the project knows on the right) plus Settings,
  * and the lists under the composer switch between chats, tasks, code and
  * artifacts. The old tab values still resolve, because people hold them in
- * bookmarks: `work` and `code` open that list, `sources` the overview (the
- * knowledge panel is always on it), `workspace` and `assistant` the settings.
+ * bookmarks: `work` and `code` open that list, `sources` opens project context,
+ * and `workspace` and `assistant` open settings.
  */
 type ListKind = "chats" | "work" | "code" | "artifacts";
 type PageView = "overview" | "settings";
@@ -165,25 +165,7 @@ const WORKSPACE_TOOL_LABELS: Record<WorkspaceTool, string> = {
   memoryRecall: "Memory",
 };
 
-/**
- * A project, laid out the way Claude lays one out: a workspace, not a form.
- *
- * Left: the way back, the name in the house serif and what the project is
- * for, a composer that starts a chat IN the project, and the project's chats
- * (with its tasks, code sessions and artifacts a switch away when it has
- * any). Right: one flat panel with what every chat here begins with: the
- * instructions, the knowledge (uploads, Library files and Google Drive files
- * and folders, kept in sync, with how full the project is) and its memory.
- *
- * On a phone it stacks in reading order: the name, the composer, the panel,
- * then the chats. The left column is `display: contents` below the split, so
- * its children and the panel are siblings that `order` can interleave; at the
- * split the column is a block again and the panel takes the right track.
- *
- * Settings (model, tools, task defaults) moved off the page's face into a
- * view of their own, reached from the actions menu: they are set once and
- * revisited rarely, and five tabs made every project open as a form.
- */
+/** Project overview and settings share the current chat draft. */
 export default function ProjectDetailPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
@@ -203,6 +185,7 @@ export default function ProjectDetailPage() {
 
   const [view, setView] = React.useState<PageView>("overview");
   const [list, setList] = React.useState<ListKind>("chats");
+  const [contextOpen, setContextOpen] = React.useState(false);
   const [savingInstructions, setSavingInstructions] = React.useState(false);
 
   // Server-backed project star (Project.starred), toggled optimistically.
@@ -401,7 +384,8 @@ export default function ProjectDetailPage() {
    */
   React.useEffect(() => {
     const url = new URL(window.location.href);
-    const tab = parseTab(url.searchParams.get("tab"));
+    const tabParam = url.searchParams.get("tab");
+    const tab = parseTab(tabParam);
     if (tab) {
       setView(tab.view);
       if (tab.list) setList(tab.list);
@@ -409,6 +393,7 @@ export default function ProjectDetailPage() {
     const reopenDrive = url.searchParams.get("drive") === "1";
     const connected = url.searchParams.get("connected") === "google-drive";
     const connectError = url.searchParams.get("connect_error");
+    setContextOpen(tabParam === "sources" || url.hash === "#project-knowledge" || reopenDrive || connected);
     if (!reopenDrive && !connected && !connectError) return;
     for (const key of ["drive", "connected", "connect_error"]) url.searchParams.delete(key);
     window.history.replaceState(window.history.state, "", url.pathname + url.search);
@@ -933,6 +918,7 @@ export default function ProjectDetailPage() {
       }}
       onDelete={isOwner ? () => setDeleteOpen(true) : undefined}
       onOpenSettings={() => openView("settings")}
+      onOpenChat={() => router.push(`/chat?project=${id}`)}
       breadcrumbs={crumbs}
       onDropOnCrumb={isOwner ? handleDrop : undefined}
       acceptOnCrumb={(drag, targetId) => (drag.kind === "chat" ? targetId !== null && targetId !== id : canDropInto(tree, drag, targetId))}
@@ -963,124 +949,23 @@ export default function ProjectDetailPage() {
       <div className={cn(view !== "overview" && "hidden")}>
         {header}
         <div className="pj-workspace-grid">
-          <div className="pj-workspace-main">
-            <section className="pj-composer-card" aria-labelledby="pj-start-chat">
-              <div className="pj-composer-heading">
-                <h2 id="pj-start-chat">New chat</h2>
-                <a className="pj-knowledge-jump" href="#project-knowledge">Project knowledge</a>
-              </div>
-              <Composer
-                conversationId={null}
-                frame="inline"
-                model={projectModel}
-                onModelChange={(m) => setSelectedModel(m)}
-                onSend={(text, _attachments, options) => handleSend(text, options)}
-                isBusy={false}
-                status="idle"
-                onStop={() => {}}
-                reasoningEffort={reasoningEffort}
-                onReasoningChange={setReasoningEffort}
-                /* The project's own name where it fits: this composer starts
-                   a chat in this project, not anywhere. */
-                placeholder={
-                  data.project.name.length <= 32
-                    ? `Start a chat in ${data.project.name}…`
-                    : "Start a chat in this project…"
-                }
-              />
-            </section>
-
-            <div className="pj-workspace-history">
-              {/* Folders: the projects inside this one, as compact cards that
-                  are drop targets. Shown when there are some; making one is in
-                  the actions menu, with the project's other filing verbs. */}
-              {isOwner && folders.length > 0 && (
-                <section className="pj mb-10" aria-labelledby="pj-folders-title">
-                  <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-                      <h2 id="pj-folders-title" className="pj-section-title flex items-baseline gap-2">
-                      Folders
-                      <span className="text-caption font-normal tabular-nums text-muted-foreground">{folders.length}</span>
-                    </h2>
-                    {folderRefusal ? (
-                      <span className="text-caption text-muted-foreground">{folderRefusal}</span>
-                    ) : (
-                      <Button variant="ghost" size="sm" className="-mr-2 text-muted-foreground" onClick={() => setFolderDialog(true)}>
-                        <Plus className="size-4" aria-hidden="true" /> New folder
-                      </Button>
-                    )}
-                  </div>
-                  <ul className="pj-grid grid gap-2 @[30rem]/page:grid-cols-2">
-                    {folders.map((folder, i) => (
-                      <li key={folder.id} className="min-w-0">
-                        <ProjectTile
-                          compact
-                          index={i}
-                          project={folder}
-                          allProjects={tree}
-                          onMove={() => setMoving({ kind: "project", id: folder.id, name: folder.name, parentId: data.project.id })}
-                          onDropInto={(drag) => handleDrop(folder.id, drag)}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              <section aria-labelledby="pj-history-title">
-                <div className="pj-history-heading">
-                  <h2 id="pj-history-title" className="pj-section-title">{listOptions.length > 1 ? "Project activity" : "Chats"}</h2>
-                  {listOptions.length > 1 && (
-                    <SegmentedControl
-                      size="sm"
-                      columns="content"
-                      value={list}
-                      onChange={openList}
-                      ariaLabel="Show"
-                      options={listOptions}
-                    />
-                  )}
-                </div>
-
-                {list === "chats" && (
-                  <ProjectChatList
-                    projectId={data.project.id}
-                    conversations={chats}
-                    onTogglePin={togglePin}
-                    onRequestMove={(chat) => setMoving({ kind: "chat", id: chat.id, name: chat.title, projectId: data.project.id })}
-                    onDeleteChat={(chat) => setChatToDelete({ id: chat.id, title: chat.title })}
-                    onNewChat={() => router.push(`/chat?project=${id}`)}
-                  />
-                )}
-                {list === "work" && (
-                  <ProjectWorkList
-                    projectId={data.project.id}
-                    workRuns={workRuns}
-                    // A task starts where every task starts: the chat
-                    // composer, with this project selected.
-                    onNewWork={() => router.push(`/chat?project=${data.project.id}`)}
-                  />
-                )}
-                {list === "code" && (
-                  <ProjectCodeList
-                    projectId={data.project.id}
-                    sessions={codeSessions.map((c) => ({
-                      id: c.id,
-                      title: c.title,
-                      lastMessageAt: c.lastMessageAt,
-                      workspaceName: c.codeWorkspaceName ?? undefined,
-                      workspacePath: c.codeWorkspacePath ?? undefined,
-                    }))}
-                    onNewCodeSession={() => router.push("/code")}
-                  />
-                )}
-                {list === "artifacts" && <ArtifactList artifacts={projectArtifacts} />}
-              </section>
-            </div>
-          </div>
+          <section className="pj-workspace-composer" aria-label="Start a project chat">
+            <Composer
+              conversationId={null}
+              frame="inline"
+              model={projectModel}
+              onModelChange={(m) => setSelectedModel(m)}
+              onSend={(text, _attachments, options) => handleSend(text, options)}
+              isBusy={false}
+              status="idle"
+              onStop={() => {}}
+              reasoningEffort={reasoningEffort}
+              onReasoningChange={setReasoningEffort}
+              placeholder="Ask about this project…"
+            />
+          </section>
 
           <div
-            id="project-knowledge"
-            tabIndex={-1}
             className={cn(
               "pj-workspace-context",
               dropping && "ring-2 ring-presence/60"
@@ -1097,42 +982,144 @@ export default function ProjectDetailPage() {
               if (!isOwner || !event.dataTransfer.files.length) return;
               event.preventDefault();
               setDropping(false);
+              setContextOpen(true);
               void uploadFiles([...event.dataTransfer.files]);
             }}
           >
-            <ProjectKnowledgePanel
-              className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
-              style={staggerDelay(1)}
-              coverUrl={coverUrl}
-              onPickCover={() => coverRef.current?.click()}
-              onRemoveCover={removeCover}
-              uploadingCover={uploadingCover}
-              instructions={data.project.instructions}
-              inherited={inherited}
-              onEditInstructions={() => setInstructionsOpen(true)}
-              files={knowledgeFiles}
-              sources={sources}
-              drive={drive}
-              usage={usage}
-              canEdit={isOwner}
-              uploading={uploading}
-              onUpload={() => fileRef.current?.click()}
-              onAddFromLibrary={() => setLibraryOpen(true)}
-              onAddFromDrive={() => setDriveOpen(true)}
-              onDeleteFile={(fileId) => void deleteFile(fileId)}
-              onSyncSource={(sourceId) => void syncSource(sourceId)}
-              onRemoveSource={setSourceToRemove}
-              onFixDrive={() => setDriveOpen(true)}
-              memory={projectMemory}
-              // Straight to this project's slice of the memory page, when it has one.
-              onManageMemory={() =>
-                router.push(
-                  projectMemory && (projectMemory.activeCount > 0 || projectMemory.summary)
-                    ? `/memory?project=${encodeURIComponent(id)}`
-                    : "/memory"
-                )
-              }
-            />
+            <button
+              type="button"
+              className="pj-context-disclosure"
+              aria-expanded={contextOpen}
+              aria-controls="project-knowledge"
+              onClick={() => setContextOpen((open) => !open)}
+            >
+              <BookOpen className="size-[18px] shrink-0" aria-hidden="true" />
+              <span className="min-w-0 flex-1 text-left">Project context</span>
+              {knowledgeFiles.length > 0 && (
+                <span className="pj-annot whitespace-nowrap">
+                  {knowledgeFiles.length} {knowledgeFiles.length === 1 ? "file" : "files"}
+                </span>
+              )}
+              <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
+            </button>
+            <div id="project-knowledge" tabIndex={-1} className="pj-context-body" data-open={contextOpen}>
+              <ProjectKnowledgePanel
+                coverUrl={coverUrl}
+                onPickCover={() => coverRef.current?.click()}
+                onRemoveCover={removeCover}
+                uploadingCover={uploadingCover}
+                instructions={data.project.instructions}
+                inherited={inherited}
+                onEditInstructions={() => setInstructionsOpen(true)}
+                files={knowledgeFiles}
+                sources={sources}
+                drive={drive}
+                usage={usage}
+                canEdit={isOwner}
+                uploading={uploading}
+                onUpload={() => fileRef.current?.click()}
+                onAddFromLibrary={() => setLibraryOpen(true)}
+                onAddFromDrive={() => setDriveOpen(true)}
+                onDeleteFile={(fileId) => void deleteFile(fileId)}
+                onSyncSource={(sourceId) => void syncSource(sourceId)}
+                onRemoveSource={setSourceToRemove}
+                onFixDrive={() => setDriveOpen(true)}
+                memory={projectMemory}
+                // Straight to this project's slice of the memory page, when it has one.
+                onManageMemory={() =>
+                  router.push(
+                    projectMemory && (projectMemory.activeCount > 0 || projectMemory.summary)
+                      ? `/memory?project=${encodeURIComponent(id)}`
+                      : "/memory"
+                  )
+                }
+              />
+            </div>
+          </div>
+
+          <div className="pj-workspace-history">
+            <section aria-labelledby="pj-history-title">
+              <div className="pj-history-heading">
+                <h2 id="pj-history-title" className="pj-section-title">{listOptions.length > 1 ? "Activity" : "Chats"}</h2>
+                {listOptions.length > 1 && (
+                  <SegmentedControl
+                    size="sm"
+                    columns="content"
+                    value={list}
+                    onChange={openList}
+                    ariaLabel="Project activity"
+                    className="max-w-full overflow-x-auto"
+                    optionClassName="px-1.5 @[30rem]/page:px-2.5"
+                    options={listOptions}
+                  />
+                )}
+              </div>
+
+              {list === "chats" && (
+                <ProjectChatList
+                  projectId={data.project.id}
+                  conversations={chats}
+                  onTogglePin={togglePin}
+                  onRequestMove={(chat) => setMoving({ kind: "chat", id: chat.id, name: chat.title, projectId: data.project.id })}
+                  onDeleteChat={(chat) => setChatToDelete({ id: chat.id, title: chat.title })}
+                />
+              )}
+              {list === "work" && (
+                <ProjectWorkList
+                  projectId={data.project.id}
+                  workRuns={workRuns}
+                  // A task starts where every task starts: the chat
+                  // composer, with this project selected.
+                  onNewWork={() => router.push(`/chat?project=${data.project.id}`)}
+                />
+              )}
+              {list === "code" && (
+                <ProjectCodeList
+                  projectId={data.project.id}
+                  sessions={codeSessions.map((c) => ({
+                    id: c.id,
+                    title: c.title,
+                    lastMessageAt: c.lastMessageAt,
+                    workspaceName: c.codeWorkspaceName ?? undefined,
+                    workspacePath: c.codeWorkspacePath ?? undefined,
+                  }))}
+                  onNewCodeSession={() => router.push("/code")}
+                />
+              )}
+              {list === "artifacts" && <ArtifactList artifacts={projectArtifacts} />}
+            </section>
+
+            {isOwner && folders.length > 0 && (
+              <section className="pj pj-workspace-folders" aria-labelledby="pj-folders-title">
+                <div className="pj-history-heading">
+                  <h2 id="pj-folders-title" className="pj-section-title flex items-baseline gap-2">
+                    Folders
+                    <span className="text-caption font-normal tabular-nums text-muted-foreground">{folders.length}</span>
+                  </h2>
+                  {folderRefusal ? (
+                    <span className="text-caption text-muted-foreground">{folderRefusal}</span>
+                  ) : (
+                    <Button variant="ghost" size="sm" className="-mr-2 text-muted-foreground" onClick={() => setFolderDialog(true)}>
+                      <Plus className="size-4" aria-hidden="true" /> New folder
+                    </Button>
+                  )}
+                </div>
+                <ul className="pj-grid grid gap-2 @[30rem]/page:grid-cols-2">
+                  {folders.map((folder, i) => (
+                    <li key={folder.id} className="min-w-0">
+                      <ProjectTile
+                        compact
+                        index={i}
+                        project={folder}
+                        allProjects={tree}
+                        onMove={() => setMoving({ kind: "project", id: folder.id, name: folder.name, parentId: data.project.id })}
+                        onDropInto={(drag) => handleDrop(folder.id, drag)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </div>
         </div>
       </div>

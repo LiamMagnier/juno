@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { intentPrefetch } from "@/lib/intent-prefetch";
-import { ChevronRight, CornerDownRight, Folder, MessageSquare, Pin, PinOff, Plus, Search } from "@/components/ui/icons";
+import { ArrowLeft, ChevronRight, CornerDownRight, Folder, MessageSquare, Pin, PinOff, Plus, Search } from "@/components/ui/icons";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -537,8 +537,8 @@ function PickerRow({
  * names this project in full, so drawing it again here was the same words
  * twice, and on a long name the repeat overflowed a phone's width. The
  * current place is still in the trail for a screen reader (`aria-current`).
- * Crumbs are navigation, so they are set in the interface face at the `ui`
- * rung, like AppPageHeader's own eyebrow, with a 24px target (44 on touch).
+ * The Projects link includes the back indicator. Each parent stays a link
+ * and a drop target even when the trail wraps.
  */
 export function ProjectBreadcrumbs({
   crumbs,
@@ -588,9 +588,10 @@ function Crumb({
     <Link
       href={href}
       {...drop}
-      className="pj-drop hit-44 relative inline-flex min-h-6 items-center break-words rounded-xs px-1 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
+      className="pj-drop hit-44 relative inline-flex min-h-7 min-w-0 items-center gap-1.5 rounded-xs px-1 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
     >
-      {label}
+      {targetId === null && <ArrowLeft className="size-4 shrink-0" aria-hidden="true" />}
+      <span className="min-w-0 break-words">{label}</span>
     </Link>
   );
 }

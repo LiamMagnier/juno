@@ -230,61 +230,111 @@
   }
 }
 
-.pj-workspace-grid { display: grid; gap: 1.5rem; }
-.pj-workspace-main { min-width: 0; }
+.pj-workspace-header {
+  display: grid;
+  gap: .5rem;
+  margin-block-end: .75rem;
+}
+
+.pj-title-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: .5rem;
+}
+
+.pj-workspace-title {
+  align-self: center;
+  margin: 0;
+  font: 600 clamp(1.875rem, 3.4cqi, 2.75rem) / 1.12 var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -.04em;
+  overflow-wrap: anywhere;
+}
+
+.pj-title-actions { display: flex; align-items: center; gap: .125rem; }
+.pj-title-actions .pj-desktop-settings { display: none; }
+.pj-workspace-description { max-width: 64ch; white-space: pre-line; overflow-wrap: anywhere; color: hsl(var(--muted-foreground)); }
+
+.pj-workspace-grid { display: grid; gap: .875rem; }
+.pj-workspace-composer,
+.pj-workspace-context,
+.pj-workspace-history { min-width: 0; }
+
 .pj-workspace-context {
-  min-width: 0;
-  scroll-margin-block-start: 1rem;
-  border-radius: var(--web-panel-radius);
+  border-block: 1px solid hsl(var(--foreground) / .09);
 }
 
-.pj-composer-card {
-  padding: clamp(.75rem, 1.75cqi, 1.25rem);
-  border: 1px solid hsl(var(--presence) / .16);
-  border-radius: var(--web-panel-radius);
-  background: hsl(var(--presence) / .035);
+.pj-context-disclosure {
+  display: flex;
+  width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: .625rem;
+  padding-inline: .25rem;
+  border-radius: var(--web-control-radius);
+  color: hsl(var(--foreground));
+  font-size: .875rem;
+  font-weight: 500;
 }
 
-.pj-composer-heading,
+.pj-context-disclosure > svg { color: hsl(var(--muted-foreground)); }
+.pj-context-disclosure:hover { background: hsl(var(--foreground) / .035); }
+.pj-context-disclosure:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.pj-context-disclosure[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
+.pj-context-body { padding-block: .125rem .625rem; }
+.pj-context-body[data-open="false"],
+.pj-context-header { display: none; }
+
 .pj-context-header,
 .pj-history-heading {
-  display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: .5rem 1rem;
+  gap: .375rem .75rem;
 }
 
-.pj-composer-heading,
-.pj-history-heading { justify-content: space-between; margin-bottom: .75rem; }
+.pj-history-heading { display: flex; justify-content: space-between; min-height: 2rem; margin-bottom: .5rem; }
 
-.pj-composer-heading h2,
+.pj-chat-search input:not(:focus-visible) {
+  border-color: hsl(var(--foreground) / .13);
+  background: hsl(var(--foreground) / .035);
+}
+
 .pj-context-header h2,
 .pj-section-title {
-  font-size: 1rem;
+  font-size: 1.0625rem;
   font-weight: 600;
-  letter-spacing: -.012em;
+  letter-spacing: -.02em;
 }
 
-.pj-knowledge-jump {
-  padding-block: .45rem;
-  color: hsl(var(--presence-ink));
-  font-size: .8125rem;
-  text-underline-offset: .2em;
+.pj-workspace-folders {
+  margin-block-start: 1.125rem;
+  padding-block-start: .875rem;
+  border-block-start: 1px solid hsl(var(--foreground) / .09);
 }
-.pj-knowledge-jump:is(:hover, :focus-visible) { text-decoration: underline; }
-.pj-workspace-history { margin-top: 2rem; }
+
 .pj-context-header {
   justify-content: flex-start;
   padding: .875rem 1rem;
   border-bottom: 1px solid var(--pj-hair);
-  background: hsl(var(--foreground) / .025);
 }
-.pj-context-header svg { color: hsl(var(--presence-ink)); }
+.pj-context-header svg { color: hsl(var(--muted-foreground)); }
 
 @container page (min-width: 56rem) {
-  .pj-workspace-grid { grid-template-columns: minmax(0, 1fr) minmax(18rem, 32%); gap: 2rem; align-items: start; }
-  .pj-workspace-context { position: sticky; top: 1rem; }
-  .pj-knowledge-jump { display: none; }
+  .pj-workspace-header { margin-block-end: 1.25rem; }
+  .pj-title-actions .pj-desktop-settings { display: inline-flex; }
+  .pj-workspace-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 32%);
+    grid-template-areas: "composer context" "history context";
+    grid-template-rows: auto 1fr;
+    gap: 1.5rem 2rem;
+    align-items: start;
+  }
+  .pj-workspace-composer { grid-area: composer; }
+  .pj-workspace-history { grid-area: history; }
+  .pj-workspace-context { grid-area: context; position: sticky; top: 1rem; border: 0; }
+  .pj-context-disclosure { display: none; }
+  .pj-context-body[data-open] { display: block; padding: 0; }
+  .pj-context-header { display: flex; }
 }
 
 /* The cover plate: a recessed tone the drawing sits in, with an inner
@@ -312,8 +362,8 @@
     animation: pj-arrive var(--dur-base) var(--ease-out-expo) backwards;
     animation-delay: calc(min(var(--i, 0), 3) * var(--stagger-tile) / 2);
   }
-  .pj-toolbar,
-  .pj-composer-card { animation: pj-arrive var(--dur-base) var(--ease-out-expo) backwards; }
+  .pj-toolbar { animation: pj-arrive var(--dur-base) var(--ease-out-expo) backwards; }
+  .pj-context-disclosure > svg:last-child { transition: transform var(--dur-fast) var(--ease-out-soft); }
 }
 @media (prefers-reduced-motion: reduce) {
   .pj-tile, .pj-pinned { transition: none; }
@@ -329,15 +379,6 @@
 }
 .pj-tile:hover .pj-well,
 .pj-tile:focus-within .pj-well { color: hsl(var(--foreground)); }
-
-/* The project page's H1 beside its actions. A long name wraps rather than
-   being cut mid-word, and from a 40rem column it keeps the actions on its
-   own row (as a short name does) by taking the space left of them instead of
-   its whole width. AppPageHeader's row is flex-wrap, so without this a long
-   heading claimed a line of its own and pushed the actions under it. */
-@container page (min-width: 40rem) {
-  .pj-head h1 { flex: 1 1 0%; }
-}
 
 /* A still surface in the same material (the Overview rail, settings groups). */
 .pj-card {
