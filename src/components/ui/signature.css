@@ -166,25 +166,19 @@
 /* ── 2. (Glass on floating layers was removed 6 Nov 2026: menus are solid, see 4.) */
 
 /* ── 3. Motion: floating layers and the switch ─────────────────────────────
-   Menus and popovers arrive from their trigger on a strong ease-out (Emil
-   Kowalski's curve: fast start, long settle), 180ms, scale .96 plus 4px of
-   travel toward the trigger; they leave in 120ms on opacity and a .98 settle,
-   no travel, so a dismissed menu does not seem to go anywhere. Dialogs are
-   bigger, so they take 240ms and stay centred. */
+   Menus and popovers open on the fast rung, with a small movement toward
+   the trigger. Dialogs keep the slower entrance for a larger surface. */
 :root {
   --alv-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --alv-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 .data-\[state\=open\]\:animate-pop-in[data-state="open"] {
-  animation: pop-in 180ms var(--alv-ease-out) both;
+  animation: pop-in var(--dur-fast) var(--alv-ease-out) both;
 }
 @media (prefers-reduced-motion: no-preference) {
   .data-\[state\=closed\]\:animate-pop-out[data-state="closed"] {
     animation: alv-pop-out 120ms var(--ease-out-soft) both;
   }
-}
-.cmenu.cmenu.cmenu[data-state="open"] {
-  animation: cmenu-in 180ms var(--alv-ease-out) both;
 }
 .data-\[state\=open\]\:animate-modal-in[data-state="open"] {
   animation: pop-in 240ms var(--alv-ease-out) both;
