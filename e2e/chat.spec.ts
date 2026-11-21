@@ -167,7 +167,11 @@ test.describe("Chat workspace", () => {
     await expect(details.getByText("Cache hits", { exact: true })).toHaveCount(0);
 
     await page.reload();
-    await meter.click();
+    // The reload can paint the server-rendered button before it handles clicks.
+    await expect(async () => {
+      if ((await meter.getAttribute("aria-expanded")) !== "true") await meter.click();
+      await expect(details).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
     await expect(inputUsage).toHaveText(expectedInput);
     await page.screenshot({ path: testInfo.outputPath("desktop-context.png"), animations: "disabled" });
   });
