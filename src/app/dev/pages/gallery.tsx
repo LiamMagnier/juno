@@ -162,6 +162,10 @@ function route(path: string, url: URL, method: string, state: PageState, page: P
     if (url.searchParams.get("projectId")) return json({ items: ARTIFACTS.slice(0, 2) });
     return own({ items: ARTIFACTS }, { items: [] });
   }
+  if (method === "GET" && path.startsWith("/api/artifacts/")) {
+    const artifact = ARTIFACTS.find((item) => path === `/api/artifacts/${item.id}`);
+    if (artifact) return json({ artifact: { ...artifact, currentVersion: artifact.version, content: artifact.preview } });
+  }
   if (path === "/api/connectors") {
     if (page !== "connections") return json({ connectors: CONNECTORS, composioConfigured: false });
     return own({ connectors: CONNECTORS, composioConfigured: false }, { connectors: [], composioConfigured: false });
