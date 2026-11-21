@@ -1,0 +1,42 @@
+name: Production health diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-health-diagnostics
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Read sanitized production health evidence
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_KNOWN_HOSTS: ${{ secrets.VM_KNOWN_HOSTS }}
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+        run: |
+          set -euo pipefail
+          test -n "$VM_SSH_KEY" && test -n "$VM_KNOWN_HOSTS" && test -n "$VM_USER" && test -n "$VM_HOST"
+          install -d -m 700 "$RUNNER_TEMP/diagnostics-ssh"
+          printf '%s\n' "$VM_SSH_KEY" > "$RUNNER_TEMP/diagnostics-ssh/key"
+          printf '%s\n' "$VM_KNOWN_HOSTS" > "$RUNNER_TEMP/diagnostics-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/diagnostics-ssh/key"
+          ssh -i "$RUNNER_TEMP/diagnostics-ssh/key" -o BatchMode=yes -o ConnectTimeout=15 \
+            -o UserKnownHostsFile="$RUNNER_TEMP/diagnostics-ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            "$VM_USER@$VM_HOST" 'export PATH="$HOME/.npm-global/bin:$PATH"; cd "$HOME/juno/current" && node --env-file="$HOME/juno/.env" --input-type=module - --run' \
+            < scripts/production-diagnostics.mjs
+      - name: Remove temporary SSH credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/diagnostics-ssh/key" "$RUNNER_TEMP/diagnostics-ssh/known_hosts"
