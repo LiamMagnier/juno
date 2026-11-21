@@ -10,6 +10,8 @@ const browser = await chromium.launch({ executablePath: process.env.ORBIT_CHROMI
 
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, reducedMotion: "reduce" });
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
   page.setDefaultTimeout(90_000);
   const visit = (path) => page.goto(new URL(path, base).href, { waitUntil: "domcontentloaded", timeout: 120_000 });
 
@@ -45,10 +47,15 @@ try {
   assert((await pageAction.boundingBox()).y > (await heading.boundingBox()).y, "Phone actions clear the heading");
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "The phone page has no sideways overflow");
 
+  await visit("/dev/pages/project/p-atlas?sources=invalid");
+  await expect(page.locator("[data-page-root] #juno-main")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Atlas launch", exact: true })).toBeVisible();
+
   await visit("/dev/live-ui");
   await expect(page.locator(".live-card").first()).toBeVisible();
   assert(await page.locator(".live-card").first().evaluate((card) => card.scrollWidth <= card.clientWidth + 1), "Live UI controls stay within the phone card");
-  console.log("Web chrome: Incognito alignment, navigation icons, responsive page headers, and mobile Live UI passed.");
+  assert.deepEqual(errors, [], "No client errors in the fixtures");
+  console.log("Web chrome: Incognito alignment, navigation icons, responsive headers, malformed project sources, and mobile Live UI passed.");
 } finally {
   await browser.close();
 }
