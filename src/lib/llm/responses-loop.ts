@@ -23,6 +23,7 @@
  * 2026-01-12) or `x_search` (not attached in this rework, O-25).
  */
 
+import { callIdIssuer } from "@/lib/llm/tool-round";
 import { serviceTierFor } from "@/lib/pricing";
 import type OpenAI from "openai";
 
@@ -30,7 +31,6 @@ import { normalizeFinishReason } from "@/lib/finish-reason";
 import { roundBudgetFor } from "@/lib/llm/loop";
 import {
   outputTextFor,
-  stampCallId,
   toolSourceFor,
   turnSignal,
   type ToolSource,
@@ -484,7 +484,7 @@ export async function* runResponsesLoop(opts: ResponsesLoopInput): AsyncGenerato
 
   const usage: TurnUsage = { input: 0, output: 0, cached: 0, cacheWrite: 0, reasoning: 0, total: 0, webSearches: 0, seen: false };
   const seenSources = new Set<string>();
-  const stampedIds = new Set<string>();
+  const issueCallId = callIdIssuer(req.batch);
   // The model step: +1 every time the model resumes after tool results, its
   // own hosted search included (SPEC §2.9).
   let round = 0;
@@ -551,10 +551,10 @@ export async function* runResponsesLoop(opts: ResponsesLoopInput): AsyncGenerato
             if (cited.length) yield { type: "sources", sources: cited, origin: "provider_search" };
           } else if (item.type === "function_call" && typeof item.name === "string") {
             const index = calls.length;
-            const providerId = typeof item.call_id === "string" ? item.call_id : undefined;
-            const ids = stampCallId(providerId, round, index, req.batch?.seenCallIds, stampedIds);
+            const providerCallId = typeof item.call_id === "string" && item.call_id.trim() ? item.call_id : undefined;
+            const callId = issueCallId(providerCallId, round, index);
             const argsText = typeof item.arguments === "string" ? item.arguments : "";
-            calls.push({ name: item.name, round, index, argsText, ...ids });
+            calls.push({ name: item.name, round, index, argsText, callId, ...(providerCallId ? { providerCallId } : {}) });
             // The whole argument JSON is here before dispatch, so it rides on
             // the call and the row is complete while the tool runs.
             yield {
@@ -562,8 +562,8 @@ export async function* runResponsesLoop(opts: ResponsesLoopInput): AsyncGenerato
               phase: "call",
               server: source?.labelFor(item.name) ?? item.name,
               name: item.name,
-              callId: ids.callId,
-              ...(ids.providerCallId && ids.providerCallId !== ids.callId ? { providerCallId: ids.providerCallId } : {}),
+              callId,
+              ...(providerCallId && providerCallId !== callId ? { providerCallId } : {}),
               round,
               index,
               args: argsText,

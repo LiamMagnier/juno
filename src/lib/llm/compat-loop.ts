@@ -30,11 +30,11 @@
  * never sent; Grok searches on Responses (`responses-loop.ts`).
  */
 
+import { callIdIssuer } from "@/lib/llm/tool-round";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { structuredOutputNote } from "@/lib/llm/compat-loop.prompt";
 import {
   outputTextFor,
-  stampCallId,
   toolSourceFor,
   turnSignal,
   type ToolSource,
@@ -563,7 +563,7 @@ export async function* runCompatLoop(opts: CompatLoopInput): AsyncGenerator<LlmE
   // because each request is billed on its own and re-sends the conversation.
   const turnUsage = emptyCompatUsage();
   let sawTokens = false;
-  const stampedIds = new Set<string>();
+  const issueCallId = callIdIssuer(req.batch);
   let round = 0;
   let lastFinish: string | undefined;
 
@@ -630,9 +630,10 @@ export async function* runCompatLoop(opts: CompatLoopInput): AsyncGenerator<LlmE
     // A call the host streamed without an id is still a call: it gets
     // `jc_<round>_<index>`, and that id goes back on the wire (RC-13).
     const calls = finalizeToolCalls(toolCalls).map((call, index) => {
-      const ids = stampCallId(call.id || undefined, round, index, req.batch?.seenCallIds, stampedIds);
+      const providerCallId = call.id?.trim() ? call.id : undefined;
+      const callId = issueCallId(providerCallId, round, index);
       const name = shape.wire.fromWire.get(call.name) ?? call.name;
-      return { ...call, name, wireName: call.name, index, ...ids, wireId: ids.providerCallId ?? ids.callId };
+      return { ...call, name, wireName: call.name, index, callId, ...(providerCallId ? { providerCallId } : {}), wireId: providerCallId ?? callId };
     });
     const dispatch =
       !!source && shouldRunToolRound({ hasTools: true, isFinalRound: step.final, callCount: calls.length, finishReason });

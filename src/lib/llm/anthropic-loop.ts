@@ -92,7 +92,7 @@ export async function* anthropicLoop(req: AdapterRequest, deps: AnthropicLoopDep
   };
 
   const labelFor = toolset ? (name: string) => toolset.labelFor(name) : undefined;
-  const callIdFor = callIdIssuer(req.batch?.seenCallIds);
+  const callIdFor = callIdIssuer(req.batch);
   const seen = new Set<string>();
   // The turn's, not the response's: a search a `pause_turn` cut off gets its
   // result in the continuation, and must still be paired with its call.

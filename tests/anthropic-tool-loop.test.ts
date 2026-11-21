@@ -650,19 +650,20 @@ test("a tool-less, search-less call sends no tools and no tool_choice", async ()
 
 test("call ids already used this generation are suffixed before anyone sees them (SPEC §4.3)", async () => {
   const { runner, seen } = fakeRunner();
-  const seenCallIds = new Set(["toolu_1"]);
+  const seenCallIds = new Set(["toolu_1", "toolu_1#0.0", "toolu_1#0.0.2"]);
   const req = request({ batch: { seenCallIds } as unknown as AdapterRequest["batch"] });
   const { events, bodies } = await run(
     req,
     [toolUseResponse([{ id: "toolu_1", name: "github__list_issues", json: "{}" }]), textResponse("ok")],
     runner,
   );
-  assert.equal(seen[0].calls[0].callId, "toolu_1#0.0");
+  assert.equal(seen[0].calls[0].callId, "toolu_1#0.0.3");
   assert.equal(seen[0].calls[0].providerCallId, "toolu_1");
   const call = ofType(events, "tool").find((e) => e.phase === "call");
   assert.ok(call && call.phase === "call");
-  assert.equal(call.callId, "toolu_1#0.0");
+  assert.equal(call.callId, "toolu_1#0.0.3");
   assert.equal(call.providerCallId, "toolu_1");
+  assert.ok(seenCallIds.has("toolu_1#0.0.3"), "the issued id is immediately reserved");
   // The PROVIDER id is what goes back on the wire.
   assert.equal((last(messagesOf(bodies[1])).content as Array<{ tool_use_id: string }>)[0].tool_use_id, "toolu_1");
 });

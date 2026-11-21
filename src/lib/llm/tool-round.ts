@@ -18,6 +18,7 @@
 import { FINAL_ROUND_NOTE } from "@/lib/llm/loop";
 import type { AdapterRequest } from "@/lib/llm/types";
 import type { McpToolset } from "@/lib/mcp";
+import { createCallIdIssuer } from "@/lib/tools/call-ids";
 import { executeToolBatch, type BatchContext, type BatchResult, type ToolCallInput } from "@/lib/tools/dispatch";
 import type { ChatToolset, ResolvedTool, ToolRisk } from "@/lib/tools/types";
 import type { LlmEvent } from "@/types/llm";
@@ -87,43 +88,9 @@ export function undispatchedToolsetReason(opts: {
   return null;
 }
 
-/**
- * The id a call is known by for the rest of the turn (SPEC §4.3): the
- * provider's own id when it has one and it is unused, a `jc_<round>_<index>` id
- * when it has none, and either one suffixed with `#<round>.<index>` when it was
- * already used — Kimi numbers its calls `functions.<name>:<idx>`, several
- * compat hosts restart their numbering every response, and Gemini's id is
- * optional, so a provider id is not unique across a turn.
- *
- * The adapter stamps the id because it announces the call (`tool` `call`)
- * before the dispatcher sees it; the call, its status acts, its result, the
- * broker's idempotency key and the persisted record all share this one id.
- * `taken` is every id already issued this generation.
- */
-export function stampCallId(
-  providerCallId: string | undefined,
-  round: number,
-  index: number,
-  taken: { has(id: string): boolean },
-): string {
-  const base = providerCallId || `jc_${round}_${index}`;
-  return taken.has(base) ? `${base}#${round}.${index}` : base;
-}
-
-/**
- * One generation's call-id issuer: `stampCallId` against both the ids this
- * adapter issued and the ids the dispatcher has recorded in `seenCallIds`.
- * Issued ids are remembered at once, so two calls in one response that carry
- * the same provider id still come out distinct.
- */
-export function callIdIssuer(seenCallIds?: ReadonlySet<string>): (providerCallId: string | undefined, round: number, index: number) => string {
-  const issued = new Set<string>();
-  const taken = { has: (id: string) => issued.has(id) || !!seenCallIds?.has(id) };
-  return (providerCallId, round, index) => {
-    const id = stampCallId(providerCallId, round, index, taken);
-    issued.add(id);
-    return id;
-  };
+/** Reserve an id as soon as the adapter announces a call. The registry belongs to the turn. */
+export function callIdIssuer(batch?: Pick<NonNullable<AdapterRequest["batch"]>, "seenCallIds">) {
+  return createCallIdIssuer(batch ? (batch.seenCallIds ??= new Set()) : undefined);
 }
 
 /** A signal for the dispatcher when the caller passed none: one that never aborts. */
