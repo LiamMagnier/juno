@@ -73,37 +73,6 @@ export function toolSourceFor(
 }
 
 /**
- * The ids one call is known by (SPEC §4.3).
- *
- * `callId` is the provider's id, or `jc_<round>_<index>` when the host sent
- * none; a repeat of an id the turn has already used is suffixed
- * `#<round>.<index>`, because several hosts restart their numbering per
- * response and a reused id would replay the broker's old receipt. The
- * provider's own id is what goes back on the wire.
- *
- * `seen` — the batch context's set — is only read. The dispatcher records the
- * ids it runs, and an adapter that wrote to the set as well would make every
- * id look like a repeat to it. The ids this loop stamped before (`local`) are
- * checked too, so a repeat inside one response, or across requests before the
- * dispatcher has recorded anything, is caught, and the same formula gives the
- * same answer on both sides.
- */
-export function stampCallId(
-  providerId: string | undefined,
-  round: number,
-  index: number,
-  seen: ReadonlySet<string> | undefined,
-  local: Set<string>,
-): { callId: string; providerCallId?: string } {
-  const provider = providerId?.trim() ? providerId : undefined;
-  const base = provider ?? `jc_${round}_${index}`;
-  const taken = local.has(base) || !!seen?.has(base);
-  const callId = taken ? `${base}#${round}.${index}` : base;
-  local.add(callId);
-  return { callId, ...(provider ? { providerCallId: provider } : {}) };
-}
-
-/**
  * The runner for the deprecated `McpToolset` path.
  *
  * The toolset authorises and runs each call itself (its broker is inside

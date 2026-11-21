@@ -1,7 +1,8 @@
-import { ConnectorApiError, type FirstPartyClient } from "@/lib/first-party-connectors/client";
+import { setTimeout as delay } from "node:timers/promises";
+import { boundedText, ConnectorApiError, type FirstPartyClient } from "@/lib/first-party-connectors/client";
 import { CloudFileError, driveQueryLiteral, resolveGoogleFile, summarizeCloudFile, type GoogleFileMeta } from "@/lib/cloud-files/drives";
 import { CLOUD_FILE_ID } from "@/lib/cloud-files/shared";
-import { estimateKnowledgeTokens } from "./knowledge-capacity";
+
 
 /*
  * A GOOGLE DRIVE FOLDER (OR FILE) AS PROJECT KNOWLEDGE.
@@ -35,17 +36,18 @@ export const DRIVE_SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
 
 /**
  * How much one source may hold. A folder is a person's own filing and can be
- * any size; a sync has a minute of a request's time and the project has a
- * knowledge capacity. Past these the listing stops and the source says so
+ * any size; a sync has a limited request budget and the project has a
+ * knowledge capacity. At these limits the listing stops and the source says so
  * (`truncated`) rather than silently mirroring a part of it.
  */
 export const SOURCE_LIMITS = {
   maxFiles: 300,
   maxFolders: 100,
   maxDepth: 8,
+  maxPages: 128,
 } as const;
 
-export type SourceLimits = { maxFiles: number; maxFolders: number; maxDepth: number };
+export type SourceLimits = { maxFiles: number; maxFolders: number; maxDepth: number; maxPages?: number };
 
 /** One Drive file a listing found, where it sits, and the marker that changes when it does. */
 export interface DriveListedFile {
@@ -75,8 +77,47 @@ interface DriveListedEntry extends GoogleFileMeta {
   trashed?: boolean;
 }
 
-const LIST_FIELDS = "nextPageToken,files(id,name,mimeType,size,modifiedTime,version,md5Checksum)";
+const LIST_FIELDS = "nextPageToken,incompleteSearch,files(id,name,mimeType,size,modifiedTime,version,md5Checksum)";
 const enc = encodeURIComponent;
+
+const DRIVE_RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+const DRIVE_QUOTA_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded"]);
+const MAX_DRIVE_RETRY_DELAY_MS = 5_000;
+
+async function isDriveQuotaResponse(response: Response): Promise<boolean> {
+  if (response.status !== 403) return false;
+  try {
+    const { error } = JSON.parse(await boundedText(response, 16_384)) as {
+      error?: { errors?: Array<{ reason?: string }> };
+    };
+    return error?.errors?.some(({ reason }) => DRIVE_QUOTA_REASONS.has(reason ?? "")) ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/** Retry only project Drive reads, within the request's existing abort budget. */
+export function projectDriveFetch(fetcher: typeof fetch): typeof fetch {
+  return async (input, init) => {
+    if (init?.method !== "GET") return fetcher(input, init);
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await fetcher(input, init);
+      const quota = await isDriveQuotaResponse(response);
+      if (!quota && !DRIVE_RETRY_STATUSES.has(response.status)) return response;
+
+      await response.body?.cancel().catch(() => undefined);
+      const retryAfter = response.headers.get("retry-after")?.trim();
+      const retryMs = retryAfter && /^\d+$/.test(retryAfter)
+        ? Number(retryAfter) * 1_000
+        : retryAfter ? Date.parse(retryAfter) - Date.now() : Number.NaN;
+      if (attempt >= 2 || retryMs > MAX_DRIVE_RETRY_DELAY_MS) {
+        throw new ConnectorApiError(quota ? 429 : response.status);
+      }
+      const backoff = 250 * 2 ** attempt + Math.random() * 100;
+      await delay(Number.isFinite(retryMs) ? Math.max(0, retryMs) : backoff, undefined, { signal: init?.signal ?? undefined });
+    }
+  };
+}
 
 function query(path: string, params: Record<string, string | number | undefined>): string {
   const search = new URLSearchParams();
@@ -147,14 +188,18 @@ export async function listDriveFolderTree(
   const queue: Array<{ id: string; path: string; depth: number }> = [{ id: folderId, path: "", depth: 0 }];
   const seen = new Set<string>([folderId]);
   let folders = 0;
+  let pages = 0;
   let truncated = false;
 
   while (queue.length > 0) {
+    if (pages >= (limits.maxPages ?? SOURCE_LIMITS.maxPages)) return { files, folders, truncated: true };
     const folder = queue.shift()!;
     folders += 1;
     let pageToken: string | undefined;
+    const cursors = new Set<string>();
     do {
-      const page = await client.json<{ files?: DriveListedEntry[]; nextPageToken?: string }>(
+      pages += 1;
+      const page = await client.json<{ files?: DriveListedEntry[]; nextPageToken?: string; incompleteSearch?: boolean }>(
         query("/drive/v3/files", {
           q: `${driveQueryLiteral(folder.id)} in parents and trashed = false`,
           pageSize: 200,
@@ -165,13 +210,14 @@ export async function listDriveFolderTree(
           includeItemsFromAllDrives: "true",
         }),
       );
+      truncated ||= page.incompleteSearch === true;
       for (const entry of page.files ?? []) {
-        if (typeof entry.id !== "string" || !CLOUD_FILE_ID.test(entry.id)) continue;
+        if (typeof entry.id !== "string" || !CLOUD_FILE_ID.test(entry.id) || seen.has(entry.id)) continue;
         const name = entry.name?.trim() || "Untitled";
         const mimeType = entry.mimeType ?? "application/octet-stream";
         if (mimeType === DRIVE_SHORTCUT_MIME) continue;
         if (mimeType === DRIVE_FOLDER_MIME) {
-          if (!options.includeSubfolders || seen.has(entry.id)) continue;
+          if (!options.includeSubfolders) continue;
           if (folder.depth + 1 > limits.maxDepth || folders + queue.length >= limits.maxFolders) {
             truncated = true;
             continue;
@@ -180,10 +226,8 @@ export async function listDriveFolderTree(
           queue.push({ id: entry.id, path: folder.path ? `${folder.path}/${name}` : name, depth: folder.depth + 1 });
           continue;
         }
-        if (files.length >= limits.maxFiles) {
-          truncated = true;
-          continue;
-        }
+        if (files.length >= limits.maxFiles) return { files, folders, truncated: true };
+        seen.add(entry.id);
         files.push({
           id: entry.id,
           name,
@@ -195,7 +239,12 @@ export async function listDriveFolderTree(
         });
       }
       pageToken = page.nextPageToken || undefined;
+      if (pageToken) {
+        if (cursors.has(pageToken) || files.length >= limits.maxFiles || pages >= (limits.maxPages ?? SOURCE_LIMITS.maxPages)) return { files, folders, truncated: true };
+        cursors.add(pageToken);
+      }
     } while (pageToken);
+    if (queue.length > 0 && files.length >= limits.maxFiles) return { files, folders, truncated: true };
   }
   return { files, folders, truncated };
 }
@@ -384,19 +433,14 @@ export function classifyDriveFailure(error: unknown, name: string): SourceSyncEr
 
 /** A file-level refusal that ends the whole sync rather than skipping one file. */
 function isSourceWide(error: unknown): boolean {
-  if (error instanceof ConnectorApiError) return error.status === 401 || error.status === 429;
-  if (error instanceof CloudFileError) return error.code === "connector_reconnect" || error.code === "rate_limited";
-  return error instanceof SourceSyncError;
+  if (error instanceof ConnectorApiError) return error.status === 401 || DRIVE_RETRY_STATUSES.has(error.status);
+  if (error instanceof CloudFileError) {
+    return ["connector_reconnect", "rate_limited", "timeout", "provider_error"].includes(error.code);
+  }
+  return true;
 }
 
 /* ─────────────────────────────── The run ─────────────────────────────── */
-
-export interface ImportedFile {
-  attachmentId: string;
-  /** Bytes stored, for the capacity estimate. */
-  bytes: number;
-  mimeType: string;
-}
 
 /**
  * The database half of a sync, as the runner needs it. drive-source-store.ts
@@ -405,14 +449,12 @@ export interface ImportedFile {
  */
 export interface SourceSyncPort {
   items(): Promise<SourceItemRecord[]>;
-  /** Fetch one Drive file and store it as a project attachment. Throws a CloudFileError for a file it can't add. */
-  importFile(file: DriveListedFile): Promise<ImportedFile>;
-  /** Insert or update the item for `file`, by its Drive id. */
-  saveItem(file: DriveListedFile, outcome: { attachmentId: string | null; state: "synced" | "skipped"; error: string | null }): Promise<void>;
+  /** Store the attachment and its source item together, retiring the previous attachment on update. */
+  importFile(file: DriveListedFile, previous: SourceItemRecord | null): Promise<void>;
+  /** Record a file the project cannot import against its Drive version. */
+  skipItem(file: DriveListedFile, error: string): Promise<void>;
   /** The item and its attachment leave the project (the attachment is tombstoned, its index redacted). */
   removeItem(item: SourceItemRecord): Promise<void>;
-  /** An attachment replaced by a newer import leaves the project. */
-  removeAttachment(attachmentId: string): Promise<void>;
   /** Rename or move an unchanged item without re-importing it. */
   relabelItem(item: SourceItemRecord, file: DriveListedFile): Promise<void>;
 }
@@ -421,8 +463,6 @@ export interface SourceSyncInput {
   client: FirstPartyClient;
   source: { kind: "file" | "folder"; externalId: string; name: string; includeSubfolders: boolean };
   port: SourceSyncPort;
-  /** Knowledge tokens the project can still take before this sync adds anything. */
-  remainingTokens: number;
   limits?: SourceLimits;
 }
 
@@ -485,16 +525,15 @@ export async function runSourceSync(input: SourceSyncInput): Promise<SourceSyncR
     return fail(error);
   }
 
-  const plan = planSourceSync(await port.items(), remote);
+  const existing = await port.items();
+  const plan = planSourceSync(existing, remote);
   let added = 0;
   let updated = 0;
   let removed = 0;
-  let remaining = input.remainingTokens;
   let stop: SourceSyncError | null = null;
-  let capacityHit = false;
 
-  // Removals first: what left the folder frees room for what arrived.
-  for (const item of plan.remove) {
+  // Only a complete listing can establish that a missing file left the folder.
+  for (const item of truncated ? [] : plan.remove) {
     await port.removeItem(item);
     removed += 1;
   }
@@ -502,24 +541,13 @@ export async function runSourceSync(input: SourceSyncInput): Promise<SourceSyncR
 
   const importOne = async (file: DriveListedFile, previous: SourceItemRecord | null) => {
     if (stop) return;
-    if (remaining <= 0) {
-      capacityHit = true;
-      return;
-    }
     try {
-      const imported = await port.importFile(file);
-      remaining -= estimateKnowledgeTokens({ size: imported.bytes, mimeType: imported.mimeType });
-      await port.saveItem(file, { attachmentId: imported.attachmentId, state: "synced", error: null });
-      if (previous?.attachmentId) await port.removeAttachment(previous.attachmentId);
+      await port.importFile(file, previous);
       if (previous) updated += 1;
       else added += 1;
     } catch (error) {
       if (isSourceWide(error)) {
         stop = classifyDriveFailure(error, name);
-        return;
-      }
-      if (error instanceof SourceSyncError) {
-        stop = error;
         return;
       }
       if (error instanceof CloudFileError && error.code === "LIBRARY_QUOTA_EXCEEDED") {
@@ -532,12 +560,23 @@ export async function runSourceSync(input: SourceSyncInput): Promise<SourceSyncR
       // that fails keeps its previous copy in the project.
       const message = error instanceof CloudFileError ? error.message : `Couldn’t add “${file.name}”.`;
       if (previous?.attachmentId) return;
-      await port.saveItem(file, { attachmentId: null, state: "skipped", error: message });
+      await port.skipItem(file, message);
     }
   };
 
   for (const { item, file } of plan.update) await importOne(file, item);
-  for (const file of plan.add) await importOne(file, null);
+  const maxFiles = input.limits?.maxFiles ?? SOURCE_LIMITS.maxFiles;
+  let occupied = existing.length - removed;
+  for (const file of plan.add) {
+    if (stop) break;
+    // An incomplete walk retains unseen items, which still occupy slots.
+    if (occupied >= maxFiles) {
+      truncated = true;
+      break;
+    }
+    await importOne(file, null);
+    occupied += 1;
+  }
 
   const items = await port.items();
   const fileCount = items.filter((item) => item.state === "synced").length;
@@ -545,9 +584,6 @@ export async function runSourceSync(input: SourceSyncInput): Promise<SourceSyncR
   const finalStop = stop as SourceSyncError | null;
   if (finalStop) {
     return { state: "error", errorCode: finalStop.code, error: finalStop.message, name, fileCount, skippedCount, truncated, added, updated, removed };
-  }
-  if (capacityHit) {
-    return { state: "error", errorCode: "capacity", error: sourceErrorMessage("capacity", name), name, fileCount, skippedCount, truncated, added, updated, removed };
   }
   return { state: "ready", errorCode: null, error: null, name, fileCount, skippedCount, truncated, added, updated, removed };
 }

@@ -67,7 +67,7 @@ export async function* geminiLoop(req: AdapterRequest, deps: GeminiLoopDeps): As
   const declarations = toolset ? geminiFunctionDeclarations(toolset) : [];
   const webSearch = req.webSearch && !structured;
   const gemini3 = isGemini3OrLater(model);
-  const callIdFor = callIdIssuer(req.batch?.seenCallIds);
+  const callIdFor = callIdIssuer(req.batch);
   const resolveSources = deps.resolveSources ?? (async (list: ClientSource[]) => list);
 
   const contents = [...deps.contents];
