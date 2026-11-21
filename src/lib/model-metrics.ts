@@ -78,6 +78,8 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["haiku"], metric: official(1, 5, 200_000, 6, 5) }, // II 29.6 (reasoning) · 94 tok/s
   ],
   openai: [
+    { hints: ["gpt-6.2-astra"], metric: official(8, 40, 1_050_000, 4, 10) },
+    { hints: ["gpt-6.2-sol"], metric: official(2, 10, 1_050_000, 5, 9) },
     { hints: ["gpt-6-astra"], metric: official(10, 50, 1_050_000, 4, 10) }, // official price/context; speed is positioning-based pending benchmark coverage
     // GPT-6 Sol/Luna (2026-09-22): official price/context; speed and
     // intelligence carry over from the 5.6 tier each replaces until a
@@ -122,6 +124,7 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["gpt-5"], metric: metric(1.25, 10, 400_000, 5, 6) },
   ],
   google: [
+    { hints: ["gemini-4-neon"], metric: official(3, 15, 1_048_576, 7, 9) },
     // Hints are AND'd (every() in familyMetric), so the old single row with all
     // three ids could never match anything: 3.8 and 3.7 fell to the generic
     // `flash` row ($0.30/$2.50) and 3.6 hit a $1.50/$9 row. Google's pricing
@@ -300,6 +303,7 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["pro"], metric: official(0.435, 0.87, 1_050_000, 3, 7) },
   ],
   qwen: [
+    { hints: ["qwen4-max"], metric: official(1.5, 4.5, 1_000_000, 8, 8) },
     // Singapore (international) list prices from each Model Studio model
     // page (2026-10-04); tiered models quote their lowest input tier.
     { hints: ["qwen3.8-max"], metric: official(2, 6, 1_000_000, 8, 8) },
@@ -483,10 +487,8 @@ export function modelGeneration(name: string): number | null {
  *  version number or ship out of order, keyed `provider:family`:
  *  - Anthropic: Fable, Opus, Sonnet, Haiku, whatever the numbers say (Opus 4.8
  *    against Sonnet 5).
- *  - Google's Gemini 4 lines: Carbon, Argon, Hydrogen (owner, 16 Nov 2026).
- *    All three are generation 4; Hydrogen shipped a month after the others,
- *    so the release date put it first, and the graded intelligence then put
- *    Argon above Carbon: the picker read Hydrogen, Argon, Carbon.
+ *  - Google's Gemini 4 lines: Carbon, Argon, Neon and Hydrogen. Neon enters
+ *    between Argon and Hydrogen and preserves the existing order of those lines.
  *  A line absent from the map keeps the generation, date and power order. */
 const LINE_RANK: Record<string, number> = {
   "anthropic:fable": 0,
@@ -495,7 +497,8 @@ const LINE_RANK: Record<string, number> = {
   "anthropic:haiku": 3,
   "google:carbon": 0,
   "google:argon": 1,
-  "google:hydrogen": 2,
+  "google:neon": 2,
+  "google:hydrogen": 3,
 };
 
 export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
@@ -747,6 +750,11 @@ const caps = (
           : tiers[Math.min(1, tiers.length - 1)] ?? null,
 });
 
+/** Qwen chat models that take an effort enum rather than a token budget. */
+export function qwenUsesReasoningEffort(providerModel: string): boolean {
+  return providerModel.includes("qwen3.8") || providerModel === "qwen4-max";
+}
+
 /** What thinking tiers a model actually supports, keyed off its provider + id. */
 export function reasoningCaps(model: ModelInfo): ReasoningCaps {
   if (!model.reasoning) return caps([], false);
@@ -794,8 +802,7 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // listed.
       // GPT-6 Astra and GPT-6.1 Sol: low|medium(default)|high|xhigh|max — no
       // `none` and no `minimal`, so no Instant option the API would reject.
-      if (id.includes("gpt-6-astra")) return caps(LMHXM, false, false, "medium");
-      if (id.includes("gpt-6.1-sol")) return caps(LMHXM, false, false, "medium");
+      if (/^gpt-6(?:-astra|\.1-sol|\.2-(?:astra|sol))$/.test(id)) return caps(LMHXM, false, false, "medium");
       // GPT-6 Sol/Luna and GPT-5.6 Sol/Terra/Luna list none|low|medium|high|
       // xhigh|max, default medium.
       if (id.includes("gpt-6-sol") || id.includes("gpt-6-luna")) return caps(LMHXM, true, false, "medium");
@@ -833,7 +840,7 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // through to the unknown-model branch and losing its thinking selector.
       // Gemini 4 Argon: low | medium | high, default medium ("On (medium)"
       // in Google's thinking table, read 2026-10-14). No off, no minimal.
-      if (id.includes("4-hydrogen")) return caps(LMHX, false, false, "high");
+      if (/^gemini-4-(hydrogen|neon)$/.test(id)) return caps(LMHX, false, false, "high");
       if (/4-(argon|carbon)$/.test(id)) return caps(LMH, false, false, "medium");
       if (/3\.[78]-flash/.test(id)) return caps(LMH, false, false, "medium");
       if (/3\.[56]-flash/.test(id)) {
@@ -992,6 +999,7 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // Qwen3.8 Omni Flash publishes the long ladder none|minimal|low|medium|
       // high|xhigh|max, default xhigh (Model Studio Chat Completions
       // reference, read 2026-10-18), still with enable_thinking as the switch.
+      if (id === "qwen4-max") return caps(["low", "high", "xhigh"], true, false, "high");
       if (id.includes("qwen3.8-omni")) return caps(["minimal", ...LMHXM], true);
       // Qwen3.8 2.4T-A95B is thinking-only: the 3.8 ladder, no Instant.
       if (id.includes("qwen3.8-2.4t")) return caps(["low", "medium", "xhigh"], false, false, "xhigh");

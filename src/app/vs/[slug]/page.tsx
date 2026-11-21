@@ -7,7 +7,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
 import {
   findPair,
   findings,
-  MODEL_PAIRS,
+  comparisonSlugs,
   modelFacts,
   pairDescription,
   pairTitle,
@@ -24,7 +24,7 @@ import { VsCta, VsList, VsMethod } from "@/components/compare-public/vs-parts";
 export const dynamicParams = false;
 
 export function generateStaticParams() {
-  return MODEL_PAIRS.map((p) => ({ slug: p.slug }));
+  return comparisonSlugs().map((slug) => ({ slug }));
 }
 
 type Params = { params: Promise<{ slug: string }> };

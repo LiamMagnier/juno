@@ -395,13 +395,15 @@ const CURATED: ModelInfo[] = [
   //
   // GPT-6 Astra (2026-09-03): Chat Completions + Responses, but tool calling
   // needs Responses. Effort low|medium|high|xhigh|max — no `none`.
-  def({ provider: "openai", id: "gpt-6-astra", name: "GPT-6 Astra", family: "gpt-named-flagship", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_050_000, description: "OpenAI's most capable model: built for hard end-to-end reasoning, coding, research, and computer-use work." }),
+  def({ provider: "openai", id: "gpt-6.2-astra", name: "GPT-6.2 Astra", family: "gpt-named-flagship", status: "current", released: "2026-11", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_050_000, api: "responses", description: "OpenAI’s flagship for complex reasoning, coding, and document work." }),
+  def({ provider: "openai", id: "gpt-6-astra", name: "GPT-6 Astra", family: "gpt-named-flagship", status: "legacy", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_050_000, description: "Previous Astra model, superseded by GPT-6.2 Astra." }),
   // GPT-6.1 Sol (2026-09-29, api/docs/models/gpt-6.1-sol): id `gpt-6.1-sol`,
   // 1.05M context (922K input), 128K output, text + image in, text out.
   // Chat Completions is supported WITHOUT tool calling, so it rides Responses.
   // Effort low|medium(default)|high|xhigh|max; `none` and `minimal` are not
   // available, so unlike GPT-6 Sol there is no Instant. $2/$10, cached $0.10.
-  def({ provider: "openai", id: "gpt-6.1-sol", name: "GPT-6.1 Sol", family: "gpt", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_050_000, description: "Near-Astra performance for complex work at a lower cost." }),
+  def({ provider: "openai", id: "gpt-6.2-sol", name: "GPT-6.2 Sol", family: "gpt", status: "current", released: "2026-11", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_050_000, api: "responses", description: "Balances speed and depth for everyday work, coding, and tool use." }),
+  def({ provider: "openai", id: "gpt-6.1-sol", name: "GPT-6.1 Sol", family: "gpt", status: "legacy", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_050_000, description: "Previous Sol model, superseded by GPT-6.2 Sol." }),
   // GPT-6 Sol and Luna (2026-09-22): 1.05M context (922K input), 128K output,
   // text + image in. Both document effort none|low|medium(default)|high|xhigh|max.
   // GPT-6 Sol's page now points to GPT-6.1 Sol as "the newer Sol model".
@@ -431,7 +433,7 @@ const CURATED: ModelInfo[] = [
   // Responses only (chat/completions 404s). Effort low|medium|high|xhigh — the
   // page lists no `none`. Deprecated 2026-10-01; shutdown 2027-04-01, the
   // page names gpt-6-sol, whose current successor is GPT-6.1 Sol.
-  def({ provider: "openai", id: "gpt-5.3-codex", name: "GPT-5.3 Codex", family: "gpt-codex", status: "deprecated", released: "2026-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 400_000, api: "responses", description: "Codex-tuned model for long-running coding, refactors, and agent loops.", deprecationNote: "Retires Apr 1, 2027. Use GPT-6.1 Sol", retiresOn: "2027-04-01", replacedBy: "openai:gpt-6.1-sol" }),
+  def({ provider: "openai", id: "gpt-5.3-codex", name: "GPT-5.3 Codex", family: "gpt-codex", status: "deprecated", released: "2026-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 400_000, api: "responses", description: "Codex-tuned model for long-running coding, refactors, and agent loops.", deprecationNote: "Retires Apr 1, 2027. Use GPT-6.2 Sol", retiresOn: "2027-04-01", replacedBy: "openai:gpt-6.2-sol" }),
   // Responses only. Effort medium(default)|high|xhigh.
   def({ provider: "openai", id: "gpt-5.4-pro", name: "GPT-5.4 Pro", family: "gpt-pro", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, api: "responses", description: "Previous Pro reasoning model (Responses API)." }),
   def({ provider: "openai", id: "gpt-5.2", name: "GPT-5.2", family: "gpt", status: "legacy", released: "2025-12", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "Previous frontier GPT model with configurable reasoning." }),
@@ -439,10 +441,10 @@ const CURATED: ModelInfo[] = [
   // gpt-5.2-codex, gpt-5.1-codex and gpt-5.1-codex-mini removed: shut down
   // 2026-07-23 (deprecations page, 2026-04-22 notice). See RETIRED_MODELS.
   // Deprecated 2026-10-01; shutdown 2027-04-01, the page names gpt-6-sol.
-  def({ provider: "openai", id: "gpt-5.1", name: "GPT-5.1", family: "gpt", status: "deprecated", released: "2025-11", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "Previous coding and agentic GPT model with configurable reasoning.", deprecationNote: "Retires Apr 1, 2027. Use GPT-6.1 Sol", retiresOn: "2027-04-01", replacedBy: "openai:gpt-6.1-sol" }),
-  def({ provider: "openai", id: "gpt-5", name: "GPT-5", family: "gpt", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "First GPT-5 release.", deprecationNote: "Retires Dec 11, 2026. Use GPT-6.1 Sol", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6.1-sol" }),
+  def({ provider: "openai", id: "gpt-5.1", name: "GPT-5.1", family: "gpt", status: "deprecated", released: "2025-11", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "Previous coding and agentic GPT model with configurable reasoning.", deprecationNote: "Retires Apr 1, 2027. Use GPT-6.2 Sol", retiresOn: "2027-04-01", replacedBy: "openai:gpt-6.2-sol" }),
+  def({ provider: "openai", id: "gpt-5", name: "GPT-5", family: "gpt", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "First GPT-5 release.", deprecationNote: "Retires Dec 11, 2026. Use GPT-6.2 Sol", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6.2-sol" }),
   def({ provider: "openai", id: "gpt-5-mini", name: "GPT-5 Mini", family: "gpt-mini", status: "deprecated", released: "2025-08", minPlan: "FREE", vision: true, cost: 1, contextWindow: 400_000, description: "Early GPT-5 mini.", deprecationNote: "Retires Dec 11, 2026. Use GPT-6.1 Terra", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6.1-terra" }),
-  def({ provider: "openai", id: "o3", name: "OpenAI o3", family: "o-series", status: "deprecated", released: "2025-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 200_000, description: "o-series reasoning model.", deprecationNote: "Retires Dec 11, 2026. Use GPT-6.1 Sol", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6.1-sol" }),
+  def({ provider: "openai", id: "o3", name: "OpenAI o3", family: "o-series", status: "deprecated", released: "2025-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 200_000, description: "o-series reasoning model.", deprecationNote: "Retires Dec 11, 2026. Use GPT-6.2 Sol", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6.2-sol" }),
   // OpenAI's deprecations page (notice dated 2026-10-14, read 2026-10-18):
   // gpt-4o-2024-08-06 (the snapshot behind the `gpt-4o` alias), 2024-11-20 and
   // gpt-4o-mini-2024-07-18 shut down Jan 14, 2027, replacement gpt-6-luna.
@@ -450,6 +452,7 @@ const CURATED: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-4o-mini", name: "GPT-4o Mini", family: "gpt-4o-mini", status: "deprecated", released: "2024-07", minPlan: "FREE", vision: true, cost: 1, contextWindow: 128_000, description: "Small GPT-4o tier.", deprecationNote: "Retires Jan 14, 2027. Use GPT-6 Luna", retiresOn: "2027-01-14", replacedBy: "openai:gpt-6-luna" }),
 
   // —— Google ——
+  def({ provider: "google", id: "gemini-4-neon", name: "Gemini 4 Neon", family: "neon", status: "current", released: "2026-11", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_048_576, description: "Google’s fast frontier model for multimodal reasoning, coding, and knowledge work." }),
   def({ provider: "google", id: "gemini-4-hydrogen", name: "Gemini 4 Hydrogen", family: "hydrogen", status: "current", released: "2026-11", minPlan: "FREE", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Google's fast multimodal Gemini 4 model, with a 1M context window and adjustable reasoning." }),
   def({ provider: "google", id: "gemini-4-carbon", name: "Gemini 4 Carbon", family: "carbon", status: "current", released: "2026-10", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_048_576, description: "Google's Gemini 4 model for complex multimodal work with a 1M context window." }),
   // Gemini 4 Argon (owner-requested 2026-10-14), read 2026-10-14 from
@@ -715,7 +718,8 @@ const CURATED: ModelInfo[] = [
   // low|medium|xhigh (default xhigh) instead of a thinking_budget.
   // Qwen rows marked agenticTools:false have Function Calling "Unsupported" in
   // the Singapore (international) region their model pages list.
-  def({ provider: "qwen", id: "qwen3.8-max", name: "Qwen3.8 Max", family: "qwen-max", status: "current", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Newest Qwen flagship: hybrid thinking (on by default, effort low/medium/xhigh), vision, and a 1M context." }),
+  def({ provider: "qwen", id: "qwen4-max", name: "Qwen4 Max", family: "qwen-max", status: "current", released: "2026-11", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Alibaba’s multimodal flagship for coding, office work, and tool use." }),
+  def({ provider: "qwen", id: "qwen3.8-max", name: "Qwen3.8 Max", family: "qwen-max", status: "legacy", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Previous Qwen Max model, superseded by Qwen4 Max." }),
   def({ provider: "qwen", id: "qwen3.7-max", name: "Qwen3.7 Max", family: "qwen-max", status: "legacy", released: "2026-05", minPlan: "PRO", reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Previous Max flagship: strong reasoning served extremely fast (~190 tok/s). Standard Model Studio pay-as-you-go API." }),
   def({ provider: "qwen", id: "qwen3.7-plus", name: "Qwen3.7 Plus", family: "qwen-plus", status: "current", released: "2026-05", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Balanced multimodal hybrid-thinking model with 1M context." }),
   // The id is exactly `qwen3.8-flash`: lowercase, with the period. Not
@@ -971,14 +975,14 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // A bare "gpt-5.6" is OpenAI's alias for 5.6 Sol. Stored ones land on the
   // CURRENT Sol row instead (validate:models requires a current target), which
   // since 2026-09-29 is GPT-6.1 Sol.
-  "openai:gpt-5.6": "openai:gpt-6.1-sol",
-  "openai:gpt-5.5-thinking": "openai:gpt-6.1-sol", // ChatGPT product name, never an API id
+  "openai:gpt-5.6": "openai:gpt-6.2-sol",
+  "openai:gpt-5.5-thinking": "openai:gpt-6.2-sol", // ChatGPT product name, never an API id
   "openai:gpt-5.5-mini": "openai:gpt-5.4-mini", // never existed; current mini is 5.4
-  "openai:o1-preview": "openai:gpt-6.1-sol", // shut down 2025-07-28
+  "openai:o1-preview": "openai:gpt-6.2-sol", // shut down 2025-07-28
   // Shut down 2026-07-23 (deprecations page, 2026-04-22 notice). OpenAI names
   // gpt-5.6-sol / gpt-5.6-terra; stored ids land on their current tiers.
-  "openai:gpt-5.2-codex": "openai:gpt-6.1-sol",
-  "openai:gpt-5.1-codex": "openai:gpt-6.1-sol",
+  "openai:gpt-5.2-codex": "openai:gpt-6.2-sol",
+  "openai:gpt-5.1-codex": "openai:gpt-6.2-sol",
   "openai:gpt-5.1-codex-mini": "openai:gpt-6.1-terra",
   "openai:o1-mini": "openai:gpt-5.4-mini", // shut down 2025-10-27
   "openai:dall-e-3": "openai:gpt-image-2.6-sunburst", // shut down 2026-05-12
@@ -1065,10 +1069,10 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // A retired id has to land somewhere selectable (`validate:models` enforces
   // that the target is `current`), which is why these point at the Max family's
   // live flagship rather than at 3.7 Max, which is `legacy` and hidden.
-  "qwen:qwen3-max": "qwen:qwen3.8-max",
+  "qwen:qwen3-max": "qwen:qwen4-max",
   // The 3.8 preview is gone now that the GA id serves the same model; anyone
   // holding the preview id in a stored conversation lands on the GA one.
-  "qwen:qwen3.8-max-preview": "qwen:qwen3.8-max",
+  "qwen:qwen3.8-max-preview": "qwen:qwen4-max",
   "qwen:qwen-plus": "qwen:qwen3.7-plus",
   "qwen:qwen-flash": "qwen:qwen3.8-flash",
   "google:gemini-3.7-flash": "google:gemini-3.8-flash", // retired 2026-10-09 (models:sync)
@@ -1080,16 +1084,16 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "mistral:devstral-2512": "mistral:mistral-medium-latest", // retired 2026-07-31 (models:sync)
   "qwen:qwen-turbo": "qwen:qwen3.8-flash", // retired 2026-10-09 (models:sync)
   "qwen:qwen-vl-max": "qwen:qwen3.7-plus", // retired 2026-10-09 (models:sync)
-  "qwen:qwq-plus": "qwen:qwen3.8-max", // retired 2026-10-09 (models:sync)
+  "qwen:qwq-plus": "qwen:qwen4-max", // retired 2026-10-09 (models:sync)
   // Nano Banana's own line continues in 2.1 (Google's page lists 3.1 Flash-Lite Image as the cheap alternative).
   "google:gemini-2.5-flash-image": "google:gemini-nano-banana-2.1", // retired 2026-10-02 (models:sync)
   "google:imagen-4.0-generate-001": "google:gemini-nano-banana-2.1", // retired 2026-08-17; Google's named replacement
   "google:gemini-omni-flash-preview": "google:gemini-omni-1.2-flash", // retired 2026-09-30 (models:sync)
   "mimo:mimo-v2.5": "mimo:mimo-v2.6-flash", // retired 2026-10-13 (models:sync)
   "mimo:mimo-v2.5-pro": "mimo:mimo-v2.6-pro", // retired 2026-10-13 (models:sync)
-  "openai:o3-mini": "openai:gpt-6.1-sol", // retired 2026-10-23 (models:sync)
-  "openai:o1": "openai:gpt-6.1-sol", // retired 2026-10-23 (models:sync)
-  "openai:gpt-4-turbo": "openai:gpt-6.1-sol", // retired 2026-10-23 (models:sync)
+  "openai:o3-mini": "openai:gpt-6.2-sol", // retired 2026-10-23 (models:sync)
+  "openai:o1": "openai:gpt-6.2-sol", // retired 2026-10-23 (models:sync)
+  "openai:gpt-4-turbo": "openai:gpt-6.2-sol", // retired 2026-10-23 (models:sync)
   "openai:gpt-3.5-turbo": "openai:gpt-6.1-terra", // retired 2026-10-23 (models:sync)
   "openai:gpt-image-1": "openai:gpt-image-2.6-sunburst", // retired 2026-10-23 (models:sync)
   "google:veo-3.1-generate-preview": "google:gemini-omni-1.2-flash", // retired 2026-10-22 (models:sync)

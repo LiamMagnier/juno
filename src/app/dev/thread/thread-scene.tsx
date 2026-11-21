@@ -48,7 +48,7 @@ const CONVERSATIONS: ClientConversation[] = [
 ];
 
 const BOOTSTRAP = {
-  user: { id: "fixture-user", name: "Liam Magnier", email: "liam@example.com", image: null },
+  user: { id: "fixture-user", name: "Demo Account", email: "demo@example.com", image: null },
   settings: {
     theme: "system",
     accent: "coral",

@@ -193,13 +193,19 @@ export const GLYPHS: Record<string, Glyph> = {
   code: { b: M(P("M8 7.5L3.5 12 8 16.5")) + M2(P("M16 7.5l4.5 4.5-4.5 4.5")), m: "spread" },
   design: { b: P("M5.5 14L12 3.5 18.5 14 12 20.5Z", "M12 3.5v7.25") + C(12, 12.5, 1.6), m: "wiggle" },
   library: {
-    // A volume standing and a second one leaning on it, a head band each.
-    // Two, not three: at 16 px the gap between three spines closed up and
-    // the shelf read as a barcode. The leaning one straightens under the
-    // pointer.
-    b: R(4.75, 3.5, 5.5, 17, 1.5) + P("M4.75 7.5h5.5") + MO(14, 20.5, `<g transform="rotate(-12.26 14 20.5)">${R(14, 4.25, 5.25, 16.25, 1.5)}${P("M14 8.25h5.25")}</g>`),
-    on: `<rect class="gf" x="4.75" y="3.5" width="5.5" height="17" rx="1.5"/>` + R(4.75, 3.5, 5.5, 17, 1.5) + `<g transform="rotate(-12.26 14 20.5)"><rect class="gf" x="14" y="4.25" width="5.25" height="16.25" rx="1.5"/>${R(14, 4.25, 5.25, 16.25, 1.5)}</g>`,
-    m: "lean",
+    b: R(3.5, 7, 17, 13, 2.25) + MO(12, 7, P("M6 7V5.75A1.75 1.75 0 0 1 7.75 4h8.5A1.75 1.75 0 0 1 18 5.75V7"))
+      + P("M3.5 12h17", "M10 15.75h4"),
+    m: "u",
+  },
+  projects: {
+    b: P("M3.5 8V6.75A2.75 2.75 0 0 1 6.25 4h3.1c.7 0 1.35.3 1.8.83L13 7h4.75A2.75 2.75 0 0 1 20.5 9.75v7.5A2.75 2.75 0 0 1 17.75 20H6.25a2.75 2.75 0 0 1-2.75-2.75V8Z")
+      + P("M3.5 10h17") + M(P("M8.5 15.25h7")),
+    m: "r",
+  },
+  "activity-feed": {
+    b: C(5.25, 6, 1.25) + C(5.25, 12, 1.25) + C(5.25, 18, 1.25)
+      + P("M10 6h10", "M10 18h8") + M(P("M10 12h6.5")),
+    m: "r",
   },
   crew: { b: C(9, 8, 3.25) + P("M2.75 20a6.25 6.25 0 0 1 12.5 0") + M(C(17, 8.75, 2.5), P("M15.6 14.2a5 5 0 0 1 5.65 5.8")), m: "hop" },
   orbit: { b: M(ringedPlanet(5.25, 10.25, 3.5, -22)), m: "orbit" },
@@ -243,7 +249,7 @@ export const GLYPHS: Record<string, Glyph> = {
   menu: { b: P("M4 6.5h16", "M4 12h16", "M4 17.5h16") },
   more: { b: `<g class="gw" style="--i:0">${D(5.5, 12, 1.5)}</g><g class="gw" style="--i:1">${D(12, 12, 1.5)}</g><g class="gw" style="--i:2">${D(18.5, 12, 1.5)}</g>`, m: "dots" },
   grip: { b: D(9, 6, 1.25) + D(15, 6, 1.25) + D(9, 12, 1.25) + D(15, 12, 1.25) + D(9, 18, 1.25) + D(15, 18, 1.25) },
-  sidebar: { b: R(3, 4, 18, 16, 2) + M(P("M9 4v16")), m: "divide-l" },
+  sidebar: { b: R(3.5, 4.5, 17, 15, 2.25) + M(P("M9 4.5v15")), m: "divide-l" },
   "panel-right": { b: R(3, 4, 18, 16, 2) + M(P("M15 4v16")), m: "divide-r" },
 
   // actions
@@ -384,7 +390,7 @@ export const GLYPHS: Record<string, Glyph> = {
   "profile-edit": { b: C(10, 8, 3.5) + P("M3.5 20a6.5 6.5 0 0 1 9.25-5.9") + M(P("M18.6 13.4a1.4 1.4 0 0 1 2 2L16 20l-2.5.5.5-2.5Z")), m: "wiggle" },
   mail: { b: R(3.5, 5, 17, 14, 3) + M(P("M4.5 7l7.5 6 7.5-6")), m: "d" },
   inbox: { b: P("M3.5 13.5l2.55-7.1A2.75 2.75 0 0 1 8.65 4.5h6.7a2.75 2.75 0 0 1 2.6 1.9l2.55 7.1V17a2.5 2.5 0 0 1-2.5 2.5H6A2.5 2.5 0 0 1 3.5 17Z") + M(P("M3.5 13.5H8l1 2h6l1-2h4.5")), m: "d" },
-  bell: { b: MO(12, 3, P("M5.25 16h13.5c-1-1.1-1.6-2.5-1.6-4.25V9a5.15 5.15 0 0 0-10.3 0v2.75c0 1.75-.6 3.15-1.6 4.25Z"), M2O(12, 3, P("M10 19a2.1 2.1 0 0 0 4 0"))), m: "swing" },
+  bell: { b: MO(12, 3, P("M4.75 17h14.5c-1.2-1.3-1.75-2.8-1.75-4.75V9a5.5 5.5 0 0 0-11 0v3.25C6.5 14.2 5.95 15.7 4.75 17Z"), M2O(12, 3, P("M10 20a2.1 2.1 0 0 0 4 0"))), m: "swing" },
   megaphone: { b: M(P("M4 10v4a1 1 0 0 0 1 1h2.25l8.75 4.5V4.5L7.25 9H5a1 1 0 0 0-1 1Z", "M7.25 15l1 4.5h2.5", "M19.5 9.5v5")), m: "tilt" },
   broadcast: { b: D(12, 12, 1.6) + `<g class="gw" style="--i:0"><path d="M8.5 15.5a5 5 0 0 1 0-7"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></g><g class="gw" style="--i:1"><path d="M5.6 18.4a9 9 0 0 1 0-12.8"/><path d="M18.4 5.6a9 9 0 0 1 0 12.8"/></g>`, m: "wave" },
   citation: { b: P("M20.5 6H3.5", "M20.5 12H8.5", "M20.5 18H8.5", "M3.5 11v8") },

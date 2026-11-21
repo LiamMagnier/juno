@@ -532,7 +532,7 @@ function BubbleEditor({
     <div className="w-full animate-fade-in">
       {/* It opens focused, so focus is an edge, not a ring: the keyboard's
           2px line only follows the keyboard (`kbd-focus-within:`). */}
-      <div className="rounded-card rounded-br-md border border-transparent bg-secondary px-4 py-2.5 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/30 kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]">
+      <div className="conversation-user-bubble border px-4 py-2.5 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-foreground/30 kbd-focus-within:border-[hsl(var(--ring)/0.55)] kbd-focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.55)]">
         <textarea
           ref={ref}
           value={value}

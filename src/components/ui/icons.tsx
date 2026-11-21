@@ -15,7 +15,7 @@
  * concept's drawing is a one-line change here and reaches every surface.
  *
  * OPTICAL SIZE comes from the size a call site asks for (`size-4`, `size`):
- * `lineFor` keeps the line near 1.4 px at 16 and 1.5 px at 20.
+ * `lineFor` keeps the line at 1.5 px for controls between 16 and 24 px.
  *
  * MOTION. Each drawing names one hover gesture (`data-m`): a chevron leans
  * the way it points, the gear turns a tooth, the bin lifts its lid, a check
@@ -86,11 +86,11 @@ function numeric(value: number | string | undefined): number | undefined {
 
 /**
  * The line a glyph paints, in device-independent pixels, per rendered size:
- * crisp at 14 and 16 (1.25, 1.4), the house 1.5 from 18, then growing with the
+ * crisp at 14 (1.25), the house 1.5 for controls, then growing with the
  * box so a 32 px empty-state glyph is not a hairline.
  */
 function lineFor(px: number): number {
-  const target = px <= 14 ? 1.25 : px <= 17 ? 1.4 : px <= 22 ? 1.5 : px * 0.068;
+  const target = px <= 14 ? 1.25 : px <= 24 ? 1.5 : px * 0.068;
   return Math.round(((target * 24) / px) * 1000) / 1000;
 }
 
@@ -156,6 +156,8 @@ export const JunoChat = glyph("chat", "JunoChat");
 export const JunoCode = glyph("code", "JunoCode");
 export const JunoDesign = glyph("design", "JunoDesign");
 export const JunoLibrary = glyph("library", "JunoLibrary");
+export const JunoProjects = glyph("projects", "JunoProjects");
+export const JunoActivity = glyph("activity-feed", "JunoActivity");
 /** Agents (Alevr Orbit): two agents on one ground line. An individual agent in a run is `Bot`. */
 export const JunoAgents = glyph("crew", "JunoAgents");
 /** Orbit, where your agents live: two open arcs of one ellipse. Static, never a spinner. */

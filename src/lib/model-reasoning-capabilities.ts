@@ -1,6 +1,6 @@
 import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
 import type { ReasoningCaps, ReasoningTier } from "@/lib/model-metrics";
-import { reasoningCaps } from "@/lib/model-metrics";
+import { qwenUsesReasoningEffort, reasoningCaps } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
 import { providerAdapterFor } from "@/lib/provider-routing";
 
@@ -67,7 +67,7 @@ function wireContract(model: ModelInfo, caps: ReasoningCaps) {
   if (model.provider === "qwen") {
     // The 3.8 line takes reasoning_effort (low|medium|xhigh); older Qwen3
     // models take a numeric thinking_budget. Never both on one request.
-    const effortEnum = id.includes("qwen3.8");
+    const effortEnum = qwenUsesReasoningEffort(id);
     return {
       controlType: caps.tiers.length ? (effortEnum ? "enum" as const : "numeric_budget" as const) : caps.canDisable ? "on_off" as const : "automatic" as const,
       parameter: effortEnum ? "enable_thinking + reasoning_effort" : "enable_thinking + thinking_budget",
@@ -99,10 +99,14 @@ function wireContract(model: ModelInfo, caps: ReasoningCaps) {
   };
 }
 
-const NOVEMBER_MODEL_DOCS: Record<string, string> = {
-  "google:gemini-4-carbon": "https://aistudio.google.com/docs/models/gemini-4-carbon",
-  "google:gemini-4-hydrogen": "https://aistudio.google.com/docs/models/gemini-4-hydrogen",
-  "meta:muse-ember-1.0": "https://dev.meta.ai/docs/muse-ember",
+const MODEL_DOCS: Record<string, { url: string; verifiedAt: string }> = {
+  "google:gemini-4-neon": { url: "https://aistudio.google.com/docs/models/gemini-4-neon", verifiedAt: "2026-11-21" },
+  "openai:gpt-6.2-astra": { url: "https://developers.openai.com/api/docs/models/gpt-6.2-astra", verifiedAt: "2026-11-21" },
+  "openai:gpt-6.2-sol": { url: "https://developers.openai.com/api/docs/models/gpt-6.2-sol", verifiedAt: "2026-11-21" },
+  "qwen:qwen4-max": { url: "https://www.alibabacloud.com/help/en/model-studio/qwen4-max", verifiedAt: "2026-11-21" },
+  "google:gemini-4-carbon": { url: "https://aistudio.google.com/docs/models/gemini-4-carbon", verifiedAt: "2026-11-14" },
+  "google:gemini-4-hydrogen": { url: "https://aistudio.google.com/docs/models/gemini-4-hydrogen", verifiedAt: "2026-11-14" },
+  "meta:muse-ember-1.0": { url: "https://dev.meta.ai/docs/muse-ember", verifiedAt: "2026-11-14" },
 };
 
 function providerValue(tier: ReasoningTier): string | number {
@@ -128,7 +132,7 @@ export function reasoningCapabilityForModel(model: ModelInfo): ModelReasoningCap
           : wire.parameter?.includes("reasoning") ? "none" : false;
   }
   if (caps.onOff) tierMapping.thinking = objectWire ? (model.provider === "minimax" ? "adaptive" : "enabled") : wire.parameter?.includes("reasoning") ? "high" : true;
-  const modelDocs = NOVEMBER_MODEL_DOCS[model.id];
+  const modelDocs = MODEL_DOCS[model.id];
   return {
     canonicalId: model.id,
     provider: model.provider,
@@ -144,8 +148,8 @@ export function reasoningCapabilityForModel(model: ModelInfo): ModelReasoningCap
     parameter: wire.parameter,
     tierMapping,
     apiSurface: wire.apiSurface,
-    officialDocs: modelDocs ?? OFFICIAL_REASONING_DOCS[model.provider] ?? "",
-    verifiedAt: modelDocs ? "2026-11-14" : "2026-10-18",
+    officialDocs: modelDocs?.url ?? OFFICIAL_REASONING_DOCS[model.provider] ?? "",
+    verifiedAt: modelDocs?.verifiedAt ?? "2026-10-18",
     method: !modelDocs && LIVE_PROBED.has(model.provider) ? "both" : "official_docs",
   };
 }

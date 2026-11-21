@@ -167,6 +167,8 @@ const MODEL_TOOLS: Readonly<Record<string, Partial<ModelToolCapabilities>>> = {
 
   // Tool calling needs Responses: on /chat/completions it fails outright
   // (Astra) or whenever the effort is above "none".
+  "openai:gpt-6.2-astra": { chatCompletions: false },
+  "openai:gpt-6.2-sol": { chatCompletions: false },
   "openai:gpt-6-astra": { chatCompletions: false },
   // "Chat Completions is supported without tool calling" (model page).
   "openai:gpt-6.1-sol": { chatCompletions: false },

@@ -57,8 +57,8 @@ const id = (provider: string, model: string) => `${provider}:${model}`;
 const OPUS = id("anthropic", "claude-opus-5-5");
 const SONNET = id("anthropic", "claude-sonnet-5-5");
 const FABLE = id("anthropic", "claude-fable-5-2");
-const SOL = id("openai", "gpt-6.1-sol");
-const ASTRA = id("openai", "gpt-6-astra");
+const SOL = id("openai", "gpt-6.2-sol");
+const ASTRA = id("openai", "gpt-6.2-astra");
 const LUNA = id("openai", "gpt-6-luna");
 const GEMINI_PRO = id("google", "gemini-3.1-pro-preview");
 const GEMINI_FLASH = id("google", "gemini-3.8-flash");
@@ -101,8 +101,24 @@ export const MODEL_PAIRS: readonly ModelPair[] = [
   pair(GEMINI_FLASH, LUNA, "general", "everyday"),
 ];
 
+// Previously published comparisons keep their original models and URLs.
+const previousModels: Readonly<Record<string, string>> = {
+  [SOL]: "openai:gpt-6.1-sol",
+  [ASTRA]: "openai:gpt-6-astra",
+};
+const previousPairs = MODEL_PAIRS.flatMap(({ a, b, use, group }) => {
+  const previousA = previousModels[a];
+  const previousB = previousModels[b];
+  return previousA || previousB ? [pair(previousA ?? a, previousB ?? b, use, group)] : [];
+});
+const pairsBySlug = new Map([...MODEL_PAIRS, ...previousPairs].map((entry) => [entry.slug, entry]));
+
 export function findPair(slug: string): ModelPair | undefined {
-  return MODEL_PAIRS.find((p) => p.slug === slug);
+  return pairsBySlug.get(slug);
+}
+
+export function comparisonSlugs(): string[] {
+  return [...pairsBySlug.keys()];
 }
 
 // ——— One model, as the page shows it ———

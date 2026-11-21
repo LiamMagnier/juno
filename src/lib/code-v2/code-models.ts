@@ -28,9 +28,9 @@ import { tiersFor } from "@/lib/code-v2/context-tiers";
  */
 export const CODE_MODEL_RANKING: readonly string[] = [
   "anthropic:claude-opus-5-5",
-  "openai:gpt-6.1-sol",
+  "openai:gpt-6.2-sol",
   "anthropic:claude-fable-5-2",
-  "openai:gpt-6-astra",
+  "openai:gpt-6.2-astra",
   "anthropic:claude-sonnet-5-5",
   "google:gemini-3.8-flash",
   "xai:grok-4.7",
@@ -38,7 +38,7 @@ export const CODE_MODEL_RANKING: readonly string[] = [
   "zhipu:glm-5.3",
   "moonshot:kimi-k3.1-pro",
   "deepseek:deepseek-v4-pro",
-  "qwen:qwen3.8-max",
+  "qwen:qwen4-max",
   "moonshot:kimi-k2.7-code",
   "xai:grok-build-0.1",
   "openai:gpt-6-luna",

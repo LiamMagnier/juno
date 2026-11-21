@@ -1,0 +1,139 @@
+/* Shared spacing and edges for the web workspace and public pages. */
+:root {
+  --web-panel-radius: 16px;
+  --web-control-radius: 10px;
+  --web-page-title-size: clamp(2.125rem, 3.225cqi, 2.875rem);
+}
+
+.juno-content-panel {
+  --web-surface-edge: hsl(var(--foreground) / .085);
+}
+
+@media (min-width: 768px) {
+  .juno-content-panel {
+    margin-block: 8px;
+    margin-inline-end: 8px;
+    border-radius: var(--web-panel-radius);
+    box-shadow: 0 0 0 1px var(--web-surface-edge), 0 3px 16px hsl(var(--shadow-ink) / .035);
+  }
+}
+
+.app-page-content {
+  padding-block-end: max(3rem, env(safe-area-inset-bottom));
+}
+
+.app-section-heading-row {
+  display: grid;
+  gap: .875rem 1.5rem;
+}
+
+.app-section-heading-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  align-self: start;
+  gap: .5rem;
+}
+
+@container page (min-width: 40rem) {
+  .app-section-heading-row:has(> .app-section-heading-actions) {
+    grid-template-columns: minmax(0, 1fr) fit-content(50%);
+    align-items: start;
+  }
+  .app-section-heading-actions {
+    justify-content: flex-end;
+    margin-block-start: .25rem;
+  }
+}
+
+.app-page-content .app-page-title,
+.app-section-header .app-page-title,
+.app-section-header .app-section-title-placeholder {
+  font-size: var(--web-page-title-size);
+  line-height: 1.08;
+  letter-spacing: -.038em;
+  font-optical-sizing: auto;
+}
+
+.app-section-lede {
+  max-width: 56ch;
+  line-height: 1.55;
+}
+
+.app-section-header :is(h1, p) {
+  overflow-wrap: anywhere;
+}
+
+.app-section-header .app-section-heading-row > div { min-width: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .app-section-heading-row .app-page-title,
+  .app-section-heading-row .app-section-lede,
+  .app-section-heading-row .app-section-heading-actions {
+    animation: web-heading-enter var(--dur-base) var(--ease-out-expo) backwards;
+  }
+  .app-section-heading-row .app-section-lede { animation-delay: 25ms; }
+  .app-section-heading-row .app-section-heading-actions { animation-delay: 50ms; }
+}
+
+@keyframes web-heading-enter {
+  from { opacity: 0; transform: translateY(5px); }
+}
+
+.workspace-nav-row[data-active] {
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .065);
+}
+
+.workspace-nav-row[data-active] .sidebar-nav-glyph { color: hsl(var(--presence-ink)); }
+.workspace-nav-row:focus-visible { box-shadow: inset 0 0 0 2px hsl(var(--ring)); }
+
+.conversation-header {
+  padding-inline: 1rem .5rem;
+}
+
+.conversation-actions :is(button, a) > svg.icon {
+  flex-shrink: 0;
+}
+
+.conversation-receipt {
+  border: 1px solid hsl(var(--foreground) / .08);
+  border-radius: var(--web-control-radius);
+  background: hsl(var(--foreground) / .035);
+}
+
+.conversation-receipt[aria-expanded="true"] {
+  border-color: hsl(var(--foreground) / .15);
+  background: hsl(var(--accent));
+}
+
+.conversation-user-bubble {
+  border: 1px solid hsl(var(--foreground) / .065);
+  border-radius: var(--web-panel-radius);
+  border-end-end-radius: calc(var(--web-panel-radius) / 2);
+  background: hsl(var(--user-bubble));
+}
+
+[data-juno-chat-root] .composer-surface {
+  border-radius: var(--web-panel-radius);
+}
+
+/* The signed-out pages use the same control and panel edges. */
+.alevr-public .alevr-public-action,
+.alevr-auth .field-well {
+  border-radius: var(--web-control-radius);
+}
+
+.alevr-public :is(.alevr-public-media, .alv-access-panel) {
+  border-radius: var(--web-panel-radius);
+}
+
+.alevr-public :is(.alv-lede, .alevr-document-main p) {
+  text-wrap: pretty;
+}
+
+.alevr-public .alevr-public-action:focus-visible,
+.alevr-auth .field-well:focus-within {
+  outline: 2px solid hsl(var(--presence-ink));
+  outline-offset: 3px;
+}

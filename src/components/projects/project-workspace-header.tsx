@@ -2,9 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Folder, Pin, Plus, Settings } from "@/components/ui/icons";
+import { Folder, MessageSquarePlus, Pin, Plus, Settings } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
-import { AppPageHeader } from "@/components/app/app-page";
 import { Pressable } from "@/components/ui/pressable";
 import { ProjectBreadcrumbs, type ProjectDrag } from "@/components/projects/project-folders";
 import { ProjectDetailsDialog } from "@/components/projects/project-details-dialog";
@@ -16,7 +15,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
-import { cn } from "@/lib/utils";
 import { IconSwap } from "@/components/ui/icon-swap";
 
 interface ProjectWorkspaceHeaderProps {
@@ -34,6 +32,7 @@ interface ProjectWorkspaceHeaderProps {
   onDelete?: () => void;
   /** Model, tools and task defaults: the project's settings view. */
   onOpenSettings?: () => void;
+  onOpenChat: () => void;
   /** Extra entries for the actions menu, placed before the destructive group. */
   menuExtras?: React.ReactNode;
   /** The folders above this project, root first (owner only). */
@@ -45,23 +44,8 @@ interface ProjectWorkspaceHeaderProps {
   onNewFolder?: () => void;
   /** Why a folder can't be made here (too deep), or null. */
   newFolderRefusal?: string | null;
-  className?: string;
 }
 
-/**
- * The project page's opening, at the head of its left column: the way back,
- * the project's name in the house serif, and under it what the project is
- * for, in the owner's words. Pin and the actions menu sit on the name's line.
- *
- * The description replaces the line of counts this header used to carry
- * ("3 chats · 4 sources · Updated today"): the chats are listed right under
- * the composer and the knowledge has its own panel, so the counts said again
- * what the page already shows. A project with no description offers to add
- * one in the same place, quietly, to its owner.
- *
- * Name and description are edited together in one dialog (Edit details), the
- * same form that creates a project, so the two routes agree.
- */
 export function ProjectWorkspaceHeader({
   project,
   isStarred,
@@ -69,6 +53,7 @@ export function ProjectWorkspaceHeader({
   onSaveDetails,
   onDelete,
   onOpenSettings,
+  onOpenChat,
   menuExtras,
   breadcrumbs = [],
   onDropOnCrumb,
@@ -76,7 +61,6 @@ export function ProjectWorkspaceHeader({
   onMove,
   onNewFolder,
   newFolderRefusal,
-  className,
 }: ProjectWorkspaceHeaderProps) {
   const [detailsOpen, setDetailsOpen] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -98,44 +82,32 @@ export function ProjectWorkspaceHeader({
     }
   };
 
-  const parent = breadcrumbs[breadcrumbs.length - 1];
   const description = project.description.trim();
-  const lede = description ? (
-    <span className="block whitespace-pre-line break-words">{description}</span>
-  ) : onSaveDetails ? (
-    <button
-      type="button"
-      onClick={() => setDetailsOpen(true)}
-      className="-mx-1 rounded-xs px-1 text-muted-foreground underline-offset-4 transition-colors duration-fast hover:text-foreground hover:underline"
-    >
-      Add a description
-    </button>
-  ) : null;
 
   return (
     <>
-      <AppPageHeader
-        className={cn("pj-head", className)}
-        backHref={parent ? `/projects/${parent.id}` : "/projects"}
-        backLabel={parent ? `Back to ${parent.name}` : "All projects"}
-        eyebrow={
-          <ProjectBreadcrumbs crumbs={breadcrumbs} current={project.name} onDropInto={onDropOnCrumb} accept={acceptOnCrumb} />
-        }
-        heading={<span className="block min-w-0 break-words">{project.name}</span>}
-        lede={lede}
-        actions={
-          <>
+      <header className="pj-workspace-header">
+        <ProjectBreadcrumbs crumbs={breadcrumbs} current={project.name} onDropInto={onDropOnCrumb} accept={acceptOnCrumb} />
+        <div className="pj-title-row">
+          <h1 className="pj-workspace-title">{project.name}</h1>
+          <div className="pj-title-actions">
             <Pressable
               kind="icon"
               size="lg"
               onClick={onToggleStar}
-              selected={isStarred}
               aria-pressed={isStarred}
               aria-label={isStarred ? "Unpin project" : "Pin project"}
               title={isStarred ? "Unpin project" : "Pin project"}
+              className={isStarred ? "text-presence-ink" : "text-muted-foreground"}
             >
               <IconSwap swapped={isStarred} from={<Pin className="size-4" />} to={<Pin weight="fill" className="size-4" />} />
             </Pressable>
+
+            {onOpenSettings && (
+              <Pressable kind="icon" size="lg" onClick={onOpenSettings} aria-label="Settings" title="Settings" className="pj-desktop-settings text-muted-foreground">
+                <Settings className="size-4" aria-hidden="true" />
+              </Pressable>
+            )}
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -144,10 +116,20 @@ export function ProjectWorkspaceHeader({
                 </Pressable>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className={MENU_W}>
+                <DropdownMenuItem onSelect={onOpenChat}>
+                  <MessageSquarePlus className="size-4" aria-hidden="true" />
+                  <span>New chat</span>
+                </DropdownMenuItem>
                 {onSaveDetails && (
                   <DropdownMenuItem onSelect={() => setDetailsOpen(true)}>
                     <ActionIcons.edit className="size-4" aria-hidden="true" />
                     <span>Edit details</span>
+                  </DropdownMenuItem>
+                )}
+                {onOpenSettings && (
+                  <DropdownMenuItem onSelect={onOpenSettings}>
+                    <Settings className="size-4" aria-hidden="true" />
+                    <span>Settings</span>
                   </DropdownMenuItem>
                 )}
                 {onNewFolder && (
@@ -160,12 +142,6 @@ export function ProjectWorkspaceHeader({
                   <DropdownMenuItem onSelect={onMove}>
                     <Folder className="size-4" aria-hidden="true" />
                     <span>Move to…</span>
-                  </DropdownMenuItem>
-                )}
-                {onOpenSettings && (
-                  <DropdownMenuItem onSelect={onOpenSettings}>
-                    <Settings className="size-4" aria-hidden="true" />
-                    <span>Settings</span>
                   </DropdownMenuItem>
                 )}
                 {menuExtras && (
@@ -185,9 +161,10 @@ export function ProjectWorkspaceHeader({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          </>
-        }
-      />
+          </div>
+        </div>
+        {description && <p className="pj-workspace-description">{description}</p>}
+      </header>
 
       <ProjectDetailsDialog
         open={detailsOpen}

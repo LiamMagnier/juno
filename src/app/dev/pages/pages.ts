@@ -1,5 +1,6 @@
 /** The pages /dev/pages can show, and the states each can be in. Shared by the server route and the client gallery. */
 export const PAGES = [
+  "activity",
   "library",
   "projects",
   "project",

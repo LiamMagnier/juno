@@ -673,14 +673,14 @@ function LibraryGridTile({
       style={stagger ? staggerDelay(index, "base") : undefined}
       className={cn("group/tile flex min-w-0 flex-col", stagger && "motion-safe:animate-rise-in [animation-fill-mode:backwards]")}
     >
-      <div className="surface-inset relative aspect-square overflow-hidden rounded-card">
+      <div className="surface-inset relative aspect-square overflow-hidden rounded-panel">
         <GridThumb item={item} onPreview={actions.onPreview} />
         {/* The hover shade and the selected ring, over the picture and under
             the controls. Colour and opacity only. */}
         <span
           aria-hidden="true"
           className={cn(
-            "pointer-events-none absolute inset-0 rounded-card ring-inset transition-[opacity,box-shadow] duration-fast ease-out-soft",
+            "pointer-events-none absolute inset-0 rounded-panel ring-inset transition-[opacity,box-shadow] duration-fast ease-out-soft",
             selected ? "ring-2 ring-primary" : "bg-foreground/[0.04] opacity-0 group-hover/tile:opacity-100",
           )}
         />
@@ -717,7 +717,7 @@ function LibraryUploadTile({ upload, actions }: { upload: LibraryUpload; actions
   return (
     <article role="listitem" aria-label={upload.fileName} aria-busy={!failed} className="flex min-w-0 flex-col motion-safe:animate-rise-in">
       <div className="relative">
-        <UploadThumb upload={upload} className="aspect-square w-full rounded-card" />
+        <UploadThumb upload={upload} className="aspect-square w-full rounded-panel" />
         {!uploadSettling(upload) && (
           <IconAction
             icon={ActionIcons.dismiss}
@@ -779,7 +779,7 @@ export function LibraryBrowserSkeleton({ view, announce = true }: { view: Librar
       <div className={gridClass} {...status}>
         {[...Array(8)].map((_, index) => (
           <div key={index} className="[animation-fill-mode:backwards] motion-safe:animate-rise-in" style={staggerDelay(index, "base")}>
-            <Skeleton className="aspect-square rounded-card" />
+            <Skeleton className="aspect-square rounded-panel" />
             <Skeleton className="mt-3 h-3 w-3/4 rounded-xs" />
             <Skeleton className="mt-2 h-2.5 w-1/2 rounded-xs" />
           </div>

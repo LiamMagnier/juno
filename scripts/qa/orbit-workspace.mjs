@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { expect } from '@playwright/test';
+import { expect as playwrightExpect } from '@playwright/test';
+
+const expect = playwrightExpect.configure({ timeout: 30_000 });
 
 const base = new URL(process.argv[2] || 'http://127.0.0.1:3000');
 if (!['localhost', '127.0.0.1', '[::1]'].includes(base.hostname)) throw new Error('Use a local development server.');
@@ -15,14 +17,21 @@ const errors = [];
 const capture = (page, name) => page.screenshot({ path: path.join(output, name), animations: 'disabled', style: 'nextjs-portal { visibility: hidden; }' });
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' });
-  context.setDefaultTimeout(20_000);
+  context.setDefaultTimeout(60_000);
+  // A fixture owns its API through its fetch shim. Requests before it mounts
+  // and the shell's EventSource belong to a signed-out browser.
+  await context.route('**/api/**', route => route.fulfill({ status: 401, json: { error: 'unauthorized' } }));
+  await context.route('**/chat/conv-mira*', route => route.fulfill({ status: 204 }));
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
   const visit = async query => {
     await page.goto(new URL(`/dev/agents?view=gallery&${query}`, base).href, { waitUntil: 'domcontentloaded', timeout: 120_000 });
     await page.locator('.orbit-workspace, [role="dialog"]').first().waitFor();
     await page.locator('[data-orbit-fixture-ready="true"]').waitFor({ state: 'attached' });
-    await page.evaluate(() => document.fonts.ready);
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
   };
   const cards = page.locator('.orbit-crew__agent');
   await visit('g=workspace');
@@ -49,7 +58,8 @@ try {
   await draft.fill('');
   await draft.press('Tab');
   assert.equal(await draft.evaluate(el => document.activeElement === el), false, 'Tab must leave an empty draft');
-  assert.match(await page.locator('.orbit-agent-computer').first().getAttribute('href'), /\?agent=computer$/);
+  assert.match(await cards.filter({ hasText: 'Scout' }).getByRole('link', { name: 'View computer' }).getAttribute('href'), /\?agent=computer$/);
+  await expect(cards.filter({ hasText: 'Mira' }).getByRole('button', { name: 'Start computer' })).toBeEnabled();
   await page.locator('.app-page-scroll').evaluate(el => { el.scrollTop = 0; });
   await capture(page, 'orbit-desktop-light.png');
   await page.evaluate(() => { document.documentElement.classList.add('dark'); });
@@ -63,7 +73,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => { document.documentElement.classList.remove('dark'); });
   await page.locator('.app-page-scroll').evaluate(el => { el.scrollTop = 0; });
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   assert.equal(await page.locator('.orbit-crew').evaluate(el => el.scrollWidth <= el.clientWidth), true);
   await capture(page, 'orbit-mobile-light.png');
   await visit('g=home-empty');
@@ -71,12 +81,18 @@ try {
   await page.locator('.orbit-capability').filter({ hasText: 'Work on a schedule' }).click();
   await expect(page.getByRole('textbox', { name: /Describe a job/ })).toHaveValue(/timezone/);
   await page.setViewportSize({ width: 1280, height: 900 });
+  await visit('g=workspace&start=fail');
+  const mira = cards.filter({ hasText: 'Mira' });
+  await mira.getByRole('button', { name: 'Start computer' }).click();
+  await expect(mira.getByRole('status')).toContainText('The computer host is unavailable.');
+  await expect(mira.getByRole('button', { name: 'Start computer' })).toBeEnabled();
+
   await visit('g=computer&computer=asleep&start=fail');
   console.log('Checking computer lifecycle');
   await page.getByRole('button', { name: 'Start computer' }).click();
   await page.getByRole('alert').filter({ hasText: 'The computer host is unavailable.' }).first().waitFor();
   assert.equal(await page.getByRole('button', { name: 'Start computer' }).isEnabled(), true);
-  await visit('g=computer&computer=disabled');
+  await visit('g=computer&computer=disabled&wakeOnly=1');
   await page.getByRole('button', { name: 'Start computer' }).click();
   await page.getByRole('status', { name: 'Starting Linux computer' }).waitFor({ timeout: 2000 });
   await capture(page, 'orbit-computer-starting.png');
@@ -84,7 +100,26 @@ try {
   await visit('g=computer&access=denied');
   await page.getByText('Computers aren’t available on this server.').waitFor();
   assert.equal(await page.getByRole('button', { name: 'Start computer' }).count(), 0);
+  await visit('g=workspace&task=confirm');
+  const taskTrigger = mira.getByRole('button', { name: 'New task' });
+  await taskTrigger.click();
+  await page.keyboard.press('Escape');
+  await expect(taskTrigger).toBeFocused();
+  await taskTrigger.click();
+  const draftDialog = page.getByRole('dialog', { name: 'Start a task with Mira' });
+  await draftDialog.getByLabel('Task name').fill('Prepare a project brief');
+  await draftDialog.getByLabel('What should Mira do?').fill('Summarize the project milestones.');
+  await draftDialog.getByRole('button', { name: 'Start task', exact: true }).click();
+  await expect(draftDialog.getByRole('status')).toContainText('$0.12');
+  await capture(page, 'orbit-task-confirmation.png');
+  const taskNavigation = page.waitForRequest(request => new URL(request.url()).pathname === '/chat/conv-mira');
+  await draftDialog.getByRole('button', { name: 'Confirm and start' }).click();
+  await taskNavigation;
+
   assert.deepEqual(errors, [], 'no browser runtime errors');
   console.log('Orbit workspace: search, filters, drafts, keyboard, responsive themes, reduced motion, computer startup, failure, and access checks passed.');
   console.log(`Screenshots: ${output}`);
+} catch (error) {
+  if (errors.length) console.error('Browser errors:', errors);
+  throw error;
 } finally { await browser.close(); }

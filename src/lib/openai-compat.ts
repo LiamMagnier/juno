@@ -5,7 +5,7 @@ import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { markRequestRejected } from "@/lib/provider-error";
-import { getModelMetrics, reasoningCaps } from "@/lib/model-metrics";
+import { getModelMetrics, qwenUsesReasoningEffort, reasoningCaps } from "@/lib/model-metrics";
 import {
   compatPromptCacheRequestFields,
   openAIPromptCacheRequestFields,
@@ -443,7 +443,7 @@ export async function* streamOpenAICompat(
     const qwenAlwaysThinks = !reasoningCaps(model).canDisable;
     const qwenEffort = effectiveReasoningEffort ?? (qwenAlwaysThinks ? "high" : null);
     params.enable_thinking = qwenAlwaysThinks ? true : !!qwenEffort;
-    if (qwenEffort && modelId.includes("qwen3.8")) {
+    if (qwenEffort && qwenUsesReasoningEffort(modelId)) {
       // The 3.8 line takes reasoning_effort low|medium|xhigh and REJECTS a
       // thinking_budget sent alongside it ("Setting both will cause an error").
       (params as Record<string, unknown>).reasoning_effort = qwenEffort;
