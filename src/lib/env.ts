@@ -611,6 +611,11 @@ export function isCloudAttachEnabled(): boolean {
   return env.cloudAttach.enabled;
 }
 
+/** Google Drive in Library and Projects is available when configured. An explicit cloud-import opt-out still applies. */
+export function isGoogleDriveFilesEnabled(): boolean {
+  return process.env.CLOUD_ATTACH_ENABLED === undefined || isCloudAttachEnabled();
+}
+
 /** A voice call may be lent the chat's tools (VOICE_TOOLS_ENABLED=1). */
 export function isVoiceToolsEnabled(): boolean {
   return env.voiceTools.enabled;

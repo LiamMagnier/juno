@@ -20,7 +20,7 @@ import { placeComposerLayer, preferredLayerSide, type LayerPlacement, type Layer
 import { TIMING } from "@/lib/interaction";
 import type { MentionItem, MentionSearchResult } from "@/lib/mentions/types";
 import type { VoiceCallParts } from "@/components/voice/realtime-voice";
-import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
+import { VoiceComposerFrame } from "@/components/voice/voice-composer-glow";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
@@ -2796,7 +2796,7 @@ function ComposerImpl({
    */
   // And only while the server has the picker on (CLOUD_ATTACH_ENABLED).
   const cloudAttachOn = features.cloudAttach === true;
-  const driveConnected = cloudAttachOn && connectors.some((connector) => connector.id === "google-drive");
+  const driveConnected = (features.googleDriveFiles ?? cloudAttachOn) && connectors.some((connector) => connector.id === "google-drive");
   const oneDriveConnected = cloudAttachOn && connectors.some((connector) => connector.id === "microsoft-365");
 
   const plusSections: PlusMenuSection[] = voiceActive
@@ -3123,7 +3123,7 @@ function ComposerImpl({
           // DictationSwap; this wrapper only carries the drop target.
           className="w-full"
         >
-        <VoiceComposerGlow call={voiceCall}>
+        <VoiceComposerFrame call={voiceCall}>
         <ComposerShell
           // The box every layer the composer opens is placed outside of.
           ref={shellRef}
@@ -3652,7 +3652,7 @@ function ComposerImpl({
                 </>
           }
         />
-        </VoiceComposerGlow>
+        </VoiceComposerFrame>
 
             <input
               ref={fileInputRef}

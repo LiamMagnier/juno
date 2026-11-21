@@ -50,7 +50,7 @@ export function VoiceCallChip({ view, stop }: { view: VoiceCallView; stop?: Reac
       data-voice-state={view.state}
       // The voice-call-part entrance (voice-call.css): the chip rises in on the left as the controls arrive on the right.
       // A quiet pill in the model chip's place: one object, a picture and a word.
-      className="voice-call-part voice-chip flex h-8 min-w-0 select-none items-center gap-2 rounded-control bg-secondary px-2.5 coarse:gap-1 coarse:px-1.5"
+      className="voice-call-part voice-chip flex h-8 min-w-0 select-none items-center gap-2 rounded-full border border-border/80 bg-secondary/65 px-2.5 coarse:gap-1 coarse:px-1.5"
     >
       <span aria-hidden="true" className="grid h-6 w-[23px] shrink-0 place-items-center">
         <span className="voice-chip-face" data-shown={view.mark === "meter"}>
@@ -67,9 +67,9 @@ export function VoiceCallChip({ view, stop }: { view: VoiceCallView; stop?: Reac
       <span
         aria-hidden="true"
         className={cn(
-          "grid min-w-0 whitespace-nowrap text-ui transition-colors duration-fast",
+          "grid min-w-0 whitespace-nowrap text-ui font-medium transition-colors duration-fast",
           // Muted and a failed call are the states a person acts on: full ink.
-          view.state === "muted" || view.state === "error" ? "text-foreground" : "text-muted-foreground"
+          view.state === "speaking" || view.state === "listening" || view.state === "muted" || view.state === "error" ? "text-foreground" : "text-muted-foreground"
         )}
       >
         {words.map((entry) => (

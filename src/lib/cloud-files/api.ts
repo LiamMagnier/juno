@@ -3,6 +3,7 @@ import { ConnectorApiError, FirstPartyClient } from "@/lib/first-party-connector
 import { planAttachmentUpload, type AttachmentUploadPlan } from "@/lib/attachment-upload";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { PRODUCT_NAME } from "@/lib/brand/names";
+import { browseDrive, parseDriveBrowseParams, projectDriveFetch } from "@/lib/projects/drive-source";
 import type { ClientAttachment } from "@/types/chat";
 import { CloudFileError, fetchCloudFile, listCloudFiles } from "./drives";
 import {
@@ -119,11 +120,14 @@ type Gate =
 async function openDrive(deps: CloudFilesDeps, providerId: string): Promise<Gate> {
   const user = await deps.currentUser();
   if (!user) return { ok: false, result: refuse(401, "unauthorized", "Unauthorized") };
-  if (!isCloudFileProvider(providerId) || !deps.connectorConfigured(providerId)) {
+  if (!isCloudFileProvider(providerId)) {
     return { ok: false, result: refuse(404, "unknown_app", "Unknown app") };
   }
   const provider = providerId;
   const label = CLOUD_FILE_SOURCE_LABEL[provider];
+  if (!deps.connectorConfigured(provider)) {
+    return { ok: false, result: refuse(404, "not_configured", `${label} is not configured on this server.`) };
+  }
   if (!(await deps.hasConnection(user.id, provider))) {
     return { ok: false, result: refuse(409, "connector_not_connected", `Connect ${label} in Apps first.`, { provider }) };
   }
@@ -148,8 +152,10 @@ export async function handleCloudFileList(deps: CloudFilesDeps, providerId: stri
   const gate = await openDrive(deps, providerId);
   if (!gate.ok) return gate.result;
   const { user, provider, token } = gate;
+  const browse = provider === "google-drive" && url.searchParams.has("view");
+  const input = browse ? parseDriveBrowseParams(url.searchParams) : null;
   const params = listQuery.safeParse({ q: url.searchParams.get("q") ?? undefined, cursor: url.searchParams.get("cursor") ?? undefined });
-  if (!params.success) return refuse(400, "invalid_request", "Invalid search.");
+  if (!params.success || (browse && !input)) return refuse(400, "invalid_request", "Invalid search.");
   // A search box asks once per pause in typing; this is far above that and
   // well below a loop.
   if (!(await deps.rateLimit(`cloud-files:${user.id}`, 120, 60))) {
@@ -157,8 +163,9 @@ export async function handleCloudFileList(deps: CloudFilesDeps, providerId: stri
   }
   const { maxUploadMb } = await deps.uploadLimit(user.id);
   const { maxBytes } = importLimits(provider, maxUploadMb);
-  const client = new FirstPartyClient(provider, token, deps.fetcher, within(LIST_BUDGET_MS, signal));
+  const client = new FirstPartyClient(provider, token, input ? projectDriveFetch(deps.fetcher) : deps.fetcher, within(LIST_BUDGET_MS, signal));
   try {
+    if (input) return json(200, await browseDrive(client, input, maxBytes));
     const page = await listCloudFiles(client, { query: params.data.q, cursor: params.data.cursor ?? null, limit: LIST_LIMIT, maxBytes });
     const body: CloudFileListResponse = { files: page.files, nextCursor: page.nextCursor, maxBytes };
     return json(200, body);
@@ -174,6 +181,12 @@ function listFailure(error: unknown, provider: CloudFileProvider): CloudFileErro
   const label = CLOUD_FILE_SOURCE_LABEL[provider];
   if (error instanceof ConnectorApiError && error.status === 401) {
     return new CloudFileError("connector_reconnect", 409, `Reconnect ${label} in Apps to continue.`);
+  }
+  if (error instanceof ConnectorApiError && error.status === 403) {
+    return new CloudFileError("forbidden", 403, `This account can’t read that location in ${label}. Check its sharing permissions or reconnect the app.`);
+  }
+  if (error instanceof ConnectorApiError && error.status === 404) {
+    return new CloudFileError("not_found", 404, `That location is no longer available in ${label}.`);
   }
   if (error instanceof ConnectorApiError && error.status === 429) {
     return new CloudFileError("rate_limited", 429, `${label} is busy. Try again in a moment.`);

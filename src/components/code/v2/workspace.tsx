@@ -113,6 +113,7 @@ function Palette({
   items,
   openId,
   onJumpTurn,
+  findOnly,
   exit,
 }: {
   onClose: () => void;
@@ -123,13 +124,14 @@ function Palette({
   items: readonly TurnItem[];
   openId: string;
   onJumpTurn: (turnId: string) => void;
+  findOnly: boolean;
   exit: ExitProps;
 }) {
   const mac = useIsMac();
   const [q, setQ] = React.useState("");
   const [hi, setHi] = React.useState(0);
   const commands = DEFAULT_KEYBINDINGS;
-  const found = usePaletteMessageSearch({ query: q, items, threads, openId });
+  const found = usePaletteMessageSearch({ query: q, items, threads: findOnly ? [] : threads, openId });
   const messageRow = (m: MessageMatch, section: string) => ({
     id: m.id,
     section,
@@ -138,22 +140,29 @@ function Palette({
     meta: m.threadTitle ?? (m.who === "you" ? SPEAKER_YOU_LABEL : m.who === "alevr" ? SPEAKER_ALEVR_LABEL : undefined),
     run: () => (m.threadId ? onOpenThread(m.threadId) : m.turnId ? onJumpTurn(m.turnId) : undefined),
   });
-  const rows: { id: string; section: string; label: string; key: string; meta?: string; run: () => void }[] = [
+  const rows: { id: string; section: string; label: string; key: string; meta?: string; run: () => void }[] = (findOnly ? [] : [
     ...threads.map((t) => ({ id: `t:${t.id}`, section: "Sessions", label: t.title, key: "", run: () => onOpenThread(t.id) })),
     { id: "pulls", section: "Go to", label: "Pull requests", key: "", run: () => window.location.assign("/code/pulls") },
     { id: "connections", section: "Go to", label: "Connections", key: "", run: () => onRun("connections.open") },
     ...commands.filter((b) => !b.command.startsWith("approval.") && !b.command.startsWith("hunk.") && b.command !== "palette.toggle" && b.command !== "composer.steer").map((b) => ({ id: b.command, section: "Commands", label: COMMAND_TITLES[b.command] ?? b.command, key: b.key, run: () => onRun(b.command) })),
-  ].filter((r) => !q.trim() || r.label.toLowerCase().includes(q.trim().toLowerCase()));
+  ]).filter((r) => !q.trim() || r.label.toLowerCase().includes(q.trim().toLowerCase()));
   // What was said comes right after the session titles: in this session, then in the others.
   const titled = rows.filter((r) => r.section === "Sessions").length;
   rows.splice(titled, 0, ...found.here.map((m) => messageRow(m, IN_THIS_SESSION_LABEL)), ...found.elsewhere.map((m) => messageRow(m, IN_OTHER_SESSIONS_LABEL)));
+  const choose = (row: (typeof rows)[number]) => {
+    row.run();
+    if (row.id === "thread.find") {
+      setQ("");
+      setHi(0);
+    } else onClose();
+  };
   return (
     <>
       <div className="cv2-scrim" style={{ background: "transparent" }} data-state={exit.state} onClick={onClose} aria-hidden />
       <div
         className="cv2-palette"
         role="dialog"
-        aria-label="Command palette"
+        aria-label={findOnly ? "Find in this session" : "Command palette"}
         data-state={exit.state}
         inert={exit.state === "closed"}
         onAnimationEnd={exit.onAnimationEnd}
@@ -164,14 +173,13 @@ function Palette({
             setHi((h) => Math.max(0, Math.min(rows.length - 1, h + (e.key === "ArrowDown" ? 1 : -1))));
           } else if (e.key === "Enter" && rows[hi]) {
             e.preventDefault();
-            rows[hi].run();
-            onClose();
+            choose(rows[hi]);
           }
         }}
       >
         <label className="cv2-pop-search">
           <Glyph name="search" size={16} />
-          <input autoFocus placeholder="Search sessions, messages and commands" value={q} onChange={(e) => (setQ(e.target.value), setHi(0))} aria-label="Search" />
+          <input autoFocus placeholder={findOnly ? "Find in this session" : "Search sessions, messages and commands"} value={q} onChange={(e) => (setQ(e.target.value), setHi(0))} aria-label={findOnly ? "Find in this session" : "Search"} />
         </label>
         <div className="cv2-pop-body" role="listbox">
           {rows.map((r, i) => (
@@ -184,10 +192,7 @@ function Palette({
                 className="cv2-mi"
                 data-active={i === hi}
                 onMouseEnter={() => setHi(i)}
-                onClick={() => {
-                  r.run();
-                  onClose();
-                }}
+                onClick={() => choose(r)}
               >
                 <span className="cv2-grow cv2-trunc">{r.label}</span>
                 {r.meta && <span className="trail cv2-trunc" style={{ maxWidth: 140 }}>{r.meta}</span>}
@@ -199,7 +204,7 @@ function Palette({
               </button>
             </React.Fragment>
           ))}
-          {rows.length === 0 && <div className="cv2-mute" style={{ padding: "10px 16px" }}>{found.searching ? "Searching messages…" : "Nothing matches."}</div>}
+          {rows.length === 0 && <div className="cv2-mute" style={{ padding: "10px 16px" }}>{findOnly && !q.trim() ? "Type to search messages in this session." : found.searching ? "Searching messages…" : "Nothing matches."}</div>}
         </div>
       </div>
     </>
@@ -263,7 +268,8 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     if (!detailChosen.current && accountDetail) setDetailState(accountDetail);
   }, [accountDetail]);
   const [popover, setPopover] = React.useState<PopoverName>(popoverFromUi(ui.popover));
-  const [palette, setPalette] = React.useState(ui.popover === "palette");
+  const [paletteMode, setPaletteMode] = React.useState<"commands" | "session" | null>(ui.popover === "palette" ? "commands" : null);
+  const palette = paletteMode !== null;
   const [headMenu, setHeadMenu] = React.useState<null | "session" | "more">(ui.popover === "session" ? "session" : ui.popover === "more" ? "more" : null);
   const [shortcuts, setShortcuts] = React.useState(false);
   const [connections, setConnections] = React.useState(false);
@@ -372,7 +378,10 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       const a = model.actions;
       switch (command) {
         case "palette.toggle":
-          setPalette((p) => !p);
+          setPaletteMode((mode) => mode === "commands" ? null : "commands");
+          return true;
+        case "thread.find":
+          setPaletteMode("session");
           return true;
         case "thread.new":
           a.newThread?.();
@@ -506,7 +515,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       const key = e.altKey && /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key;
       const command = resolveKeybinding({ key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey }, ctx, DEFAULT_KEYBINDINGS, mac);
       if (!command) return;
-      if (command === "composer.steer" || command.startsWith("hunk.") || command === "diff.toggleSplit" || command === "thread.undoLastTurn" || command === "thread.find") return;
+      if (command === "composer.steer" || command.startsWith("hunk.") || command === "diff.toggleSplit" || command === "thread.undoLastTurn") return;
       if (command === "approval.allowOnce" && editable) return;
       if (run(command)) {
         e.preventDefault();
@@ -575,6 +584,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     ...(a.deleteThread ? [{ id: "delete", label: "Delete…", icon: <Glyph name="delete" size={16} />, danger: true, onSelect: () => a.deleteThread?.() }] : []),
   ];
   const moreMenu: MenuEntry[] = [
+    ...(!empty ? [{ id: "find", label: "Find in this session", icon: <Glyph name="search" size={16} />, trail: <Kbd k="mod+f" mac={mac} />, onSelect: () => setPaletteMode("session") }] : []),
     ...(model.actions.commit ? [{ id: "commit", label: "Commit…", icon: <Glyph name="commit" size={16} />, onSelect: () => model.actions.commit?.() }] : []),
     { id: "pr", label: "Create pull request…", icon: <Glyph name="pull-request" size={16} />, onSelect: () => composer.current?.setDraft("/pr ") },
     { id: "files", label: "Files", icon: <Glyph name="file-tree" size={16} />, trail: <Kbd k="mod+p" mac={mac} />, onSelect: () => openDock({ tab: "files" }) },
@@ -658,7 +668,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       <main className={cn("cv2-main", dock.open && dock.expanded && "expanded")} aria-label={model.thread.title}>
         <div className="cv2-left">
         <header className="cv2-top">
-          <button type="button" className="cv2-iconbtn cv2-only-narrow" aria-label="Sessions" onClick={() => (sidebar ? setPalette(true) : window.dispatchEvent(new CustomEvent("juno:toggle-sidebar")))}>
+          <button type="button" className="cv2-iconbtn cv2-only-narrow" aria-label="Sessions" onClick={() => (sidebar ? setPaletteMode("commands") : window.dispatchEvent(new CustomEvent("juno:toggle-sidebar")))}>
             <Glyph name="sidebar-toggle" />
           </button>
           <div className="cv2-crumb" ref={crumbRef}>
@@ -687,6 +697,9 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
             </ComposerPopover>
           </div>
           <div className="cv2-top-actions" ref={headRef}>
+            {!empty && <button type="button" className="cv2-iconbtn cv2-wide" aria-label="Find in this session" title="Find in this session" onClick={() => setPaletteMode("session")}>
+              <Glyph name="search" />
+            </button>}
             <button type="button" className="cv2-iconbtn" aria-pressed={dock.open && dock.tab === "terminal"} aria-label="Terminal" title={`Terminal (${mac ? "⌘J" : "Ctrl J"})`} onClick={() => toggleDock("terminal")}>
               <Glyph name="terminal" />
             </button>
@@ -800,7 +813,8 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       {palettePresence.mounted && (
         <Palette
           exit={exitOf(palettePresence)}
-          onClose={() => setPalette(false)}
+          onClose={() => setPaletteMode(null)}
+          findOnly={paletteMode === "session"}
           onRun={(c) => run(c)}
           threads={(model.threads ?? []).filter((t) => t.id !== model.thread.id).map((t) => ({ id: t.id, title: t.title }))}
           onOpenThread={(id) => model.actions.openThread?.(id)}

@@ -41,7 +41,7 @@ import type { ModelSelection, ProviderInstance, ProviderModel, RoleRouting } fro
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
-import { CODE_COMPOSER_SEED_EVENT } from "@/components/code/code-seed";
+import { CodeStartingPoints } from "@/components/code/code-landing-actions";
 import { seedThreadSkills, useLandingSkills } from "@/components/code/code-landing-skills";
 import { useCodePrefs } from "@/components/code/v2/use-code-prefs";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
@@ -161,6 +161,8 @@ export function CodeComposer({
   const { upsertConversation, removeConversation, features } = useApp();
   const composer = React.useRef<ComposerHandle>(null);
   const stack = React.useRef<HTMLDivElement>(null);
+  const [interactive, setInteractive] = React.useState(false);
+  const [startingPointHint, setStartingPointHint] = React.useState(false);
 
   /*
    * The landing's draft is kept in this tab only (nothing to sync before a
@@ -574,20 +576,16 @@ export function CodeComposer({
     [submitting, target, selectedWorkspace, selectedRepo, cloudBlocked, baseRef, startDevice, startCloud],
   );
 
-  // A starting point under the landing seeds the field (code-starting-points):
-  // the text lands with the caret at its end, and nothing is sent.
-  React.useEffect(() => {
-    const onSeed = (event: Event) => {
-      const text = event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : null;
-      if (!text || submitting) return;
-      composer.current?.setDraft(text);
-    };
-    window.addEventListener(CODE_COMPOSER_SEED_EVENT, onSeed);
-    return () => window.removeEventListener(CODE_COMPOSER_SEED_EVENT, onSeed);
-  }, [submitting]);
+  function chooseStartingPoint(text: string) {
+    setStartingPointHint(composer.current?.setDraft(text, { onlyIfEmpty: true }) === false);
+  }
 
   React.useEffect(() => {
-    requestAnimationFrame(() => composer.current?.focus());
+    // The server-rendered textarea can accept typing before React attaches its
+    // input handler. Enable it once those edits can be recorded in the draft.
+    setInteractive(true);
+    const frame = requestAnimationFrame(() => composer.current?.focus());
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   const [popover, setPopover] = React.useState<PopoverName>(null);
@@ -719,10 +717,12 @@ export function CodeComposer({
           gate={cloudBlocked?.message ?? gateHint}
           team={target === "device"}
           initialDraft={prefill?.prompt ?? ""}
+          readOnly={!interactive}
           under={under}
           stackRef={stack}
         />
       </div>
+      <CodeStartingPoints onChoose={chooseStartingPoint} disabled={!interactive || submitting} showDraftHint={startingPointHint} />
     </div>
   );
 }

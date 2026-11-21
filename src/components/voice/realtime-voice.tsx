@@ -31,7 +31,7 @@ import { EffortPanelContext, ReasoningSlider } from "@/components/chat/reasoning
 import { cn } from "@/lib/utils";
 import { readVoiceLevel } from "@/lib/voice-level";
 import type { VoiceGlowTone } from "@/components/effects/use-effect-theme";
-import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
+import { VoiceComposerFrame } from "@/components/voice/voice-composer-glow";
 import { VoiceCallChip } from "@/components/voice/voice-call-chip";
 import { PRODUCT_NAME } from "@/lib/brand/names";
 import "@/components/voice/voice-call.css";
@@ -513,13 +513,13 @@ export function RealtimeVoice({
     <section aria-label="Voice call" className="relative mx-auto mb-3 flex w-full flex-col items-center px-2 motion-safe:animate-fade-in sm:px-0">
       <VoiceCallNotices voice={voice} />
       <div className="max-w-full">
-        <VoiceComposerGlow call={parts}>
+        <VoiceComposerFrame call={parts}>
           <div className="flex items-center gap-2 rounded-full border border-[var(--float-edge)] bg-popover p-1.5 shadow-float coarse:gap-1">
             {parts.status}
             {parts.controls}
             {parts.end}
           </div>
-        </VoiceComposerGlow>
+        </VoiceComposerFrame>
       </div>
     </section>
   );

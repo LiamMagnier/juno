@@ -397,7 +397,7 @@ test("each product's archive opens from the account menu, with the contract's la
 // the agents at work come before the list of past chats, which is the longest
 // thing in the column. The contract's ids give the labels; the web's order is
 // pinned here. (Recent used to follow Needs you directly.)
-test("the web Chat sidebar puts Orbit between Needs you and Recent", () => {
+test("the web Chat sidebar puts Orbit and project shortcuts before Recent", () => {
   // Needs you is its own fold (`NeedsYouFold`), drawn above every Section.
   const needsYouFold = functionNamed(SIDEBAR, "NeedsYouFold");
   const needsYouLabel = descendants(needsYouFold)
@@ -443,7 +443,7 @@ test("the web Chat sidebar puts Orbit between Needs you and Recent", () => {
       continue;
     }
     const labels = new Map(CONTRACT.sidebar[product].sections.map(({ id, label }) => [id, label]));
-    assert.deepEqual(drawn, ["needsYou", "agents", "recent", "pinnedProjects"].map((id) => labels.get(id)), "web Chat section headings");
+    assert.deepEqual(drawn, [labels.get("needsYou"), labels.get("agents"), "Project shortcuts", labels.get("recent")], "web Chat section headings");
   }
 });
 

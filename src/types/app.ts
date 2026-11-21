@@ -203,8 +203,10 @@ export interface AppBootstrap {
     sharePeople?: boolean;
     /** "Memory off for this chat" in the composer's + and the chat's menu (CHAT_MEMORY_OFF_ENABLED). */
     chatMemoryOff?: boolean;
-    /** Add from Google Drive / OneDrive in the composer's + (CLOUD_ATTACH_ENABLED). */
+    /** Opt-in cloud attachments, including OneDrive. */
     cloudAttach?: boolean;
+    /** Google Drive file access can be offered when the connector is configured. */
+    googleDriveFiles?: boolean;
     /** The five tone characteristics under Personalization (TONE_CHARACTERISTICS_ENABLED). */
     toneCharacteristics?: boolean;
     /** Artifacts' `window.alevr` bridge (ARTIFACT_AI_ENABLED). */

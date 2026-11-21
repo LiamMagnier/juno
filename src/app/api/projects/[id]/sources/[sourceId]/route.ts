@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
-import { isCloudAttachEnabled } from "@/lib/env";
+import { isGoogleDriveFilesEnabled } from "@/lib/env";
 import { removeProjectSource, scheduleSourceSync, listProjectSources } from "@/lib/projects/drive-source-store";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id, sourceId } = await params;
-  if (!isCloudAttachEnabled()) {
+  if (!isGoogleDriveFilesEnabled()) {
     return NextResponse.json({ error: "Google Drive isn’t turned on for this server.", code: "not_enabled" }, { status: 404 });
   }
   if (!(await ownedSource(user.id, id, sourceId))) return NextResponse.json({ error: "Not found" }, { status: 404 });

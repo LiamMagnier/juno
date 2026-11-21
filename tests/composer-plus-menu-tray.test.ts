@@ -65,11 +65,10 @@ test("everything else stays in the + menu, and the @ row is the palette's alone"
   assert.doesNotMatch(COMPOSER, /mentionRow/);
 });
 
-test("Google Drive / OneDrive are drawn only while that drive is connected and CLOUD_ATTACH_ENABLED is on", () => {
+test("each connected drive respects its own cloud attachment availability", () => {
   const sections = plusSections();
-  // Off (the default), neither row is drawn whatever is connected.
   assert.match(COMPOSER, /const cloudAttachOn = features\.cloudAttach === true;/);
-  assert.match(COMPOSER, /const driveConnected = cloudAttachOn && connectors\.some\(\(connector\) => connector\.id === "google-drive"\);/);
+  assert.match(COMPOSER, /const driveConnected = \(features\.googleDriveFiles \?\? cloudAttachOn\) && connectors\.some\(\(connector\) => connector\.id === "google-drive"\);/);
   assert.match(COMPOSER, /const oneDriveConnected = cloudAttachOn && connectors\.some\(\(connector\) => connector\.id === "microsoft-365"\);/);
   assert.match(sections, /\.\.\.\(driveConnected\s*\?\s*\[\s*\{\s*kind: "action" as const,\s*id: "google-drive"/);
   assert.match(sections, /\.\.\.\(oneDriveConnected\s*\?\s*\[\s*\{\s*kind: "action" as const,\s*id: "onedrive"/);

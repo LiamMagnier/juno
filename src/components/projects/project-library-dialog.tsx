@@ -10,17 +10,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ContextTokenMark } from "@/components/chat/context-token-mark";
 import { fileIconKey } from "@/lib/mentions/types";
-import { cn, formatBytes } from "@/lib/utils";
+import { formatBytes } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
-
-interface LibraryRow {
-  id: string;
-  kind: "IMAGE" | "FILE";
-  fileName: string;
-  mimeType: string;
-  size: number;
-  createdAt: string;
-}
+import { useLibrary } from "@/components/library/use-library";
 
 /** The most a project takes from the Library in one go (the route's own cap). */
 const MAX_PICK = 20;
@@ -29,30 +21,25 @@ const MAX_PICK = 20;
  * Add files already in the Library to a project's knowledge. Each pick is
  * cloned into the project on the same stored object, so nothing is uploaded
  * twice and the Library keeps its own copy (POST
- * /api/projects/[id]/knowledge/library). Files the project already holds are
- * shown as added rather than offered again.
+ * /api/projects/[id]/knowledge/library). The route recognises copies by their
+ * stored object and can import distinct files with the same name.
  */
 export function ProjectLibraryDialog({
   open,
   onOpenChange,
   projectId,
-  existingNames,
   onAdded,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
-  /** Names of the files the project already holds. */
-  existingNames: ReadonlySet<string>;
   onAdded: () => void;
 }) {
   const [query, setQuery] = React.useState("");
   const [search, setSearch] = React.useState("");
-  const [rows, setRows] = React.useState<LibraryRow[] | null>(null);
-  const [failed, setFailed] = React.useState(false);
+  const { items: rows, error: failed, pending, reload, hasMore, loadMore, loadingMore } = useLibrary({ q: search, kind: "FILE", sort: "newest", deleted: false }, open);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [adding, setAdding] = React.useState(false);
-  const ticket = React.useRef(0);
 
   React.useEffect(() => {
     if (!open) return;
@@ -65,26 +52,6 @@ export function ProjectLibraryDialog({
     const timer = window.setTimeout(() => setSearch(query.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [query]);
-
-  React.useEffect(() => {
-    if (!open) return;
-    const mine = ++ticket.current;
-    setRows(null);
-    setFailed(false);
-    const params = new URLSearchParams({ kind: "FILE", limit: "100", sort: "newest" });
-    if (search) params.set("q", search);
-    fetch(`/api/library?${params}`)
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error())))
-      .then((data: { items?: LibraryRow[] }) => {
-        if (mine === ticket.current) setRows(data.items ?? []);
-      })
-      .catch(() => {
-        if (mine === ticket.current) {
-          setFailed(true);
-          setRows([]);
-        }
-      });
-  }, [open, search]);
 
   const toggle = (id: string, next: boolean) =>
     setSelected((current) => {
@@ -100,7 +67,7 @@ export function ProjectLibraryDialog({
     });
 
   const add = async () => {
-    if (!selected.size) return;
+    if (!selected.size || adding) return;
     setAdding(true);
     try {
       const response = await fetch(`/api/projects/${projectId}/knowledge/library`, {
@@ -108,9 +75,10 @@ export function ProjectLibraryDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ attachmentIds: [...selected] }),
       });
-      const data = (await response.json().catch(() => ({}))) as { error?: string; attachments?: unknown[] };
+      const data = (await response.json().catch(() => ({}))) as { error?: string; attachments?: unknown[]; alreadyAdded?: number };
       if (!response.ok) throw new Error(data.error ?? "Couldn’t add those files.");
-      onAdded();
+      if (data.attachments?.length) onAdded();
+      else if (data.alreadyAdded) toast.info("Those files are already in this project.");
       onOpenChange(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn’t add those files.");
@@ -136,11 +104,11 @@ export function ProjectLibraryDialog({
           </div>
         </DialogHeader>
 
-        <SearchField value={query} onValueChange={setQuery} label="Search your Library" busy={rows === null && !!search} />
+        <SearchField value={query} onValueChange={setQuery} label="Search your Library" busy={pending && !!search} />
 
         <div className="-mx-2 max-h-[46vh] min-h-[16rem] overflow-y-auto overscroll-contain px-2">
           {failed ? (
-            <EmptyState tone="error" size="panel" icon={StatusIcons.error} title="Couldn’t load your Library" description="Check your connection and try again." />
+            <EmptyState tone="error" size="panel" icon={StatusIcons.error} title="Couldn’t load your Library" description="Check your connection and try again." action={<Button variant="outline" size="sm" onClick={() => void reload()}>Try again</Button>} />
           ) : rows === null ? (
             <div role="status" className="flex flex-col gap-1.5">
               <span className="sr-only">Loading your Library…</span>
@@ -158,27 +126,26 @@ export function ProjectLibraryDialog({
             <div role="list" aria-label="Library files" className="space-y-px">
               {rows.map((row) => {
                 const id = `pj-lib-${row.id}`;
-                const already = existingNames.has(row.fileName);
                 const checked = selected.has(row.id);
                 return (
                   <div
                     role="listitem"
                     key={row.id}
                     data-selected={checked ? "" : undefined}
-                    className={cn("pj-pick flex min-h-11 items-center gap-3 rounded-inner px-2 py-1.5 transition-colors duration-fast ease-out-soft", !already && "hover:bg-accent")}
+                    className="pj-pick flex min-h-11 items-center gap-3 rounded-inner px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent"
                   >
-                    <Checkbox id={id} checked={checked || already} disabled={already || adding} onCheckedChange={(next) => toggle(row.id, next === true)} />
+                    <Checkbox id={id} checked={checked} disabled={pending || adding} onCheckedChange={(next) => toggle(row.id, next === true)} />
                     <ContextTokenMark source={{ kind: "file", id: row.id, icon: fileIconKey(row.mimeType, row.fileName) }} size={20} />
-                    <label htmlFor={id} className={cn("min-w-0 flex-1", already ? "opacity-60" : "cursor-pointer")}>
+                    <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
                       <span className="block truncate text-ui font-medium text-foreground">{row.fileName}</span>
                       <span className="block truncate text-caption text-muted-foreground">
                         {formatBytes(row.size)}
-                        {already ? " · Already in this project" : ""}
                       </span>
                     </label>
                   </div>
                 );
               })}
+              {hasMore && <Button variant="ghost" size="sm" disabled={pending} loading={loadingMore} onClick={() => void loadMore()}>Show more</Button>}
             </div>
           )}
         </div>

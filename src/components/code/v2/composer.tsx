@@ -31,6 +31,10 @@ import { touchReturnBreaksLine, useEnterKeyHint } from "@/lib/touch-keyboard";
 import { ComposerAttachmentRow } from "@/components/ui/composer-shell";
 import { ComposerDropOverlay, ComposerFileInputs } from "@/components/code/code-composer-parts";
 import { LibraryPicker } from "@/components/chat/library-picker";
+import { CloudFilePicker } from "@/components/chat/cloud-file-picker";
+import { GoogleDriveMark } from "@/components/projects/google-drive-mark";
+import { useOptionalApp } from "@/components/app/app-provider";
+import type { CloudFileProvider } from "@/lib/cloud-files/shared";
 import type { ClientAttachment } from "@/types/chat";
 import { useComposerAttachments } from "./use-composer-attachments";
 import { useComposerArrival } from "./composer-travel";
@@ -40,7 +44,7 @@ import { formatReset, formatTokens, tightestWindow } from "@/lib/code-v2/tier-vi
 import { DictationSwap } from "@/components/ui/dictation-swap";
 import { useDictationSupported } from "@/hooks/use-dictation-support";
 import { useCodeVoice, useCodeVoiceCall, type CodeVoiceSend } from "@/components/code/code-voice";
-import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
+import { VoiceComposerFrame } from "@/components/voice/voice-composer-glow";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
 import { availableComposerModes, composerModeInfo, composerModeOf, setComposerMode } from "@/lib/code-v2/composer-mode";
 import { EFFORT_LABELS, currentTier, effectiveEffort, effortLevelsOf, findInstance } from "./model-info";
@@ -269,7 +273,7 @@ export interface ComposerHandle {
   focus(): void;
   openPopover(name: PopoverName): void;
   editLastQueued(): void;
-  setDraft(text: string): void;
+  setDraft(text: string, options?: { onlyIfEmpty?: boolean }): boolean;
 }
 
 export const Composer = React.forwardRef<
@@ -297,12 +301,13 @@ export const Composer = React.forwardRef<
     under?: React.ReactNode;
     /** The draft to start from (a prefilled link on the landing). */
     initialDraft?: string;
+    readOnly?: boolean;
     /** Whether the team chip is offered (a cloud run has no team). */
     team?: boolean;
     /** The outer box, for the landing-to-session travel. */
     stackRef?: React.Ref<HTMLDivElement>;
   }
->(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange, tall, variant = "session", gate = null, under, initialDraft, team = true, stackRef }, ref) {
+>(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange, tall, variant = "session", gate = null, under, initialDraft, readOnly = false, team = true, stackRef }, ref) {
   const mac = useIsMac();
   const landing = variant === "landing";
   const { actions, instances, selection } = model;
@@ -321,6 +326,8 @@ export const Composer = React.forwardRef<
   const fileInput = React.useRef<HTMLInputElement>(null);
   const imageInput = React.useRef<HTMLInputElement>(null);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
+  const [cloudPicker, setCloudPicker] = React.useState<CloudFileProvider | null>(null);
+  const features = useOptionalApp()?.features;
 
   const running = model.state === "running" || model.state === "waiting";
   const instance = findInstance(instances, selection.instanceId);
@@ -513,12 +520,21 @@ export const Composer = React.forwardRef<
       setDraft(last.text);
       requestAnimationFrame(() => textarea.current?.focus());
     },
-    setDraft: (t) => {
+    setDraft: (t, options) => {
+      const field = textarea.current;
+      const current = field?.value ?? draftRef.current;
+      if (options?.onlyIfEmpty && current.trim()) {
+        // A browser can update the field before React's change event is reflected in state.
+        if (current !== draftRef.current) setDraft(current);
+        field?.focus();
+        return false;
+      }
       setDraft(t);
       requestAnimationFrame(() => {
         textarea.current?.focus();
         textarea.current?.setSelectionRange(t.length, t.length);
       });
+      return true;
     },
   }));
 
@@ -780,6 +796,9 @@ export const Composer = React.forwardRef<
           { id: "photos", label: "Photos", icon: <Glyph name="image" size={16} />, onSelect: () => imageInput.current?.click() },
           ...(attachments.canScreenshot ? [{ id: "capture", label: "Take a screenshot", icon: <Glyph name="screenshot" size={16} />, onSelect: () => void attachments.captureScreenshot() }] : []),
           { id: "library", label: "From your library", icon: <Glyph name="library" size={16} />, onSelect: () => setLibraryOpen(true) },
+          ...((features?.googleDriveFiles ?? features?.cloudAttach) ? [
+            { id: "google-drive", label: "Google Drive", icon: <GoogleDriveMark className="size-4" />, onSelect: () => setCloudPicker("google-drive") },
+          ] : []),
           { kind: "sep", id: "s-attach" },
         ] satisfies MenuEntry[])
       : ([{ id: "file", label: "Attach files", l2: UPLOADS_OFF_NOTE, icon: <Glyph name="attach" size={16} />, disabled: true }, { kind: "sep", id: "s-attach" }] satisfies MenuEntry[])),
@@ -845,6 +864,7 @@ export const Composer = React.forwardRef<
         enterKeyHint={enterKeyHint}
         value={draft}
         disabled={!connected}
+        readOnly={readOnly}
         placeholder={!connected ? "Connect a subscription or add a key to start" : call ? "Type while you talk\u2026" : revising ? "What should change in the plan?" : landing ? LANDING_PLACEHOLDER : placeholder(running)}
         aria-label="Message"
         onChange={(e) => {
@@ -890,7 +910,7 @@ export const Composer = React.forwardRef<
   return (
     <div className="cv2-cstack" ref={stackRef} data-variant={variant}>
       <DictationSwap active={dictating} draft={draft} onCancel={() => setDictating(false)} onClose={closeDictation}>
-      <VoiceComposerGlow call={call}>
+      <VoiceComposerFrame call={call}>
       <div ref={shellRef} className={cn("cv2-composer", tone, call && "voice-glow-host")} data-state={tone || (running ? "running" : "idle")} {...(showFoot ? attachments.dropHandlers : {})}>
         {attachments.dragging && <ComposerDropOverlay className="rounded-composer" />}
         {showRow && <ComposerAttachmentRow uploads={attachments.uploads} onRemove={attachments.remove} className="cv2-attach-row" />}
@@ -1075,9 +1095,17 @@ export const Composer = React.forwardRef<
         )}
         {escArmed !== null && running && <div className="cv2-esc-hint">Press Esc again to stop</div>}
       </div>
-      </VoiceComposerGlow>
+      </VoiceComposerFrame>
       </DictationSwap>
       {attachments.enabled && <LibraryPicker open={libraryOpen} onOpenChange={setLibraryOpen} onAttach={attachments.addAttachments} existingCount={attachments.uploads.length} />}
+      {attachments.enabled && cloudPicker && <CloudFilePicker
+        provider={cloudPicker}
+        open
+        onOpenChange={(open) => { if (!open) setCloudPicker(null); }}
+        onAttach={attachments.addAttachments}
+        conversationId={model.uploadConversationId}
+        existingCount={attachments.uploads.length}
+      />}
       {attachments.lastPaste && (
         <div className="cv2-under" role="status">
           <span>{PASTE_FILE_NOTE}</span>
