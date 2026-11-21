@@ -188,7 +188,7 @@ export function AgentsHome({
           <div><h2 id="orbit-crew">Your crew</h2>{working > 0 && <p>{working} {working === 1 ? "agent working" : "agents working"}</p>}</div>
           <div className="orbit-search"><Search className="size-4 shrink-0" aria-hidden="true" /><input type="search" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search agents" placeholder="Find an agent or task…" />{query ? <button type="button" onClick={() => setQuery("")} aria-label="Clear agent search"><X className="size-3.5" /></button> : null}</div>
         </div>
-        <div className="orbit-filters" aria-label="Filter agents">
+        <div className="orbit-filters workspace-filter-rail" role="group" aria-label="Filter agents">
           {filters.map(({ value, label, count }) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}<span>{count}</span></button>)}
         </div>
         <p className="sr-only" role="status">{visible.length} {visible.length === 1 ? "agent" : "agents"} shown</p>
