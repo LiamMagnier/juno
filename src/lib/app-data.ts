@@ -15,6 +15,7 @@ import {
   isArtifactAiEnabled,
   isChatMemoryOffEnabled,
   isCloudAttachEnabled,
+  isGoogleDriveFilesEnabled,
   isSharePeopleEnabled,
   isToneCharacteristicsEnabled,
 } from "@/lib/env";
@@ -265,6 +266,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       sharePeople: isSharePeopleEnabled(),
       chatMemoryOff: isChatMemoryOffEnabled(),
       cloudAttach: isCloudAttachEnabled(),
+      googleDriveFiles: isGoogleDriveFilesEnabled(),
       toneCharacteristics: isToneCharacteristicsEnabled(),
       artifactAi: isArtifactAiEnabled(),
     },

@@ -7,8 +7,6 @@ import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
-import { SearchField } from "@/components/ui/search-field";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ContextTokenMark } from "@/components/chat/context-token-mark";
@@ -17,14 +15,10 @@ import { fileIconKey } from "@/lib/mentions/types";
 import { cn, formatBytes } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 import { PRODUCT_NAME } from "@/lib/brand/names";
-import type { DriveBrowseEntry, DriveBrowsePage } from "@/lib/projects/drive-source";
+import type { DriveBrowseEntry } from "@/lib/projects/drive-source";
+import { DriveBrowserControls, useDriveBrowser } from "@/components/drive/drive-browser-controls";
 import type { DriveAvailability, ProjectSourceView } from "@/lib/projects/project-sources-shared";
 
-type View = "folder" | "shared";
-interface Crumb {
-  id: string;
-  name: string;
-}
 interface Picked {
   id: string;
   name: string;
@@ -58,103 +52,40 @@ export function ProjectDriveDialog({
   onOpenChange,
   projectId,
   drive,
+  availabilityError,
+  onRetryAvailability,
   onAdded,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
   drive: DriveAvailability | null;
+  availabilityError: boolean;
+  onRetryAvailability: () => void;
   onAdded: (sources: ProjectSourceView[]) => void;
 }) {
-  const [view, setView] = React.useState<View>("folder");
-  const [path, setPath] = React.useState<Crumb[]>([{ id: "root", name: "My Drive" }]);
-  const [query, setQuery] = React.useState("");
-  const [search, setSearch] = React.useState("");
-  const [entries, setEntries] = React.useState<DriveBrowseEntry[]>([]);
-  const [cursor, setCursor] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(false);
-  const [loadingMore, setLoadingMore] = React.useState(false);
-  const [error, setError] = React.useState<{ message: string; code?: string } | null>(null);
+  const browser = useDriveBrowser(`/api/projects/${encodeURIComponent(projectId)}/sources/drive`, open && drive?.enabled === true && drive.connected);
+  const { entries, error, setError, pageError, loading, loadingMore, cursor, load, search, parent, enter, changeLocation } = browser;
   const [selected, setSelected] = React.useState<Map<string, Picked>>(new Map());
   const [includeSubfolders, setIncludeSubfolders] = React.useState(true);
   const [adding, setAdding] = React.useState(false);
-  const request = React.useRef(0);
 
   const needsConnect = drive !== null && drive.enabled && (!drive.connected || error?.code === "not_connected" || error?.code === "reconnect");
   const reconnect = drive?.connected === true && error?.code === "reconnect";
-  const browsing = drive !== null && drive.enabled && !needsConnect;
-  const parent = path[path.length - 1];
+  const browsing = drive !== null && drive.enabled && !needsConnect && !availabilityError;
 
-  // Fresh each time it opens: a folder picked last time is not still picked.
   React.useEffect(() => {
-    if (!open) return;
-    setView("folder");
-    setPath([{ id: "root", name: "My Drive" }]);
-    setQuery("");
-    setSearch("");
+    if (open) return;
+    changeLocation("folder");
     setSelected(new Map());
     setIncludeSubfolders(true);
     setError(null);
-  }, [open]);
+  }, [open, changeLocation, setError]);
 
-  // The search box asks once per pause in typing.
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => setSearch(query.trim()), 300);
-    return () => window.clearTimeout(timer);
-  }, [query]);
-
-  const load = React.useCallback(
-    async (more: string | null) => {
-      const ticket = ++request.current;
-      if (more) setLoadingMore(true);
-      else {
-        setLoading(true);
-        setEntries([]);
-        setCursor(null);
-      }
-      setError(null);
-      const params = new URLSearchParams();
-      if (search) {
-        params.set("view", "search");
-        params.set("q", search);
-      } else if (view === "shared" && path.length === 1) params.set("view", "shared");
-      else params.set("parent", parent.id);
-      if (more) params.set("cursor", more);
-      try {
-        const response = await fetch(`/api/projects/${projectId}/sources/drive?${params}`);
-        const data = (await response.json().catch(() => ({}))) as Partial<DriveBrowsePage> & { error?: string; code?: string };
-        if (ticket !== request.current) return;
-        if (!response.ok) {
-          setError({ message: data.error ?? "Couldn’t reach Google Drive. Try again.", code: data.code });
-          return;
-        }
-        setEntries((current) => (more ? [...current, ...(data.entries ?? [])] : data.entries ?? []));
-        setCursor(data.nextCursor ?? null);
-      } catch {
-        if (ticket === request.current) setError({ message: "Couldn’t reach Google Drive. Check your connection and try again." });
-      } finally {
-        if (ticket === request.current) {
-          setLoading(false);
-          setLoadingMore(false);
-        }
-      }
-    },
-    [projectId, search, view, path.length, parent.id],
-  );
-
-  React.useEffect(() => {
-    if (open && browsing) void load(null);
-  }, [open, browsing, load]);
-
-  const enter = (entry: DriveBrowseEntry) => {
-    setQuery("");
-    setSearch("");
-    setPath((current) => [...(search ? [current[0]] : current), { id: entry.id, name: entry.name }]);
-  };
   const toggle = (entry: DriveBrowseEntry, next: boolean) =>
     setSelected((current) => {
       const updated = new Map(current);
-      if (next) updated.set(entry.id, { id: entry.id, name: entry.name, kind: entry.kind });
+      if (next && updated.size < 20) updated.set(entry.id, { id: entry.id, name: entry.name, kind: entry.kind });
       else updated.delete(entry.id);
       return updated;
     });
@@ -167,7 +98,7 @@ export function ProjectDriveDialog({
     .join(", ");
 
   const add = async () => {
-    if (!picks.length) return;
+    if (!picks.length || adding) return;
     setAdding(true);
     try {
       const response = await fetch(`/api/projects/${projectId}/sources`, {
@@ -215,7 +146,14 @@ export function ProjectDriveDialog({
           </div>
         </DialogHeader>
 
-        {drive === null ? (
+        {availabilityError ? (
+          <EmptyState
+            size="panel"
+            title="Couldn’t check Google Drive"
+            description="Check your connection and try again."
+            action={<Button variant="outline" size="sm" onClick={onRetryAvailability}>Try again</Button>}
+          />
+        ) : drive === null ? (
           <div className="grid min-h-40 place-items-center" role="status">
             <Loader2 className="size-5 animate-spin text-muted-foreground" aria-label="Checking Google Drive" />
           </div>
@@ -227,47 +165,7 @@ export function ProjectDriveDialog({
           <ConnectSteps reconnect={reconnect} accountLabel={drive.accountLabel} message={error?.code ? error.message : null} />
         ) : (
           <div className="flex min-h-0 flex-col gap-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <SegmentedControl
-                value={view}
-                onChange={(next) => {
-                  setView(next);
-                  setQuery("");
-                  setSearch("");
-                  setPath([{ id: "root", name: next === "shared" ? "Shared with me" : "My Drive" }]);
-                }}
-                ariaLabel="Where to look"
-                options={[
-                  { value: "folder", label: "My Drive" },
-                  { value: "shared", label: "Shared with me" },
-                ]}
-                className="shrink-0"
-              />
-              <SearchField value={query} onValueChange={setQuery} label="Search Google Drive" busy={loading && !!search} className="sm:flex-1" />
-            </div>
-
-            {!search && path.length > 1 && (
-              <nav aria-label="Folder path" className="flex min-w-0 flex-wrap items-center gap-0.5 text-caption">
-                {path.map((crumb, index) => (
-                  <React.Fragment key={`${crumb.id}-${index}`}>
-                    {index > 0 && <ChevronRight className="size-3 shrink-0 text-ink-tertiary" aria-hidden="true" />}
-                    {index === path.length - 1 ? (
-                      <span className="truncate px-1 font-medium text-foreground" aria-current="location">
-                        {crumb.name}
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="truncate rounded-xs px-1 py-0.5 text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground hit-24"
-                        onClick={() => setPath((current) => current.slice(0, index + 1))}
-                      >
-                        {crumb.name}
-                      </button>
-                    )}
-                  </React.Fragment>
-                ))}
-              </nav>
-            )}
+            <DriveBrowserControls browser={browser} />
 
             <div className="-mx-2 max-h-[46vh] min-h-[16rem] overflow-y-auto overscroll-contain px-2" aria-busy={loading}>
               {error ? (
@@ -303,11 +201,12 @@ export function ProjectDriveDialog({
                       key={entry.id}
                       entry={entry}
                       checked={selected.has(entry.id)}
-                      disabled={adding}
+                      disabled={adding || (picks.length >= 20 && !selected.has(entry.id))}
                       onCheckedChange={(next) => toggle(entry, next)}
                       onOpen={() => enter(entry)}
                     />
                   ))}
+                  {pageError && <p role="alert" className="px-2 py-2 text-ui text-destructive-ink">{pageError}</p>}
                   {cursor && (
                     <div className="flex justify-center py-2">
                       <Button variant="ghost" size="sm" loading={loadingMore} className="text-muted-foreground" onClick={() => void load(cursor)}>
@@ -329,6 +228,7 @@ export function ProjectDriveDialog({
                 Include subfolders
               </label>
             )}
+            {browsing && picks.length >= 20 && <p role="status" className="text-caption text-muted-foreground">20 items selected. Add these before selecting more.</p>}
           </div>
           <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row">
             <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={adding}>

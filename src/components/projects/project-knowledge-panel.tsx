@@ -50,6 +50,7 @@ export interface KnowledgeFile {
   mimeType: string;
   size: number;
   url: string;
+  parserState?: string;
   /** The Drive source that mirrors it; null for an upload or a Library file. */
   sourceId: string | null;
   knowledge?: (KnowledgeIndexState & { documentId: string; tokenCount?: number }) | null;
@@ -169,7 +170,7 @@ export function ProjectKnowledgePanel({
           <span>Add from Library</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={onAddFromDrive} disabled={drive !== null && !drive.enabled}>
+        <DropdownMenuItem onSelect={onAddFromDrive}>
           <GoogleDriveMark className="size-4" />
           <span className="min-w-0 flex-1">Google Drive file or folder</span>
           {drive !== null && !drive.enabled && <span className="text-caption text-muted-foreground">Off</span>}
@@ -471,7 +472,11 @@ function SourceRow({
 /** Index state, said the way the Library says it. */
 function indexNote(file: KnowledgeFile): { text: string; failed: boolean } | null {
   const knowledge = file.knowledge;
-  if (!knowledge) return null;
+  if (!knowledge) {
+    if (file.parserState === "failed") return { text: "Couldn’t read", failed: true };
+    if (file.parserState === "queued" || file.parserState === "indexing") return { text: "Indexing…", failed: false };
+    return null;
+  }
   if ((knowledge.state === "ready" || knowledge.state === "degraded") && knowledge.chunkCount === 0) return { text: "Indexing…", failed: false };
   switch (knowledge.state) {
     case "ready":

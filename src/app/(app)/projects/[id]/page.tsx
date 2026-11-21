@@ -218,6 +218,7 @@ export default function ProjectDetailPage() {
   // Knowledge sources (Google Drive) and whether Drive can be offered.
   const [sources, setSources] = React.useState<ProjectSourceView[]>([]);
   const [drive, setDrive] = React.useState<DriveAvailability | null>(null);
+  const [driveAvailabilityError, setDriveAvailabilityError] = React.useState(false);
   const [driveOpen, setDriveOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [sourceToRemove, setSourceToRemove] = React.useState<ProjectSourceView | null>(null);
@@ -284,19 +285,21 @@ export default function ProjectDetailPage() {
   }, [id]);
 
   const loadSources = React.useCallback(async () => {
+    setDriveAvailabilityError(false);
     try {
       const r = await fetch(`/api/projects/${id}/sources`);
-      if (!r.ok) {
+      if (r.status === 404) {
         // A collaborator: sources are the owner's, and there is nothing to add.
         setDrive({ enabled: false, configured: false, connected: false, accountLabel: null });
         return;
       }
+      if (!r.ok) throw new Error("Sources unavailable");
       const body = (await r.json()) as ProjectSourcesResponse | null;
-      if (!body || !Array.isArray(body.sources) || !body.drive) return;
+      if (!body || !Array.isArray(body.sources) || !body.drive) throw new Error("Invalid sources response");
       setSources(body.sources);
       setDrive(body.drive);
     } catch {
-      // Keep what is drawn; the next poll or visit tries again.
+      setDriveAvailabilityError(true);
     }
   }, [id]);
 
@@ -397,11 +400,11 @@ export default function ProjectDetailPage() {
     if (!reopenDrive && !connected && !connectError) return;
     for (const key of ["drive", "connected", "connect_error"]) url.searchParams.delete(key);
     window.history.replaceState(window.history.state, "", url.pathname + url.search);
+    if (reopenDrive) setDriveOpen(true);
     if (connectError) {
       toast.error(connectError === "denied" ? "Google Drive wasn’t connected. Nothing changed." : "Couldn’t connect Google Drive. Try again.");
       return;
     }
-    if (reopenDrive) setDriveOpen(true);
     if (connected) {
       void fetch(`/api/projects/${id}/sources`)
         .then((r) => (r.ok ? (r.json() as Promise<ProjectSourcesResponse>) : null))
@@ -437,12 +440,15 @@ export default function ProjectDetailPage() {
   const busy = sourcesBusy(sources);
   const wasBusy = React.useRef(false);
   React.useEffect(() => {
-    if (wasBusy.current && !busy) void load();
+    if (wasBusy.current && !busy) {
+      void load();
+      refreshKnowledgeAfterUpload();
+    }
     wasBusy.current = busy;
     if (!busy) return;
     const timer = window.setInterval(() => void loadSources(), SOURCE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [busy, load, loadSources]);
+  }, [busy, load, loadSources, refreshKnowledgeAfterUpload]);
 
   /** The artifacts made in this project's chats, derived so a chat moved out takes its artifacts with it. */
   const conversations = data?.conversations;
@@ -1295,13 +1301,14 @@ export default function ProjectDetailPage() {
         onOpenChange={setDriveOpen}
         projectId={data.project.id}
         drive={drive}
+        availabilityError={driveAvailabilityError}
+        onRetryAvailability={loadSources}
         onAdded={(next) => setSources(next)}
       />
       <ProjectLibraryDialog
         open={libraryOpen}
         onOpenChange={setLibraryOpen}
         projectId={data.project.id}
-        existingNames={new Set(knowledgeFiles.map((f) => f.fileName))}
         onAdded={() => {
           void load();
           refreshKnowledgeAfterUpload();

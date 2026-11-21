@@ -99,6 +99,27 @@ function googleDrive(pngBytes: Uint8Array<ArrayBuffer> = new Uint8Array([0x89, 0
 
 const listUrl = (query = "") => new URL(`https://alevr.example/api/connectors/google-drive/files${query}`);
 
+test("Library browses folders and paginates through the connected user's Google Drive", async () => {
+  const h = harness({ drive: () => ({ nextPageToken: "next-page", files: [
+    { id: "subfolder", name: "Reports", mimeType: "application/vnd.google-apps.folder" },
+    { id: "doc1", name: "Q3 plan", mimeType: "application/vnd.google-apps.document" },
+  ] }) });
+  const result = await handleCloudFileList(h.deps, "google-drive", listUrl("?view=folder&parent=reports&cursor=page-two"));
+  assert.equal(result.status, 200);
+  const page = result.body as { entries: { id: string; kind: string; unavailable: string | null }[]; nextCursor: string };
+  assert.deepEqual(page.entries.map(({ id, kind, unavailable }) => ({ id, kind, unavailable })), [
+    { id: "subfolder", kind: "folder", unavailable: null },
+    { id: "doc1", kind: "file", unavailable: null },
+  ]);
+  assert.equal(page.nextCursor, "next-page");
+  assert.match(h.driveCalls[0].searchParams.get("q")!, /^'reports' in parents/);
+  assert.equal(h.driveCalls[0].searchParams.get("pageToken"), "page-two");
+
+  const invalid = await handleCloudFileList(h.deps, "google-drive", listUrl("?view=folder&parent=.."));
+  assert.equal(invalid.status, 400);
+  assert.equal(h.driveCalls.length, 1);
+});
+
 test("signed out, an unknown app or an unconfigured one are refused before any lookup", async () => {
   const out = harness({ user: null });
   assert.equal((await handleCloudFileList(out.deps, "google-drive", listUrl())).status, 401);

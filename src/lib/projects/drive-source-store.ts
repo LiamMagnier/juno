@@ -15,7 +15,7 @@ import { assertLibraryCapacity, libraryCapacity, lockedLibraryCapacity, LibraryQ
 import { tombstoneAttachment } from "@/lib/library-removal";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
-import { isCloudAttachEnabled } from "@/lib/env";
+import { isGoogleDriveFilesEnabled } from "@/lib/env";
 import {
   readDriveTarget,
   projectDriveFetch,
@@ -57,7 +57,7 @@ const MIB = 1024 * 1024;
 export async function driveAvailability(userId: string): Promise<DriveAvailability> {
   const def = getConnector(PROVIDER);
   const configured = Boolean(def && isConnectorConfigured(def));
-  const enabled = isCloudAttachEnabled() && configured;
+  const enabled = isGoogleDriveFilesEnabled() && configured;
   const connection = configured
     ? await prisma.connection.findFirst({ where: { userId, provider: PROVIDER }, select: { accountLabel: true } })
     : null;
@@ -458,7 +458,7 @@ export function scheduleSourceSync(userId: string, sourceIds: readonly string[])
  */
 export async function scheduleStaleSourceSyncs(userId: string, projectId: string): Promise<string[]> {
   try {
-    if (!isCloudAttachEnabled()) return [];
+    if (!isGoogleDriveFilesEnabled()) return [];
     const ids = await dueSourceIds(userId, projectId);
     return scheduleSourceSync(userId, ids) ? ids : [];
   } catch {

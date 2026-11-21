@@ -309,6 +309,28 @@ if (!DB_URL) {
     assert.equal(response.status, 404);
     assert.equal(await db.attachment.count({ where: { projectId: project.id, deletedAt: null } }), 1);
   });
+
+  test("project knowledge accepts distinct files with the same name and keeps concurrent retries idempotent", async (t) => {
+    const { db, store, owner, project } = await fixture(t);
+    const { sourceIds: [id] } = await store.addDriveSources(owner.id, project.id, [{ id: "brief1", kind: "file" }], true);
+    await store.syncProjectSource(owner.id, id);
+    const existing = await db.attachment.findFirstOrThrow({ where: { userId: owner.id, projectId: project.id } });
+    const other = await db.attachment.create({ data: {
+      userId: owner.id, kind: "FILE", fileName: existing.fileName, mimeType: "text/markdown", size: 21,
+      storageKey: `${owner.id}/second-brief.md`,
+    } });
+    signedIn = owner;
+    const { POST } = await import("@/app/api/projects/[id]/knowledge/library/route");
+    const add = () => POST(new Request("https://app.example.invalid/", {
+      method: "POST", body: JSON.stringify({ attachmentIds: [existing.id, other.id] }),
+    }), { params: Promise.resolve({ id: project.id }) });
+    const responses = await Promise.all([add(), add()]);
+    assert.deepEqual(responses.map((response) => response.status).sort(), [200, 201]);
+    assert.deepEqual((await Promise.all(responses.map((response) => response.json()))).map((body) => body.alreadyAdded).sort(), [1, 2]);
+    const rows = await db.attachment.findMany({ where: { userId: owner.id, projectId: project.id, deletedAt: null } });
+    assert.equal(rows.length, 2);
+    assert.ok(rows.every((row) => row.fileName === existing.fileName));
+  });
   test("the picker retries Drive quota responses with a short Retry-After", async (t) => {
     let calls = 0;
     const { owner, project } = await fixture(t, async (...args) => {

@@ -108,7 +108,7 @@ type LibraryHome = "library" | "deleted";
  * can be undone is a question the product could answer itself. A failure puts
  * the row back where it was and says so.
  */
-export function useLibrary(query: LibraryQuery) {
+export function useLibrary(query: LibraryQuery, enabled = true) {
   const [items, setItems] = React.useState<LibraryItem[] | null>(null);
   const [counts, setCounts] = React.useState<LibraryCounts | null>(null);
   const [total, setTotal] = React.useState<number | null>(null);
@@ -180,10 +180,10 @@ export function useLibrary(query: LibraryQuery) {
   }, [q, kind, sort, deleted, setCursor]);
 
   React.useEffect(() => {
+    if (!enabled) return;
     void reload();
-  }, [reload]);
-
-  React.useEffect(() => () => controller.current?.abort(), []);
+    return () => controller.current?.abort();
+  }, [enabled, reload]);
 
   const loadMore = React.useCallback(async () => {
     const { value, generation: from } = cursor.current;

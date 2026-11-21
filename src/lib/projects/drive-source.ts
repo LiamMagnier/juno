@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { z } from "zod";
 import { boundedText, ConnectorApiError, type FirstPartyClient } from "@/lib/first-party-connectors/client";
 import { CloudFileError, driveQueryLiteral, resolveGoogleFile, summarizeCloudFile, type GoogleFileMeta } from "@/lib/cloud-files/drives";
 import { CLOUD_FILE_ID } from "@/lib/cloud-files/shared";
@@ -273,6 +274,27 @@ export type DriveBrowseInput =
   | { view: "folder"; parent: string; cursor?: string | null }
   | { view: "shared"; cursor?: string | null }
   | { view: "search"; query: string; cursor?: string | null };
+
+const browseQuery = z.object({
+  view: z.enum(["folder", "shared", "search"]).default("folder"),
+  parent: z.string().regex(CLOUD_FILE_ID).default("root"),
+  q: z.string().max(200).default(""),
+  cursor: z.string().min(1).max(8192).optional(),
+});
+
+export function parseDriveBrowseParams(params: URLSearchParams): DriveBrowseInput | null {
+  const parsed = browseQuery.safeParse({
+    view: params.get("view") ?? undefined,
+    parent: params.get("parent") ?? undefined,
+    q: params.get("q") ?? undefined,
+    cursor: params.get("cursor") ?? undefined,
+  });
+  if (!parsed.success) return null;
+  const { view, parent, q, cursor } = parsed.data;
+  if (view === "shared") return { view, cursor };
+  if (view === "search") return { view, query: q, cursor };
+  return { view, parent, cursor };
+}
 
 /**
  * One page of the "Add from Google Drive" picker: a folder's contents (My

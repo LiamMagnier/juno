@@ -18,7 +18,7 @@ import { isPdfAttachment, providerReceivesDocumentBytes } from "@/lib/attachment
 import { retrieveAttachmentKnowledge, retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
 import type { WorkspaceConfig } from "@/lib/projects/workspace-config";
 import { loadProjectLineage } from "@/lib/projects/project-tree-server";
-import { isCloudAttachEnabled } from "@/lib/env";
+import { isGoogleDriveFilesEnabled } from "@/lib/env";
 import { isAttachmentParserPending, isAttachmentParserUnavailable } from "@/lib/attachment-context";
 import type { ChatRequestBody } from "@/lib/chat/request";
 import type { ContextPort, TurnContext } from "@/lib/chat/context-resolution";
@@ -92,7 +92,7 @@ export async function resolveProjectContext({
   // is used: a stale source is queued to sync after this turn's response, so
   // the next turn reads what the folder holds now. Never awaited and never
   // thrown (lib/projects/drive-source-store.ts); off with cloud imports.
-  if (projectRow && conversation.projectId && isCloudAttachEnabled()) {
+  if (projectRow && conversation.projectId && isGoogleDriveFilesEnabled()) {
     const projectId = conversation.projectId;
     void import("@/lib/projects/drive-source-store")
       .then((sources) => sources.scheduleStaleSourceSyncs(conversation.userId, projectId))

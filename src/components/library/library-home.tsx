@@ -7,7 +7,8 @@ import { useApp } from "@/components/app/app-provider";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { LayoutGrid, List, Search, Trash2, Upload } from "@/components/ui/icons";
+import { ChevronRight, LayoutGrid, List, Search, Trash2, Upload } from "@/components/ui/icons";
+import { GoogleDriveMark } from "@/components/projects/google-drive-mark";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileVersionsDialog, RenameFileDialog } from "./library-dialogs";
@@ -384,6 +385,14 @@ export function LibraryHome() {
             />
           </div>
         </div>
+
+        {(show === "all" || show === "files") && !query.trim() && (
+          <Link href="/library?view=drive" className="mb-5 flex min-h-12 items-center gap-3 rounded-card border border-border px-3 text-ui transition-colors duration-fast hover:bg-accent">
+            <span className="grid size-8 shrink-0 place-items-center rounded-control bg-secondary"><GoogleDriveMark className="size-4" /></span>
+            <span className="font-medium">Google Drive</span>
+            <ChevronRight className="ms-auto size-4 shrink-0 text-muted-foreground rtl:rotate-180" aria-hidden="true" />
+          </Link>
+        )}
 
         {show === "media" ? (
           <div role="group" aria-label="Media type" className="mb-6 flex flex-wrap gap-2 motion-safe:animate-rise-in">

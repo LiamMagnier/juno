@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
-import { CLOUD_FILE_ID, CLOUD_IMPORT_CEILING_MB } from "@/lib/cloud-files/shared";
-import { browseDrive, classifyDriveFailure, SourceSyncError, type DriveBrowseInput } from "@/lib/projects/drive-source";
+import { CLOUD_IMPORT_CEILING_MB } from "@/lib/cloud-files/shared";
+import { browseDrive, classifyDriveFailure, parseDriveBrowseParams, SourceSyncError } from "@/lib/projects/drive-source";
 import { openDrive } from "@/lib/projects/drive-source-store";
 
 export const runtime = "nodejs";
@@ -20,13 +19,6 @@ export const maxDuration = 30;
  * files with the same "can't be added" note the composer's Drive picker draws.
  */
 
-const browseQuery = z.object({
-  view: z.enum(["folder", "shared", "search"]).default("folder"),
-  parent: z.string().regex(CLOUD_FILE_ID).default("root"),
-  q: z.string().max(200).default(""),
-  cursor: z.string().min(1).max(8192).optional(),
-});
-
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,24 +26,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const project = await prisma.project.findFirst({ where: { id, userId: user.id }, select: { id: true } });
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const url = new URL(req.url);
-  const parsed = browseQuery.safeParse({
-    view: url.searchParams.get("view") ?? undefined,
-    parent: url.searchParams.get("parent") ?? undefined,
-    q: url.searchParams.get("q") ?? undefined,
-    cursor: url.searchParams.get("cursor") ?? undefined,
-  });
-  if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  const input = parseDriveBrowseParams(new URL(req.url).searchParams);
+  if (!input) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   if (!(await rateLimit({ key: `cloud-files:${user.id}`, limit: 120, windowSec: 60 })).success) {
     return NextResponse.json({ error: "Too many requests. Try again in a minute." }, { status: 429 });
   }
 
-  const input: DriveBrowseInput =
-    parsed.data.view === "shared"
-      ? { view: "shared", cursor: parsed.data.cursor }
-      : parsed.data.view === "search"
-        ? { view: "search", query: parsed.data.q, cursor: parsed.data.cursor }
-        : { view: "folder", parent: parsed.data.parent, cursor: parsed.data.cursor };
   const plan = await getUserPlan(user.id);
   const maxBytes = Math.min(PLANS[plan].maxUploadMb, CLOUD_IMPORT_CEILING_MB) * 1024 * 1024;
   try {

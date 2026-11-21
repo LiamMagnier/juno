@@ -74,13 +74,24 @@ test("the app bootstrap carries every switch the web's UI reads, and only from e
   assert.match(data, /sharePeople: isSharePeopleEnabled\(\),/);
   assert.match(data, /chatMemoryOff: isChatMemoryOffEnabled\(\),/);
   assert.match(data, /cloudAttach: isCloudAttachEnabled\(\),/);
+  assert.match(data, /googleDriveFiles: isGoogleDriveFilesEnabled\(\),/);
   assert.match(data, /toneCharacteristics: isToneCharacteristicsEnabled\(\),/);
   assert.match(data, /artifactAi: isArtifactAiEnabled\(\),/);
   // Voice tools are decided where the relay token is signed, not in the UI.
   assert.doesNotMatch(data, /voiceTools/);
   const types = read("src/types/app.ts");
-  for (const key of ["sharePeople", "chatMemoryOff", "cloudAttach", "toneCharacteristics", "artifactAi"]) {
+  for (const key of ["sharePeople", "chatMemoryOff", "cloudAttach", "googleDriveFiles", "toneCharacteristics", "artifactAi"]) {
     assert.match(types, new RegExp(`\\b${key}\\?: boolean;`), `${key} is optional: an older server never sends it`);
+  }
+});
+
+test("configured Google Drive can be offered without enabling OneDrive, and explicit off disables both", () => {
+  const available = envModule.isGoogleDriveFilesEnabled;
+  assert.equal(withValue("CLOUD_ATTACH_ENABLED", undefined, available), true);
+  assert.equal(withValue("CLOUD_ATTACH_ENABLED", "0", available), false);
+  assert.equal(withValue("CLOUD_ATTACH_ENABLED", "1", available), true);
+  for (const path of ["files/route.ts", "files/attach/route.ts"]) {
+    assert.match(read(`src/app/api/connectors/[id]/${path}`), /id === "google-drive" \? isGoogleDriveFilesEnabled\(\) : isCloudAttachEnabled\(\)/);
   }
 });
 
