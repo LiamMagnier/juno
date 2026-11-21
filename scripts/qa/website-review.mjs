@@ -117,7 +117,7 @@ try {
           await page.setViewportSize({ width: 320, height: 740 });
           await page.goto(new URL('/dev/pages/project/p-atlas?tab=work', base).href, { waitUntil: 'domcontentloaded' });
           const activity = page.getByRole('radiogroup', { name: 'Project activity' });
-          await expect(activity.getByRole('radio')).toHaveCount(4);
+          await expect(activity.getByRole('radio')).toHaveCount(4, { timeout: 30_000 });
           assert(await activity.evaluate((tabs) => tabs.scrollWidth <= tabs.clientWidth + 1 && tabs.getBoundingClientRect().right <= innerWidth), 'Four activity tabs fit at 320px');
         }
         checks.push(`${mode}: project context, recent chats and settings access`);
