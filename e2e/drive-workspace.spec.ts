@@ -39,7 +39,7 @@ test("Drive connection returns to the Library folder", async ({ page }) => {
   await expect(link).toHaveAttribute("href", /return=%2Flibrary%3Fview%3Ddrive$/);
 });
 
-test("a project retries a failed Drive check and adds a picked folder", async ({ page }) => {
+test("a project retries a failed Drive check and adds a picked folder", async ({ page, isMobile }) => {
   const list = await page.request.get("/api/projects");
   expect(list.ok()).toBeTruthy();
   const { projects } = await list.json() as { projects: { id: string }[] };
@@ -57,7 +57,9 @@ test("a project retries a failed Drive check and adds a picked folder", async ({
   });
   await page.route(`**/api/projects/${project.id}/sources/drive?*`, (route) => route.fulfill({ json: { entries: [entries.folder], nextCursor: null } }));
   await page.goto(`/projects/${project.id}?tab=sources`);
+  if (isMobile) await page.getByRole("button", { name: "Open menu", exact: true }).click();
   await expect(page.getByRole("button", { name: "New chat in project" })).toBeVisible();
+  if (isMobile) await page.getByRole("button", { name: "Close menu", exact: true }).click();
   await page.getByRole("button", { name: "Add knowledge" }).first().click();
   await page.getByRole("menuitem", { name: "Google Drive file or folder" }).click();
   const picker = page.getByRole("dialog", { name: "Add from Google Drive" });
@@ -69,7 +71,7 @@ test("a project retries a failed Drive check and adds a picked folder", async ({
   expect(body).toEqual({ provider: "google-drive", items: [{ id: "reports", kind: "folder" }], includeSubfolders: true });
 });
 
-test("Code's starting points preserve drafts and the shared sidebar exposes workspace tools", async ({ page }) => {
+test("Code's starting points preserve drafts and the shared sidebar exposes workspace tools", async ({ page, isMobile }) => {
   await page.goto("/code");
   const draft = page.getByRole("textbox", { name: "Message" });
   await expect(draft).toBeVisible();
@@ -77,17 +79,27 @@ test("Code's starting points preserve drafts and the shared sidebar exposes work
   await expect(draft).toHaveValue("A draft to keep");
   await page.getByRole("button", { name: "Review changes" }).click();
   await expect(draft).toHaveValue("A draft to keep");
+  const draftHint = page.getByText("Finish or clear your draft before choosing a starting point.");
+  await expect(draftHint).toBeVisible();
   await draft.fill("");
   await page.getByRole("button", { name: "Review changes" }).click();
   await expect(draft).toHaveValue(/^Review the current changes/);
+  await expect(draftHint).toBeHidden();
+  if (isMobile) await page.getByRole("button", { name: "Open menu", exact: true }).click();
   const primary = page.getByRole("navigation", { name: "Primary" });
   await expect(primary.getByRole("link", { name: "Artifacts" })).toHaveAttribute("href", "/artifacts");
   await expect(primary.getByRole("link", { name: "Apps & plugins" })).toHaveAttribute("href", "/connections");
   await expect(primary.getByRole("link", { name: "Skills" })).toHaveAttribute("href", "/skills");
+  if (isMobile) await page.getByRole("button", { name: "Close menu", exact: true }).click();
 
   const recent = page.getByRole("region", { name: "Recent sessions" });
   await recent.getByRole("link", { name: /QA · Code session/ }).click();
-  await page.getByRole("button", { name: "Find in this session", exact: true }).click();
+  if (isMobile) {
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    await page.getByRole("menuitem", { name: /Find in this session/ }).click();
+  } else {
+    await page.getByRole("button", { name: "Find in this session", exact: true }).click();
+  }
   const finder = page.getByRole("dialog", { name: "Find in this session" });
   await finder.getByRole("textbox", { name: "Find in this session" }).fill("health check route");
   await expect(finder.getByRole("option", { name: /Add a health check route/ })).toBeVisible();

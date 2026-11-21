@@ -162,6 +162,7 @@ export function CodeComposer({
   const composer = React.useRef<ComposerHandle>(null);
   const stack = React.useRef<HTMLDivElement>(null);
   const [interactive, setInteractive] = React.useState(false);
+  const [startingPointHint, setStartingPointHint] = React.useState(false);
 
   /*
    * The landing's draft is kept in this tab only (nothing to sync before a
@@ -576,9 +577,7 @@ export function CodeComposer({
   );
 
   function chooseStartingPoint(text: string) {
-    if (composer.current?.setDraft(text, { onlyIfEmpty: true }) === false) {
-      toast.info("Finish or clear your draft before choosing a starting point.");
-    }
+    setStartingPointHint(composer.current?.setDraft(text, { onlyIfEmpty: true }) === false);
   }
 
   React.useEffect(() => {
@@ -723,7 +722,7 @@ export function CodeComposer({
           stackRef={stack}
         />
       </div>
-      <CodeStartingPoints onChoose={chooseStartingPoint} disabled={!interactive || submitting} />
+      <CodeStartingPoints onChoose={chooseStartingPoint} disabled={!interactive || submitting} showDraftHint={startingPointHint} />
     </div>
   );
 }

@@ -10,18 +10,27 @@ const starters = [
   { label: "Review changes", icon: GitBranch, prompt: "Review the current changes for bugs and missing test coverage. Cite the files and lines behind each finding." },
 ];
 
-export function CodeStartingPoints({ onChoose, disabled }: { onChoose: (prompt: string) => void; disabled: boolean }) {
+export function CodeStartingPoints({ onChoose, disabled, showDraftHint }: {
+  onChoose: (prompt: string) => void;
+  disabled: boolean;
+  showDraftHint: boolean;
+}) {
   return (
-    <div role="group" aria-label="Starting points" className="mt-4 flex flex-wrap justify-center gap-2">
-      {starters.map(({ label, icon: Icon, prompt }) => (
-        <button key={label} type="button" disabled={disabled}
-          className="flex min-h-9 items-center gap-2 rounded-control border border-border px-3 text-ui text-muted-foreground transition-colors duration-fast enabled:hover:bg-accent enabled:hover:text-foreground coarse:min-h-11"
-          onClick={() => onChoose(prompt)}
-        >
-          <Icon className="size-4" aria-hidden="true" />
-          {label}
-        </button>
-      ))}
+    <div className="mt-4">
+      <div role="group" aria-label="Starting points" className="flex flex-wrap justify-center gap-2">
+        {starters.map(({ label, icon: Icon, prompt }) => (
+          <button key={label} type="button" disabled={disabled}
+            className="flex min-h-9 items-center gap-2 rounded-control border border-border px-3 text-ui text-muted-foreground transition-colors duration-fast enabled:hover:bg-accent enabled:hover:text-foreground coarse:min-h-11"
+            onClick={() => onChoose(prompt)}
+          >
+            <Icon className="size-4" aria-hidden="true" />
+            {label}
+          </button>
+        ))}
+      </div>
+      <p role="status" className={showDraftHint ? "mt-1.5 text-center text-caption text-muted-foreground" : "sr-only"}>
+        {showDraftHint ? "Finish or clear your draft before choosing a starting point." : ""}
+      </p>
     </div>
   );
 }
