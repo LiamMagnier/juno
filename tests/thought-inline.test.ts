@@ -148,11 +148,13 @@ test("the bottom sheet is the house sheet: one grabber, one rise and sink, one g
   assert.match(sheet, /<SheetContent\s+side="bottom"/);
   // No private engine left behind: keyframes, pointer code or a grabber of its own.
   assert.doesNotMatch(sheet, /@keyframes|onPointerDown|data-sheet-drag|bg-muted-foreground\/35|88dvh/);
-  // The house sheet travels on the shared rise/sink pair, which reads --motion-shift.
+  // The shared rise/sink pair keeps travel bounded even for a full-height sheet.
+  // Both distances still honor the reduced-motion multiplier.
   const css = read("src/components/ui/sheet.css");
-  assert.match(css, /ui-sheet-rise var\(--dur-slow\) var\(--ease-drawer\)/);
-  assert.match(css, /ui-sheet-sink var\(--dur-base\) var\(--ease-in\)/);
-  assert.match(css, /translate3d\(0, calc\(100% \* var\(--motion-shift, 1\)\), 0\)/);
+  assert.match(css, /ui-sheet-rise var\(--dur-base\) var\(--ease-drawer\)/);
+  assert.match(css, /ui-sheet-sink var\(--dur-exit\) var\(--ease-in\)/);
+  assert.match(css, /translate3d\(0, calc\(clamp\(1\.25rem, 18%, 3rem\) \* var\(--motion-shift, 1\)\), 0\)/);
+  assert.match(css, /translate3d\(0, calc\(clamp\(\.75rem, 8%, 1\.5rem\) \* var\(--motion-shift, 1\)\), 0\)/);
   const house = read("src/components/ui/sheet.tsx");
   assert.match(house, /useDialogFocusReturn/);
 });
