@@ -273,7 +273,7 @@ export interface ComposerHandle {
   focus(): void;
   openPopover(name: PopoverName): void;
   editLastQueued(): void;
-  setDraft(text: string): void;
+  setDraft(text: string, options?: { onlyIfEmpty?: boolean }): boolean;
 }
 
 export const Composer = React.forwardRef<
@@ -519,12 +519,21 @@ export const Composer = React.forwardRef<
       setDraft(last.text);
       requestAnimationFrame(() => textarea.current?.focus());
     },
-    setDraft: (t) => {
+    setDraft: (t, options) => {
+      const field = textarea.current;
+      const current = field?.value ?? draftRef.current;
+      if (options?.onlyIfEmpty && current.trim()) {
+        // A browser can update the field before React's change event is reflected in state.
+        if (current !== draftRef.current) setDraft(current);
+        field?.focus();
+        return false;
+      }
       setDraft(t);
       requestAnimationFrame(() => {
         textarea.current?.focus();
         textarea.current?.setSelectionRange(t.length, t.length);
       });
+      return true;
     },
   }));
 
