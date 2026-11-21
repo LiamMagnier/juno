@@ -34,7 +34,7 @@ import { cn } from "@/lib/utils";
  * of the bootstrap is cast, because nothing on this page reaches it.
  */
 export const BOOTSTRAP = {
-  user: { id: "dev", name: "Liam Magnier", email: null, image: null },
+  user: { id: "dev", name: "Demo Account", email: null, image: null },
   settings: {
     theme: "system",
     accent: "coral",

@@ -39,15 +39,46 @@ try {
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
       if (overflow) failures.push(`${mode}/${route}: horizontal document overflow`);
       if (mode.startsWith('mobile') && route === 'projects') {
-        for (const tile of await page.locator('.pj-tile').all()) {
+        const describedTiles = page.locator('.pj-tile').filter({ has: page.locator('p.line-clamp-2') });
+        await describedTiles.first().waitFor({ state: 'visible' });
+        const tiles = await describedTiles.all();
+        assert(tiles.length > 0, 'Project descriptions are missing from the fixture');
+        for (const tile of tiles) {
           const actions = await tile.locator('.pj-actions').boundingBox();
-          const excerpt = await tile.locator('p.mt-1').boundingBox();
-          if (actions && excerpt) assert(excerpt.y >= actions.y + actions.height - 1, 'Project actions cover the description');
+          const excerpt = await tile.locator('p.line-clamp-2').boundingBox();
+          assert(actions && excerpt, 'Project description and actions must render');
+          assert(excerpt.y >= actions.y + actions.height - 1, 'Project actions cover the description');
         }
         checks.push(`${mode}: project actions clear the description`);
       }
       await capture(page, `${mode}/${route}.png`);
       console.log(`${mode}/${route}`);
+      if (route === 'projects' && mode.endsWith('light')) {
+        const list = page.getByRole('list', { name: 'Projects', exact: true });
+        const listButton = page.getByRole('button', { name: 'List view', exact: true });
+        const gridButton = page.getByRole('button', { name: 'Grid view', exact: true });
+        const tile = list.locator('.pj-tile').first();
+        const gridHeight = (await tile.boundingBox())?.height;
+        await listButton.click();
+        await expect(listButton).toHaveAttribute('aria-pressed', 'true');
+        await expect(list).toHaveAttribute('data-layout', 'list');
+        assert((await tile.boundingBox())?.height < gridHeight, 'List mode should be denser');
+        await capture(page, `${mode}/projects-list.png`);
+        await gridButton.click();
+        await expect(list).toHaveAttribute('data-layout', 'grid');
+        checks.push(`${mode}: projects switch between grid and denser list`);
+      }
+      if (route === 'project' && mode.endsWith('light')) {
+        await expect(page.getByRole('heading', { name: 'Project context' })).toBeVisible();
+        if (mode.startsWith('mobile')) {
+          await page.getByRole('link', { name: 'Project knowledge', exact: true }).click();
+          await expect(page.locator('#project-knowledge')).toBeInViewport();
+        }
+        await page.getByRole('button', { name: 'Settings', exact: true }).click();
+        await expect(page.getByRole('heading', { name: 'Settings', exact: true, level: 1 })).toBeVisible();
+        await capture(page, `${mode}/project-settings.png`);
+        checks.push(`${mode}: project context and direct settings access`);
+      }
     }
     if (mode === 'desktop-light') {
       for (const [routeName, label, query] of [['projects','Search projects','Atlas'], ['library','Search the library','Pricing'], ['connections','Search apps','GitHub']]) {

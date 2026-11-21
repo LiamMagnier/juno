@@ -306,7 +306,7 @@ function host(overrides: Record<string, unknown>) {
 }
 const HOSTS = [
   host({}),
-  host({ id: "host-air", deviceId: "dev-air", displayName: "Liam’s MacBook Air", state: "offline", activeRunCount: 0, allowsComputerUse: false }),
+  host({ id: "host-air", deviceId: "dev-air", displayName: "Demo laptop", state: "offline", activeRunCount: 0, allowsComputerUse: false }),
 ];
 
 function useFetchShim() {

@@ -10,6 +10,7 @@ const browser = await chromium.launch({ executablePath: process.env.ORBIT_CHROMI
 
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, reducedMotion: "reduce" });
+  await page.route("**/api/**", (route) => route.fulfill({ status: 401, json: { error: "unauthorized" } }));
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.setDefaultTimeout(90_000);
@@ -46,6 +47,9 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   assert((await pageAction.boundingBox()).y > (await heading.boundingBox()).y, "Phone actions clear the heading");
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "The phone page has no sideways overflow");
+  const sortLabel = page.getByRole("combobox", { name: "Sort projects" }).locator("span").first();
+  await expect(sortLabel).toHaveText("Activity");
+  assert(await sortLabel.evaluate((label) => label.scrollWidth <= label.clientWidth + 1), "The mobile sort label fits without clipping");
 
   await visit("/dev/pages/project/p-atlas?sources=invalid");
   await expect(page.locator("[data-page-root] #juno-main")).toBeVisible();

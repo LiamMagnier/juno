@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import { chromium } from "playwright";
 
 const base = process.env.DESIGN_TEST_BASE_URL;
+const executablePath = process.env.DESIGN_TEST_CHROMIUM;
+const launchOptions = executablePath ? { executablePath, headless: true } : { channel: "chrome", headless: true };
 function localBase() {
   const url = new URL(base!);
   assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname));
@@ -13,11 +15,11 @@ function localBase() {
 }
 
 test("menu glyphs answer the pointer and remain still during keyboard navigation", { skip: !base, timeout: 90_000 }, async () => {
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await chromium.launch(launchOptions);
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "no-preference" });
     await page.goto(new URL("/dev/pages?page=library", localBase()).href);
-    await page.getByRole("button", { name: /Liam Magnier/ }).click();
+    await page.getByRole("button", { name: /Demo Account/ }).click();
     await page.mouse.move(1300, 100);
     await page.keyboard.press("s");
     const settings = page.getByRole("menuitem", { name: "Settings", exact: true });
@@ -37,7 +39,7 @@ test("menu glyphs answer the pointer and remain still during keyboard navigation
 });
 
 test("Search opens on phone and desktop after its lazy chunk and stays inside the viewport", { skip: !base, timeout: 90_000 }, async () => {
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await chromium.launch(launchOptions);
   try {
     for (const width of [390, 1440]) {
       const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
