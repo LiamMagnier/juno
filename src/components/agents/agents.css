@@ -19,23 +19,19 @@
 .orbit-filters > button:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
 .orbit-filters > button[aria-pressed=true] { background: hsl(var(--foreground)); color: hsl(var(--background)); }
 .orbit-filters > button > span { font-family: var(--font-mono), monospace; font-size: 10px; opacity: .65; }
-.orbit-crew { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.orbit-crew__agent { display: flex; flex-direction: column; overflow: hidden; border: 1px solid hsl(var(--border) / .75); border-radius: theme("borderRadius.card"); background: hsl(var(--card)); transition: border-color var(--dur-fast) var(--ease-out-soft), background-color var(--dur-fast) var(--ease-out-soft); }
-.orbit-crew__agent:hover, .orbit-crew__agent:focus-within { border-color: hsl(var(--foreground) / .2); background: hsl(var(--accent) / .25); }
-.orbit-agent-card { display: flex; flex: 1; min-height: 218px; flex-direction: column; align-items: flex-start; padding: 16px 18px; }
-.orbit-agent-card__stage { position: relative; display: flex; align-items: center; width: 100%; height: 70px; }
-.orbit-crew__face { display: block; zoom: .68; transform-origin: center; transition: transform var(--dur-base) var(--ease-out-expo); }
-.orbit-agent-card__open { position: absolute; inset-inline-end: 0; top: 34px; color: hsl(var(--muted-foreground)); opacity: 0; transition: opacity var(--dur-base); }
+.orbit-crew { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.orbit-crew__agent { display: flex; flex-direction: column; overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: theme("borderRadius.card"); background: hsl(var(--card)); }
+.orbit-crew__agent:hover, .orbit-crew__agent:focus-within { border-color: hsl(var(--foreground) / .24); }
+.orbit-agent-card { display: flex; flex: 1; align-items: center; gap: .75rem; min-height: 4.5rem; padding: .75rem 3rem .5rem .875rem; }
+.orbit-crew__face { display: block; flex-shrink: 0; }
+.orbit-agent-card__open { color: hsl(var(--muted-foreground)); opacity: 0; transition: opacity var(--dur-fast); }
 .orbit-agent-card:hover .orbit-agent-card__open, .orbit-agent-card:focus-visible .orbit-agent-card__open { opacity: 1; }
-@media (hover: hover) {
-  .orbit-agent-card:hover .orbit-crew__face { transform: translateY(calc(-3px * var(--motion-shift, 1))); }
-}
+.orbit-agent-card:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; border-radius: calc(theme("borderRadius.card") - 1px); }
 @media (hover: none) { .orbit-agent-card__open { opacity: 1; } }
-.orbit-crew__when { margin-top: auto; padding-top: 12px; }
-.orbit-workspace-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-block-end: 22px; }
-.orbit-workspace-nav a { display: inline-flex; min-height: 40px; align-items: center; gap: 8px; padding-inline: 12px; border: 1px solid hsl(var(--border)); border-radius: theme("borderRadius.control"); color: hsl(var(--foreground)); font-size: 13px; font-weight: 500; }
-.orbit-workspace-nav a:hover { background: hsl(var(--accent)); }
-.orbit-workspace-nav a svg:last-child { color: hsl(var(--muted-foreground)); }
+.orbit-crew__when { padding: 0 .875rem .625rem; }
+.orbit-workspace-nav { display: flex; flex-wrap: wrap; gap: .25rem; }
+.orbit-workspace-nav a { display: inline-flex; min-height: 36px; align-items: center; gap: .5rem; padding-inline: .625rem; border-radius: theme("borderRadius.control"); color: hsl(var(--muted-foreground)); font-size: 13px; }
+.orbit-workspace-nav a:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
 .orbit-agent-actions { padding: 6px 8px; border-top: 1px solid hsl(var(--border) / .75); }
 .orbit-agent-actions__row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
 .orbit-agent-computer, .orbit-agent-task { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding-inline: 7px; border-radius: theme("borderRadius.control"); color: hsl(var(--foreground)); font-size: 12px; font-weight: 500; }
@@ -55,17 +51,14 @@
 .orbit-first .orbit-capabilities { border-top: 0; margin-top: 0; padding-top: 0; }
 .orbit-first .orbit-section-heading { justify-content: center; text-align: center; }
 .orbit-first .orbit-overline { display: none; }
-@container page (max-width: 47rem) { .orbit-crew, .orbit-capabilities__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container page (max-width: 47rem) { .orbit-capabilities__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container page (max-width: 31rem) {
   .orbit-workspace .app-page-content { padding-block-start: 1rem; }
   .orbit-heading p { margin-block-start: .5rem; }
   .orbit-section-heading { align-items: flex-start; flex-direction: column; gap: 14px; }
   .orbit-search { width: 100%; min-height: 44px; }
   .orbit-search input { font-size: 16px; }
-  .orbit-crew { gap: 10px; }
-  .orbit-agent-card { min-height: 205px; padding: 14px 12px; }
-  .orbit-agent-card__stage { height: 68px; }
-  .orbit-crew__face { zoom: .58; }
+  .orbit-crew { grid-template-columns: minmax(0, 1fr); }
   .orbit-agent-actions { padding: 4px; }
   .orbit-agent-computer, .orbit-agent-task { flex: 1; justify-content: flex-start; white-space: nowrap; }
   .orbit-capabilities__grid { grid-template-columns: 1fr; gap: 2px; }
@@ -77,15 +70,7 @@
   .orbit-filters { flex-wrap: nowrap; }
   .orbit-filters > button { flex-shrink: 0; white-space: nowrap; }
 }
-@container page (max-width: 23rem) {
-  .orbit-crew { grid-template-columns: minmax(0, 1fr); }
-  .orbit-agent-card { min-height: 9rem; padding: .75rem; }
-  .orbit-agent-card__stage { height: 3.25rem; }
-  .orbit-agent-card__open { top: 1rem; }
-}
 @media (pointer: coarse) { .orbit-agent-computer, .orbit-agent-task, .orbit-workspace-nav a { min-height: 44px; } .orbit-search button { min-width: 32px; min-height: 40px; } }
-@media (prefers-reduced-motion: no-preference) { .orbit-crew__agent { animation: orbit-crew-in var(--dur-base) var(--ease-out-expo) backwards; animation-delay: calc(min(var(--i, 0), 4) * var(--stagger-tile)); } }
-@keyframes orbit-crew-in { from { opacity: 0; transform: translateY(calc(8px * var(--motion-shift, 1))); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .orbit-workspace *, .orbit-crew *, .orbit-capabilities * { animation: none !important; transition: none !important; } }
 .orbit-computer-header { border-bottom: 1px solid hsl(var(--border) / .6); margin-bottom: 16px; }
 .orbit-computer-mark { display: grid; place-items: center; width: 104px; height: 104px; border: 1px solid hsl(var(--border)); border-radius: 28px; background: hsl(var(--card) / .6); box-shadow: inset 0 1px 0 hsl(var(--foreground) / .03); }

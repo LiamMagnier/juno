@@ -14,7 +14,6 @@
   --sw-hair: hsl(var(--border));
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-  backdrop-filter: none;
 }
 @media (min-width: 768px) {
   .settings-window {

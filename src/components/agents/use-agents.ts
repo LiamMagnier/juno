@@ -85,17 +85,23 @@ let rosterInflight: ReturnType<typeof fetchAgents> | null = null;
 // A write must not be answered by a read that started before it. Registered at
 // import, so it runs before any hook's own listener for the same event rereads.
 if (typeof window !== "undefined") {
+  let invalidated = false;
   for (const event of [AGENTS_CHANGED_EVENT, "juno:agent-updated"]) {
     window.addEventListener(event, () => {
+      if (invalidated) return;
+      invalidated = true;
       rosterInflight = null;
+      queueMicrotask(() => { invalidated = false; });
     });
   }
 }
 function readRoster() {
-  rosterInflight ??= fetchAgents().finally(() => {
-    rosterInflight = null;
+  if (rosterInflight) return rosterInflight;
+  const request = fetchAgents().finally(() => {
+    if (rosterInflight === request) rosterInflight = null;
   });
-  return rosterInflight;
+  rosterInflight = request;
+  return request;
 }
 
 export function useAgents(options: { enabled?: boolean } = {}): AgentsRoster {

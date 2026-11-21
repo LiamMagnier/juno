@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ArrowUpRight, CalendarClock, Plus, Search, Workflow, X } from "@/components/ui/icons";
+import { ArrowRight, CalendarClock, Plus, Search, Workflow, X } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,6 @@ import { formatAgo, localStateSentence } from "./agent-bits";
 import { announceAgentsChanged, hireAgent } from "./agents-transport";
 import { useAgents } from "./use-agents";
 import { AGENT_NOUN, BRAND, FEATURE_NAMES } from "@/lib/brand/names";
-import { prefersReducedMotion } from "@/lib/motion-preference";
 import { staggerDelay } from "@/lib/motion";
 import { touchReturnBreaksLine } from "@/lib/touch-keyboard";
 import { agentIsWorking, filterRoster, type RosterFilter } from "@/lib/agents/roster-view";
@@ -69,7 +68,7 @@ const RISE = "motion-safe:animate-rise-in";
 function stagger(step: number): React.CSSProperties {
   return {
     ...staggerDelay(step, "tight"),
-    animationDuration: "var(--dur-slow)",
+    animationDuration: "var(--dur-fast)",
     animationTimingFunction: "var(--ease-out-expo)",
     animationFillMode: "both",
   };
@@ -113,7 +112,7 @@ export function AgentsHome({
   const [starter, setStarter] = React.useState<{ text: string } | null>(null);
   const composerSection = React.useRef<HTMLElement>(null);
   const focusNewAgent = () => {
-    composerSection.current?.scrollIntoView({ behavior: prefersReducedMotion() ? "instant" : "smooth", block: "center" });
+    composerSection.current?.scrollIntoView({ behavior: "instant", block: "center" });
     composerSection.current?.querySelector("textarea")?.focus({ preventScroll: true });
   };
   const chooseStarter = (text: string) => {
@@ -149,14 +148,13 @@ export function AgentsHome({
           slogan for a lede ("A capable crew. A clearer day."). */}
       <AppPageHeader
         heading={BRAND.orbit.label}
-        lede="Start a task, open a computer, or check in on your agents."
         className={cn(TITLE_FINISH, "orbit-heading")}
         actions={<>{canHire ? <Button type="button" onClick={focusNewAgent}><Plus className="size-4" aria-hidden="true" />New agent</Button> : null}<Button variant="outline" asChild><Link href="/connections">Connections<ArrowRight className="size-3.5" aria-hidden="true" /></Link></Button></>}
       />
 
       <nav aria-label="Orbit workspace" className="orbit-workspace-nav">
-        <Link href="/activity"><Workflow className="size-4.5" aria-hidden="true" /><span>Activity and approvals</span><ArrowUpRight className="size-3.5" aria-hidden="true" /></Link>
-        <Link href="/automations"><CalendarClock className="size-4.5" aria-hidden="true" /><span>Automations</span><ArrowUpRight className="size-3.5" aria-hidden="true" /></Link>
+        <Link href="/activity"><Workflow className="size-4.5" aria-hidden="true" /><span>Activity and approvals</span></Link>
+        <Link href="/automations"><CalendarClock className="size-4.5" aria-hidden="true" /><span>Automations</span></Link>
       </nav>
 
       {attention.length > 0 ? (
@@ -183,7 +181,7 @@ export function AgentsHome({
       {/* The crew: one tile per agent, its live face, who it is and what it
           is doing (orbit-stage.tsx). The list a keyboard and a screen reader
           use; it is named aloud, and on screen only under the cards. */}
-      <section aria-labelledby="orbit-crew" className="mt-9">
+      <section aria-labelledby="orbit-crew" className="mt-6">
         <div className="orbit-section-heading">
           <div><h2 id="orbit-crew">Your crew</h2>{working > 0 && <p>{working} {working === 1 ? "agent working" : "agents working"}</p>}</div>
           <div className="orbit-search"><Search className="size-4 shrink-0" aria-hidden="true" /><input type="search" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search agents" placeholder="Find an agent or task…" />{query ? <button type="button" onClick={() => setQuery("")} aria-label="Clear agent search"><X className="size-3.5" /></button> : null}</div>
@@ -367,10 +365,8 @@ function useCreateAgent(team: readonly ClientAgent[], runsOn: RunsOn = { target:
       }
       announceAgentsChanged();
       const href = agentHref(outcome.value);
-      router.prefetch(href);
       setArrived(true);
-      const reduce = prefersReducedMotion();
-      window.setTimeout(() => router.push(href), reduce ? 0 : 220);
+      router.push(href);
     } catch {
       setError(`Couldn’t create that ${AGENT_NOUN.singular}. Your words are still here; try again.`);
       setBusy(false);
@@ -491,7 +487,7 @@ function HeroComposer({ team, heading, starter }: { team: readonly ClientAgent[]
   React.useEffect(() => {
     if (!starter) return;
     setValue(starter.text);
-    field.current?.scrollIntoView({ behavior: prefersReducedMotion() ? "instant" : "smooth", block: "center" });
+    field.current?.scrollIntoView({ behavior: "instant", block: "center" });
     field.current?.focus({ preventScroll: true });
   }, [starter, field]);
   const state: AgentState = arrived ? "done" : busy ? "working" : value.trim() ? "listening" : "idle";

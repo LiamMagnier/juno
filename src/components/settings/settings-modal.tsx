@@ -95,7 +95,7 @@ export function SettingsModal({
           target.focus();
         }}
         className={cn(
-          "flex flex-col gap-0 overflow-hidden bg-background text-foreground [backdrop-filter:none] !shadow-none",
+          "flex flex-col gap-0 overflow-hidden bg-background text-foreground !shadow-none",
           "md:h-[min(86dvh,46rem)] md:w-[calc(100%-3rem)] md:max-w-[58rem] md:flex-row",
           "max-md:left-0 max-md:top-0 max-md:h-dvh max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:[translate:none]",
           // The entrance and exit, on the dialog's own pop keyframes with the

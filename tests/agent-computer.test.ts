@@ -59,6 +59,23 @@ const { sweepAgentComputers, resetOrphanTrackingForTest } = req(
   "../src/lib/computer/sweep"
 ) as typeof import("@/lib/computer/sweep");
 
+it("concurrent desktop availability checks share one provider probe", async (context) => {
+  const previous = process.env.AGENT_COMPUTER_PROVIDER;
+  process.env.AGENT_COMPUTER_PROVIDER = "fake";
+  resetComputerProviderCache();
+  try {
+    const provider = computerProvider();
+    assert.ok(provider);
+    const probe = context.mock.method(provider, "available", async () => ({ ok: true }));
+    assert.deepEqual(await Promise.all([isAgentComputerConfigured(), isAgentComputerConfigured()]), [true, true]);
+    assert.equal(probe.mock.callCount(), 1);
+  } finally {
+    resetComputerProviderCache();
+    if (previous === undefined) delete process.env.AGENT_COMPUTER_PROVIDER;
+    else process.env.AGENT_COMPUTER_PROVIDER = previous;
+  }
+});
+
 describe("agent-computer prompt for unattended runs", () => {
   it("a scheduled or triggered run is never told to ask for a take-over", () => {
     assert.equal(computerPromptSection({ attended: true }), YOUR_COMPUTER_PROMPT_SECTION);

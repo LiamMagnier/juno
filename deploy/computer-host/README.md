@@ -12,6 +12,21 @@ are off in production until the owner does everything below and sets
 `COMPUTER_PROVIDER=remote` on the web VM. Nothing here changes a price, a plan or a
 credential.
 
+## Using hardware you already own
+
+Use an existing Mac for an Orbit agent by installing Alevr, signing in to the
+same account, and turning on Work in the Mac app. In Orbit, open **Computers**
+and move the agent to that Mac. The Mac needs to be awake and online during a
+run. Enable screen control on the Mac if the agent needs to interact with apps.
+This path uses the Mac you own for execution, so there is no hosted desktop to
+rent. The account's agent access and model usage limits still apply.
+
+For a separate Linux desktop per agent, use an existing dedicated Linux machine
+as the Docker computer host. The host and image use local Docker without a
+managed browser service. Follow the host setup and acceptance checks below to
+connect it to Alevr. The host needs its own approved network and the existing
+per-account computer access policy still governs wake requests.
+
 ## Why a separate machine
 
 The web VM holds the database URL, `AUTH_SECRET` and the AI provider keys, and the Work

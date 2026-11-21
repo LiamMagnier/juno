@@ -21,7 +21,7 @@ export function OrbitAgentActions({ agent, href, onChanged }: {
   const hasCloudComputer = agent.executionTarget !== "mac";
   const computerHref = `${href}?agent=computer`;
   const computer = agent.computer;
-  const canWake = computer && (!computer.enabled || ["asleep", "disabled", "error"].includes(computer.status));
+  const canWake = computer && (!computer.enabled || ["asleep", "resting", "disabled", "error"].includes(computer.status));
   const wakingRef = useRef(false);
   const [waking, setWaking] = useState(false);
   const [computerError, setComputerError] = useState<string | null>(null);
