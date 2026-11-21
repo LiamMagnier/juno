@@ -79,7 +79,7 @@ test("the v2 composer keeps the mode on the row and uses Chat's dictation and Co
   assert.match(src, /<DictationSwap active=\{dictating\}/);
   // The call is the composer, as in Chat: voiceCallParts through useCodeVoiceCall, the glow around the shell.
   assert.match(src, /useCodeVoiceCall\(\{ open: voice\.open, onClose: voice\.close, briefing: voiceBriefing, send: voiceSend/);
-  assert.match(src, /<VoiceComposerGlow call=\{call\}>/);
+  assert.match(src, /<VoiceComposerFrame call=\{call\}>/);
   assert.match(src, /call\.end/);
   assert.doesNotMatch(src, /<CodeVoicePanel/);
   assert.match(src, /aria-label="Voice conversation"/);

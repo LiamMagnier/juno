@@ -1,7 +1,6 @@
 /*
  * THE VOICE CALL: the state chip, the controls' entrance and the exit back to
- * the composer (realtime-voice.tsx, voice-call-chip.tsx). The edge light is
- * Tailwind on its own layers (voice-composer-glow.tsx).
+ * the composer (realtime-voice.tsx, voice-call-chip.tsx).
  *
  * Motion is on the house ladder (DIRECTION.md §7): the controls and state word
  * enter on the fast rung (120ms), with a short travel distance.
@@ -59,6 +58,7 @@
 @container (max-width: 22.5rem) {
   .voice-call-frame .voice-chip {
     background: transparent;
+    border-color: transparent;
     padding-left: 0;
     padding-right: 0;
   }
@@ -103,7 +103,7 @@
   color: hsl(var(--foreground));
 }
 .voice-meter[data-meter="alevr"] {
-  color: hsl(var(--primary));
+  color: hsl(var(--foreground));
 }
 .voice-meter[data-meter="rest"],
 .voice-meter[data-meter="none"] {

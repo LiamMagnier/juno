@@ -15,10 +15,8 @@ import { FEATURE_NAMES } from "@/lib/brand/names";
  *
  * What the chat shell owes the merge at First light, held in one place:
  *
- *   - the sidebar has no Design door: Chat's destinations are Projects,
- *     Library and Customize (shell contract v2; Artifacts live inside
- *     Library), on the panel and the rail alike (they are one list, drawn
- *     twice);
+ *   - the sidebar links to Artifacts. Designs open within Artifacts and keep
+ *     the same destination in the panel and the rail;
  *   - ⌘K still answers the word "design", and every design row lands on
  *     Artifacts filtered to designs, never on the retired `/design` page;
  *   - no word keys two destinations, which is how "canvas" used to offer two
@@ -36,19 +34,15 @@ function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
-test("Chat's destinations are Projects, Library and Customize, with no Design row", () => {
+test("the sidebar exposes Library, Artifacts, Apps and Skills as separate destinations", () => {
   const sidebar = withoutComments(SIDEBAR);
-  // The Chat list is the second array in the `isCode ? [...] : [...]` choice,
-  // after Code's; read it from its first row to its close.
-  const start = sidebar.indexOf('{ href: "/projects"');
-  assert.ok(start >= 0, "the Chat list starts with Projects");
-  const chat = sidebar.slice(start, sidebar.indexOf("] as const)", start));
-  const hrefs = [...chat.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
-  // The shell contract's Chat destinations, in its order (v2: Artifacts are a
-  // view of Library, agents are a section of the list, not a door).
-  assert.deepEqual(hrefs, ["/projects", "/library", "/customize"]);
-  // Library stays lit on /artifacts, so a design opened from it keeps its place.
-  assert.match(chat, /label: FEATURE_NAMES\.library\.label, active: pathname === "\/library" \|\| pathname === "\/artifacts"/);
+  const start = sidebar.indexOf('aria-label="Primary"');
+  assert.ok(start >= 0);
+  const primary = sidebar.slice(start, sidebar.indexOf("</nav>", start));
+  const hrefs = [...primary.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(hrefs, ["/activity", "/projects", "/library", "/artifacts", "/connections", "/skills", "/code/customize", "/customize"]);
+  assert.match(primary, /label: FEATURE_NAMES\.library\.label, active: pathname === "\/library" \}/);
+  assert.match(primary, /label: FEATURE_NAMES\.artifacts\.label, active: pathname\?\.startsWith\("\/artifacts"\)/);
 
   // Nowhere else in the column either: not a pinned row, not the rail.
   assert.ok(!sidebar.includes('"/design"'), "no sidebar row links to /design");

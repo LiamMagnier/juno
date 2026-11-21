@@ -688,9 +688,19 @@ export function AppSidebar({
     };
   }, [loadProjects]);
 
-  /* A pinned project opened or folded, remembered with the section folds.
-     Only pinned projects are kept, so the list cannot outgrow the column. */
+  /* Remember project disclosures with the section folds. */
+  const projectPath = pathname?.match(/^\/projects\/([^/]+)$/);
+  const chatProjectId = pathname?.startsWith("/chat/")
+    ? conversations.find((conversation) => `/chat/${conversation.id}` === pathname)?.projectId
+    : undefined;
+  const currentProjectId = projectPath?.[1] ?? chatProjectId;
+  const [foldedCurrentProject, setFoldedCurrentProject] = React.useState<string | null>(null);
+  React.useEffect(() => setFoldedCurrentProject(null), [currentProjectId]);
+
   const setProjectOpen = (id: string, open: boolean) => {
+    if (id === currentProjectId) {
+      setFoldedCurrentProject(open ? null : id);
+    }
     setOpenProjects((prev) => {
       const pinnedIds = projects.length > 0 ? projects.filter((p) => p.starred).map((p) => p.id) : undefined;
       const next = withProjectOpen(prev, id, open, pinnedIds);
@@ -805,9 +815,9 @@ export function AppSidebar({
   const sidebarProjects = React.useMemo(
     () =>
       [...projects]
-        .filter((p) => p.starred)
-        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    [projects]
+        .filter((p) => p.starred || p.id === currentProjectId)
+        .sort((a, b) => Number(b.id === currentProjectId) - Number(a.id === currentProjectId) || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [projects, currentProjectId]
   );
 
   const toggleProjectStar = async (project: SidebarProject) => {
@@ -1334,9 +1344,6 @@ export function AppSidebar({
       </div>
 
       {/* ── Destinations ─────────────────────────────────────────────── */}
-      {/* Chat: Activity · Projects · Library · Customize. Code: Customize,
-          the one way to /code/customize. The rail keeps the same order
-          icon-only. */}
       {/* `min-h-0 flex-1 overflow-y-auto` on the rail: collapsed, the list
           scroller below renders nothing, all thirteen rail rows sit in
           non-scrolling blocks, and the shell's `<aside>` is `overflow-hidden`
@@ -1380,22 +1387,24 @@ export function AppSidebar({
         )}
         aria-label="Primary"
       >
-        {(isCode
-          ? ([
-              { href: "/code/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: pathname === "/code/customize" },
-            ] as const)
-          : ([
-              { href: "/activity", kind: "activity", label: FEATURE_NAMES.activity.label, active: pathname === "/activity" },
-              { href: "/projects", kind: "projects", label: FEATURE_NAMES.projects.label, active: !!pathname?.startsWith("/projects") },
-              { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" || pathname === "/artifacts" },
-              { href: "/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: !!pathname?.startsWith("/customize") || !!pathname?.startsWith("/connections") || !!pathname?.startsWith("/skills") || !!pathname?.startsWith("/automations") },
-            ] as const)
-        ).map((item) => (
+        {([
+          ...(isCode ? [] : [
+            { href: "/activity", kind: "activity", label: FEATURE_NAMES.activity.label, active: pathname === "/activity" },
+            { href: "/projects", kind: "projects", label: FEATURE_NAMES.projects.label, active: pathname === "/projects" },
+          ] as const),
+          { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" },
+          { href: "/artifacts", kind: "artifacts", label: FEATURE_NAMES.artifacts.label, active: pathname?.startsWith("/artifacts") },
+          { href: "/connections", kind: "connections", label: "Apps & plugins", active: pathname?.startsWith("/connections") },
+          { href: "/skills", kind: "skills", label: "Skills", active: pathname?.startsWith("/skills") },
+          isCode
+            ? { href: "/code/customize", kind: "customize" as const, label: FEATURE_NAMES.customize.label, active: pathname === "/code/customize" }
+            : { href: "/customize", kind: "customize" as const, label: FEATURE_NAMES.customize.label, active: pathname?.startsWith("/customize") || pathname?.startsWith("/automations") },
+        ] as const).map((item) => (
           <NavRow
             key={item.href}
             collapsed={collapsed}
             href={item.href}
-            active={item.active}
+            active={!!item.active}
             onClick={() => setSidebarOpen(false)}
             icon={<SidebarMotionIcon kind={item.kind} />}
             label={item.label}
@@ -1822,6 +1831,55 @@ export function AppSidebar({
                       </section>
                     )}
 
+                    {projectsError && !needsYouOnly && (
+                      <InlineErrorRow message="Couldn’t load your projects." onRetry={loadProjects} />
+                    )}
+
+                    {!needsYouOnly && sidebarProjects.length > 0 && (
+                      <Section
+                        label={currentProjectId ? "Project shortcuts" : "Pinned projects"}
+                        isCollapsed={sectionCollapsed.projects}
+                        onToggleCollapse={() => toggleSection("projects")}
+                        action={
+                          <SectionAction
+                            label="New project"
+                            onClick={() => {
+                              setSidebarOpen(false);
+                              router.push("/projects?new=1");
+                            }}
+                            always
+                          >
+                            <Plus className="size-4" />
+                          </SectionAction>
+                        }
+                      >
+                        {sidebarProjects.map((p) => (
+                          <ProjectRow
+                            key={p.id}
+                            project={p}
+                            chats={live.filter((c) => c.projectId === p.id)}
+                            signals={rowSignals}
+                            active={p.id === currentProjectId}
+                            activePath={pathname}
+                            starred={p.starred}
+                            expanded={p.id === currentProjectId ? foldedCurrentProject !== p.id : openProjects.includes(p.id)}
+                            onExpandedChange={(open) => setProjectOpen(p.id, open)}
+                            onNavigate={() => setSidebarOpen(false)}
+                            onNewChat={() => {
+                              router.push(`/chat?project=${p.id}`);
+                              setSidebarOpen(false);
+                            }}
+                            onToggleStar={() => toggleProjectStar(p)}
+                            onRename={() => {
+                              setRenameDraft(p.name);
+                              setRenameTarget(p);
+                            }}
+                            onDelete={() => deleteProject(p)}
+                          />
+                        ))}
+                      </Section>
+                    )}
+
                     {/* ONE LIST, ONE HEADING: "Recent", drawn by the same
                         `Section` as Pinned projects above it, so the two read
                         as one family and fold the same way. It was four date
@@ -1876,64 +1934,6 @@ export function AppSidebar({
                           appear here.
                         </p>
                       )
-                    )}
-
-                    {projectsError && !needsYouOnly && (
-                      <InlineErrorRow message="Couldn’t load your projects." onRetry={loadProjects} />
-                    )}
-
-                    {/* Projects are Chat's filing, not Code's: a Code session
-                        belongs to a repository or a workspace, which is a fact
-                        about where it RUNS and is already on the session. */}
-                    {!needsYouOnly && sidebarProjects.length > 0 && (
-                      // "Pinned projects", because that is what `sidebarProjects`
-                      // is — the starred subset — and because the nav row ~40px
-                      // above this heading already says "Projects" and already
-                      // goes to /projects. The section used to repeat the word
-                      // AND carry an "All projects" chevron to the same route:
-                      // one destination, two controls, one column.
-                      <Section
-                        label="Pinned projects"
-                        isCollapsed={sectionCollapsed.projects}
-                        onToggleCollapse={() => toggleSection("projects")}
-                        action={
-                          <SectionAction
-                            label="New project"
-                            onClick={() => {
-                              setSidebarOpen(false);
-                              router.push("/projects?new=1");
-                            }}
-                            always
-                          >
-                            <Plus className="size-4" />
-                          </SectionAction>
-                        }
-                      >
-                        {sidebarProjects.map((p) => (
-                          <ProjectRow
-                            key={p.id}
-                            project={p}
-                            chats={live.filter((c) => c.projectId === p.id)}
-                            signals={rowSignals}
-                            active={pathname === `/projects/${p.id}`}
-                            activePath={pathname}
-                            starred={p.starred}
-                            expanded={openProjects.includes(p.id)}
-                            onExpandedChange={(open) => setProjectOpen(p.id, open)}
-                            onNavigate={() => setSidebarOpen(false)}
-                            onNewChat={() => {
-                              router.push(`/chat?project=${p.id}`);
-                              setSidebarOpen(false);
-                            }}
-                            onToggleStar={() => toggleProjectStar(p)}
-                            onRename={() => {
-                              setRenameDraft(p.name);
-                              setRenameTarget(p);
-                            }}
-                            onDelete={() => deleteProject(p)}
-                          />
-                        ))}
-                      </Section>
                     )}
 
                     {/* The Needs you live region (its note is at the top of
@@ -3257,7 +3257,8 @@ function ProjectRow({
   const [showAll, setShowAll] = React.useState(false);
   const PREVIEW = 3;
   const visibleChats = showAll ? chats : chats.slice(0, PREVIEW);
-  const hasChats = chats.length > 0;
+  const hasChildren = chats.length > 0 || active;
+  const projectHref = `/projects/${project.id}`;
 
   return (
     <div>
@@ -3268,18 +3269,18 @@ function ProjectRow({
              column's trailing line, 18px in (24 under `coarse:`): the fold
              chevron when the project has chats, else the kebab. */
           "group relative flex h-8 items-center rounded-control pl-2 coarse:h-11",
-          hasChats ? "pr-2 coarse:pr-1" : "pr-1",
+          hasChildren ? "pr-2 coarse:pr-1" : "pr-1",
           LIST_ROW_TRANSITION,
           listRowClass(active)
         )}
       >
         <Link
-          href={`/projects/${project.id}`}
+          href={projectHref}
           onClick={onNavigate}
           prefetch={false}
           {...intentPrefetch(router, `/projects/${project.id}`)}
           data-row-link=""
-          aria-current={active ? "page" : undefined}
+          aria-current={activePath === projectHref ? "page" : active ? "location" : undefined}
           className={cn("-ml-2 flex min-w-0 flex-1 items-center gap-2.5 pl-2 text-nav font-normal", ROW_LINK_FOCUS)}
           title={project.name}
         >
@@ -3319,7 +3320,7 @@ function ProjectRow({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {hasChats && (
+        {hasChildren && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -3362,7 +3363,7 @@ function ProjectRow({
           </Tooltip>
         )}
       </div>
-      {hasChats && (
+      {hasChildren && (
         <Disclosure open={expanded}>
           {/* The guide drops from the folder's REAL centre, the row's `pl-2`
               (8) plus half of `size-5` (10) = 18px, so it stays under the
@@ -3371,6 +3372,11 @@ function ProjectRow({
               on purpose: this is an alignment to a computed centre, and
               rounding it to `ml-4` or `ml-5` would visibly miss the folder. */}
           <div className="ml-[18px] mt-0.5 space-y-0.5 border-l border-sidebar-border pb-1 pl-2.5">
+            {active && (
+              <button type="button" onClick={onNewChat} className="flex min-h-8 w-full items-center gap-2 rounded-control px-2 text-start text-ui text-muted-foreground hover:bg-sidebar-hover hover:text-foreground coarse:min-h-11">
+                <Plus className="size-4 shrink-0" aria-hidden="true" /> New chat in project
+              </button>
+            )}
             {visibleChats.map((c) => {
               const signal = signals.get(c.id);
               const label = c.title || "New chat";

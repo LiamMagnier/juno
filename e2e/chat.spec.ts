@@ -313,6 +313,9 @@ test("ending voice restores the composer while the transcript saves", async ({ p
   await expect(page.getByRole("log", { name: "Conversation transcript" })).toContainText(transcript, { timeout: 20_000 });
   const end = page.getByRole("button", { name: "End the call" });
   await expect(end).toBeVisible();
+  const callFrame = page.locator(".voice-call-frame[data-voice-call]");
+  await expect(callFrame).toBeVisible();
+  await expect(callFrame.locator("[data-voice-edge], .border-primary\\/60")).toHaveCount(0);
   await end.evaluate((button) => {
     const frame = button.closest(".voice-call-frame");
     if (!frame) throw new Error("Voice composer frame is missing");

@@ -580,6 +580,11 @@ export function CodeComposer({
     const onSeed = (event: Event) => {
       const text = event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : null;
       if (!text || submitting) return;
+      if (draftIo.current?.read().text.trim()) {
+        composer.current?.focus();
+        toast.info("Finish or clear your draft before choosing a starting point.");
+        return;
+      }
       composer.current?.setDraft(text);
     };
     window.addEventListener(CODE_COMPOSER_SEED_EVENT, onSeed);
