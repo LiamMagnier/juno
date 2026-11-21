@@ -336,6 +336,7 @@ export function LibraryHome() {
             onChange={setShow}
             ariaLabel="Show"
             columns="content"
+            className="workspace-filter-rail"
             options={[
               { value: "all", label: "All" },
               { value: "made", label: FEATURE_NAMES.artifacts.label },
@@ -343,9 +344,9 @@ export function LibraryHome() {
               { value: "media", label: "Media" },
             ]}
           />
-          <div className="flex w-full min-w-0 items-center justify-end gap-2 @[40rem]/page:w-auto @[40rem]/page:flex-none">
+          <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 @[40rem]/page:flex @[40rem]/page:w-auto @[40rem]/page:flex-none @[40rem]/page:justify-end">
             {show === "files" ? (
-              <Button variant="ghost" asChild className="hidden px-3 font-normal text-muted-foreground hover:text-foreground @[40rem]/page:inline-flex">
+              <Button variant="ghost" asChild className="col-span-2 row-start-2 min-h-11 justify-self-start px-3 font-normal text-muted-foreground hover:text-foreground @[40rem]/page:min-h-0">
                 <Link href="/library?view=files">Manage files</Link>
               </Button>
             ) : null}
@@ -354,7 +355,7 @@ export function LibraryHome() {
               onValueChange={setQuery}
               label="Search the library"
               busy={searching}
-              className="flex-1 @[40rem]/page:w-64 @[40rem]/page:flex-none"
+              className="min-w-0 @[40rem]/page:w-64 @[40rem]/page:flex-none"
             />
             <SegmentedControl
               value={view}

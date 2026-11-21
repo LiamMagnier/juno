@@ -163,7 +163,7 @@ export function ActivityBody({
     <div className="mt-2 space-y-6">
       {/* On a phone the five filters outrun the column: the row scrolls, and
           fades at the edge that has more (scroll-fade-x, signature.css §14). */}
-      <div ref={filterRowRef} className="scroll-fade-x -mx-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+      <div ref={filterRowRef} className="workspace-filter-rail scroll-fade-x -mx-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
         <SegmentedControl<Filter>
           value={filter}
           onChange={onFilter}

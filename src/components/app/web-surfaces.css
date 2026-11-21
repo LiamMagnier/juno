@@ -67,14 +67,70 @@
 
 .app-section-header .app-section-heading-row > div { min-width: 0; }
 
+@media (width < 768px) {
+  .app-main-canvas {
+    --workspace-safe-start: env(safe-area-inset-left, 0px);
+    --workspace-safe-end: env(safe-area-inset-right, 0px);
+    --web-page-title-size: clamp(1.75rem, 7cqi, 2.125rem);
+  }
+
+  .app-main-canvas:dir(rtl) {
+    --workspace-safe-start: env(safe-area-inset-right, 0px);
+    --workspace-safe-end: env(safe-area-inset-left, 0px);
+  }
+
+  .workspace-mobile-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: .25rem;
+    padding-block: calc(.25rem + env(safe-area-inset-top, 0px)) .25rem;
+    padding-inline: max(.375rem, var(--workspace-safe-start)) max(.375rem, var(--workspace-safe-end));
+    border-block-end: 1px solid hsl(var(--border) / .7);
+    background: hsl(var(--background));
+  }
+
+  .app-main-canvas :is(.page-gutter, .app-page-content) {
+    padding-inline: max(var(--page-gutter), var(--workspace-safe-start)) max(var(--page-gutter), var(--workspace-safe-end));
+  }
+
+  .app-main-canvas .app-page-content {
+    padding-block-end: calc(2rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-section-heading-row {
+    row-gap: .625rem;
+  }
+
+  .app-section-heading-actions :is(button, a[role="button"]) {
+    min-block-size: 2.75rem;
+  }
+
+  .app-main-canvas .conversation-header {
+    padding-inline: max(1rem, var(--workspace-safe-start)) max(.375rem, var(--workspace-safe-end));
+  }
+
+  .workspace-filter-rail {
+    min-inline-size: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-padding-inline: .375rem;
+    scrollbar-width: none;
+  }
+
+  .workspace-filter-rail :is(button, [role="tab"]) {
+    min-block-size: 2.75rem;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .app-section-heading-row .app-page-title,
   .app-section-heading-row .app-section-lede,
   .app-section-heading-row .app-section-heading-actions {
     animation: web-heading-enter var(--dur-base) var(--ease-out-expo) backwards;
   }
-  .app-section-heading-row .app-section-lede { animation-delay: 25ms; }
-  .app-section-heading-row .app-section-heading-actions { animation-delay: 50ms; }
+  .app-section-heading-row .app-section-lede { animation-delay: calc(var(--stagger-tile) / 2); }
+  .app-section-heading-row .app-section-heading-actions { animation-delay: var(--stagger-tile); }
 }
 
 @keyframes web-heading-enter {
