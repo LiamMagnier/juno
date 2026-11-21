@@ -475,7 +475,8 @@ export function AgentsTreePane({
   const [focusedId, setFocusedId] = React.useState<string>(selected.id);
   const rowRefs = React.useRef(new Map<string, HTMLLIElement>());
   const rows = React.useMemo(() => visibleRows(root, expanded), [root, expanded]);
-  const focus = rows.some((r) => r.id === focusedId) ? focusedId : selected.id;
+  const fallbackFocus = rows.some((row) => row.id === selected.id) ? selected.id : root.id;
+  const focus = rows.some((row) => row.id === focusedId) ? focusedId : fallbackFocus;
 
   // One clock for every live row; nothing ticks once the run has settled.
   const counts = countLive(root);
@@ -491,13 +492,15 @@ export function AgentsTreePane({
     setFocusedId(id);
     rowRefs.current.get(id)?.focus();
   };
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    moveFocus(id);
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  };
   const select = (id: string) => onSelect(id === LEAD_NODE_ID ? null : id);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLUListElement>) => {
@@ -511,22 +514,24 @@ export function AgentsTreePane({
     else if (effect.kind === "select") select(effect.id);
   };
 
-  const summary = counts.total === 0 ? "No agents yet" : counts.live > 0 ? `${counts.live} of ${counts.total} working` : `${counts.total} ${counts.total === 1 ? "agent" : "agents"}, all settled`;
+  const active = counts.live - counts.waiting - counts.paused;
+  const summary = counts.total === 0
+    ? "No subagents yet"
+    : [
+        active > 0 ? `${active} active` : null,
+        counts.waiting > 0 ? `${counts.waiting} waiting` : null,
+        counts.paused > 0 ? `${counts.paused} paused` : null,
+      ].filter(Boolean).join(" · ") || `${counts.total} ${counts.total === 1 ? "agent" : "agents"} finished`;
 
   return (
     <div className="cv2-dock-pane cv2-agents">
       <div className="cv2-dockbar">
         <span className="cv2-m">Agents</span>
         <span className="cv2-mute cv2-small cv2-trunc cv2-grow">{summary}</span>
-        {counts.waiting > 0 && (
-          <span className="cv2-small cv2-sig">
-            <span>Needs you</span> <span className="cv2-tnum">{counts.waiting}</span>
-          </span>
-        )}
       </div>
       <div className="cv2-atree-wrap">
         <ul role="tree" aria-label="Agents in this run" className="cv2-atree" onKeyDown={onKeyDown}>
-          <TreeRow node={root} now={now} expanded={expanded} focusedId={focus} selectedId={selected.id} onSelect={select} onToggle={toggle} onFocusRow={setFocusedId} rowRefs={rowRefs} />
+          <TreeRow node={root} now={now} expanded={expanded} focusedId={focus} selectedId={selected.id} onSelect={select} onToggle={toggle} onFocusRow={moveFocus} rowRefs={rowRefs} />
         </ul>
       </div>
       <div className="cv2-dockscroll cv2-adetail-wrap">

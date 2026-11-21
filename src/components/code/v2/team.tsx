@@ -211,18 +211,16 @@ export function TeamEditor({
         <p className="cv2-team-line">{TEAM_PRESET_COPY[preset].line}</p>
       </div>
       <div className="cv2-pop-body">
-        {preset === "solo" && (
-          <div className="cv2-team-role" data-role="lead">
-            <button type="button" className="cv2-team-role-main" onClick={() => onPickRole("lead")}>
-              <span className="who">
-                <span className="n">Lead</span>
-                <span className="d">Plans, builds and checks on the composer&apos;s model</span>
-              </span>
-              <RoleModel instances={instances} selection={lead} />
-              <Glyph name="chevron-right" size={14} className="cv2-mute" />
-            </button>
-          </div>
-        )}
+        <div className="cv2-team-role cv2-team-lead" data-role="lead">
+          <button type="button" className="cv2-team-role-main" onClick={() => onPickRole("lead")}>
+            <span className="who">
+              <span className="n">{preset === "solo" ? "Lead" : "Orchestrator"}</span>
+              <span className="d">{preset === "solo" ? "Plans, builds and checks" : "Coordinates the team and combines results"}</span>
+            </span>
+            <RoleModel instances={instances} selection={lead} />
+            <Glyph name="chevron-right" size={14} className="cv2-mute" />
+          </button>
+        </div>
         {preset === "plan-build-verify" && (
           <>
             {role("architect")}
