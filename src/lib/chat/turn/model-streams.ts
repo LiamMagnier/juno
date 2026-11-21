@@ -95,6 +95,8 @@ export const SMOKE_ARTIFACT_TITLE = "E2E smoke note";
 export const SMOKE_ARTIFACT_BODY = "JUNO_E2E_ARTIFACT_BODY";
 export const SMOKE_SOURCES_DIRECTIVE = "JUNO_E2E_SOURCES";
 export const SMOKE_SOURCES_TOKEN = "JUNO_E2E_SOURCES_OK";
+export const SMOKE_CONTEXT_DIRECTIVE = "JUNO_E2E_LARGE_CONTEXT";
+export const SMOKE_CONTEXT_INPUT_TOKENS = 500_000;
 /** Two fixed, well-known pages; nothing fetches them. */
 export const SMOKE_SOURCES: ReadonlyArray<{ title: string; url: string; snippet: string }> = [
   { title: "Example Domain", url: "https://example.com/", snippet: "This domain is for use in documentation examples." },
@@ -231,6 +233,8 @@ export async function* streamDeterministicSmokeResponse(
   yield { type: "text", text: answer.slice(0, midpoint) };
   await Promise.resolve();
   yield { type: "text", text: answer.slice(midpoint) };
-  yield { type: "usage", input: Math.max(1, Math.ceil(prompt.length / 4)), output: answer.length };
+  // Exercise the phone's context meter threshold without sending a huge prompt.
+  const input = prompt.includes(SMOKE_CONTEXT_DIRECTIVE) ? SMOKE_CONTEXT_INPUT_TOKENS : Math.max(1, Math.ceil(prompt.length / 4));
+  yield { type: "usage", input, output: answer.length };
   yield { type: "finish", reason: "stop" };
 }

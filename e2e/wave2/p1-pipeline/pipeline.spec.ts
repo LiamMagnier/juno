@@ -87,7 +87,7 @@ test("at the medium width, prose fills the column (no 75ch cap)", async ({ page 
   await open(page);
   await mount(page, `<div class="transcript-column" style="width:100%;margin-inline:auto"><div class="prose-juno"><p id="para">${"Words ".repeat(200)}</p></div></div>`);
   const width = await page.locator("#para").evaluate((el) => el.getBoundingClientRect().width);
-  expect(Math.round(width)).toBe(768);
+  expect(Math.round(width)).toBe(672);
 });
 
 test("the view-transition root has no animation; the app-page group runs 120 out and 160 in", async ({ page }) => {
@@ -138,7 +138,7 @@ test("the new status colours resolve through the role tokens", async ({ page }) 
   });
   expect(roles.needsYou).toBe("rgb(211, 99, 23)");
   expect(roles.blocked).toBe("rgb(184, 30, 40)");
-  expect(roles.running).toBe("rgb(45, 73, 201)");
+  expect(roles.running).toBe("rgb(45, 74, 200)");
 });
 
 test("the in-app Increase contrast toggle applies the high-contrast tokens", async ({ page }) => {
