@@ -236,8 +236,8 @@ export function OrbitComputers({
 
   return (
     <section aria-labelledby="orbit-computers">
-      <div className="mb-2.5 flex min-h-6 items-center gap-2 px-0.5">
-        <h2 id="orbit-computers" className="text-ui font-medium text-foreground">
+      <div className="orbit-label">
+        <h2 id="orbit-computers">
           Computers
         </h2>
         {macs.length > 0 ? (

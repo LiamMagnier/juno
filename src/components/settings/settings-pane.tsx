@@ -3,6 +3,9 @@
 import * as React from "react";
 import { AnimatePresence, motion, type Variants } from "framer-motion";
 import { SettingsPaneHeader } from "@/components/settings/setting-row";
+import { DesignsView } from "@/components/settings/designs-view";
+import { ArrowLeft } from "@/components/ui/icons";
+import { Button } from "@/components/ui/button";
 import { settingsSection, type SettingsSectionId } from "@/components/settings/settings-sections";
 import { settingsPanelId, settingsTabId } from "@/components/settings/settings-rail";
 import { GeneralSection } from "@/components/settings/sections/general";
@@ -25,8 +28,7 @@ import { cn } from "@/lib/utils";
 import "@/components/app/editorial.css";
 import { useReducedMotion } from "@/lib/motion-preference";
 
-const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
-  general: GeneralSection,
+const SECTION_COMPONENTS: Record<Exclude<SettingsSectionId, "general">, React.ComponentType> = {
   personalization: PersonalizationSection,
   memory: MemorySection,
   models: ModelsSection,
@@ -123,7 +125,7 @@ export function SettingsPane({
   className?: string;
 }) {
   const meta = settingsSection(section);
-  const Section = SECTION_COMPONENTS[section];
+  const Section = section === "general" ? null : SECTION_COMPONENTS[section];
   const headingId = `settings-${section}`;
   const reduce = useReducedMotion();
   const rootRef = React.useRef<HTMLDivElement>(null);
@@ -133,6 +135,21 @@ export function SettingsPane({
   const [firstSection] = React.useState(section);
   const [switched, setSwitched] = React.useState(false);
   if (!switched && section !== firstSection) setSwitched(true);
+  const [designsOpen, setDesignsOpen] = React.useState(false);
+  const showDesigns = section === "general" && designsOpen;
+  const designsHeading = React.useRef<HTMLSpanElement>(null);
+  const browseDesigns = React.useRef<HTMLButtonElement>(null);
+  const restoreBrowseFocus = React.useRef(false);
+  React.useEffect(() => {
+    if (section !== "general") setDesignsOpen(false);
+  }, [section]);
+  React.useLayoutEffect(() => {
+    if (showDesigns) designsHeading.current?.focus({ preventScroll: true });
+    else if (restoreBrowseFocus.current) {
+      restoreBrowseFocus.current = false;
+      browseDesigns.current?.focus();
+    }
+  }, [showDesigns]);
 
   const resetScroll = React.useCallback(() => {
     const scroller = scrollParent(rootRef.current);
@@ -149,15 +166,23 @@ export function SettingsPane({
       id={tabpanel ? settingsPanelId(section) : undefined}
       aria-labelledby={tabpanel ? settingsTabId(section) : headingId}
     >
+      {showDesigns && (
+        <Button type="button" variant="ghost" size="sm" className="-ms-2 mb-3 gap-2 text-muted-foreground" aria-label="Back to General" onClick={() => {
+          restoreBrowseFocus.current = true;
+          setDesignsOpen(false);
+        }}>
+          <ArrowLeft className="size-4 rtl:rotate-180" aria-hidden="true" /> General
+        </Button>
+      )}
       <SettingsPaneHeader
         title={
-          <span key={section} id={headingId} className={cn("block", switched && "motion-safe:animate-fade-in")}>
-            {meta.label}
+          <span key={section} id={headingId} ref={showDesigns ? designsHeading : undefined} tabIndex={showDesigns ? -1 : undefined} className={cn("block", switched && "motion-safe:animate-fade-in")}>
+            {showDesigns ? "Designs" : meta.label}
           </span>
         }
         lede={
           <span key={section} className={cn("block", switched && "motion-safe:animate-fade-in")}>
-            {SECTION_LEDES[section]}
+            {showDesigns ? "Choose a preset, save your look, or share it with a design code." : SECTION_LEDES[section]}
           </span>
         }
       />
@@ -173,7 +198,10 @@ export function SettingsPane({
           // of SettingsGroups, so they are this wrapper's children.
           className="ed-stagger min-w-0"
         >
-          <Section />
+          {Section ? <Section /> : showDesigns ? <DesignsView /> : <GeneralSection browseRef={browseDesigns} onBrowseDesigns={() => {
+            resetScroll();
+            setDesignsOpen(true);
+          }} />}
         </motion.div>
       </AnimatePresence>
     </div>

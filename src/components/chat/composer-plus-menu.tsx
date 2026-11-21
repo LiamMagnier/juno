@@ -304,7 +304,7 @@ export function PlusMenu({
   const [compact, setCompact] = React.useState(false);
   const [tipOpen, setTipOpen] = React.useState(false);
   const [panelId, setPanelId] = React.useState<string | null>(null);
-  const menuRef = React.useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = React.useState<HTMLDivElement | null>(null);
   const panel = sections.flat().find(item => item.kind === "sub" && item.id === panelId);
   React.useEffect(() => {
     const query = window.matchMedia("(max-width: 639px)");
@@ -314,12 +314,29 @@ export function PlusMenu({
     return () => query.removeEventListener("change", update);
   }, []);
   React.useEffect(() => {
-    if (compact && panelId) menuRef.current?.querySelector<HTMLElement>("input, [data-menu-back]")?.focus();
-  }, [compact, panelId]);
+    if (compact && panelId) menu?.querySelector<HTMLElement>("input, [data-menu-back]")?.focus();
+  }, [compact, menu, panelId]);
+  React.useEffect(() => {
+    const viewport = window.visualViewport;
+    const wrapper = menu?.parentElement;
+    if (!open || !compact || !viewport || !wrapper) return;
+    const fit = () => {
+      const keyboardInset = viewport.scale === 1 ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) : 0;
+      wrapper.style.setProperty("--composer-keyboard-inset", `${keyboardInset}px`);
+    };
+    fit();
+    viewport.addEventListener("resize", fit);
+    viewport.addEventListener("scroll", fit);
+    return () => {
+      viewport.removeEventListener("resize", fit);
+      viewport.removeEventListener("scroll", fit);
+      wrapper.style.removeProperty("--composer-keyboard-inset");
+    };
+  }, [compact, menu, open]);
   const back = () => {
     if (panel?.kind === "sub") panel.onOpenChange?.(false);
     setPanelId(null);
-    requestAnimationFrame(() => menuRef.current?.querySelector<HTMLElement>(`[data-panel-id="${panelId}"]`)?.focus());
+    requestAnimationFrame(() => menu?.querySelector<HTMLElement>(`[data-panel-id="${panelId}"]`)?.focus());
   };
   const drillIn = (item: Extract<PlusMenuItem, { kind: "sub" }>) => {
     setPanelId(item.id);
@@ -363,20 +380,16 @@ export function PlusMenu({
       </Tooltip>
 
       <DropdownMenuContent
-        // At the + itself (owner, 2026-10-04): just above the button, its
-        // bottom edge 8px over it, over the composer's own draft, the way a
-        // menu opens from the control that asked for it. It used to clear the
-        // composer's whole box and land far from the +. Radix flips it below
-        // only when there is no room above, shifts it on screen, and the
-        // max-height below caps it to the room it has (it scrolls, with the
-        // edge fades, rather than being cut off).
+        // Anchor above the + on desktop. The same menu becomes a bottom
+        // sheet at phone width, including its keyboard behavior and scroll.
         align="start"
         side="top"
         sideOffset={6}
         avoidCollisions
         collisionPadding={COMPOSER_MENU_COLLISION_PADDING}
         data-opened-by={openedBy}
-        ref={menuRef}
+        data-composer-add=""
+        ref={setMenu}
         aria-label={compact && panel ? panel.label : "Add"}
         onKeyDown={(event) => { if (event.key === "ArrowLeft" && panelId && !(event.target instanceof HTMLInputElement)) { event.preventDefault(); back(); } }}
         // Escape can't ride the onKeyDown above: Radix listens for it with a

@@ -866,6 +866,26 @@
 .cmenu.cmenu[data-side="right"] { --cm-dy: 0px; --cm-dx: -4px; }
 .cmenu.cmenu[data-side="left"] { --cm-dy: 0px; --cm-dx: 4px; }
 
+@media (max-width: 639px) {
+  /* Radix still owns focus, dismissal, and the menu portal on phones. The
+     root Add menu uses the viewport edges in place of the button anchor. */
+  [data-radix-popper-content-wrapper]:has(> [data-composer-add]) {
+    inset: auto max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom), var(--composer-keyboard-inset, 0px)) max(8px, env(safe-area-inset-left)) !important;
+    min-width: 0 !important;
+    transform: none !important;
+  }
+  .cmenu.cmenu.cmenu[data-composer-add] {
+    --cm-dx: 0px;
+    --cm-dy: 4px;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    max-height: min(32rem, calc(100dvh - 1rem - env(safe-area-inset-top) - var(--composer-keyboard-inset, 0px)));
+    overscroll-behavior: contain;
+    transform-origin: center bottom;
+  }
+}
+
 /* Keep the root and flyouts on the shared fast rung. Items are usable
    immediately and travel only a few pixels with their frame. */
 .cmenu.cmenu[data-state="open"] {
