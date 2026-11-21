@@ -137,6 +137,7 @@ async function run(
   opts: { dialect?: ResponsesDialect; dispatch?: typeof executeToolBatch; legacyToolset?: McpToolset } = {},
 ) {
   const { transport, bodies } = scripted(responses);
+  if (req.batch === batch) req = { ...req, batch: { ...batch, seenCallIds: new Set() } };
   const events: LlmEvent[] = [];
   for await (const event of runResponsesLoop({
     req,
@@ -543,4 +544,17 @@ test("the deprecated McpToolset path reports malformed arguments instead of runn
     events.filter((e) => e.type === "tool" && e.phase === "result").map((e) => e.type === "tool" && e.phase === "result" && e.status),
     ["failed", "succeeded"],
   );
+});
+
+test("Responses reserves the first free call id and keeps the wire id", async () => {
+  const { dispatch, batches } = fakeDispatch({});
+  const seenCallIds = new Set(["call_1", "call_1#0.0", "call_1#0.0.2"]);
+  const req = request(model("openai:gpt-6-sol"), { toolset: fakeToolset(["lookup"]), batch: { ...batch, seenCallIds } });
+  await run(req, [
+    [...functionCall("call_1", "lookup", "{}"), completed(10, 2)],
+    [...message("msg_1", "Done"), completed(10, 2)],
+  ], { dispatch });
+  assert.equal(batches[0][0].callId, "call_1#0.0.3");
+  assert.equal(batches[0][0].providerCallId, "call_1");
+  assert.ok(seenCallIds.has("call_1#0.0.3"));
 });

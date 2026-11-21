@@ -9,10 +9,13 @@ import {
   planSourceSync,
   runSourceSync,
   SOURCE_LIMITS,
+  SourceSyncError,
   type DriveListedFile,
   type SourceItemRecord,
   type SourceSyncPort,
 } from "@/lib/projects/drive-source";
+import { estimateKnowledgeTokens } from "@/lib/projects/knowledge-capacity";
+import { safeReturnPath } from "@/lib/projects/project-sources-shared";
 import { mergeInheritedProjectContext } from "@/lib/projects/project-tree";
 import { buildProjectContext, buildProjectReferenceFiles } from "@/lib/chat/context-assembly";
 
@@ -92,7 +95,7 @@ function sampleTree(): FakeNode[] {
 }
 
 /** The store half in memory: items, and project attachments with their text. */
-function memoryPort(client: FirstPartyClient) {
+function memoryPort(client: FirstPartyClient, remainingTokens = 1_000_000) {
   const items = new Map<string, SourceItemRecord & { error?: string | null }>();
   const attachments = new Map<string, { id: string; fileName: string; extractedText: string; deletedAt: Date | null; projectId: string }>();
   let next = 0;
@@ -101,26 +104,29 @@ function memoryPort(client: FirstPartyClient) {
     async items() {
       return [...items.values()].map((item) => ({ ...item }));
     },
-    async importFile(file) {
+    async importFile(file, previous) {
       const fetched = await fetchCloudFile(client, { id: file.id }, { maxBytes: 1024 * 1024, tooLarge: "Too large." });
+      const tokens = estimateKnowledgeTokens({ size: fetched.bytes.byteLength, mimeType: fetched.mimeType });
+      if (tokens > remainingTokens) throw new SourceSyncError("capacity", "This project’s knowledge is full.");
+      remainingTokens -= tokens;
       const id = `att-${++next}`;
       const text = new TextDecoder().decode(fetched.bytes).replace(/^PK\u0003\u0004\u0014\u0000\u0006\u0000/, "");
       attachments.set(id, { id, fileName: fetched.fileName, extractedText: text, deletedAt: null, projectId: "project-1" });
       log.push(`import ${file.id}`);
-      return { attachmentId: id, bytes: fetched.bytes.byteLength, mimeType: fetched.mimeType };
+      items.set(file.id, { id: previous?.id ?? `item-${file.id}`, externalId: file.id, version: file.version, attachmentId: id, state: "synced", name: file.name, path: file.path, error: null });
+      if (previous?.attachmentId) {
+        attachments.get(previous.attachmentId)!.deletedAt = new Date();
+        log.push(`retire ${previous.attachmentId}`);
+      }
     },
-    async saveItem(file, outcome) {
+    async skipItem(file, error) {
       const existing = items.get(file.id);
-      items.set(file.id, { id: existing?.id ?? `item-${file.id}`, externalId: file.id, version: file.version, attachmentId: outcome.attachmentId, state: outcome.state, name: file.name, path: file.path, error: outcome.error });
+      items.set(file.id, { id: existing?.id ?? `item-${file.id}`, externalId: file.id, version: file.version, attachmentId: null, state: "skipped", name: file.name, path: file.path, error });
     },
     async removeItem(item) {
       if (item.attachmentId) attachments.get(item.attachmentId)!.deletedAt = new Date();
       items.delete(item.externalId);
       log.push(`remove ${item.externalId}`);
-    },
-    async removeAttachment(attachmentId) {
-      attachments.get(attachmentId)!.deletedAt = new Date();
-      log.push(`retire ${attachmentId}`);
     },
     async relabelItem(item, file) {
       items.set(item.externalId, { ...item, name: file.name, path: file.path });
@@ -196,7 +202,7 @@ test("a sync plan matches Drive's own ids: added, changed by version, renamed, a
 test("first sync mirrors the folder; the next picks up added, changed and removed files", async () => {
   const drive = fakeDrive(sampleTree());
   const store = memoryPort(drive.client);
-  const first = await runSourceSync({ client: drive.client, source: folderSource, port: store.port, remainingTokens: 1_000_000 });
+  const first = await runSourceSync({ client: drive.client, source: folderSource, port: store.port });
   assert.equal(first.state, "ready");
   assert.equal(first.added, 4, "four files the project can take");
   assert.equal(first.fileCount, 4);
@@ -211,7 +217,7 @@ test("first sync mirrors the folder; the next picks up added, changed and remove
 
   // Unchanged since the last sync: no request for any file's bytes.
   store.log.length = 0;
-  const quiet = await runSourceSync({ client: drive.client, source: folderSource, port: store.port, remainingTokens: 1_000_000 });
+  const quiet = await runSourceSync({ client: drive.client, source: folderSource, port: store.port });
   assert.deepEqual([quiet.added, quiet.updated, quiet.removed], [0, 0, 0]);
   assert.equal(store.log.length, 0, "nothing is fetched twice");
 
@@ -221,7 +227,7 @@ test("first sync mirrors the folder; the next picks up added, changed and remove
   drive.tree.set("new", { id: "new", name: "Pricing.csv", mimeType: "text/csv", parent: "specs", version: 1, body: "tier,price\npro,20" });
   drive.tree.get("brief")!.trashed = true;
   const oldApi = store.items.get("api")!.attachmentId!;
-  const second = await runSourceSync({ client: drive.client, source: folderSource, port: store.port, remainingTokens: 1_000_000 });
+  const second = await runSourceSync({ client: drive.client, source: folderSource, port: store.port });
   assert.equal(second.state, "ready");
   assert.deepEqual([second.added, second.updated, second.removed], [1, 1, 1]);
   assert.ok(store.attachments.get(oldApi)!.deletedAt, "the old copy of a changed file leaves the project");
@@ -234,7 +240,7 @@ test("first sync mirrors the folder; the next picks up added, changed and remove
 test("what a sync mirrors is what a chat in the project is given, and nothing it removed", async () => {
   const drive = fakeDrive(sampleTree());
   const store = memoryPort(drive.client);
-  await runSourceSync({ client: drive.client, source: folderSource, port: store.port, remainingTokens: 1_000_000 });
+  await runSourceSync({ client: drive.client, source: folderSource, port: store.port });
 
   // The chat route's own path (lib/chat/turn/project-context.ts): the project
   // row's live files, merged with its lineage, in the first user turn.
@@ -249,7 +255,7 @@ test("what a sync mirrors is what a chat in the project is given, and nothing it
   assert.match(buildProjectContext(project, null), /Answer as the launch lead/);
 
   drive.tree.get("brief")!.trashed = true;
-  await runSourceSync({ client: drive.client, source: folderSource, port: store.port, remainingTokens: 1_000_000 });
+  await runSourceSync({ client: drive.client, source: folderSource, port: store.port });
   const after = buildProjectReferenceFiles(mergeInheritedProjectContext([{ name: "Atlas", instructions: "", files: liveFiles() }]), null);
   assert.doesNotMatch(after, /4 December/, "a file deleted from the folder no longer reaches the chat");
   assert.match(after, /600 requests a minute/);
@@ -258,7 +264,7 @@ test("what a sync mirrors is what a chat in the project is given, and nothing it
 test("a refused token, a folder no longer shared or gone, keep what the project holds and say how to fix it", async () => {
   const drive = fakeDrive(sampleTree());
   const store = memoryPort(drive.client);
-  await runSourceSync({ client: drive.client, source: folderSource, port: store.port, remainingTokens: 1_000_000 });
+  await runSourceSync({ client: drive.client, source: folderSource, port: store.port });
   const held = [...store.attachments.values()].filter((file) => !file.deletedAt).length;
 
   for (const [status, code, words] of [
@@ -269,7 +275,7 @@ test("a refused token, a folder no longer shared or gone, keep what the project 
     [500, "provider_error", /Couldn’t reach Google Drive/],
   ] as const) {
     const refusing = fakeDrive(sampleTree(), { fail: () => new Response(null, { status }) });
-    const result = await runSourceSync({ client: refusing.client, source: folderSource, port: store.port, remainingTokens: 1_000_000 });
+    const result = await runSourceSync({ client: refusing.client, source: folderSource, port: store.port });
     assert.equal(result.state, "error");
     assert.equal(result.errorCode, code, `HTTP ${status}`);
     assert.match(result.error ?? "", words);
@@ -278,7 +284,7 @@ test("a refused token, a folder no longer shared or gone, keep what the project 
   assert.equal([...store.attachments.values()].filter((file) => !file.deletedAt).length, held, "nothing was removed");
 
   drive.tree.get("root-folder")!.trashed = true;
-  const trashed = await runSourceSync({ client: drive.client, source: folderSource, port: store.port, remainingTokens: 1_000_000 });
+  const trashed = await runSourceSync({ client: drive.client, source: folderSource, port: store.port });
   assert.equal(trashed.errorCode, "not_found");
   assert.equal([...store.attachments.values()].filter((file) => !file.deletedAt).length, held);
 });
@@ -288,7 +294,7 @@ test("a token that expires mid-sync stops the sync instead of marking every file
     fail: (url) => (url.pathname.endsWith("/export") ? new Response(null, { status: 401 }) : null),
   });
   const store = memoryPort(drive.client);
-  const result = await runSourceSync({ client: drive.client, source: folderSource, port: store.port, remainingTokens: 1_000_000 });
+  const result = await runSourceSync({ client: drive.client, source: folderSource, port: store.port });
   assert.equal(result.state, "error");
   assert.equal(result.errorCode, "reconnect");
   assert.ok(![...store.items.values()].some((item) => item.externalId === "plan"), "the Doc is retried after reconnecting, not skipped");
@@ -296,8 +302,8 @@ test("a token that expires mid-sync stops the sync instead of marking every file
 
 test("a project at capacity stops adding files and says why", async () => {
   const drive = fakeDrive(sampleTree());
-  const store = memoryPort(drive.client);
-  const result = await runSourceSync({ client: drive.client, source: folderSource, port: store.port, remainingTokens: 5 });
+  const store = memoryPort(drive.client, 11);
+  const result = await runSourceSync({ client: drive.client, source: folderSource, port: store.port });
   assert.equal(result.state, "error");
   assert.equal(result.errorCode, "capacity");
   assert.equal(result.added, 1, "the first file fits; the rest wait for room");
@@ -308,13 +314,13 @@ test("a single-file source mirrors that file and follows its versions", async ()
   const drive = fakeDrive(sampleTree());
   const store = memoryPort(drive.client);
   const source = { kind: "file" as const, externalId: "api", name: "api.txt", includeSubfolders: false };
-  const first = await runSourceSync({ client: drive.client, source, port: store.port, remainingTokens: 1_000_000 });
+  const first = await runSourceSync({ client: drive.client, source, port: store.port });
   assert.deepEqual([first.state, first.added, first.fileCount], ["ready", 1, 1]);
   drive.tree.get("api")!.version = 9;
-  const second = await runSourceSync({ client: drive.client, source, port: store.port, remainingTokens: 1_000_000 });
+  const second = await runSourceSync({ client: drive.client, source, port: store.port });
   assert.equal(second.updated, 1);
   drive.tree.delete("api");
-  const gone = await runSourceSync({ client: drive.client, source, port: store.port, remainingTokens: 1_000_000 });
+  const gone = await runSourceSync({ client: drive.client, source, port: store.port });
   assert.equal(gone.errorCode, "not_found");
 });
 
@@ -347,4 +353,94 @@ test("Drive refusals map to the fix the page offers", () => {
   const cases: Array<[number, string]> = [[401, "reconnect"], [403, "forbidden"], [404, "not_found"], [429, "rate_limited"], [502, "provider_error"]];
   for (const [status, code] of cases) assert.equal(classifyDriveFailure(new ConnectorApiError(status), "X").code, code, `HTTP ${status}`);
   assert.equal(classifyDriveFailure(new Error("socket hang up"), "X").code, "provider_error");
+});
+
+test("OAuth return paths stay local after normalization and can be validated twice", () => {
+  assert.equal(safeReturnPath("/projects/atlas?panel=knowledge"), "/projects/atlas?panel=knowledge");
+  assert.equal(safeReturnPath("/projects/../archive"), "/archive");
+  assert.equal(safeReturnPath("/projects/..//archive"), null);
+});
+
+test("the folder walk stops paging after reaching the file ceiling", async () => {
+  const drive = fakeDrive(sampleTree(), { pageSize: 1 });
+  const listing = await listDriveFolderTree(drive.client, "root-folder", {
+    includeSubfolders: true,
+    limits: { ...SOURCE_LIMITS, maxFiles: 1 },
+  });
+  assert.equal(listing.files.length, 1);
+  assert.equal(listing.truncated, true);
+  assert.equal(drive.calls.length, 1);
+});
+
+test("repeating an opaque page token ends the walk with an incomplete listing", async () => {
+  let requests = 0;
+  const client = new FirstPartyClient("google-drive", "fixture", async () => {
+    assert.ok(++requests <= 2, "a repeated cursor should never be requested again");
+    return Response.json({ files: [], nextPageToken: "cursor" });
+  });
+  const listing = await listDriveFolderTree(client, "root-folder", { includeSubfolders: true });
+  assert.equal(listing.truncated, true);
+  assert.equal(requests, 2);
+});
+
+test("files missing from an incomplete listing stay mirrored", async () => {
+  const drive = fakeDrive(sampleTree());
+  const store = memoryPort(drive.client);
+  const input = { client: drive.client, source: folderSource, port: store.port };
+  const before = await runSourceSync(input);
+  const after = await runSourceSync({ ...input, limits: { ...SOURCE_LIMITS, maxDepth: 0 } });
+  assert.equal(after.truncated, true);
+  assert.equal(after.removed, 0);
+  assert.equal(after.fileCount, before.fileCount);
+  assert.ok(store.items.has("notes"));
+});
+
+test("a temporary provider failure leaves the file eligible for the next sync", async () => {
+  let unavailable = true;
+  const drive = fakeDrive(sampleTree(), {
+    fail: (url) => unavailable && url.pathname.endsWith("/api") && url.searchParams.get("alt") === "media" ? new Response(null, { status: 503 }) : null,
+  });
+  const store = memoryPort(drive.client);
+  const input = { client: drive.client, source: folderSource, port: store.port };
+  const failed = await runSourceSync(input);
+  assert.equal(failed.errorCode, "provider_error");
+  assert.equal(store.items.has("api"), false);
+  unavailable = false;
+  const recovered = await runSourceSync(input);
+  assert.equal(recovered.state, "ready");
+  assert.equal(store.items.get("api")?.state, "synced");
+});
+
+test("empty pages still count toward the total page budget", async () => {
+  let requests = 0;
+  const client = new FirstPartyClient("google-drive", "fixture", async () => {
+    assert.ok(++requests <= 3);
+    return Response.json({ files: [], nextPageToken: String(requests) });
+  });
+  const listing = await listDriveFolderTree(client, "root-folder", {
+    includeSubfolders: true, limits: { ...SOURCE_LIMITS, maxPages: 3 },
+  });
+  assert.equal(listing.truncated, true);
+  assert.equal(requests, 3);
+});
+
+test("Drive can flag a listing incomplete even when there is no next page", async () => {
+  const client = new FirstPartyClient("google-drive", "fixture", async (input) => {
+    assert.match(new URL(String(input)).searchParams.get("fields") ?? "", /incompleteSearch/);
+    return Response.json({ files: [], incompleteSearch: true });
+  });
+  const listing = await listDriveFolderTree(client, "root-folder", { includeSubfolders: true });
+  assert.equal(listing.truncated, true);
+});
+
+test("a changing truncated folder stays within the per-source file ceiling", async () => {
+  const drive = fakeDrive(sampleTree());
+  const store = memoryPort(drive.client);
+  const input = { client: drive.client, source: folderSource, port: store.port, limits: { ...SOURCE_LIMITS, maxFiles: 1 } };
+  const first = await runSourceSync(input);
+  assert.deepEqual([first.fileCount, first.truncated], [1, true]);
+  drive.tree.set("new", { id: "new", name: "A.txt", mimeType: "text/plain", parent: "root-folder", version: 1, body: "New" });
+  const second = await runSourceSync(input);
+  assert.deepEqual([second.fileCount, second.added, second.truncated], [1, 0, true]);
+  assert.ok(store.items.has("brief"));
 });

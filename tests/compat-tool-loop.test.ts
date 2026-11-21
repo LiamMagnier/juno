@@ -114,6 +114,7 @@ const MESSAGES: CompatMessage[] = [
 
 async function run(req: AdapterRequest, responses: unknown[][], dispatch?: typeof executeToolBatch) {
   const { transport, bodies } = scripted(responses);
+  if (req.batch === batch) req = { ...req, batch: { ...batch, seenCallIds: new Set() } };
   const events: LlmEvent[] = [];
   for await (const event of runCompatLoop({ req, messages: MESSAGES, transport, dispatch })) events.push(event);
   return { events, bodies };
@@ -327,4 +328,17 @@ test("dynamic context lands just before the newest user turn, never ahead of the
     { role: "system", content: "Today is Thursday." },
     { role: "user", content: "hi" },
   ]);
+});
+
+test("a call id skips every reserved suffix and preserves the provider id", async () => {
+  const { dispatch, batches } = fakeDispatch();
+  const seenCallIds = new Set(["lookup-1", "lookup-1#0.0", "lookup-1#0.0.2"]);
+  const req = request(model("qwen:qwen3.8-max"), { toolset: fakeToolset(["lookup"]), batch: { ...batch, seenCallIds } });
+  await run(req, [
+    [call(0, "lookup", "{}", "lookup-1"), finish("tool_calls")],
+    [text("Done"), finish("stop")],
+  ], dispatch);
+  assert.equal(batches[0][0].callId, "lookup-1#0.0.3");
+  assert.equal(batches[0][0].providerCallId, "lookup-1");
+  assert.ok(seenCallIds.has("lookup-1#0.0.3"));
 });

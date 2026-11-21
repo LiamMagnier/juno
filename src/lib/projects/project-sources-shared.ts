@@ -139,7 +139,7 @@ export function safeReturnPath(value: unknown): string | null {
   if (/[\u0000-\u001f\u007f]/.test(value)) return null;
   try {
     const url = new URL(value, "https://alevr.invalid");
-    if (url.origin !== "https://alevr.invalid") return null;
+    if (url.origin !== "https://alevr.invalid" || url.pathname.startsWith("//")) return null;
     return `${url.pathname}${url.search}`;
   } catch {
     return null;

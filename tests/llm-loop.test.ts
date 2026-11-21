@@ -1,3 +1,4 @@
+import { stampCallId } from "@/lib/tools/call-ids";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,7 +17,6 @@ import {
   callIdIssuer,
   legacyChatToolset,
   legacyToolRound,
-  stampCallId,
   toolRoundRunner,
   undispatchedToolsetReason,
 } from "@/lib/llm/tool-round";
@@ -130,7 +130,7 @@ test("a call keeps the provider's id, or gets jc_<round>_<index> when it has non
 test("a provider id seen before in the turn is suffixed, never reused", () => {
   // Kimi numbers `functions.<name>:<idx>` and several compat hosts restart
   // every response; a reused id would replay the broker's old receipt.
-  const issue = callIdIssuer(new Set(["functions.search:0"]));
+  const issue = callIdIssuer({ seenCallIds: new Set(["functions.search:0"]) });
   assert.equal(issue("functions.search:0", 1, 0), "functions.search:0#1.0");
   assert.equal(issue("functions.fetch:1", 1, 1), "functions.fetch:1");
   // Two calls in one response carrying the same id still come out distinct.

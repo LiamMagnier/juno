@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
-import { CLOUD_IMPORT_CEILING_MB } from "@/lib/cloud-files/shared";
+import { CLOUD_FILE_ID, CLOUD_IMPORT_CEILING_MB } from "@/lib/cloud-files/shared";
 import { browseDrive, classifyDriveFailure, SourceSyncError, type DriveBrowseInput } from "@/lib/projects/drive-source";
 import { openDrive } from "@/lib/projects/drive-source-store";
 
@@ -22,7 +22,7 @@ export const maxDuration = 30;
 
 const browseQuery = z.object({
   view: z.enum(["folder", "shared", "search"]).default("folder"),
-  parent: z.string().min(1).max(256).default("root"),
+  parent: z.string().regex(CLOUD_FILE_ID).default("root"),
   q: z.string().max(200).default(""),
   cursor: z.string().min(1).max(8192).optional(),
 });
