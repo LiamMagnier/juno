@@ -65,7 +65,9 @@ test("a project retries a failed Drive check and adds a picked folder", async ({
   const picker = page.getByRole("dialog", { name: "Add from Google Drive" });
   await expect(picker.getByText("Couldn’t check Google Drive")).toBeVisible();
   await picker.getByRole("button", { name: "Try again" }).click();
-  await picker.getByRole("checkbox", { name: "Add the folder Reports" }).check();
+  const folder = picker.getByRole("checkbox", { name: "Add the folder Reports" });
+  await folder.click();
+  await expect(folder).toBeChecked();
   await picker.getByRole("button", { name: "Add 1 folder" }).click();
   await expect(picker).toHaveCount(0);
   expect(body).toEqual({ provider: "google-drive", items: [{ id: "reports", kind: "folder" }], includeSubfolders: true });
