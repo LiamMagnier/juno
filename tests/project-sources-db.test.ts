@@ -67,12 +67,18 @@ if (!DB_URL) {
 
   let onPut: (() => Promise<void>) | undefined;
   let signedIn: { id: string } | null = null;
+  const oauthCookies = new Map<string, string>();
   const objects = new Map<string, Uint8Array>();
   const afterQueue: Array<() => unknown> = [];
   test.before(async () => {
     const server = await import("next/server");
     mock.module("next/server", { namedExports: { ...server, after: (task: () => unknown) => void afterQueue.push(task) } });
     mock.module("@/lib/session", { namedExports: { getCurrentUser: async () => signedIn } });
+    const headers = await import("next/headers");
+    mock.module("next/headers", { namedExports: { ...headers, cookies: async () => ({
+      get: (name: string) => ({ value: oauthCookies.get(name) }),
+      delete: (name: string) => oauthCookies.delete(name),
+    }) } });
     const storage = await import("@/lib/storage");
     mock.module("@/lib/storage", {
       namedExports: {
@@ -210,6 +216,7 @@ if (!DB_URL) {
       globalThis.fetch = originalFetch;
       onPut = undefined;
       signedIn = null;
+      oauthCookies.clear();
       afterQueue.length = 0;
       objects.clear();
       await db.user.deleteMany({ where: { id: owner.id } });
@@ -397,6 +404,27 @@ if (!DB_URL) {
     await Promise.all(clients.map((client) => client.json("/drive/v3/files/brief1")));
     assert.equal(refreshes, 1);
     assert.equal(reads, 2);
+  });
+
+  test("OAuth denial returns to the page in validated state and consumes the nonce", async (t) => {
+    const { owner } = await fixture(t);
+    const { signState } = await import("@/lib/crypto");
+    const { GET } = await import("@/app/api/connectors/[id]/callback/route");
+    signedIn = owner;
+    oauthCookies.set("oauth_nonce_google-drive", "flow-fixture");
+    const state = signState(JSON.stringify({ u: owner.id, c: "google-drive", n: "flow-fixture", r: "/projects/example?panel=knowledge" }));
+    const url = new URL("https://app.example.invalid/oauth/callback");
+    url.searchParams.set("state", state);
+    url.searchParams.set("error", "access_denied");
+    const params = { params: Promise.resolve({ id: "google-drive" }) };
+    const response = await GET(new Request(url), params);
+    const location = new URL(response.headers.get("Location")!);
+    assert.equal(location.pathname, "/projects/example");
+    assert.equal(location.searchParams.get("panel"), "knowledge");
+    assert.equal(location.searchParams.get("connect_error"), "denied");
+    assert.equal(oauthCookies.has("oauth_nonce_google-drive"), false);
+    const replay = await GET(new Request(url), params);
+    assert.equal(new URL(replay.headers.get("Location")!).pathname, "/connections");
   });
 
 }

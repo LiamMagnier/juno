@@ -36,10 +36,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const providerError = url.searchParams.get("error");
-  if (providerError || !code || !state) {
-    if (providerError) console.error("[connectors] provider returned error", def.id, providerError, url.searchParams.get("error_description"));
-    return back("denied", id);
-  }
+  if (!state) return back("denied", id);
 
   // Validate the signed state and match it to this user + connector + nonce cookie.
   const decoded = verifyState(state);
@@ -53,7 +50,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const jar = await cookies();
   const nonceCookie = jar.get(`oauth_nonce_${def.id}`)?.value;
   jar.delete(`oauth_nonce_${def.id}`);
-  if (parsed.u !== user.id || parsed.c !== def.id || !parsed.n || parsed.n !== nonceCookie) {
+  if (parsed?.u !== user.id || parsed.c !== def.id || !parsed.n || parsed.n !== nonceCookie) {
     return back("bad_state", id);
   }
   const returnTo = safeReturnPath(parsed.r);
@@ -62,6 +59,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   let session: ConnectorOAuthSession | undefined;
   const sessionCookie = jar.get(`oauth_session_${def.id}`)?.value;
   jar.delete(`oauth_session_${def.id}`);
+  if (providerError || !code) return back("denied", id, returnTo);
   if (sessionCookie) {
     try {
       session = JSON.parse(decryptSecret(sessionCookie)) as ConnectorOAuthSession;

@@ -15,6 +15,7 @@ import {
   type SourceSyncPort,
 } from "@/lib/projects/drive-source";
 import { estimateKnowledgeTokens } from "@/lib/projects/knowledge-capacity";
+import { safeReturnPath } from "@/lib/projects/project-sources-shared";
 import { mergeInheritedProjectContext } from "@/lib/projects/project-tree";
 import { buildProjectContext, buildProjectReferenceFiles } from "@/lib/chat/context-assembly";
 
@@ -352,6 +353,12 @@ test("Drive refusals map to the fix the page offers", () => {
   const cases: Array<[number, string]> = [[401, "reconnect"], [403, "forbidden"], [404, "not_found"], [429, "rate_limited"], [502, "provider_error"]];
   for (const [status, code] of cases) assert.equal(classifyDriveFailure(new ConnectorApiError(status), "X").code, code, `HTTP ${status}`);
   assert.equal(classifyDriveFailure(new Error("socket hang up"), "X").code, "provider_error");
+});
+
+test("OAuth return paths stay local after normalization and can be validated twice", () => {
+  assert.equal(safeReturnPath("/projects/atlas?panel=knowledge"), "/projects/atlas?panel=knowledge");
+  assert.equal(safeReturnPath("/projects/../archive"), "/archive");
+  assert.equal(safeReturnPath("/projects/..//archive"), null);
 });
 
 test("the folder walk stops paging after reaching the file ceiling", async () => {
