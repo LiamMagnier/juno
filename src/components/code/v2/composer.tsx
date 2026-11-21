@@ -301,12 +301,13 @@ export const Composer = React.forwardRef<
     under?: React.ReactNode;
     /** The draft to start from (a prefilled link on the landing). */
     initialDraft?: string;
+    readOnly?: boolean;
     /** Whether the team chip is offered (a cloud run has no team). */
     team?: boolean;
     /** The outer box, for the landing-to-session travel. */
     stackRef?: React.Ref<HTMLDivElement>;
   }
->(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange, tall, variant = "session", gate = null, under, initialDraft, team = true, stackRef }, ref) {
+>(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange, tall, variant = "session", gate = null, under, initialDraft, readOnly = false, team = true, stackRef }, ref) {
   const mac = useIsMac();
   const landing = variant === "landing";
   const { actions, instances, selection } = model;
@@ -863,6 +864,7 @@ export const Composer = React.forwardRef<
         enterKeyHint={enterKeyHint}
         value={draft}
         disabled={!connected}
+        readOnly={readOnly}
         placeholder={!connected ? "Connect a subscription or add a key to start" : call ? "Type while you talk\u2026" : revising ? "What should change in the plan?" : landing ? LANDING_PLACEHOLDER : placeholder(running)}
         aria-label="Message"
         onChange={(e) => {

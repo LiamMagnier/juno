@@ -1,7 +1,7 @@
 import { AlevrLockup } from "@/components/brand/alevr-lockup";
 import { PageRoot } from "@/components/app/page-root";
 import { CodeComposer } from "@/components/code/code-composer";
-import { CodeLandingActions } from "@/components/code/code-landing-actions";
+import { CodeRecentSessions } from "@/components/code/code-landing-actions";
 import type { CodePrefill } from "@/lib/code-prefill";
 import { BRAND } from "@/lib/brand/names";
 
@@ -20,7 +20,7 @@ export function CodeLanding({ prefill }: { prefill: CodePrefill }) {
         <div className="relative isolate w-full">
           <CodeComposer prefill={prefill} />
         </div>
-        <PageRoot><CodeLandingActions /></PageRoot>
+        <PageRoot><CodeRecentSessions /></PageRoot>
       </div>
     </div>
   );

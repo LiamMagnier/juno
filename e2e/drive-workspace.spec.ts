@@ -74,6 +74,7 @@ test("Code's starting points preserve drafts and the shared sidebar exposes work
   const draft = page.getByRole("textbox", { name: "Message" });
   await expect(draft).toBeVisible();
   await draft.fill("A draft to keep");
+  await expect(draft).toHaveValue("A draft to keep");
   await page.getByRole("button", { name: "Review changes" }).click();
   await expect(draft).toHaveValue("A draft to keep");
   await draft.fill("");
