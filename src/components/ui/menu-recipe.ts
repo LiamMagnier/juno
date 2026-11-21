@@ -70,7 +70,9 @@
 export const menuShellFrameClass =
   "surface-float overlay-glass z-popper origin-popper nest-menu " +
   "max-w-[calc(100vw-1rem)] " +
-  "data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out";
+  "motion-safe:[--motion-scale-from:0.99] [--pop-shift:2px] " +
+  "data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out " +
+  "data-[state=open]:[animation-duration:var(--dur-fast)] data-[state=closed]:[animation-duration:var(--dur-fast)]";
 
 /**
  * The frame plus its 6px inset. Split from the frame because the `nest-*`

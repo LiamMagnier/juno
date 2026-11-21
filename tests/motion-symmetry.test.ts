@@ -129,3 +129,31 @@ test("without the API the update simply runs, and modified clicks keep the link"
   // No API here: the Link navigates as it always did.
   assert.deepEqual(click(), { took: false, prevented: false, pushed: [] });
 });
+
+test("a skipped transition still applies its update once", async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "document");
+  let updateAfterSkip: (() => Promise<void>) | undefined;
+  const dataset: Record<string, string> = {};
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      documentElement: { dataset },
+      startViewTransition: (update: () => Promise<void>) => {
+        updateAfterSkip = update;
+        return { finished: Promise.resolve() };
+      },
+    },
+  });
+  try {
+    let updates = 0;
+    await withViewTransition("canvas", () => { updates++; });
+    assert.equal(updates, 1);
+    await updateAfterSkip?.();
+    assert.equal(updates, 1);
+    assert.equal(viewTransitionActive(), false);
+    assert.deepEqual(dataset, {});
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "document", previous);
+    else Reflect.deleteProperty(globalThis, "document");
+  }
+});

@@ -95,15 +95,15 @@ export function SettingsModal({
           target.focus();
         }}
         className={cn(
-          "flex flex-col gap-0 overflow-hidden",
+          "flex flex-col gap-0 overflow-hidden bg-background text-foreground [backdrop-filter:none] !shadow-none",
           "md:h-[min(86dvh,46rem)] md:w-[calc(100%-3rem)] md:max-w-[58rem] md:flex-row",
           "max-md:left-0 max-md:top-0 max-md:h-dvh max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:[translate:none]",
           // The entrance and exit, on the dialog's own pop keyframes with the
           // travel and the start scale set for this surface. The scale is set
           // behind motion-safe only, so under reduced motion the element keeps
           // inheriting the root's value (1) instead of outranking it.
-          "[--pop-shift:0px] motion-safe:[--motion-scale-from:0.97] max-md:motion-safe:[--motion-scale-from:1] max-md:[--pop-shift:24px]",
-          "data-[state=open]:animate-[pop-in_var(--dur-base)_var(--ease-out-soft)_both] data-[state=closed]:animate-[pop-out_var(--dur-exit)_var(--ease-in)_both]",
+          "[--pop-shift:0px] motion-safe:[--motion-scale-from:0.99] max-md:motion-safe:[--motion-scale-from:1] max-md:[--pop-shift:8px]",
+          "data-[state=open]:animate-[pop-in_var(--dur-fast)_var(--ease-out-soft)_both] data-[state=closed]:animate-[pop-out_var(--dur-exit)_var(--ease-in)_both]",
           via === "keyboard" && "data-[state=open]:animate-none"
         )}
       >

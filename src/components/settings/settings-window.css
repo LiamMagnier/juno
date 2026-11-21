@@ -11,21 +11,15 @@
 }
 
 .settings-window {
-  --sw-hair: hsl(var(--foreground) / 0.08);
+  --sw-hair: hsl(var(--border));
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  backdrop-filter: none;
 }
-
 @media (min-width: 768px) {
   .settings-window {
-    box-shadow:
-      0 0 0 1px var(--sw-hair),
-      0 1px 2px hsl(var(--foreground) / 0.06),
-      0 24px 56px -12px hsl(220 30% 10% / 0.28);
-  }
-  .dark .settings-window {
-    --sw-hair: rgb(255 255 255 / 0.09);
-    box-shadow:
-      0 0 0 1px var(--sw-hair),
-      0 24px 64px -12px rgb(0 0 0 / 0.7);
+    border: 1px solid var(--sw-hair);
+    box-shadow: 0 12px 36px -16px hsl(var(--shadow-ink) / .35);
   }
 }
 
@@ -42,21 +36,7 @@
   }
 }
 
-/* Arrival choreography, after the window's own spring: the rail's rows deal
-   in from the left on a short stagger, so the window reads as a place being
-   laid out rather than a page swapping in. Opacity and transform only. */
-@media (prefers-reduced-motion: no-preference) {
-  .settings-rail-in .settings-rail-rows > * {
-    animation: sw-rail-in var(--dur-base) var(--ease-out-expo) backwards;
-    animation-delay: calc(min(var(--rail-index, 0), 3) * var(--stagger-tile) / 2);
-  }
-  .settings-rail-in .settings-rail-rows > :nth-child(2) { --rail-index: 1; }
-  .settings-rail-in .settings-rail-rows > :nth-child(3) { --rail-index: 2; }
-  .settings-rail-in .settings-rail-rows > :nth-child(n + 4) { --rail-index: 3; }
-}
-@keyframes sw-rail-in {
-  from {
-    opacity: 0;
-    transform: translateX(-3px);
-  }
+.settings-window .segmented-thumb {
+  background: hsl(var(--card));
+  box-shadow: inset 0 0 0 1px hsl(var(--border) / .7);
 }

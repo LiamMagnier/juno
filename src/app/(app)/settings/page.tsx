@@ -16,8 +16,8 @@ import { useReducedMotion } from "@/lib/motion-preference";
 import { duration, ease, transition } from "@/lib/motion";
 import "@/components/settings/settings-window.css";
 
-/** The window's settle: Apple's spring vocabulary, no bounce. */
-const WINDOW_SPRING = { type: "spring", duration: duration.slow, bounce: 0 } as const;
+/** The settings frame settles on the shared fast rung. */
+const WINDOW_ENTER = { duration: duration.fast, ease: ease.outSoft } as const;
 /** It leaves faster than it came: the reader has already decided. */
 const WINDOW_EXIT = { duration: duration.fast, ease: ease.in } as const;
 
@@ -93,10 +93,10 @@ function SettingsPageContent() {
             role="dialog"
             aria-modal="true"
             aria-label="Settings"
-            initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.965, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0, transition: reduce ? transition.base : WINDOW_SPRING }}
+            initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.99, y: 4 }}
+            animate={{ opacity: 1, scale: 1, y: 0, transition: WINDOW_ENTER }}
             exit={reduce ? { opacity: 0, transition: WINDOW_EXIT } : { opacity: 0, scale: 0.985, transition: WINDOW_EXIT }}
-            className="settings-window pointer-events-auto flex h-full w-full flex-col overflow-hidden bg-background text-foreground md:h-[min(48rem,calc(100dvh-2rem))] md:w-[min(62rem,calc(100vw-2rem))] md:flex-row md:rounded-composer"
+            className="settings-window pointer-events-auto flex h-full w-full flex-col overflow-hidden bg-background text-foreground md:h-[min(48rem,calc(100dvh-2rem))] md:w-[min(62rem,calc(100vw-2rem))] md:flex-row md:rounded-panel"
           >
             <aside className="@container/rail settings-rail-col relative flex shrink-0 flex-col px-3 pb-3 pt-3 md:h-full md:w-[15.5rem] md:pb-4 md:pt-4">
               <div className="mb-3 flex h-9 items-center justify-between pl-2.5 md:mb-4">
@@ -106,7 +106,7 @@ function SettingsPageContent() {
                   <ActionIcons.dismiss className="size-4" aria-hidden="true" />
                 </Pressable>
               </div>
-              <div className="settings-rail-in min-h-0 flex-1 overflow-y-auto no-scrollbar">
+              <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
                 <SettingsRail active={section} hrefFor={settingsHref} />
               </div>
             </aside>
