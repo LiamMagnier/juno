@@ -129,7 +129,7 @@ const ICONS: Record<SidebarMotionIconKind, IconComponent> = {
  * (`[&_svg]:size-4.5` on a row's glyph box) win too, because that selector
  * outranks a bare utility on the svg.
  */
-const DEFAULT_GLYPH_SIZE = "size-4";
+const DEFAULT_GLYPH_SIZE = "size-4.5";
 
 export function SidebarMotionIcon({
   kind,
@@ -139,9 +139,6 @@ export function SidebarMotionIcon({
   className?: string;
 }) {
   const Icon = ICONS[kind];
-  // The folder's closed-to-open change is the drawing's own gesture now
-  // (alevr-glyphs.ts, `folder`: its cover falls open), so one glyph is drawn
-  // rather than two stacked.
   return (
     <span aria-hidden="true" className={cn("sidebar-motion-icon", `sidebar-motion-icon--${kind}`, DEFAULT_GLYPH_SIZE, className)}>
       <Icon focusable="false" className={cn("sidebar-motion-icon__glyph", DEFAULT_GLYPH_SIZE, className)} />

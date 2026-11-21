@@ -149,15 +149,13 @@ export function AppPageHeader({
         </div>
       )}
 
-      {/* The page's action sits on its TITLE's line (design V3, revision 2),
-          not beside the lede's last line, where it floated below the title. */}
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <h1 className="app-page-title ed-rise min-w-0 break-words text-balance text-page-title" style={{ ["--i" as string]: 0 }}>{heading}</h1>
-        {/* max-w-full: on a phone the actions wrap to their own line, and a
-            row wider than that line (Admin's four tabs) scrolls inside its own track. */}
-        {actions && <div className="ed-rise flex min-w-0 max-w-full flex-wrap items-center gap-2 @[40rem]/page:mt-1.5" style={{ ["--i" as string]: 2 }}>{actions}</div>}
+      <div className="app-section-heading-row">
+        <div className="min-w-0">
+          <h1 className="app-page-title ed-rise min-w-0 text-balance text-page-title" style={{ ["--i" as string]: 0 }}>{heading}</h1>
+          {lede && <p className="ed-rise mt-2 max-w-prose text-pretty text-body text-muted-foreground" style={{ ["--i" as string]: 1 }}>{lede}</p>}
+        </div>
+        {actions && <div className="app-section-heading-actions ed-rise" style={{ ["--i" as string]: 2 }}>{actions}</div>}
       </div>
-      {lede && <p className="ed-rise mt-2 max-w-prose text-pretty text-body text-muted-foreground" style={{ ["--i" as string]: 1 }}>{lede}</p>}
     </header>
   );
 }
@@ -224,13 +222,8 @@ export function AppPageHeaderSkeleton({
    */
   phoneLedeLines?: 1 | 2 | 3;
   /**
-   * `"button"` when the page's action is a default Button on the heading's
-   * line (Projects' "New project", Library's "Upload"). On a touch screen that
-   * button is 44px beside a 30px heading, so the real lede starts under the
-   * button, and the placeholder puts it there too: lede under the heading row,
-   * as the header draws it. `true` is a placeholder beside the header that
-   * leaves the lede under the heading alone, for an action no taller than
-   * the heading (Compare's 16px note).
+   * `"button"` reserves the default Button's larger touch height.
+   * `true` draws the standard action placeholder.
    */
   actions?: boolean | "button";
   /** Pass `mb-0` where the page frame supplies its own gap between blocks. */
@@ -259,21 +252,17 @@ export function AppPageHeaderSkeleton({
           </span>
         </div>
       )}
-      {/* With a button action, the header's own two rows: the heading with
-          the button beside it, then the lede under both (see `actions`).
-          Otherwise the lede stays in the heading's column. */}
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0 flex-1">
+      <div className="app-section-heading-row">
+        <div className="min-w-0">
           <Skeleton className={cn("h-[1.08em] max-w-full text-page-title", headingWidth)} />
-          {actions !== "button" && ledeBars}
+          {ledeBars}
         </div>
-        {/* A button is the real one's box: 36px, 44 on touch, set 6px down
-            beside the heading from 40rem, as the actions cluster is. */}
         {actions && (
-          <Skeleton className={cn("h-9 w-32 shrink-0", actions === "button" && "coarse:h-11 @[40rem]/page:mt-1.5")} />
+          <div className="app-section-heading-actions">
+            <Skeleton className={cn("h-9 w-32 shrink-0", actions === "button" && "coarse:h-11")} />
+          </div>
         )}
       </div>
-      {actions === "button" && ledeBars}
     </div>
   );
 }

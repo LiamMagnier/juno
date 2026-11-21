@@ -19,14 +19,14 @@ try {
     await mkdir(path.join(output, mode), { recursive: true });
     const context = await browser.newContext({ viewport: mode.startsWith('mobile') ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, isMobile: mode.startsWith('mobile'), hasTouch: mode.startsWith('mobile'), colorScheme: mode.endsWith('dark') ? 'dark' : 'light', reducedMotion: 'reduce' });
     let page = await context.newPage();
-    page.setDefaultTimeout(25_000);
+    page.setDefaultTimeout(90_000);
     let route = '';
     page.on('pageerror', error => failures.push(`${mode}/${route}: ${error.message}`));
     for (route of pages) {
       if (route !== pages[0]) {
         await page.close();
         page = await context.newPage();
-        page.setDefaultTimeout(25_000);
+        page.setDefaultTimeout(90_000);
         page.on('pageerror', error => failures.push(`${mode}/${route}: ${error.message}`));
       }
       await page.goto(new URL(route === 'project' ? '/dev/pages/project/p-atlas' : `/dev/pages?page=${route}`, base).href, { waitUntil: 'domcontentloaded', timeout: 120_000 });

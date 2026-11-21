@@ -202,9 +202,9 @@ export function VoiceComposerGlow({ call, children }: { call?: VoiceCallParts; c
           {/* Yours: graphite. The edge darkens toward ink and a soft halo follows your voice. */}
           <span ref={ref("youBloom")} className="absolute inset-0 rounded-inherit opacity-0 shadow-[0_0_14px_0_hsl(var(--foreground)/0.08),0_0_3px_0_hsl(var(--foreground)/0.06)]" />
           <span ref={ref("youRing")} className="absolute inset-0 rounded-inherit border border-foreground/25 opacity-0" />
-          {/* Alevr's: the one accent, with a softer, wider bloom. */}
-          <span ref={ref("alevrBloom")} className="absolute inset-0 rounded-inherit opacity-0 shadow-[0_0_22px_1px_hsl(var(--primary)/0.24),0_0_4px_0_hsl(var(--primary)/0.18)]" />
-          <span ref={ref("alevrRing")} className="absolute inset-0 rounded-inherit border border-primary opacity-0" />
+          {/* Alevr's: the accent is strongest at the edge. */}
+          <span ref={ref("alevrBloom")} className="absolute inset-0 rounded-inherit opacity-0 shadow-[0_0_12px_hsl(var(--primary)/0.12)]" />
+          <span ref={ref("alevrRing")} className="absolute inset-0 rounded-inherit border border-primary/60 opacity-0" />
         </span>
       )}
     </div>

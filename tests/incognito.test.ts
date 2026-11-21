@@ -242,7 +242,8 @@ test("the toggle stays where it was pressed and is the way out", () => {
   assert.match(TOGGLE, /aria-pressed=\{active\}/);
   assert.match(TOGGLE, /"hit-44 relative inline-flex h-9/, "44px under a finger");
   // The pill names the mode; width never tweens (D27).
-  assert.match(TOGGLE, /\? "bg-foreground pl-3\.5 pr-2\.5 text-background hover:bg-foreground\/90"/);
+  assert.match(TOGGLE, /bg-foreground\/10 ps-3 pe-\[9px\] text-foreground/, "the filled glyph stays 18px from the end in both states");
+  assert.match(TOGGLE, /<TooltipContent side="bottom" align="end">/, "the tooltip stays aligned with the right edge");
   assert.doesNotMatch(TOGGLE, /transition-\[[^\]]*(?:width|padding)/);
 });
 

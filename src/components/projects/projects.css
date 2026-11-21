@@ -60,6 +60,7 @@
    the drop). */
 .pj-tile {
   border: 1px solid var(--pj-hair);
+  border-radius: var(--web-panel-radius, 18px);
   background: hsl(var(--card));
   transition:
     border-color var(--dur-fast) var(--ease-out-soft),
