@@ -736,6 +736,8 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
   .cv2-pop-scrim { display: block; position: fixed; inset: 0; background: hsl(var(--scrim)); z-index: var(--z-modal); animation: cv2-fade var(--dur-exit) var(--cv2-ease) both; }
   .cv2-menu-anchor .cv2-pop { position: fixed; width: auto; }
   .cv2-picker { flex-direction: column; }
+  .cv2-pop-foot { flex-wrap: wrap; }
+  .cv2-pop-foot > .cv2-seg { max-width: 100%; overflow-x: auto; }
   .cv2-rail { width: auto; flex-direction: row; border-right: 0; border-bottom: 1px solid hsl(var(--border)); padding: 6px 10px; overflow-x: auto; }
   .cv2-rail-sep { width: 1px; height: 20px; margin: 0 4px; }
   .cv2-rail-labs, .cv2-rail-foot { flex-direction: row; width: auto; padding: 0; }

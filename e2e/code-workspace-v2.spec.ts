@@ -1,7 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { readQaFixtures } from "./support/fixtures";
 
-test("Code configures a delegated team and keeps the draft if the team cannot be saved", async ({ page }, testInfo) => {
+test("Code configures a delegated team and keeps the draft if the team cannot be saved", async ({ page, isMobile }, testInfo) => {
   await page.route("**/api/code/workspaces", (route) => route.fulfill({
     json: { workspaces: [{ id: "qa-workspace", name: "Storefront", path: "/qa/storefront", lastOpenedAt: "2026-11-22T00:00:00.000Z" }] },
   }));
@@ -43,6 +43,9 @@ test("Code configures a delegated team and keeps the draft if the team cannot be
   await search.fill("Sonnet");
   const option = picker.getByRole("option", { name: /Sonnet/ }).first();
   await expect(option).toBeVisible();
+  if (isMobile) {
+    await expect.poll(() => picker.locator(".ui-dialog-body").evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(1);
+  }
   await page.screenshot({ path: testInfo.outputPath("code-swarm-models.png"), animations: "disabled" });
   await option.click();
   await picker.getByRole("button", { name: "Back to team" }).click();
@@ -127,16 +130,24 @@ test("Chat and Code share the resting editor and Code offers voice without a bui
       controls: [rowStyle.padding, rowStyle.columnGap],
     };
   });
+  // Wait for the real focus shadow to settle after autofocus is cleared.
+  // The browser can otherwise sample either composer halfway through its transition.
+  const rest = (editor: Locator) => editor.evaluate(async (field) => {
+    field.blur();
+    const shell = field.closest(".chat-composer");
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await Promise.allSettled(shell?.getAnimations().map((animation) => animation.finished) ?? []);
+  });
   await page.goto("/chat");
   const chatEditor = page.getByRole("combobox", { name: "Message Alevr", exact: true });
   await expect(chatEditor).toBeEditable();
-  await chatEditor.evaluate((field) => field.blur());
+  await rest(chatEditor);
   const chat = await geometry();
   await page.screenshot({ path: testInfo.outputPath("chat-reference.png"), animations: "disabled" });
   await page.goto("/code");
   const editor = page.getByRole("combobox", { name: "Message", exact: true });
   await expect(editor).toBeEditable();
-  await editor.evaluate((field) => field.blur());
+  await rest(editor);
   await expect.poll(geometry).toEqual(chat);
   const launcher = page.getByRole("button", { name: "Start voice conversation" });
   await expect(launcher).toBeVisible();
@@ -196,10 +207,10 @@ test("the Swarm grid and activity follow persisted Code task events", async ({ p
   await expect(grid.getByRole("listitem")).toHaveCount(3);
   await expect(workerTwo).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("code-swarm-live.png"), animations: "disabled" });
-  await panel.getByRole("button", { name: "Activity", exact: true }).click();
+  await panel.getByRole("button", { name: /^activity$/i }).click();
   const activity = panel.getByRole("list", { name: "Swarm activity" });
   await expect(activity.getByText(/Check the password reset form/)).toBeVisible();
-  await panel.getByRole("button", { name: "Grid", exact: true }).click();
+  await panel.getByRole("button", { name: /^grid$/i }).click();
   await workerTwo.click();
   await expect(panel.getByRole("heading", { name: "Worker 2" })).toBeVisible();
   if (isMobile) {

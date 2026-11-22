@@ -211,7 +211,7 @@ function TeamEditor({
           <DialogDescription>{editing ? `Choose a model for ${editing.label}.` : "Choose how Code runs this task."}</DialogDescription>
         </DialogHeader>
         {editing ? (
-          <div className="space-y-3 pb-4" key={editing.id}>
+          <div className="min-w-0 space-y-3 pb-4" key={editing.id}>
             <Button autoFocus type="button" variant="ghost" className="-ms-2" onClick={() => setActiveRole(null)}>
               <Glyph name="arrow-left" size={16} /> Back to team
             </Button>

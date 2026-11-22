@@ -24,7 +24,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { StatusIcons } from "@/lib/app-icons";
-import { COMPOSER_MENU_COLLISION_PADDING, composerMenuClass, MenuGlide, MenuScrollEdges } from "@/components/chat/composer-menu";
+import { COMPOSER_MENU_COLLISION_PADDING, composerMenuClass, MenuScrollEdges } from "@/components/chat/composer-menu";
 import { cn } from "@/lib/utils";
 
 /**
@@ -345,11 +345,15 @@ export function PlusMenu({
     setPanelId(item.id);
     item.onOpenChange?.(true);
   };
+  const changeOpen = (next: boolean) => {
+    if (!next) {
+      setPanelId(null);
+      if (panel?.kind === "sub") panel.onOpenChange?.(false);
+    }
+    onOpenChange(next);
+  };
   return (
-    <DropdownMenu open={open} onOpenChange={(next) => {
-      if (!next) { setPanelId(null); if (panel?.kind === "sub") panel.onOpenChange?.(false); }
-      onOpenChange(next);
-    }}>
+    <DropdownMenu open={open} onOpenChange={changeOpen}>
       {/* Never over its own open menu. With the menu's trigger outside, the
           menu's pointerdown (which prevents its default) also stops the
           tooltip's own close-on-press, so the menu's state holds it shut. */}
@@ -369,7 +373,13 @@ export function PlusMenu({
               aria-label={label}
               disabled={disabled}
               data-opened-by={openedBy}
-              onPointerDown={() => setOpenedBy("pointer")}
+              onPointerDown={(event) => {
+                setOpenedBy("pointer");
+                // The phone sheet can cover the trigger. Open after release
+                // so Radix cannot select the row under the opening press.
+                if (compact) event.preventDefault();
+              }}
+              onClick={compact ? () => changeOpen(!open) : undefined}
               onKeyDown={() => setOpenedBy("keyboard")}
               className={cn(composerIconButtonClass, "composer-plus group relative", className)}
             >
@@ -412,7 +422,6 @@ export function PlusMenu({
         // edge concentric with the 8px rows inside it (14 − 6 = 8).
         className={cn(MENU_W_WIDE, composerMenuClass, "cmenu-scroll max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto")}
       >
-        <MenuGlide />
         <MenuScrollEdges />
         {compact && panel?.kind === "sub" ? (
           // The panel arrives from the right and the root list comes back from
@@ -514,7 +523,6 @@ export function PlusMenu({
                           collisionPadding={16}
                           className={cn("flex flex-col", MENU_W_WIDE, composerMenuClass)}
                         >
-                          <MenuGlide />
                           {item.render()}
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>
