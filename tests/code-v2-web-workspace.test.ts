@@ -170,18 +170,18 @@ for (const s of STATES) {
 test("Swarm shows the real run roster with model names and agent states", () => {
   const f = fixture("subagents");
   const html = renderWorkspace({ model: f.model, ui: f.ui });
-  assert.match(html, /aria-label="Swarm agents"/);
-  assert.match(html, /data-agent-id="w2a"/);
-  assert.match(html, /Hook audit/);
-  assert.match(html, /DeepSeek/i);
-  assert.match(html, /Paused/);
-  assert.match(html, /aria-label="Agent view"/);
+  // One roster: the tree, each row named for its work, with its model in one word.
+  assert.match(html, /role="tree" aria-label="Agents in this run"/);
+  assert.match(html, /aria-label="Hook audit, Paused/);
+  assert.match(html, /class="m cv2-trunc" title="DeepSeek[^"]*">DeepSeek/);
+  assert.match(html, /Client-side total updater/);
+  assert.doesNotMatch(html, /aria-label="Agent view"/);
 });
 
 test("the needs-you state takes the composer over with the asker and the three decisions", () => {
   const f = fixture("needs-you");
   const html = renderWorkspace({ model: f.model, ui: f.ui });
-  assert.match(html, /Worker 3 wants to run a command/);
+  assert.match(html, /Regression suite writer wants to run a command/, "the card names the asker as the Agents panel does");
   assert.match(html, /Allow once/);
   assert.match(html, /Allow for this session/);
   assert.match(html, /Deny/);

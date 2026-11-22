@@ -10,6 +10,7 @@
 import type { ApprovalRequestItem, SubagentItem, TurnItem } from "./contracts";
 import { TEAM_PHASE_VALUES } from "./contracts";
 import { groupTurns } from "./turns";
+import { agentDisplayName, agentDisplayNames } from "./agent-names";
 
 /** What a node is doing, in the tree's own vocabulary. */
 export type AgentNodeState = "thinking" | "tool" | "waiting" | "queued" | "paused" | "done" | "failed" | "stopped";
@@ -126,11 +127,32 @@ export function agentNodeState(agent: SubagentItem, items: readonly TurnItem[]):
   return { state: "thinking", step: agent.liveLine ?? agent.title ?? "Thinking" };
 }
 
+/** One agent's name, from its work (agent-names.ts); a run's names come from `agentNamesFor`, which also tells repeats apart. */
 export function agentLabel(agent: SubagentItem): string {
-  return agent.label ?? agent.title ?? agent.task?.split("\n")[0]?.slice(0, 80) ?? "Agent";
+  return agentDisplayName(agent);
 }
 
 const phaseRank = (a: SubagentItem) => (a.phase ? TEAM_PHASE_VALUES.indexOf(a.phase) : TEAM_PHASE_VALUES.length);
+
+/** A run's agents in the tree's order: Plan → Build → Verify, then the order they started in. */
+export function orderedAgents(items: readonly TurnItem[]): SubagentItem[] {
+  return latestAgentItems(items)
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => phaseRank(x.a) - phaseRank(y.a) || x.i - y.i)
+    .map((x) => x.a);
+}
+
+/** Every agent's name in this run, by agent id: the tree, the thread and the approval card all read it. */
+export function agentNamesFor(items: readonly TurnItem[]): Map<string, string> {
+  return agentDisplayNames(orderedAgents(items));
+}
+
+/** What a running lead is doing when it is not using a tool itself: waiting on its agents, combining their work, or planning it. */
+function leadIdleStep(agents: readonly SubagentItem[]): string {
+  const live = agents.filter((a) => a.status === "running" || a.status === "waiting").length;
+  if (live) return `Waiting on ${live} ${live === 1 ? "agent" : "agents"}`;
+  return agents.length ? "Combining the results" : "Planning the work";
+}
 
 export interface LeadInput {
   /** The run is going: the lead is working. */
@@ -146,10 +168,8 @@ export interface LeadInput {
  * phases first, then the order they started in.
  */
 export function buildAgentTree(items: readonly TurnItem[], lead: LeadInput): AgentTreeNode {
-  const agents = latestAgentItems(items)
-    .map((a, i) => ({ a, i }))
-    .sort((x, y) => phaseRank(x.a) - phaseRank(y.a) || x.i - y.i)
-    .map((x) => x.a);
+  const agents = orderedAgents(items);
+  const names = agentDisplayNames(agents);
   const known = new Set(agents.map((a) => a.agentId));
   const nodes = new Map<string, AgentTreeNode>();
   for (const agent of agents) {
@@ -158,7 +178,7 @@ export function buildAgentTree(items: readonly TurnItem[], lead: LeadInput): Age
     nodes.set(agent.agentId, {
       id: agent.agentId,
       agent,
-      label: agentLabel(agent),
+      label: names.get(agent.agentId) ?? agentLabel(agent),
       state,
       step,
       startedAt: agent.createdAt,
@@ -179,7 +199,7 @@ export function buildAgentTree(items: readonly TurnItem[], lead: LeadInput): Age
     state: !lead.running ? "done" : leadApproval ? "waiting" : leadTool ? "tool" : "thinking",
     step: !lead.running
       ? agents.length ? `Ran ${agents.length} ${agents.length === 1 ? "agent" : "agents"}` : "Idle"
-      : leadApproval ? leadApproval.summary || "Waiting for your approval" : leadTool ? toolStep(leadTool) : `Coordinating ${agents.length} ${agents.length === 1 ? "agent" : "agents"}`,
+      : leadApproval ? leadApproval.summary || "Waiting for your approval" : leadTool ? toolStep(leadTool) : leadIdleStep(agents),
     ...(costs.length ? { costUsd: costs.reduce((a, b) => a + b, 0) } : {}),
     ...(lead.budgetUsd !== undefined ? { budgetUsd: lead.budgetUsd } : {}),
     children: [],

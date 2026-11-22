@@ -19,7 +19,6 @@ async function openGallery(page: Page, query = "state=subagents&bare=1", { phone
     const agentsTab = page.getByRole("tab", { name: /Agents/ });
     if (await agentsTab.count()) await agentsTab.first().click();
   }
-  await page.getByRole("button", { name: /^tree$/i }).click({ timeout: 30_000 });
   await expect(page.getByRole("tree", { name: "Agents in this run" })).toBeVisible({ timeout: 30_000 });
 }
 
@@ -43,8 +42,8 @@ test("the tree walks by keyboard and selecting a node shows its controls", async
   await page.keyboard.press("Home");
   await expect(lead).toBeFocused();
 
-  // Worker 2 holds a nested helper: Left folds it, Right opens it again.
-  const worker2 = tree.getByRole("treeitem", { name: /^Worker 2,/ });
+  // The client updater (the engine's "Worker 2") holds a nested helper: Left folds it, Right opens it again.
+  const worker2 = tree.getByRole("treeitem", { name: /^Client-side total updater,/ });
   await worker2.focus();
   await expect(worker2).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("ArrowLeft");
@@ -66,11 +65,11 @@ test("the tree walks by keyboard and selecting a node shows its controls", async
   // Enter selects: the detail follows, with its controls and the steer box.
   await page.keyboard.press("Enter");
   await expect(worker2).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "Worker 2" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Client-side total updater" })).toBeVisible();
   const controls = page.getByRole("toolbar", { name: "Agent controls" });
   await expect(controls.getByRole("button", { name: "Pause" })).toBeVisible();
   await expect(controls.getByRole("button", { name: "Stop" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Steer Worker 2" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Steer Client-side total updater" })).toBeVisible();
 
   // A press is answered in the polite status line.
   await controls.getByRole("button", { name: "Pause" }).click();
@@ -100,13 +99,13 @@ test("at phone width the pane fits and an agent opens in its own view", async ({
   expect(overflow).toBeLessThanOrEqual(1);
   const tree = page.getByRole("tree", { name: "Agents in this run" });
   await expect(tree).toBeVisible();
-  await rowLine(page, "Worker 2").click();
-  await expect(page.getByRole("heading", { name: "Worker 2" })).toBeVisible();
+  await rowLine(page, "Client-side total updater").click();
+  await expect(page.getByRole("heading", { name: "Client-side total updater" })).toBeVisible();
   await expect(tree).toBeHidden();
   const back = page.getByRole("button", { name: "All agents" });
   await expect(back).toBeFocused();
   await page.screenshot({ path: testInfo.outputPath("agent-detail-phone.png"), animations: "disabled" });
   await back.click();
   await expect(tree).toBeVisible();
-  await expect(tree.getByRole("treeitem", { name: /^Worker 2,/ })).toBeFocused();
+  await expect(tree.getByRole("treeitem", { name: /^Client-side total updater,/ })).toBeFocused();
 });

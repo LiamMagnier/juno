@@ -34,7 +34,7 @@ final class CodeV2TeamSnapshotTests: XCTestCase {
             if case let .subagent(agent) = item { return CodeV2AgentNode(subagent: agent, items: CodeV2TeamGallery.runningSnapshot.items) }
             return nil
         }
-        XCTAssertEqual(nodes.map(\.roleLabel), ["Architect", "Builder 1", "Builder 2"])
+        XCTAssertEqual(nodes.map(\.roleLabel), ["Architect", "Server route builder", "Server total builder"], "builders are named for their part of the plan")
         XCTAssertEqual(CodeV2AgentCopy.headline(nodes), "Plan → Build")
     }
 

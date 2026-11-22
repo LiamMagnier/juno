@@ -53,6 +53,7 @@ import { matchSkills, readCodeSkillInvocation, skillsChipLabel, type CodeSkillCh
 import { ComposerPopover, Glyph, MenuList, ModelMark, useIsMac, type MenuEntry } from "./primitives";
 import type { WorkspaceModel } from "./types";
 import { cn } from "@/lib/utils";
+import { agentNamesFor } from "@/lib/code-v2/agent-tree";
 import { useHeightSwap } from "@/lib/use-height-swap";
 
 /** `model` opens the model chip on its effort stage; `catalog` on the model list. */
@@ -64,7 +65,11 @@ type Pending = ApprovalRequestItem | UserInputRequestItem;
 export const DEFAULT_RUNTIME_MODE = "auto-edit";
 
 export function pendingRequests(items: readonly TurnItem[]): Pending[] {
-  return items.filter((i): i is Pending => (i.kind === "approval_request" || i.kind === "user_input_request") && i.status === "pending");
+  const pending = items.filter((i): i is Pending => (i.kind === "approval_request" || i.kind === "user_input_request") && i.status === "pending");
+  if (!pending.some((p) => p.kind === "approval_request" && p.agentId)) return pending;
+  // The card names the asker as the Agents panel does ("Reset form checker wants to run a command"), not "Worker 3".
+  const names = agentNamesFor(items);
+  return pending.map((p) => (p.kind === "approval_request" && p.agentId && names.has(p.agentId) ? { ...p, agentLabel: names.get(p.agentId) } : p));
 }
 
 const ACTION_PHRASE: Record<ApprovalRequestItem["action"], string> = {

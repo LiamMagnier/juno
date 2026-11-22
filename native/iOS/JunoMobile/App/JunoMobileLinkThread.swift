@@ -623,7 +623,8 @@ struct JunoMobileLinkSubagentRow: View {
     HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
       JunoIconView(.agents, size: 13).foregroundStyle(Color.junoTertiaryInk).frame(width: 16)
       VStack(alignment: .leading, spacing: JunoSpace.micro) {
-        Text(agent.title ?? agent.label ?? String((agent.task ?? agent.role.rawValue.capitalized).prefix(80)))
+        // Named for its work ("Reset form checker"), as on the web and the Mac.
+        Text(CodeV2AgentNames.displayName(for: agent))
           .font(.subheadline)
         Text("\(CodeV2Team.shortModelName(agent.model.model)), \(words)")
           .font(.footnote)
@@ -953,7 +954,7 @@ struct JunoMobileLinkAgentsView: View {
         .padding(JunoSpace.regular)
       }
       .junoScreenCanvas()
-      .navigationTitle(selected.map { $0.title ?? $0.label ?? "Agent" } ?? "Agents")
+      .navigationTitle(selected.map { CodeV2AgentNames.displayName(for: $0) } ?? "Agents")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         if selected != nil {

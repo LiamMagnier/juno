@@ -48,6 +48,7 @@ import { Glyph, LiveMark, useNow } from "./primitives";
 import type { PagedHistory } from "./types";
 import { shouldLoadOlder } from "@/lib/chat/history-client";
 import { cn } from "@/lib/utils";
+import { agentDisplayNames } from "@/lib/code-v2/agent-names";
 import { useLatched } from "@/lib/use-presence";
 import { CrossMessageRow } from "@/components/chat/cross-message-row";
 import { peerHrefForRef as peerHref } from "@/lib/cross-conversation/links";
@@ -286,8 +287,11 @@ export function teamHead(items: readonly SubagentItem[]): string {
   const workers = items.filter((i) => i.role === "worker" && !isCandidate(i)).length;
   const others = items.filter((i) => i.role !== "worker");
   if (candidates) return `${candidates} candidates`;
+  // Counted per role: two explorers are "2 explorers", never "an explorer and an explorer".
+  const roles = new Map<string, number>();
+  for (const x of others) roles.set(x.role, (roles.get(x.role) ?? 0) + 1);
   const w = workers ? `${workers} ${workers === 1 ? "worker" : "workers"}` : "";
-  const o = others.map((x) => (x.role === "explorer" ? "an explorer" : x.role === "reviewer" ? "a reviewer" : `a ${x.role}`));
+  const o = [...roles].map(([role, n]) => (n === 1 ? `${/^[aeiou]/.test(role) ? "an" : "a"} ${role}` : `${n} ${role}s`));
   const parts = [w, ...o].filter(Boolean);
   if (!parts.length) return `${items.length} agents`;
   const all = parts.length <= 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
@@ -314,6 +318,7 @@ function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: 
   const [open, setOpen] = React.useState<boolean | null>(null);
   const shown = open ?? (live || forceOpen);
   const elapsed = Math.max(0, ...items.map((i) => i.elapsedMs ?? 0));
+  const names = React.useMemo(() => agentDisplayNames(phaseOrdered(items)), [items]);
   return (
     <div role="group" aria-label={teamHead(items)}>
       <button type="button" className="cv2-wl" aria-expanded={shown} onClick={() => setOpen(!shown)}>
@@ -339,7 +344,7 @@ function TeamGroup({ items, props, forceOpen }: { items: SubagentItem[]; props: 
                 props.onOpenDock?.({ tab: "agents", target: a.agentId });
               }}
             >
-              <span className="who">{a.title ?? a.task?.split("\n")[0] ?? a.label ?? "Agent"}</span>
+              <span className="who">{names.get(a.agentId) ?? a.title ?? "Agent"}</span>
               <span className={cn("what", step.needs && "cv2-sig", a.status === "running" && "cv2-live")}>{step.text}</span>
               <span className="t">{a.elapsedMs !== undefined ? formatDuration(a.elapsedMs) : ""}</span>
             </button>

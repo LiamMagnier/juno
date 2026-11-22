@@ -1,0 +1,180 @@
+{
+  "about": "Agents are named for their work, never \"Worker 2\". Shared by src/lib/code-v2/agent-names.ts and native CodeV2AgentNames.swift; both test suites read this file. Each case is [label, title, task, role, name]; null is absent.",
+  "cases": [
+    [
+      "Worker 1",
+      "Map the auth middleware",
+      null,
+      "worker",
+      "Auth middleware mapper"
+    ],
+    [
+      "Worker 2",
+      "Check the password reset form",
+      null,
+      "worker",
+      "Reset form checker"
+    ],
+    [
+      null,
+      null,
+      "Redesign the sidebar so sessions are easier to scan",
+      "worker",
+      "Sidebar redesigner"
+    ],
+    [
+      null,
+      null,
+      "Redesigning the onboarding flow",
+      "worker",
+      "Onboarding flow redesigner"
+    ],
+    [
+      "Worker 1",
+      "Server route for the total",
+      "Add GET /api/cart/total computing tax before the coupon.",
+      "worker",
+      "Cart total builder"
+    ],
+    [
+      "Worker 2",
+      "Client reads the server total",
+      "Replace the client-side total in useCartTotal with a query.",
+      "worker",
+      "Client-side total updater"
+    ],
+    [
+      "Worker 3",
+      "Cart total regression suite",
+      null,
+      "worker",
+      "Regression suite writer"
+    ],
+    [
+      "Explorer",
+      "Map every caller of selectCartTotal",
+      null,
+      "explorer",
+      "Caller mapper"
+    ],
+    [
+      null,
+      null,
+      "Write tests for the password reset form",
+      "worker",
+      "Reset form test writer"
+    ],
+    [
+      null,
+      null,
+      "Fix the flaky login test",
+      "worker",
+      "Login test fixer"
+    ],
+    [
+      null,
+      null,
+      "Fix the failing checkout test",
+      "worker",
+      "Checkout test fixer"
+    ],
+    [
+      null,
+      null,
+      "Set up CI for the iOS app",
+      "worker",
+      "CI configurer"
+    ],
+    [
+      null,
+      null,
+      "Update README with the new env vars",
+      "worker",
+      "README updater"
+    ],
+    [
+      null,
+      null,
+      "Investigate why the webhook retries twice",
+      "worker",
+      "Webhook investigator"
+    ],
+    [
+      null,
+      null,
+      "Audit src/lib/auth.ts for token leaks",
+      "reviewer",
+      "Auth auditor"
+    ],
+    [
+      null,
+      null,
+      "Please add dark mode to the settings page",
+      "worker",
+      "Dark mode builder"
+    ],
+    [
+      null,
+      null,
+      "Speed up the cold start",
+      "worker",
+      "Cold start optimizer"
+    ],
+    [
+      null,
+      null,
+      "Refactor the extremely complicated legacy payment reconciliation service",
+      "worker",
+      "Reconciliation refactorer"
+    ],
+    [
+      "Hook audit",
+      "Find every reader of useCartTotal",
+      null,
+      "explorer",
+      "Hook audit"
+    ],
+    [
+      "Candidate A",
+      "Lazy-load the drawer",
+      null,
+      "worker",
+      "Candidate A"
+    ],
+    [
+      "Verifier",
+      "Run the suite",
+      null,
+      "reviewer",
+      "Verifier"
+    ],
+    [
+      "Builder 2",
+      null,
+      null,
+      "worker",
+      "Builder"
+    ],
+    [
+      null,
+      null,
+      null,
+      "explorer",
+      "Explorer"
+    ]
+  ],
+  "repeats": {
+    "tasks": [
+      "Fix the login test",
+      "Fix the login test",
+      "Fix the login test",
+      "Map the routes"
+    ],
+    "names": [
+      "Login test fixer",
+      "Login test fixer 2",
+      "Login test fixer 3",
+      "Routes mapper"
+    ]
+  }
+}

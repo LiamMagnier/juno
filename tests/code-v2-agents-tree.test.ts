@@ -79,7 +79,7 @@ test("tree: agents nest under the agent that started them, and each state is rea
   assert.equal(findNode(root, "f")!.state, "failed");
   assert.equal(findNode(root, "g")!.state, "stopped");
   assert.equal(root.state, "thinking");
-  assert.match(root.step, /Coordinating 8 agents/);
+  assert.match(root.step, /^Waiting on 5 agents$/, "a running lead says what it waits on");
   const counts = countLive(root);
   assert.deepEqual(counts, { live: 5, waiting: 1, paused: 1, total: 8 });
   for (const s of Object.keys(AGENT_NODE_STATE_LABEL)) assert.ok(AGENT_NODE_STATE_LABEL[s as keyof typeof AGENT_NODE_STATE_LABEL]);
@@ -129,18 +129,24 @@ test("pane: an ARIA tree with levels, states in words, and the selected agent's 
   assert.match(html, /role="tree"[^>]*aria-label="Agents in this run"/);
   assert.match(html, /role="treeitem"[^>]*aria-level="1"/);
   assert.match(html, /role="group"/);
-  // The nested helper sits at level 3 under Worker 2, paused, and says so in words.
+  // Agents are named for their work: "Worker 2" and "Worker 3" from the engine become what they do.
+  assert.doesNotMatch(html, /Worker \d/);
+  // The nested helper sits at level 3 under the client updater, paused, and says so in words.
   assert.match(html, /aria-level="3"[^>]*aria-label="Hook audit, Paused, 10K \/ 400K tokens"/);
-  assert.match(html, /aria-label="Worker 3, Using a tool, Running pnpm test --filter cart/);
+  assert.match(html, /aria-label="Regression suite writer, Using a tool, Running pnpm test --filter cart/);
   // Roving focus: exactly one row is in the tab order.
   assert.equal(html.match(/role="treeitem"[^>]*tabindex="0"/g)?.length, 1);
-  assert.match(html, /aria-selected="true"[^>]*aria-label="Worker 2/);
+  assert.match(html, /aria-selected="true"[^>]*aria-label="Client-side total updater/);
   // The detail: live controls and the steer box for a running agent.
   assert.match(html, /role="toolbar" aria-label="Agent controls"/);
   assert.match(html, />Pause</);
   assert.match(html, />Stop</);
   assert.match(html, />Top up</);
-  assert.match(html, /aria-label="Steer Worker 2"/);
+  assert.match(html, /aria-label="Steer Client-side total updater"/);
+  // One line under the heading says what needs you first, then how far the run is; the strip draws the same.
+  assert.match(html, /1 paused, 2 of 5 done/);
+  assert.equal(html.match(/class="cv2-runstrip"/g)?.length, 1);
+  assert.match(html, /Brief from the lead/);
   assert.match(html, /role="meter"[^>]*aria-label="Token budget used"/);
   assert.match(html, /role="status" aria-live="polite"/);
 });
@@ -151,18 +157,22 @@ test("pane: the lead offers run controls, and a reader without controls sees no 
   assert.match(lead, /role="toolbar" aria-label="Run controls"/);
   assert.match(lead, />Pause all</);
   assert.match(lead, />Stop run</);
-  assert.match(lead, /The lead&#x27;s own work is in the thread/);
+  // No filler: the lead's detail is its controls and spend, not a sentence and a second list of the agents.
+  assert.doesNotMatch(lead, /own work is in the thread/);
   assert.match(lead, /Run budget used/);
 
   const readOnly = { ...f.model, actions: { ...f.model.actions, controlAgent: undefined } };
   const html = renderToStaticMarkup(React.createElement(AgentsTreePane, { model: readOnly, selectedId: "w2", onSelect: () => undefined, modelLabel: (s) => s.model }));
   assert.doesNotMatch(html, /role="toolbar"/);
-  assert.doesNotMatch(html, /Steer Worker 2/);
+  assert.doesNotMatch(html, /Steer Client-side total updater/);
 });
 
-test("workspace: the Agents dock shows the grid for a Swarm, a tree for phased runs, and keeps Best of N's compare", () => {
+test("workspace: the Agents dock shows one roster for a Swarm and for phased runs, and keeps Best of N's compare", () => {
   const sub = fixture("subagents");
-  assert.match(renderToStaticMarkup(React.createElement(CodeWorkspace, { model: sub.model, ui: sub.ui })), /aria-label="Swarm agents"/);
+  const swarm = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: sub.model, ui: sub.ui }));
+  assert.match(swarm, /<h2>Swarm<\/h2>/);
+  assert.match(swarm, /role="tree"/);
+  assert.doesNotMatch(swarm, /aria-label="Agent view"|aria-label="Swarm agents"|aria-label="Swarm activity"/, "one view, not a grid, a tree and a feed of the same agents");
   const phased = { ...sub.model, routing: { ...sub.model.routing, preset: "plan-build-verify" as const } };
   assert.match(renderToStaticMarkup(React.createElement(CodeWorkspace, { model: phased, ui: sub.ui })), /role="tree"/);
   const best = fixture("best-of-n");

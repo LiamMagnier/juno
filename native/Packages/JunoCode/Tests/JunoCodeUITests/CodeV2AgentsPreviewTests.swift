@@ -37,7 +37,7 @@ final class CodeV2AgentsPreviewTests: XCTestCase {
             return CodeV2AgentNode(subagent: child, items: items, now: Date(timeIntervalSince1970: 1_791_712_900), ordinal: ordinal)
         }
         XCTAssertEqual(nodes.map(\.agentId), ["toolu_hero", "toolu_work"])
-        XCTAssertEqual(nodes.map(\.roleLabel), ["Worker 1", "Worker 2"])
+        XCTAssertEqual(nodes.map(\.roleLabel), ["Hero section builder", "Work grid builder"], "named for their work, not Worker 1 and 2")
         XCTAssertEqual(nodes[0].status, .running)
         XCTAssertEqual(nodes[0].title, "Build the hero section")
         XCTAssertEqual(nodes[0].steps.count, 1, "the child's own message is its trace")

@@ -62,7 +62,7 @@ final class CodeV2StudioBridgeTests: XCTestCase {
             guard case let .subagent(child) = item else { return nil }
             return CodeV2AgentNode(subagent: child, items: snapshot.items, now: CodeV2Fixtures.now)
         }
-        XCTAssertEqual(nodes.map(\.roleLabel), ["Worker 1", "Worker 2", "Worker 3", "Explorer"])
+        XCTAssertEqual(nodes.map(\.roleLabel), ["Server route builder", "Server total builder", "Regression suite writer", "Caller mapper"])
         XCTAssertEqual(nodes[0].elapsedSeconds, 112)
         XCTAssertEqual(nodes[1].liveLine, "Editing src/cart/useCartTotal.ts")
         XCTAssertEqual(nodes[1].elapsedSeconds, 161)

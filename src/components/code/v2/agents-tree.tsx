@@ -1,11 +1,16 @@
 "use client";
 
 /**
- * The Agents tree (REA backlog 10, docs/rea/designs/subagents-and-harness.md
- * §3.3 "Web"): a run's agents as a live tree — the lead at the root, each
- * agent under the one that started it — with its state, current step, clock
- * and spend against its budget. Selecting a node shows its live activity and
- * a person's controls: Steer, Pause / Resume, Stop, and a bounded Top-up.
+ * The Agents panel (REA backlog 10, docs/rea/designs/subagents-and-harness.md
+ * §3.3 "Web"): a run's agents as one live roster — the lead on top, each
+ * agent under the one that started it — then the selected agent's detail.
+ *
+ * One view, not three. The roster used to come as a card grid, a tree and an
+ * activity feed of the same agents; it is now the tree alone, with the grid's
+ * useful parts (the name, what it is doing, how long) on each row. Agents are
+ * named for their work (agent-names.ts): "Reset form checker", not "Worker 2".
+ * A thin strip under the heading shows the whole run at a glance, one segment
+ * per agent, in the same state colours as the rows.
  *
  * Everything shown is derived from the thread's items (agent-tree.ts), so it
  * is exactly as live as the session stream. The controls go through
@@ -14,15 +19,13 @@
  *
  * Accessibility: a WAI-ARIA tree (roving focus, arrows / Home / End,
  * Left-Right to fold, Enter or Space to select), every state in words as well
- * as a mark, results announced in a polite status line, no motion beyond the
- * global tiers (the meter's fill is a Tier A change).
+ * as a mark, results announced in a polite status line. The one moving mark
+ * is the selected live row's (LiveMark); the strip changes colour, never
+ * position, so reduced motion has nothing extra to stop.
  */
 import * as React from "react";
-import { AgentFace } from "@/components/agents/agent-face";
-import { defaultAgentAvatar } from "@/lib/agents/avatar";
-import type { AgentState } from "@/lib/agents/state-labels";
 import { Markdown } from "@/components/chat/markdown";
-import type { AgentControlResult, TurnItem } from "@/lib/code-v2/contracts";
+import type { AgentControlResult, ModelSelection, TurnItem } from "@/lib/code-v2/contracts";
 import {
   AGENT_NODE_STATE_LABEL,
   LEAD_NODE_ID,
@@ -37,21 +40,23 @@ import {
   type AgentNodeState,
   type AgentTreeNode,
 } from "@/lib/code-v2/agent-tree";
-import { describeItem, formatDuration } from "@/lib/code-v2/turns";
+import { formatDuration } from "@/lib/code-v2/turns";
 import { Glyph, LiveMark } from "./primitives";
 import { LogRow, lineFor } from "./thread";
 import type { AgentControlRequestInput, WorkspaceModel } from "./types";
-import type { ModelSelection } from "@/lib/code-v2/contracts";
+import { cn } from "@/lib/utils";
+import { useMediaQuery, PHONE_QUERY } from "@/hooks/use-media-query";
 
 /** How the dock names a model (dock.tsx `modelLabelFor`), passed in to keep the two files acyclic. */
 export type ModelLabeler = (selection: ModelSelection) => string;
-import { cn } from "@/lib/utils";
-import { useMediaQuery, PHONE_QUERY } from "@/hooks/use-media-query";
 
 /** Token top-ups a person can pick for one agent (inside agent-core's bounds). */
 export const AGENT_TOP_UP_TOKENS = [50_000, 100_000, 200_000] as const;
 /** Dollar top-ups for the run's own budget. */
 export const RUN_TOP_UP_USD = [1, 5, 10] as const;
+
+/** Spend shown on a row only once it is worth acting on. */
+const ROW_METER_FROM = 0.8;
 
 function StateMark({ state, animate }: { state: AgentNodeState; animate?: boolean }) {
   if ((state === "thinking" || state === "tool") && animate) return <LiveMark size={12} />;
@@ -72,7 +77,7 @@ function Meter({ fraction, label }: { fraction: number | null; label?: string })
   if (fraction === null) return null;
   const a11y = label ? { role: "meter", "aria-label": label, "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": Math.round(fraction * 100) } : { "aria-hidden": true };
   return (
-    <span className="cv2-ameter" {...a11y} data-warn={fraction >= 0.8 || undefined}>
+    <span className="cv2-ameter" {...a11y} data-warn={fraction >= ROW_METER_FROM || undefined}>
       <span style={{ inlineSize: `${Math.round(fraction * 100)}%` }} />
     </span>
   );
@@ -100,15 +105,22 @@ interface RowProps {
   onToggle: (id: string) => void;
   onFocusRow: (id: string) => void;
   rowRefs: React.MutableRefObject<Map<string, HTMLLIElement>>;
+  /** The lead's model, which its row has no item to read from. */
+  leadModel: ModelSelection;
+  modelLabel: ModelLabeler;
 }
 
-function TreeRow({ node, now, expanded, focusedId, selectedId, onSelect, onToggle, onFocusRow, rowRefs }: RowProps) {
+function TreeRow({ node, now, expanded, focusedId, selectedId, onSelect, onToggle, onFocusRow, rowRefs, leadModel, modelLabel }: RowProps) {
   const open = expanded.has(node.id);
   const hasChildren = node.children.length > 0;
   const selected = selectedId === node.id;
   const elapsed = elapsedOf(node, now);
   const spend = spendLine(node);
   const word = AGENT_NODE_STATE_LABEL[node.state];
+  const fraction = nodeFraction(node);
+  // A Swarm can run each agent on its own model: the row says which, under its clock.
+  const selection = node.agent?.model ?? leadModel;
+  const model = selection.model ? modelLabel(selection) : "";
   return (
     <li
       ref={(el) => {
@@ -122,6 +134,7 @@ function TreeRow({ node, now, expanded, focusedId, selectedId, onSelect, onToggl
       aria-label={[node.label, word, node.step === word ? null : node.step, spend ? `${spend}${node.tokens !== undefined ? " tokens" : ""}` : null].filter(Boolean).join(", ")}
       tabIndex={focusedId === node.id ? 0 : -1}
       data-state={node.state}
+      data-lead={node.id === LEAD_NODE_ID || undefined}
       className="cv2-aitem"
       onFocus={(e) => {
         if (e.target === e.currentTarget) onFocusRow(node.id);
@@ -130,7 +143,6 @@ function TreeRow({ node, now, expanded, focusedId, selectedId, onSelect, onToggl
       <div
         className="cv2-anode"
         data-selected={selected || undefined}
-        style={{ paddingInlineStart: 6 + node.depth * 16 }}
         onClick={() => {
           onFocusRow(node.id);
           onSelect(node.id);
@@ -148,20 +160,22 @@ function TreeRow({ node, now, expanded, focusedId, selectedId, onSelect, onToggl
         >
           {hasChildren && <Glyph name="chevron-right" size={12} />}
         </span>
-        <StateMark state={node.state} animate={selected} />
+        <span className="cv2-amark-slot">
+          <StateMark state={node.state} animate={selected} />
+        </span>
         <span className="cv2-acol">
           <span className="nm cv2-trunc">{node.label}</span>
-          <span className={cn("st cv2-trunc", node.state === "waiting" && "cv2-sig")}>{node.step}</span>
+          <span className="st cv2-trunc">{node.step}</span>
         </span>
         <span className="cv2-aside" aria-hidden="true">
           <span className="t">{elapsed !== undefined ? formatDuration(elapsed) : ""}</span>
-          <Meter fraction={nodeFraction(node)} />
+          {fraction !== null && fraction >= ROW_METER_FROM ? <Meter fraction={fraction} /> : model && <span className="m cv2-trunc" title={model}>{model}</span>}
         </span>
       </div>
       {hasChildren && open && (
         <ul role="group" className="cv2-agroup">
           {node.children.map((c) => (
-            <TreeRow key={c.id} node={c} now={now} expanded={expanded} focusedId={focusedId} selectedId={selectedId} onSelect={onSelect} onToggle={onToggle} onFocusRow={onFocusRow} rowRefs={rowRefs} />
+            <TreeRow key={c.id} node={c} now={now} expanded={expanded} focusedId={focusedId} selectedId={selectedId} onSelect={onSelect} onToggle={onToggle} onFocusRow={onFocusRow} rowRefs={rowRefs} leadModel={leadModel} modelLabel={modelLabel} />
           ))}
         </ul>
       )}
@@ -173,6 +187,34 @@ function allNodes(node: AgentTreeNode, out: AgentTreeNode[] = []): AgentTreeNode
   out.push(node);
   for (const c of node.children) allNodes(c, out);
   return out;
+}
+
+/** The run at a glance: one segment per agent, in the roster's order and state colours. */
+function RunStrip({ agents }: { agents: readonly AgentTreeNode[] }) {
+  if (!agents.length) return null;
+  return (
+    <div className="cv2-runstrip" aria-hidden="true">
+      {agents.map((node) => (
+        <span key={node.id} data-state={node.state} title={`${node.label}: ${AGENT_NODE_STATE_LABEL[node.state]}`} />
+      ))}
+    </div>
+  );
+}
+
+/** "1 needs you, 2 of 5 done": what to act on first, then how far the run is. */
+export function runSummary(agents: readonly AgentTreeNode[]): string {
+  if (!agents.length) return "No agents yet";
+  const needs = agents.filter((n) => n.state === "waiting").length;
+  const paused = agents.filter((n) => n.state === "paused").length;
+  const failed = agents.filter((n) => n.state === "failed").length;
+  const done = agents.filter((n) => n.state === "done").length;
+  const settled = agents.every((n) => !isLive(n.state));
+  return [
+    needs ? `${needs} ${needs === 1 ? "needs" : "need"} you` : null,
+    paused ? `${paused} paused` : null,
+    failed ? `${failed} failed` : null,
+    settled && done === agents.length ? `${done} ${done === 1 ? "agent" : "agents"} finished` : `${done} of ${agents.length} done`,
+  ].filter(Boolean).join(", ");
 }
 
 /** One press at a time per node; the answer is announced in the detail's status line. */
@@ -236,33 +278,17 @@ function TopUpMenu({ node, disabled, onPick, budgetUsd }: { node: AgentTreeNode;
 }
 
 function AgentActivity({ node, items }: { node: AgentTreeNode; items: readonly TurnItem[] }) {
-  if (node.id === LEAD_NODE_ID) {
-    return (
-      <div className="cv2-alog">
-        <p className="cv2-mute cv2-small">The lead&apos;s own work is in the thread. Pick an agent to see what it is doing.</p>
-        {node.children.length > 0 && (
-          <ul className="cv2-adigest">
-            {node.children.map((c) => (
-              <li key={c.id}>
-                <span className="nm">{c.label}</span>
-                <span className="cv2-mute">{AGENT_NODE_STATE_LABEL[c.state]}</span>
-                <span className="cv2-mute cv2-trunc">{c.step}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    );
-  }
+  // The lead's own work is the thread itself; its detail is the run's controls and spend.
+  if (node.id === LEAD_NODE_ID) return null;
   const agent = node.agent!;
   const trace = items.filter((i) => i.kind !== "subagent" && i.agentId === agent.agentId);
   const now = Date.now();
   return (
     <div className="cv2-alog">
       {agent.task && (
-        <details className="cv2-atask">
-          <summary className="cv2-mute cv2-small">Task from the lead</summary>
-          <div className="cv2-prose" style={{ whiteSpace: "pre-wrap" }}>{agent.task}</div>
+        <details className="cv2-atask" open>
+          <summary className="cv2-small cv2-mute">Brief from the lead</summary>
+          <div className="cv2-prose cv2-atask-body">{agent.task}</div>
         </details>
       )}
       {trace.map((item) =>
@@ -282,7 +308,7 @@ function AgentActivity({ node, items }: { node: AgentTreeNode; items: readonly T
       )}
       {trace.length === 0 && (
         <>
-          <p className="cv2-mute cv2-small">{isLive(node.state) ? "Waiting for activity from the provider…" : "The provider did not share a live trace for this run."}</p>
+          <p className="cv2-mute cv2-small">{isLive(node.state) ? "Its steps show here as it works." : "This provider did not share the steps of this run."}</p>
           {agent.closingText && <Markdown content={agent.closingText} />}
         </>
       )}
@@ -310,27 +336,28 @@ function AgentDetailPanel({ node, model, now, runBudgetUsd, onRunBudget, modelLa
   const anyPaused = isLead ? counts.paused > 0 : node.state === "paused";
   const canPause = isLead ? counts.live - counts.paused > 0 : live && node.state !== "paused";
   const headingId = `cv2-adetail-${node.id}`;
-  const model_ = agent ? modelLabel(agent.model) : null;
+  // The lead is always the composer's own model (team.ts); a worker carries its own.
+  const modelName = modelLabel(agent?.model ?? model.selection);
   const spendTokens = node.tokens !== undefined ? formatTokens(node.tokens) : null;
-  const steerPlaceholder = live ? "Steer this agent" : "Continue this agent";
+  const steerPlaceholder = live ? `Steer ${node.label}` : `Continue ${node.label}`;
+  const word = AGENT_NODE_STATE_LABEL[node.state];
 
   return (
     <section className="cv2-adetail" aria-labelledby={headingId}>
       <header className="cv2-adetail-head">
-        <SwarmFace node={node} animate={false} size={40} />
         <h3 id={headingId} className="cv2-m cv2-trunc">{node.label}</h3>
         <span className={cn("cv2-achip", node.state === "waiting" && "cv2-sig")} data-state={node.state}>
           <StateMark state={node.state} animate={live} />
-          <span>{AGENT_NODE_STATE_LABEL[node.state]}</span>
+          <span>{word}</span>
         </span>
       </header>
-      <p className={cn("cv2-small cv2-adetail-step", node.state === "waiting" ? "cv2-sig" : "cv2-mute")}>{node.step}</p>
+      {node.step !== word && <p className={cn("cv2-small cv2-adetail-step", node.state === "waiting" ? "cv2-sig" : "cv2-mute")}>{node.step}</p>}
 
       <dl className="cv2-astats">
-        {model_ && (
+        {modelName && (
           <div>
             <dt>Model</dt>
-            <dd className="cv2-trunc">{model_}</dd>
+            <dd className="cv2-trunc" title={modelName}>{modelName}</dd>
           </div>
         )}
         {elapsed !== undefined && (
@@ -346,7 +373,7 @@ function AgentDetailPanel({ node, model, now, runBudgetUsd, onRunBudget, modelLa
               <span>{spendTokens ?? "0"}</span>
               {node.tokenBudget !== undefined && (
                 <>
-                  <span className="cv2-mute"> / {formatTokens(node.tokenBudget)}</span>
+                  <span className="cv2-mute">&nbsp;of {formatTokens(node.tokenBudget)}</span>
                   <Meter fraction={budgetFraction(node.tokens ?? 0, node.tokenBudget)} label="Token budget used" />
                 </>
               )}
@@ -360,7 +387,7 @@ function AgentDetailPanel({ node, model, now, runBudgetUsd, onRunBudget, modelLa
               <span>${(node.costUsd ?? 0).toFixed(2)}</span>
               {isLead && runBudgetUsd !== undefined && (
                 <>
-                  <span className="cv2-mute"> / ${runBudgetUsd.toFixed(2)}</span>
+                  <span className="cv2-mute">&nbsp;of ${runBudgetUsd.toFixed(2)}</span>
                   <Meter fraction={budgetFraction(node.costUsd ?? 0, runBudgetUsd)} label="Run budget used" />
                 </>
               )}
@@ -459,105 +486,6 @@ function AgentDetailPanel({ node, model, now, runBudgetUsd, onRunBudget, modelLa
   );
 }
 
-const ORBIT_STATE: Record<AgentNodeState, AgentState> = {
-  thinking: "working",
-  tool: "working",
-  waiting: "waiting",
-  queued: "idle",
-  paused: "sleeping",
-  done: "done",
-  failed: "blocked",
-  stopped: "sleeping",
-};
-
-function SwarmFace({ node, animate, size = 36 }: { node: AgentTreeNode; animate: boolean; size?: number }) {
-  return <AgentFace
-    avatar={defaultAgentAvatar(node.id)}
-    state={ORBIT_STATE[node.state]}
-    size={size}
-    live={animate && isLive(node.state) && node.state !== "paused"}
-    still={!animate}
-  />;
-}
-
-function SwarmGrid({ agents, selected, selection, modelLabel, onSelect, animate }: {
-  agents: readonly AgentTreeNode[];
-  selected: string;
-  selection: ModelSelection;
-  modelLabel: ModelLabeler;
-  onSelect: (id: string) => void;
-  animate: boolean;
-}) {
-  return (
-    <ul className="cv2-swarm-grid" aria-label="Swarm agents">
-      {agents.map((node) => {
-        const model = modelLabel(node.agent?.model ?? selection);
-        return (
-          <li key={node.id} className={node.id === LEAD_NODE_ID ? "cv2-swarm-lead" : undefined}>
-            <button type="button" className="cv2-swarm-card" data-state={node.state} data-agent-id={node.id} aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
-              <span className="cv2-swarm-card-head">
-                <SwarmFace node={node} animate={animate} />
-                <span className="cv2-swarm-identity">
-                  <span className="cv2-m cv2-trunc">{node.label}</span>
-                  <span className="cv2-small cv2-mute cv2-trunc" title={model}>{model}</span>
-                </span>
-                <Glyph name="chevron-right" size={13} className="cv2-swarm-open cv2-mute" />
-              </span>
-              <span className={cn("cv2-swarm-state cv2-small", node.state === "waiting" ? "cv2-sig" : "cv2-mute")}>
-                <StateMark state={node.state} />
-                {AGENT_NODE_STATE_LABEL[node.state]}
-              </span>
-              {node.agent && <span className="cv2-swarm-task cv2-small">{node.agent.task || node.agent.title || node.step}</span>}
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function SwarmActivity({ items, agents, now, onSelect }: {
-  items: readonly TurnItem[];
-  agents: readonly AgentTreeNode[];
-  now: number;
-  onSelect: (id: string) => void;
-}) {
-  const recent = [];
-  const seen = new Set<string>();
-  const byId = new Map(agents.map((node) => [node.id, node]));
-  for (let i = items.length - 1; i >= 0 && recent.length < 30; i--) {
-    const item = items[i];
-    if (item.kind === "reasoning" || item.kind === "user_message" || seen.has(item.id)) continue;
-    const agent = byId.get(item.agentId ?? LEAD_NODE_ID);
-    if (!agent) continue;
-    const step = describeItem(item, now);
-    const label = item.kind === "subagent"
-      ? [AGENT_NODE_STATE_LABEL[agent.state], item.title || item.task].filter(Boolean).join(" · ")
-      : item.kind === "assistant_message" && item.agentId && !item.streaming
-        ? item.text
-        : step && [step.verb, step.object].filter(Boolean).join(" ");
-    if (!label) continue;
-    seen.add(item.id);
-    recent.push({ id: item.id, agent, text: label.length > 180 ? `${label.slice(0, 179)}…` : label });
-  }
-  if (!recent.length) return <p className="px-4 py-3 cv2-small cv2-mute">Agent activity will appear here as the run progresses.</p>;
-  return (
-    <ol className="cv2-swarm-activity" aria-label="Swarm activity">
-      {recent.map(({ id, agent, text }) => (
-        <li key={id}>
-          <button type="button" className="cv2-swarm-event" data-agent-id={agent.id} onClick={() => onSelect(agent.id)}>
-            <SwarmFace node={agent} animate={false} size={24} />
-            <span className="min-w-0">
-              <span className="cv2-m block">{agent.label}</span>
-              <span className="break-words cv2-small cv2-mute">{text}</span>
-            </span>
-          </button>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 export function AgentsTreePane({
   model,
   selectedId,
@@ -576,9 +504,8 @@ export function AgentsTreePane({
   const runLive = model.state === "running" || model.state === "waiting";
   const root = React.useMemo(() => buildAgentTree(model.items, { running: runLive, budgetUsd: historical ? undefined : runBudgetUsd }), [model.items, runLive, runBudgetUsd, historical]);
   const swarm = model.routing.preset === "lead-workers";
-  const [view, setView] = React.useState<"grid" | "tree" | "activity">(swarm ? "grid" : "tree");
   const allAgents = React.useMemo(() => allNodes(root), [root]);
-  const viewRoot = React.useRef<HTMLDivElement>(null);
+  const agents = React.useMemo(() => allAgents.filter((node) => node.id !== LEAD_NODE_ID), [allAgents]);
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set());
   const expanded = React.useMemo(() => new Set(allAgents.filter((node) => node.children.length && !collapsed.has(node.id)).map((node) => node.id)), [allAgents, collapsed]);
   const selected = (selectedId && findNode(root, selectedId)) || root;
@@ -597,13 +524,9 @@ export function AgentsTreePane({
     if (detailVisible) backRef.current?.focus({ preventScroll: true });
     else if (restoreRow.current) {
       restoreRow.current = false;
-      if (view === "tree") rowRefs.current.get(focus)?.focus({ preventScroll: true });
-      else {
-        const buttons = Array.from(viewRoot.current?.querySelectorAll<HTMLButtonElement>("[data-agent-id]") ?? []);
-        (buttons.find((button) => button.dataset.agentId === focus) ?? buttons[0])?.focus({ preventScroll: true });
-      }
+      rowRefs.current.get(focus)?.focus({ preventScroll: true });
     }
-  }, [phone, detailVisible, focus, view]);
+  }, [phone, detailVisible, focus]);
 
   // One clock for every live row; nothing ticks once the run has settled.
   const counts = countLive(root);
@@ -647,14 +570,8 @@ export function AgentsTreePane({
     else if (effect.kind === "select") select(effect.id);
   };
 
-  const active = counts.live - counts.waiting - counts.paused;
-  const summary = counts.total === 0
-    ? "No subagents yet"
-    : [
-        active > 0 ? `${active} active` : null,
-        counts.waiting > 0 ? `${counts.waiting} need you` : null,
-        counts.paused > 0 ? `${counts.paused} paused` : null,
-      ].filter(Boolean).join(" · ") || `${counts.total} ${counts.total === 1 ? "agent" : "agents"} finished`;
+  const title = historical ? "Previous run" : swarm ? "Swarm" : "Agents";
+  const summary = runSummary(agents);
 
   return (
     <div className="cv2-dock-pane cv2-agents">
@@ -665,25 +582,19 @@ export function AgentsTreePane({
             onSelect(null);
             setMobileDetail(false);
           }}><Glyph name="arrow-left" size={16} /> All agents</button>
-        ) : <h2>{historical ? "Previous run" : swarm ? "Swarm" : "Current run"}</h2>}
-        <span className="cv2-mute cv2-small cv2-trunc">{historical && detailVisible ? "Previous run" : summary}</span>
+        ) : <h2>{title}</h2>}
+        <span className="cv2-mute cv2-small cv2-trunc cv2-tnum" aria-live="polite">{historical && detailVisible ? "Previous run" : summary}</span>
       </div>
-      <div hidden={detailVisible} className="cv2-roles cv2-swarm-view" role="group" aria-label="Agent view">
-        {(["grid", "tree", "activity"] as const).map((mode) => (
-          <button key={mode} type="button" aria-pressed={view === mode} className="capitalize" onClick={() => setView(mode)}>{mode}</button>
-        ))}
-      </div>
-      <div ref={viewRoot} className="cv2-atree-wrap" hidden={detailVisible}>
-        {view === "tree" ? (
-          <ul role="tree" aria-label="Agents in this run" className="cv2-atree" onKeyDown={onKeyDown}>
-            <TreeRow node={root} now={now} expanded={expanded} focusedId={focus} selectedId={selected.id} onSelect={select} onToggle={toggle} onFocusRow={moveFocus} rowRefs={rowRefs} />
-          </ul>
-        ) : view === "grid" ? (
-          <>
-            <SwarmGrid agents={allAgents} selected={selected.id} selection={model.selection} modelLabel={modelLabel} onSelect={select} animate={!historical} />
-            {counts.total === 0 && <p className="px-4 pb-3 cv2-small cv2-mute">{runLive ? "Workers appear here as the lead assigns tasks." : "Send a task to start a Swarm."}</p>}
-          </>
-        ) : <SwarmActivity items={model.items} agents={allAgents} now={now} onSelect={select} />}
+      {!detailVisible && <RunStrip agents={agents} />}
+      <div className="cv2-atree-wrap" hidden={detailVisible}>
+        <ul role="tree" aria-label="Agents in this run" className="cv2-atree" onKeyDown={onKeyDown}>
+          <TreeRow node={root} now={now} expanded={expanded} focusedId={focus} selectedId={selected.id} onSelect={select} onToggle={toggle} onFocusRow={moveFocus} rowRefs={rowRefs} leadModel={model.selection} modelLabel={modelLabel} />
+        </ul>
+        {agents.length === 0 && (
+          <p className="cv2-agents-hint cv2-small cv2-mute">
+            {runLive ? "Agents appear here as the lead hands out work." : swarm ? "Send a task and the lead splits it across agents." : "This run has no agents."}
+          </p>
+        )}
       </div>
       <div className="cv2-dockscroll cv2-adetail-wrap" hidden={phone && !detailVisible}>
         <AgentDetailPanel key={selected.id} node={selected} model={model} now={now} runBudgetUsd={historical ? undefined : runBudgetUsd} onRunBudget={setRunBudgetUsd} modelLabel={modelLabel} />

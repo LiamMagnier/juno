@@ -56,7 +56,12 @@ public struct CodeV2AgentNode: Identifiable, Equatable, Sendable {
         case .compaction: roleLabel = "Compaction"
         case .architect: roleLabel = "Architect"
         }
-        if let label = subagent.label, !label.isEmpty { roleLabel = label }
+        // Named for its work ("Reset form checker"), as on the web; repeats in the run get a number.
+        if subagent.role != .orchestrator {
+            roleLabel = CodeV2AgentNames.displayNames(in: items)[subagent.agentId] ?? CodeV2AgentNames.displayName(for: subagent)
+        } else if let label = subagent.label, !label.isEmpty {
+            roleLabel = label
+        }
         if let elapsed = subagent.elapsedMs { elapsedSeconds = max(0, Int(elapsed / 1_000)) }
         else if let start = CodeV2Dates.parse(subagent.createdAt) {
             if subagent.status == .running || subagent.status == .waiting {
