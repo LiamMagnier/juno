@@ -4,6 +4,7 @@ import { AppPage } from "@/components/app/app-page";
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, ImageOff, ImagePlus, Loader2, Maximize2, Plus } from "@/components/ui/icons";
 import { AppIcons, StatusIcons } from "@/lib/app-icons";
@@ -99,6 +100,7 @@ function parseTab(raw: string | null): { view: PageView; list?: ListKind } | nul
     case "overview":
     case "sources":
       return { view: "overview" };
+    case "chats":
     case "work":
     case "code":
     case "artifacts":
@@ -168,6 +170,7 @@ const WORKSPACE_TOOL_LABELS: Record<WorkspaceTool, string> = {
 /** Project overview and settings share the current chat draft. */
 export default function ProjectDetailPage() {
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
   const { id } = useParams<{ id: string }>();
   const { settings, models } = useApp();
   const [data, setData] = React.useState<Detail | null>(null);
@@ -248,7 +251,7 @@ export default function ProjectDetailPage() {
   const openView = React.useCallback(
     (next: PageView) => {
       setView(next);
-      writeTab(next === "settings" ? "settings" : list === "chats" ? null : list);
+      writeTab(next === "settings" ? "settings" : list);
       window.scrollTo?.({ top: 0 });
     },
     [list, writeTab],
@@ -256,7 +259,7 @@ export default function ProjectDetailPage() {
   const openList = React.useCallback(
     (next: ListKind) => {
       setList(next);
-      writeTab(next === "chats" ? null : next);
+      writeTab(next);
     },
     [writeTab],
   );
@@ -392,6 +395,8 @@ export default function ProjectDetailPage() {
     if (tab) {
       setView(tab.view);
       if (tab.list) setList(tab.list);
+    } else {
+      setList(url.searchParams.get("surface") === "code" ? "code" : "chats");
     }
     const reopenDrive = url.searchParams.get("drive") === "1";
     const connected = url.searchParams.get("connected") === "google-drive";
@@ -713,7 +718,7 @@ export default function ProjectDetailPage() {
       window.dispatchEvent(new CustomEvent("projects:sync"));
       // Up one level: the folder this one sat in, or the list.
       const parent = data?.breadcrumbs?.[data.breadcrumbs.length - 1];
-      router.push(parent ? `/projects/${parent.id}` : "/projects");
+      router.push(hrefFor(parent ? `/projects/${parent.id}` : "/projects"));
     } else toast.error("Couldn’t delete project.");
   };
 
@@ -762,7 +767,7 @@ export default function ProjectDetailPage() {
       window.dispatchEvent(new CustomEvent("projects:sync"));
       // Busy until the folder's page replaces this one, so a second click
       // cannot make a second folder.
-      router.push(`/projects/${d.id}`);
+      router.push(hrefFor(`/projects/${d.id}`));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn’t create the folder.");
       setFolderBusy(false);
@@ -839,7 +844,7 @@ export default function ProjectDetailPage() {
             description="It may have been deleted."
             action={
               <Button size="sm" asChild>
-                <Link href="/projects">Back to projects</Link>
+                <Link href={hrefFor("/projects")}>Back to projects</Link>
               </Button>
             }
           />
@@ -863,7 +868,7 @@ export default function ProjectDetailPage() {
                   Try again
                 </Button>
                 <Button size="sm" asChild>
-                  <Link href="/projects">Back to projects</Link>
+                  <Link href={hrefFor("/projects")}>Back to projects</Link>
                 </Button>
               </>
             }
@@ -901,13 +906,13 @@ export default function ProjectDetailPage() {
   const folderRefusal = newFolderRefusal(tree, data.project.id);
   const isOwner = data.isOwner !== false;
   const description = data.project.description ?? "";
+  const newCodeHref = isOwner ? `/code?project=${encodeURIComponent(data.project.id)}` : undefined;
 
-  // The lists under the composer: chats always, the others when they hold
-  // something (or a link opened them).
+  // Chats and Code share the project. Tasks and Artifacts appear when relevant.
   const listOptions = [
     { value: "chats" as const, label: "Chats", count: chats.length },
     ...(workRuns.length > 0 || list === "work" ? [{ value: "work" as const, label: "Tasks", count: workRuns.length }] : []),
-    ...(codeSessions.length > 0 || list === "code" ? [{ value: "code" as const, label: "Code", count: codeSessions.length }] : []),
+    ...(isOwner || codeSessions.length > 0 || list === "code" ? [{ value: "code" as const, label: "Code", count: codeSessions.length }] : []),
     ...(projectArtifacts.length > 0 || list === "artifacts" ? [{ value: "artifacts" as const, label: "Artifacts", count: projectArtifacts.length }] : []),
   ];
 
@@ -956,6 +961,13 @@ export default function ProjectDetailPage() {
         {header}
         <div className="pj-workspace-grid">
           <section className="pj-workspace-composer" aria-label="Start a project chat">
+            {newCodeHref && (
+              <div className="mb-2 flex justify-end">
+                <Button asChild variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
+                  <Link href={newCodeHref}><AppIcons.code className="size-4" aria-hidden="true" />Open in Code</Link>
+                </Button>
+              </div>
+            )}
             <Composer
               conversationId={null}
               frame="inline"
@@ -1081,7 +1093,6 @@ export default function ProjectDetailPage() {
               )}
               {list === "code" && (
                 <ProjectCodeList
-                  projectId={data.project.id}
                   sessions={codeSessions.map((c) => ({
                     id: c.id,
                     title: c.title,
@@ -1089,7 +1100,7 @@ export default function ProjectDetailPage() {
                     workspaceName: c.codeWorkspaceName ?? undefined,
                     workspacePath: c.codeWorkspacePath ?? undefined,
                   }))}
-                  onNewCodeSession={() => router.push("/code")}
+                  newSessionHref={newCodeHref}
                 />
               )}
               {list === "artifacts" && <ArtifactList artifacts={projectArtifacts} />}

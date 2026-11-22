@@ -23,7 +23,7 @@ export function SkillsChip({ skills, open, onToggle }: { skills: CodeSkillsState
   return (
     <button
       type="button"
-      className="cv2-ctl cv2-skills-chip"
+      className="composer-tray__item cv2-skills-chip"
       data-active={active || undefined}
       aria-haspopup="dialog"
       aria-expanded={open}

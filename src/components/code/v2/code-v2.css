@@ -155,6 +155,7 @@
 .cv2-main.expanded .cv2-left { display: none; }
 .cv2-top { display: flex; align-items: center; gap: .5rem; padding-inline: 1rem; min-width: 0; border-bottom: 1px solid hsl(var(--border) / .7); }
 .cv2-crumb { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 500; }
+.cv2-crumb .cv2-shared-project { max-width: min(25vw, 9rem); }
 .cv2-crumb .proj { color: hsl(var(--muted-foreground)); white-space: nowrap; }
 .cv2-crumb .slash { color: hsl(var(--muted-foreground) / 0.6); font-weight: 400; }
 .cv2-crumb .title { display: inline-flex; align-items: center; gap: 4px; min-width: 0; border-radius: 6px; padding: 2px 4px; margin-left: -4px; color: hsl(var(--foreground)); transition: background-color var(--dur-fast, 120ms); }
@@ -333,19 +334,25 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 @media (max-width: 640px) { .cv2-plan { margin: 0 6px -10px; } .cv2-plan-head { min-height: 44px; } }
 .cv2-cwrap { position: relative; padding: 0 32px 18px; }
 .cv2-cstack { display: flex; flex-direction: column; }
-.cv2-composer { position: relative; z-index: 2; background: hsl(var(--card)); border: 1px solid var(--cv2-edge); --cv2-composer-inset: .625rem; border-radius: var(--web-composer-radius, 30px); padding: 1rem var(--cv2-composer-inset) var(--cv2-composer-inset); transition: border-color var(--dur-fast, 120ms) var(--cv2-ease); }
-.dark .cv2-composer { box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04); }
-.cv2-composer:focus-within { border-color: var(--cv2-edge-focus); }
-.cv2-composer.needs, .cv2-composer.needs:focus-within { border-color: hsl(var(--signal)); }
-.cv2-draft { display: block; width: 100%; resize: none; border: 0; outline: none; background: transparent; font: inherit; font-size: 1rem; line-height: 1.5; min-height: 44px; max-height: 40vh; color: hsl(var(--foreground)); padding: 0 .5rem; }
-.cv2-draft.tall { min-height: 66px; }
-/* iOS Safari zooms the page into a focused field under 16px (Chat's composer
-   keeps 16px for the same reason, composer-shell.tsx), and the /code landing
-   is this composer now. */
-@media (pointer: coarse) { .cv2-draft { font-size: 16px; } }
-.cv2-draft::placeholder { color: hsl(var(--muted-foreground) / 0.9); }
-.cv2-draft:focus-visible { outline: none; }
-.cv2-cfoot { display: flex; align-items: center; gap: 2px; margin-top: 4px; min-width: 0; }
+.cv2-composer { z-index: 2; }
+.cv2-composer.needs { border-color: hsl(var(--signal)); }
+.cv2-draft { max-height: 40vh; }
+.cv2-tools-row { flex-wrap: wrap; }
+.cv2-tools-row .composer-tray__capsule { max-width: 100%; }
+.cv2-tools-row .composer-tray__capsule > button { min-width: 0; }
+.cv2-tools-row .composer-tray__capsule > button > svg { flex-shrink: 0; }
+.cv2-tools-row .composer-tray__item { white-space: nowrap; }
+.cv2-model-chip .eff { color: hsl(var(--muted-foreground)); }
+@media (max-width: 639px) {
+  .cv2-model-chip { max-width: min(10rem, 43vw); }
+  .cv2-model-chip .eff { display: none; }
+  .cv2-tools-row .composer-tray__item { min-height: 36px; }
+  .cv2 .composer-tray--dock .composer-tray__row .cv2-tools .composer-tray__item {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+  .cv2-tools .composer-tray__item > .chev { display: none; }
+}
 .cv2-ctl { height: 34px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; border-radius: theme("borderRadius.control"); color: hsl(var(--muted-foreground)); white-space: nowrap; min-width: 0; transition: background-color var(--dur-fast, 120ms) var(--cv2-ease), color var(--dur-fast, 120ms) var(--cv2-ease); }
 .cv2-ctl:hover, .cv2-ctl[aria-expanded="true"] { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
 .cv2-ctl.icon { width: 34px; padding: 0; justify-content: center; }
@@ -355,7 +362,6 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-send { position: relative; width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; background: hsl(var(--foreground)); color: hsl(var(--background)); margin-left: 2px; transition: opacity var(--dur-fast, 120ms) var(--cv2-ease), transform var(--dur-press, 90ms) var(--cv2-ease); }
 .cv2-send:active { transform: scale(0.94); }
 .cv2-send:disabled { opacity: 0.4; }
-.cv2-composer .cv2-send { border-radius: calc(var(--web-composer-radius, 30px) - var(--cv2-composer-inset)); }
 .cv2-send .glyph, .cv2-send .stop { transition: opacity 120ms var(--cv2-ease), transform 120ms var(--cv2-ease); }
 .cv2-send .stop { position: absolute; width: 10px; height: 10px; border-radius: 2.5px; background: currentColor; opacity: 0; transform: scale(0.6); }
 .cv2-send[data-mode="stop"] { background: hsl(var(--foreground)); color: hsl(var(--background)); }
@@ -376,7 +382,7 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 
 /* Attachments on the composer (Chat's 56px tile row), seated in the box's own
    padding: the first tile's corner sits on the field's left edge. */
-.cv2-composer .cv2-attach-row { padding: 0 0 10px; margin-left: -4px; }
+.cv2-composer .cv2-attach-row { padding: .75rem .75rem 0; }
 
 /* The landing: the same composer with nothing behind it, so the target tray
    tucked under its top edge reads as one object (chat/composer.css .composer-tray). */
@@ -704,7 +710,7 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
 }
 @media (max-width: 760px) {
   .cv2-top { padding: 0 6px 0 6px; }
-  .cv2-crumb .proj, .cv2-crumb .slash, .cv2-wide { display: none !important; }
+  .cv2-crumb .proj:not(.cv2-shared-project), .cv2-crumb .slash, .cv2-wide { display: none !important; }
   .cv2-scroll { padding: 12px 16px 24px; }
   .cv2-cwrap { padding: 0 10px 12px; }
   .cv2-empty { padding: 0 10px 12px; }
@@ -712,11 +718,10 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
   .cv2-empty .spacer-bottom { order: 2; }
   .cv2-empty > .cv2-col { order: 3; }
   .cv2-empty h1 { font-size: 24px; margin-bottom: 18px; padding: 0 8px; }
-  .cv2-composer { padding: .75rem var(--cv2-composer-inset) var(--cv2-composer-inset); }
   .cv2-strip { margin: -1px 16px 0; }
   .cv2-strip .s .lbl-long { display: none; }
   .cv2-ctl .v { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-  .cv2-ctl .eff, .cv2-cfoot .cv2-hide-narrow { display: none; }
+  .cv2-ctl .eff { display: none; }
   .cv2-you-wrap { max-width: 88%; }
   .cv2-dock { width: 100vw !important; }
   .cv2-nav-rail { display: none; }
@@ -789,39 +794,6 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
 
 /* The Team orchestrator (team lane): the composer chip and the role editor. */
 .cv2-team-chip .v { max-width: 340px; }
-/* The row fits its composer at every width (design audit 2026-11 #6: on the
-   640px landing column the send disc stood 14px outside the edge, because
-   every chip refused to shrink and the first step began at 520px; on a phone
-   the steps let Add, More and Dictate shrink to 24px). The icon controls, the
-   context ring and the disc keep their size; the labelled chips give way, in
-   this order, as the row narrows:
-     640  the team's word (its glyph stays; "Team…" is also in More)
-     520  the effort word and the mode's name (the glyph says the mode)
-     420  the Team chip, and the Skills chip while no skill is on: both are
-          in More, so a phone row is Chat's: +, model, mode, More, mic, disc;
-          and the model's lab mark, before its name is cut
-   Past the last step a chip's name ends in an ellipsis rather than pushing
-   the disc out; the team chip's word goes first. */
-.cv2-cfoot { container: cv2foot / inline-size; }
-.cv2-cfoot > .cv2-ctl:not(.icon) { flex-shrink: 1; min-width: 3rem; }
-.cv2-cfoot > .cv2-team-chip { flex-shrink: 1; }
-.cv2-cfoot > :is(.cv2-ctl.icon, .cv2-ring, .cv2-send) { flex-shrink: 0; }
-.cv2-queue-count { display: none; }
-@container cv2foot (max-width: 640px) {
-  .cv2-cfoot .cv2-team-chip[data-team="set"] .v { max-width: 8ch; }
-}
-@container cv2foot (max-width: 520px) {
-  .cv2-cfoot .cv2-ctl .eff, .cv2-cfoot .cv2-ctl[data-mode] .v { display: none; }
-}
-@container cv2foot (max-width: 420px) {
-  .cv2-cfoot > :is(.cv2-skills-chip, .cv2-ring, .cv2-dictate-trigger) { display: none; }
-  .cv2-cfoot > :is(.cv2-team-chip, .cv2-ctl[data-mode], .cv2-queue-trigger) { flex: 0 0 36px; min-width: 0; padding: 0; justify-content: center; }
-  .cv2-cfoot > :is(.cv2-team-chip, .cv2-ctl[data-mode], .cv2-queue-trigger) :is(.v, .chev, .cv2-queue-label) { display: none; }
-  .cv2-cfoot > .cv2-queue-trigger .cv2-queue-count { display: inline; font-variant-numeric: tabular-nums; }
-  .cv2-cfoot > .cv2-model-chip > .mark { display: none; }
-  .cv2-composer.voice-glow-host .cv2-cfoot > :is(.cv2-team-chip, .cv2-model-chip, .cv2-ctl[data-mode], .cv2-queue-trigger) { display: none; }
-}
-@media (max-width: 720px) { .cv2-team-chip .v { max-width: 150px; } }
 .cv2-team-chip[data-team="solo"] .v { color: hsl(var(--muted-foreground)); }
 .cv2-team-chip[data-team="set"] { background: hsl(var(--selected)); color: hsl(var(--foreground)); }
 

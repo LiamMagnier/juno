@@ -20,16 +20,14 @@ export interface ProjectCodeSessionItem {
 }
 
 interface ProjectCodeListProps {
-  projectId: string;
   sessions: ProjectCodeSessionItem[];
-  onNewCodeSession: () => void;
+  newSessionHref?: string;
   className?: string;
 }
 
 export function ProjectCodeList({
-  projectId: _projectId,
   sessions,
-  onNewCodeSession,
+  newSessionHref,
   className,
 }: ProjectCodeListProps) {
   const [query, setQuery] = React.useState("");
@@ -64,10 +62,11 @@ export function ProjectCodeList({
         <span className="text-caption tabular-nums text-muted-foreground">
           {filtered.length} of {sessions.length}
         </span>
-        <Button type="button" size="sm" variant="secondary" onClick={onNewCodeSession} className="ml-auto">
-          <Plus className="size-3.5" aria-hidden="true" />
-          New code session
-        </Button>
+        {newSessionHref && (
+          <Button asChild size="sm" variant="secondary" className="ml-auto">
+            <Link href={newSessionHref}><Plus className="size-3.5" aria-hidden="true" />New code session</Link>
+          </Button>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -79,7 +78,7 @@ export function ProjectCodeList({
           description={
             query
               ? "Try another search term."
-              : "Start a coding session against a local, remote or cloud repository with this project’s context."
+              : "Code sessions started here appear alongside your project chats."
           }
           action={
             query ? (
@@ -98,7 +97,7 @@ export function ProjectCodeList({
               style={staggerDelay(i)}
             >
               <Link
-                href={`/chat/${session.id}`}
+                href={`/code/${session.id}`}
                 className="group/tile surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-colors duration-fast ease-out-soft hover:border-foreground/20 hover:bg-accent/40 active:bg-selected"
               >
                 <div className="flex items-start gap-3">

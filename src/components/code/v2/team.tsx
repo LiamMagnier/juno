@@ -93,7 +93,7 @@ export function TeamChip({ routing, open, onToggle }: { routing: RoleRouting; op
   return (
     <button
       type="button"
-      className="cv2-ctl cv2-team-chip"
+      className="composer-tray__item cv2-team-chip"
       aria-haspopup="dialog"
       aria-expanded={open}
       aria-label={summary ? `Orchestrator: ${TEAM_PRESET_COPY[routing.preset].label}. ${summary}` : "Orchestrator"}

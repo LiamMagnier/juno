@@ -21,7 +21,7 @@ test("Code configures a delegated team and keeps the draft if the team cannot be
   await page.goto("/code");
   const draft = page.getByRole("textbox", { name: "Message", exact: true });
   await draft.fill("Make the checkout summary easier to scan.");
-  await page.getByRole("button", { name: /No project picked yet/ }).click();
+  await page.getByRole("button", { name: "Choose a local folder" }).click();
   await page.getByRole("option", { name: /Storefront/ }).click();
   const orchestrator = page.getByRole("button", { name: "Orchestrator", exact: true });
   await orchestrator.click();
@@ -46,10 +46,23 @@ test("Code opens Agents directly and keeps the composer usable at narrow widths"
   await page.goto("/code");
   const home = page.getByRole("heading", { name: "What will you build?" });
   await expect(home).toBeVisible();
-  await expect(page.getByRole("link", { name: "Pull requests", exact: true })).toBeVisible();
+  const row = page.locator("[data-composer-row]");
+  const tools = page.getByRole("group", { name: "Code tools" });
+  await expect(row.getByRole("button", { name: /Model:/ })).toBeVisible();
+  await expect(row.getByRole("button", { name: /Orchestrator|Mode:|Skills/ })).toHaveCount(0);
+  for (const name of [/Orchestrator/, /Mode:/, /Skills/]) {
+    await expect(tools.getByRole("button", { name })).toBeVisible();
+  }
+  const [rowBox, toolBox] = await Promise.all([row.boundingBox(), tools.boundingBox()]);
+  expect(toolBox!.y).toBeGreaterThanOrEqual(rowBox!.y + rowBox!.height);
+  for (const label of ["Orchestrator", "Accept edits", "Skills"]) {
+    const text = tools.getByText(label, { exact: true });
+    expect(await text.evaluate((span) => span.scrollWidth - span.clientWidth)).toBeLessThanOrEqual(1);
+  }
   await page.screenshot({ path: testInfo.outputPath("code-landing.png"), animations: "disabled" });
-  const recent = page.getByRole("region", { name: "Recent sessions" });
-  await recent.getByRole("link", { name: /QA · Code session/ }).click();
+  if (isMobile) await page.getByRole("button", { name: "Open menu", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Pull requests", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: /QA · Code session/ }).click();
   if (isMobile) {
     await expect(page.getByRole("button", { name: "Open menu", exact: true })).toBeHidden();
     await expect(page.getByRole("button", { name: "Sessions", exact: true })).toBeVisible();
@@ -68,9 +81,9 @@ test("Code opens Agents directly and keeps the composer usable at narrow widths"
   if (isMobile) await expect(agents).toBeFocused();
   const draft = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(draft).toBeVisible();
-  expect(await page.locator(".cv2-cfoot").evaluate((bar) => bar.scrollWidth - bar.clientWidth)).toBeLessThanOrEqual(1);
+  expect(await page.locator("[data-composer-row]").evaluate((bar) => bar.scrollWidth - bar.clientWidth)).toBeLessThanOrEqual(1);
   if (isMobile) {
     await page.setViewportSize({ width: 320, height: 740 });
-    expect(await page.locator(".cv2-cfoot").evaluate((bar) => bar.scrollWidth - bar.clientWidth)).toBeLessThanOrEqual(1);
+    expect(await page.locator("[data-composer-row]").evaluate((bar) => bar.scrollWidth - bar.clientWidth)).toBeLessThanOrEqual(1);
   }
 });

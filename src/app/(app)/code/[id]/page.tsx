@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import { getConversationThreadPage } from "@/lib/queries";
 import { CodeV2Client } from "./client";
+import { prisma } from "@/lib/prisma";
 import { PageRoot } from "@/components/app/page-root";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,10 @@ export default async function CodeSessionPage({ params }: { params: Promise<{ id
   if (!thread) notFound();
   const c = thread.conversation;
   if (c.kind !== "code" || !(c.codeWorkspacePath || c.codeWorkspaceKey)) redirect(`/chat/${id}`);
+  const project = c.projectId ? await prisma.project.findFirst({
+    where: { id: c.projectId, userId: user.id },
+    select: { id: true, name: true },
+  }) : null;
   return (
     <PageRoot>
       <CodeV2Client
@@ -34,6 +39,7 @@ export default async function CodeSessionPage({ params }: { params: Promise<{ id
           codeWorkspacePath: c.codeWorkspacePath ?? null,
           codeWorkspaceKey: c.codeWorkspaceKey ?? null,
         }}
+        project={project ?? undefined}
         initialMessages={thread.messages}
         initialHistory={thread.history}
       />

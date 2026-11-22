@@ -1044,6 +1044,8 @@ export interface ClientCommandParams {
   "turn.start": {
     sessionId: string;
     input: UserInput;
+    /** Optional Alevr project brief. Passed to the runtime without saving it as a user message. */
+    projectContext?: string | null;
     selection: ModelSelection;
     routing?: RoleRouting;
     runtimeMode: RuntimeMode;

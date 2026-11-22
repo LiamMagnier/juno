@@ -147,24 +147,14 @@ test("/code/new is a redirect rather than a second composer", () => {
 
 /* ─────────────────────── The composer's row, as specified ───────────────── */
 
-test("the composer's tray holds where it runs and the project; the row is the session's own", () => {
-  // The tray sits on the composer (owner, 2026-10-03): where it runs and which
-  // project, on a shelf drawn before the box. The box is the SESSION's
-  // composer in its landing variant (G58): one composer from landing to
-  // session, so the row (+, model, team, mode, skills) is the one a session has.
+test("Code landing and sessions use Chat’s composer shell and put workspace setup below it", () => {
   const composer = read(COMPOSER);
-  const tray = composer.indexOf('className="composer-tray composer-tray--top"');
-  const box = composer.indexOf("<Composer", tray);
-  assert.ok(tray > 0 && box > tray, "the tray is drawn before the composer");
-  const traySlot = composer.slice(tray, box);
-  assert.match(traySlot, /<CodeEnvironmentChip/, "the environment chip is in the tray");
-  assert.match(traySlot, /<CodeTargetPicker/, "the repository chip is in the tray");
-  assert.ok(!/ModelSelector|ModeChip/.test(composer), "the landing no longer draws its own model or mode chip");
-  assert.match(composer.slice(box), /variant="landing"/, "the session's composer, landing variant");
+  assert.match(composer, /workspaceControls=\{[\s\S]*?<CodeEnvironmentChip[\s\S]*?<CodeTargetPicker/);
+  assert.match(composer, /variant="landing"/);
+  assert.doesNotMatch(composer, /ModelSelector|ModeChip/);
   const v2 = read("src/components/code/v2/composer.tsx");
-  // The model chip opens the session's picker (every provider, Team, keys).
+  assert.match(v2, /<ComposerShell[\s\S]*?composer-tray--dock[\s\S]*?\{workspaceControls\}/);
   assert.match(v2, /<ModelPicker\b/);
-  assert.match(v2, /aria-label=\{`Mode: \$\{modeInfo\.label\}`\}/, "the mode is on the row, as in a session");
 });
 
 test("thinking effort stays inside the model popover", () => {

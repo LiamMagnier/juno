@@ -9,6 +9,7 @@
  * be shown and tested without a backend.
  */
 import * as React from "react";
+import Link from "next/link";
 import type { DockTab } from "@/lib/code-v2/dock";
 import { dockReducer, initialDockState } from "@/lib/code-v2/dock";
 import { COMMAND_TITLES, DEFAULT_KEYBINDINGS, resolveKeybinding, type KeyContext } from "@/lib/code-v2/keymap";
@@ -676,7 +677,11 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
             <Glyph name="sidebar-toggle" />
           </button>
           <div className="cv2-crumb" ref={crumbRef}>
-            <span className="proj">{model.thread.repo}</span>
+            {model.thread.project ? (
+              <Link className="proj cv2-shared-project truncate hover:underline focus-visible:underline" href={`/projects/${encodeURIComponent(model.thread.project.id)}?surface=code`} title={model.thread.repo}>
+                {model.thread.project.name}
+              </Link>
+            ) : <span className="proj">{model.thread.repo}</span>}
             <span className="slash" aria-hidden>
               /
             </span>

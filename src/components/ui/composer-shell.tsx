@@ -60,6 +60,8 @@ export interface ComposerShellProps extends Omit<React.ComponentPropsWithoutRef<
    * at full strength, because Stop is the one thing left to press.
    */
   dimmed?: boolean;
+  /** Approval cards can occupy the entire composer until a decision is made. */
+  hideControls?: boolean;
   /**
    * The field tier's element. Anything a host floats off the composer with
    * `bottom-full` — the slash/@ palette — resolves against this, not the shell.
@@ -78,7 +80,7 @@ export interface ComposerShellProps extends Omit<React.ComponentPropsWithoutRef<
 const noModality = () => "none" as const;
 
 const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(function ComposerShell(
-  { field, leading, trailing, action, above, dimmed = false, fieldTierRef, frame, keyboardFocus = false, className, ...props },
+  { field, leading, trailing, action, above, dimmed = false, hideControls = false, fieldTierRef, frame, keyboardFocus = false, className, ...props },
   ref
 ) {
   const dim = cn(
@@ -138,7 +140,7 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
             its glyphs stay still under the pointer (I-7). `data-composer-row`
             is how the model chip finds the row's slack when it picks the
             label it has room for (model-selector.tsx, `useChipFit`). */}
-        <div data-composer-row="" className="flex flex-nowrap items-center gap-1 px-2 pb-2 pt-1 shrink-0">
+        {!hideControls && <div data-composer-row="" className="flex flex-nowrap items-center gap-1 px-2 pb-2 pt-1 shrink-0">
           <div data-composer-leading="" className={cn("flex min-w-0 shrink-0 items-center gap-1", dim)}>
             {leading}
           </div>
@@ -158,7 +160,7 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
             {trailing && <div className={cn("flex min-w-0 items-center gap-1 coarse:gap-0.5", dim)}>{trailing}</div>}
             {action}
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

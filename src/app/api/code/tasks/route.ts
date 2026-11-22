@@ -1,3 +1,5 @@
+import { formatCodeProjectContext } from "@/lib/projects/code-context";
+import { loadProjectLineage } from "@/lib/projects/project-tree-server";
 import { after, NextResponse } from "next/server";
 import { Prisma, type CodeTask } from "@prisma/client";
 import { z } from "zod";
@@ -378,12 +380,14 @@ export async function POST(req: Request) {
 
   // Resolve conversation + first-prompt title (shared by both targets).
   let sessionTitleUpdate: string | null = null;
+  let projectId: string | null = null;
   if (conversationId) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, userId: user.id, kind: "code" },
-      select: { id: true, title: true, titleSource: true },
+      select: { id: true, title: true, titleSource: true, projectId: true },
     });
     if (!conversation) return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+    projectId = conversation.projectId;
     // First prompt of a fresh session names it (never overrides a user rename).
     if (conversation.titleSource === "default" && isDefaultCodeSessionTitle(conversation.title)) {
       sessionTitleUpdate = defaultTitle.slice(0, 48);
@@ -405,11 +409,14 @@ export async function POST(req: Request) {
   // then the narrow slice of memory a Code run may see (how the user works, what
   // they are building — never identity, people or anything sensitive; see
   // lib/code-memory-prompt.ts). The USER message stores the raw composer text so
-  // the transcript stays clean — neither fold ever appears in the chat.
-  const agentPrompt = foldMemoryIntoPrompt(
+  // the transcript stays clean.
+  const project = projectId ? await loadProjectLineage(user.id, projectId) : null;
+  const taskPrompt = foldMemoryIntoPrompt(
     await enrichPromptWithAttachments(prompt, attachmentIds, user.id),
     await getCodingMemory(user.id, prompt)
   );
+
+  const agentPrompt = project ? `${formatCodeProjectContext(project.merged)}\n\n${taskPrompt}` : taskPrompt;
 
   // Persist a linked prompt as one transaction with its attachment claims and
   // session timestamp. Cloud tasks call this BEFORE dispatching a runner, so a

@@ -35,6 +35,7 @@ export async function GET(req: Request) {
 // field at 300, quietly cutting long paths and losing path-fallback grouping.
 const createSchema = z.object({
   ...codeWorkspaceAttributionShape,
+  projectId: z.string().trim().min(1).max(200).optional(),
   model: z.string().trim().min(1).max(200).optional(),
   activeConnectors: z.array(z.string().min(1).max(100)).max(50).optional(),
 });
@@ -50,10 +51,19 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const d = parsed.data;
 
+  if (d.projectId) {
+    const project = await prisma.project.findFirst({
+      where: { id: d.projectId, userId: user.id },
+      select: { id: true },
+    });
+    if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+
   const conversation = await prisma.conversation.create({
     data: {
       userId: user.id,
       titleSource: "default",
+      projectId: d.projectId,
       kind,
       model: d.model ?? undefined,
       activeConnectors: d.activeConnectors ?? [],

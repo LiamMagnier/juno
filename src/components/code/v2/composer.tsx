@@ -28,7 +28,8 @@ import { toast } from "sonner";
 import { clearComposerDraft, readComposerDraft, writeComposerDraft } from "@/lib/chat/context-draft";
 import { insertLineBreak } from "@/lib/composer-keys";
 import { touchReturnBreaksLine, useEnterKeyHint } from "@/lib/touch-keyboard";
-import { ComposerAttachmentRow } from "@/components/ui/composer-shell";
+import { ComposerAttachmentRow, ComposerPrimaryAction, ComposerShell, composerChipClass, composerFieldClass, composerIconButtonClass } from "@/components/ui/composer-shell";
+import { CODE_STARTERS } from "@/components/code/code-landing-actions";
 import { ComposerDropOverlay, ComposerFileInputs } from "@/components/code/code-composer-parts";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { CloudFilePicker } from "@/components/chat/cloud-file-picker";
@@ -295,19 +296,21 @@ export const Composer = React.forwardRef<
      * on a thread. The landing draws its target tray around it.
      */
     variant?: "session" | "landing";
-    /** Why Send cannot go yet (the landing: "Pick a project to start"); null when it can. */
+    /** Explains why Send is unavailable before the user chooses where to run. */
     gate?: string | null;
     /** Drawn under the composer in place of the context strip (the landing's one line). */
     under?: React.ReactNode;
     /** The draft to start from (a prefilled link on the landing). */
     initialDraft?: string;
     readOnly?: boolean;
+    onStartingPoint?: (prompt: string) => void;
+    workspaceControls?: React.ReactNode;
     /** Whether the team chip is offered (a cloud run has no team). */
     team?: boolean;
     /** The outer box, for the landing-to-session travel. */
     stackRef?: React.Ref<HTMLDivElement>;
   }
->(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange, tall, variant = "session", gate = null, under, initialDraft, readOnly = false, team = true, stackRef }, ref) {
+>(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange, tall, variant = "session", gate = null, under, initialDraft, readOnly = false, onStartingPoint, workspaceControls, team = true, stackRef }, ref) {
   const mac = useIsMac();
   const landing = variant === "landing";
   const { actions, instances, selection } = model;
@@ -320,7 +323,7 @@ export const Composer = React.forwardRef<
   const [roleTab, setRoleTab] = React.useState<RoleTab>("lead");
   const textarea = React.useRef<HTMLTextAreaElement>(null);
   const enterKeyHint = useEnterKeyHint("touch");
-  const footRef = React.useRef<HTMLDivElement>(null);
+  const toolsRef = React.useRef<HTMLDivElement>(null);
   const shellRef = React.useRef<HTMLDivElement>(null);
   const stripRef = React.useRef<HTMLDivElement>(null);
   const fileInput = React.useRef<HTMLInputElement>(null);
@@ -729,7 +732,11 @@ export const Composer = React.forwardRef<
   const tier = currentTier(instances, selection);
   const levels = effortLevelsOf(instances, selection).filter((l) => l !== "none");
   const effort = effectiveEffort(instances, selection);
-  const toggle = (p: PopoverName) => setPopover(popover === p ? null : p);
+  const [addMenuVersion, setAddMenuVersion] = React.useState(0);
+  const toggle = (p: PopoverName) => {
+    if (p === "attach" && popover !== "attach") setAddMenuVersion((version) => version + 1);
+    setPopover(popover === p ? null : p);
+  };
 
   // An approval, a plan or a limit takes the textarea's place: the box eases
   // to its new height instead of jumping (and moving the thread above it).
@@ -804,6 +811,13 @@ export const Composer = React.forwardRef<
       : ([{ id: "file", label: "Attach files", l2: UPLOADS_OFF_NOTE, icon: <Glyph name="attach" size={16} />, disabled: true }, { kind: "sep", id: "s-attach" }] satisfies MenuEntry[])),
     { id: "mention", label: "Mention a file", icon: <Glyph name="at" size={16} />, trail: "@", onSelect: () => (setDraft((d) => `${d}${d && !d.endsWith(" ") ? " " : ""}@`), textarea.current?.focus()) },
     { id: "cmd", label: "Commands", icon: <Glyph name="slash" size={16} />, trail: "/", onSelect: () => (setDraft("/"), textarea.current?.focus()) },
+    ...(onStartingPoint ? [{
+      id: "starting-points",
+      label: "Starting points",
+      icon: <Glyph name="list" size={16} />,
+      sub: { title: "Starting points", entries: CODE_STARTERS.map(({ label, prompt }) => ({ id: label, label, onSelect: () => onStartingPoint(prompt) })) },
+    }] : []),
+    { id: "options", label: "More options", icon: <Glyph name="more" size={16} />, onSelect: () => setTimeout(() => setPopover("overflow"), 0) },
   ];
 
   // ── Body ──
@@ -859,7 +873,7 @@ export const Composer = React.forwardRef<
     body = (
       <textarea
         ref={textarea}
-        className={cn("cv2-draft", tall && "tall")}
+        className={cn(composerFieldClass, "cv2-draft", tall && "min-h-[3.5rem] max-[760px]:min-h-[3.25rem]")}
         rows={1}
         enterKeyHint={enterKeyHint}
         value={draft}
@@ -911,9 +925,17 @@ export const Composer = React.forwardRef<
     <div className="cv2-cstack" ref={stackRef} data-variant={variant}>
       <DictationSwap active={dictating} draft={draft} onCancel={() => setDictating(false)} onClose={closeDictation}>
       <VoiceComposerFrame call={call}>
-      <div ref={shellRef} className={cn("cv2-composer", tone, call && "voice-glow-host")} data-state={tone || (running ? "running" : "idle")} {...(showFoot ? attachments.dropHandlers : {})}>
-        {attachments.dragging && <ComposerDropOverlay className="rounded-composer" />}
-        {showRow && <ComposerAttachmentRow uploads={attachments.uploads} onRemove={attachments.remove} className="cv2-attach-row" />}
+      <ComposerShell
+        ref={shellRef}
+        frame={tall ? "home" : "dock"}
+        className={cn("cv2-composer", tone, call && "voice-glow-host")}
+        data-state={tone || (running ? "running" : "idle")}
+        hideControls={!showFoot}
+        {...(showFoot ? attachments.dropHandlers : {})}
+        above={showRow ? <ComposerAttachmentRow uploads={attachments.uploads} onRemove={attachments.remove} className="cv2-attach-row" /> : undefined}
+        field={
+          <>
+            {attachments.dragging && <ComposerDropOverlay className="rounded-composer" />}
         {menuOpen && trigger && (
           <div className="cv2-menu-anchor">
             <div className="cv2-pop" role="listbox" aria-label={trigger.kind === "slash" ? "Commands" : "Mentions"}>
@@ -927,10 +949,8 @@ export const Composer = React.forwardRef<
                       aria-selected={i === menuIndex}
                       className="cv2-mi"
                       data-active={i === menuIndex}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        pick(i);
-                      }}
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => pick(i)}
                       onMouseEnter={() => setMenuIndex(i)}
                     >
                       <span className="cv2-trunc" style={{ flex: "none", maxWidth: "60%" }}>
@@ -945,132 +965,99 @@ export const Composer = React.forwardRef<
             </div>
           </div>
         )}
-        {body}
-        {showFoot && (
-          <div className="cv2-cfoot" ref={footRef}>
+            {body}
+          </>
+        }
+        leading={
+          <>
             <ComposerFileInputs imageInputRef={imageInput} fileInputRef={fileInput} onFiles={attachments.addFiles} />
             {connected ? (
               <>
-                <button type="button" className="cv2-ctl icon" aria-label="Add" title="Attach, mention or run a command" aria-haspopup="menu" aria-expanded={popover === "attach"} onClick={() => toggle("attach")}>
+                <button type="button" className={cn(composerIconButtonClass, "grid place-items-center")} aria-label="Add files and more" aria-haspopup="menu" aria-expanded={popover === "attach"} onClick={() => toggle("attach")}>
                   <Glyph name="plus" size={16} />
                 </button>
-                <button type="button" className="cv2-ctl cv2-model-chip" aria-expanded={popover === "model" || popover === "catalog"} aria-haspopup="dialog" aria-label={`Model: ${words.model}${words.effortName ? `, ${words.effortName}` : ""}`} onClick={() => (setRoleTab("lead"), toggle("model"))}>
+                {!call && <button type="button" className={cn(composerChipClass, "cv2-model-chip")} aria-expanded={popover === "model" || popover === "catalog"} aria-haspopup="dialog" aria-label={`Model: ${words.model}${words.effortName ? `, ${words.effortName}` : ""}`} onClick={() => (setRoleTab("lead"), toggle("model"))}>
                   {instance && <ModelMark modelId={selection.model} instance={instance} className="mark" />}
                   <span className="v cv2-trunc">{words.model}</span>
                   {words.effort && <span className="eff">{words.effort}</span>}
                   <Glyph name="chevron-down" size={12} className="chev" />
-                </button>
-                {/* Team lane: always on the composer, Solo or not (team.tsx). A cloud run has none. */}
-                {team && (
-                  <ComposerTeam
-                    routing={routing}
-                    lead={selection}
-                    instances={instances}
-                    scope={{ session: model.thread.id, project: model.thread.repo }}
-                    fresh={model.items.length === 0}
-                    setRouting={actions.setRouting}
-                    popover={popover}
-                    setPopover={setPopover}
-                    onPickRole={(t) => {
-                      setRoleTab(t);
-                      setPopover("catalog");
-                    }}
-                    anchorRef={footRef}
-                  />
-                )}
-                <button
-                  type="button"
-                  className="cv2-ctl"
-                  data-mode={composerMode}
-                  aria-haspopup="menu"
-                  aria-expanded={popover === "mode"}
-                  aria-label={`Mode: ${modeInfo.label}`}
-                  title={`${modeInfo.description} ${mac ? "⇧⌘A" : "Ctrl+Shift+A"} cycles`}
-                  onClick={() => toggle("mode")}
-                >
-                  <Glyph name={modeInfo.glyph} size={14} />
-                  <span className="v cv2-trunc">{modeInfo.label}</span>
-                  <Glyph name="chevron-down" size={12} className="chev" />
-                </button>
-                {skills && <SkillsChip skills={skills} open={popover === "skills"} onToggle={() => toggle("skills")} />}
-                <button type="button" className="cv2-ctl icon" aria-label="More options" title="Effort, context, mode and permissions" aria-haspopup="menu" aria-expanded={popover === "overflow"} onClick={() => toggle("overflow")}>
-                  <Glyph name="more" size={16} />
-                </button>
+                </button>}
+                {call?.status}
               </>
             ) : (
-              <button type="button" className="cv2-ctl" onClick={actions.openConnections}>
-                <span className="v">Connect</span>
-                <Glyph name="chevron-down" size={12} className="chev" />
-              </button>
+              <button type="button" className={composerChipClass} onClick={actions.openConnections}>Connect <Glyph name="chevron-down" size={12} /></button>
             )}
-            <span className="cv2-grow" />
-            {model.queue.length > 0 && (
-              <button type="button" className="cv2-ctl cv2-queue-trigger" aria-label={`Queued (${model.queue.length})`} aria-haspopup="menu" aria-expanded={popover === "queue"} onClick={() => toggle("queue")}>
-                <span className="cv2-queue-label">Queued ({model.queue.length})</span>
-                <span className="cv2-queue-count" aria-hidden="true">{model.queue.length}</span>
-                <Glyph name="chevron-down" size={12} className="chev" />
-              </button>
-            )}
+          </>
+        }
+        trailing={call?.controls ?? (
+          <>
             {connected && <ContextRing usage={model.usage} onOpen={() => toggle("context")} expanded={popover === "context"} />}
-            {call ? (
-              <>
-                {call.controls}
-                {/* End keeps its place while a draft is typed; Send joins it (voice audit D6). */}
-                {hasDraft && (
-                  <button type="button" className="cv2-send" data-mode={mode} disabled={mode === "disabled"} aria-label="Send" onClick={() => submit(running ? (canQueue ? "queue" : "steer") : "send")}>
-                    <span className="glyph">
-                      <Glyph name="arrow-up" size={16} />
-                    </span>
-                    <span className="stop" />
-                  </button>
-                )}
-                {call.end}
-              </>
-            ) : (
-              <>
-                {connected && speechSupported && (
-                  <button type="button" className="cv2-ctl icon cv2-dictate-trigger" aria-label="Dictate" title="Dictate" aria-pressed={dictating} onClick={() => setDictating(true)}>
-                    <Glyph name="mic" size={16} />
-                  </button>
-                )}
-                {/* One primary slot, as on the web's Chat composer: voice while nothing is typed, then Send, Stop while it runs. */}
-                {!hasDraft && !running && voice.onOpenVoiceMode ? (
-                  <button type="button" className="cv2-send" data-mode="voice" aria-label="Voice conversation" title="Voice conversation" onClick={voice.onOpenVoiceMode}>
-                    <span className="glyph">
-                      <Glyph name="voice" size={16} />
-                    </span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="cv2-send"
+            {connected && speechSupported && (
+              <button type="button" className={cn(composerIconButtonClass, "grid place-items-center")} aria-label="Dictate" title="Dictate" aria-pressed={dictating} onClick={() => setDictating(true)}>
+                <Glyph name="mic" size={16} />
+              </button>
+            )}
+          </>
+        )}
+        action={
+          <>
+            {(!call || hasDraft) && (
+              !hasDraft && !running && voice.onOpenVoiceMode && !call
+                ? <ComposerPrimaryAction face="voice" data-mode="voice" aria-label="Start voice conversation" onClick={voice.onOpenVoiceMode} />
+                : <ComposerPrimaryAction
+                    face={!call && mode === "stop" ? "stop" : "send"}
                     data-mode={mode}
                     disabled={mode === "disabled"}
-                    aria-label={mode === "stop" ? "Stop" : mode === "queue" ? "Queue" : attachments.uploading && hasDraft ? ATTACHMENTS_UPLOADING_LABEL : waitingOn ?? "Send"}
-                    title={mode === "stop" ? "Stop (Esc Esc)" : attachments.uploading && hasDraft ? ATTACHMENTS_UPLOADING_LABEL : (waitingOn ?? undefined)}
-                    onClick={() => (mode === "stop" ? actions.stop() : submit(running ? (canQueue ? "queue" : "steer") : "send"))}
-                  >
-                    <span className="glyph">
-                      <Glyph name="arrow-up" size={16} />
-                    </span>
-                    <span className="stop" />
-                  </button>
-                )}
-              </>
+                    aria-label={!call && mode === "stop" ? "Stop" : mode === "queue" ? "Queue" : attachments.uploading && hasDraft ? ATTACHMENTS_UPLOADING_LABEL : waitingOn ?? "Send"}
+                    title={!call && mode === "stop" ? "Stop (Esc Esc)" : waitingOn ?? undefined}
+                    onClick={() => (!call && mode === "stop" ? actions.stop() : submit(running ? (canQueue ? "queue" : "steer") : "send"))}
+                  />
             )}
-
-            <ComposerPopover open={popover === "attach"} onClose={() => setPopover(null)} width={240} align="left" offset={0} label="Add" anchorRef={footRef} role="menu">
-              <MenuList entries={attach} onClose={() => setPopover(null)} label="Add" />
+            {call?.end}
+          </>
+        }
+      />
+      {showFoot && escArmed !== null && running && <div className="cv2-under" role="status">Press Esc again to stop</div>}
+      </VoiceComposerFrame>
+      </DictationSwap>
+      {showFoot && !call && (
+        <div className="composer-tray composer-tray--dock">
+          <div ref={toolsRef} className="composer-tray__row cv2-tools-row">
+            {workspaceControls}
+            {connected && <div className="composer-tray__capsule cv2-tools" role="group" aria-label="Code tools">
+              {team && (
+                <ComposerTeam routing={routing} lead={selection} instances={instances} scope={{ session: model.thread.id, project: model.thread.repo }}
+                  fresh={model.items.length === 0} setRouting={actions.setRouting} popover={popover} setPopover={setPopover}
+                  onPickRole={(tab) => { setRoleTab(tab); setPopover("catalog"); }} anchorRef={toolsRef} />
+              )}
+              <button type="button" className="composer-tray__item" aria-haspopup="menu" aria-expanded={popover === "mode"}
+                aria-label={`Mode: ${modeInfo.label}`} title={modeInfo.description} onClick={() => toggle("mode")}>
+                <Glyph name={modeInfo.glyph} size={14} />
+                <span className="truncate">{modeInfo.label}</span>
+                <Glyph name="chevron-down" size={12} className="chev" />
+              </button>
+              {skills && <SkillsChip skills={skills} open={popover === "skills"} onToggle={() => toggle("skills")} />}
+            </div>}
+            {model.queue.length > 0 && (
+              <button type="button" className="composer-tray__item ms-auto" aria-haspopup="dialog" aria-expanded={popover === "queue"} onClick={() => toggle("queue")}>Queued ({model.queue.length})</button>
+            )}
+          </div>
+        </div>
+      )}
+      {showFoot && (
+        <>
+            <ComposerPopover open={popover === "attach"} onClose={() => setPopover(null)} width={240} align="left" offset={0} label="Add" anchorRef={shellRef} role="menu">
+              <MenuList key={addMenuVersion} entries={attach} onClose={() => setPopover(null)} label="Add" />
             </ComposerPopover>
-            <ComposerPopover open={popover === "mode"} onClose={() => setPopover(null)} width={300} align="left" offset={0} label="Mode" anchorRef={footRef} role="menu">
+            <ComposerPopover open={popover === "mode"} onClose={() => setPopover(null)} width={300} align="left" offset={0} label="Mode" anchorRef={toolsRef} role="menu">
               <MenuList entries={modeEntries} onClose={() => setPopover(null)} label="Mode" />
             </ComposerPopover>
-            <ComposerPopover open={popover === "overflow"} onClose={() => setPopover(null)} width={280} align="left" offset={0} label="Options" anchorRef={footRef} role="menu">
+            <ComposerPopover open={popover === "overflow"} onClose={() => setPopover(null)} width={280} align="left" offset={0} label="Options" anchorRef={shellRef} role="menu">
               <div className="cv2-pop-grab" aria-hidden />
               <MenuList entries={overflow} onClose={() => setPopover(null)} label="Options" />
             </ComposerPopover>
-            {skills && <SkillsPicker skills={skills} open={popover === "skills"} onClose={() => setPopover(null)} anchorRef={footRef} />}
-            <ComposerPopover open={popover === "queue"} onClose={() => setPopover(null)} width={360} align="right" offset={0} label="Queued messages" anchorRef={footRef}>
+            {skills && <SkillsPicker skills={skills} open={popover === "skills"} onClose={() => setPopover(null)} anchorRef={toolsRef} />}
+            <ComposerPopover open={popover === "queue"} onClose={() => setPopover(null)} width={360} align="right" offset={0} label="Queued messages" anchorRef={shellRef}>
               <QueueMenu model={model} canSteer={canSteer && running} mac={mac} onEdit={(text, id) => (actions.removeQueued(id), setDraft(text), setPopover(null), requestAnimationFrame(() => textarea.current?.focus()))} />
             </ComposerPopover>
             <ModelPicker
@@ -1081,7 +1068,7 @@ export const Composer = React.forwardRef<
               flags={model.flags}
               onSelect={actions.setSelection}
               onConnect={actions.openConnections}
-              anchorRef={footRef}
+              anchorRef={shellRef}
               routing={routing}
               onRouting={actions.setRouting}
               initialTab={roleTab}
@@ -1092,12 +1079,8 @@ export const Composer = React.forwardRef<
                 actions.setSelection(sel);
               }}
             />
-          </div>
-        )}
-        {escArmed !== null && running && <div className="cv2-esc-hint">Press Esc again to stop</div>}
-      </div>
-      </VoiceComposerFrame>
-      </DictationSwap>
+        </>
+      )}
       {attachments.enabled && <LibraryPicker open={libraryOpen} onOpenChange={setLibraryOpen} onAttach={attachments.addAttachments} existingCount={attachments.uploads.length} />}
       {attachments.enabled && cloudPicker && <CloudFilePicker
         provider={cloudPicker}

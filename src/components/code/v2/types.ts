@@ -81,6 +81,7 @@ export interface DeviceInfo {
 }
 
 export interface WorkspaceThread {
+  project?: { id: string; name: string };
   id: string;
   title: string;
   repo: string;

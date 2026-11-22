@@ -25,6 +25,8 @@ import { peekPendingCodePrompt } from "@/lib/code-session-handoff";
 import type { ClientMessage } from "@/types/chat";
 import { useComposerArrival } from "./composer-travel";
 import { Glyph } from "./primitives";
+import { ComposerPrimaryAction, ComposerShell, composerFieldClass, composerIconButtonClass } from "@/components/ui/composer-shell";
+import { cn } from "@/lib/utils";
 
 /** The newest turns the static thread draws: enough to fill a screen, few enough to stay light. */
 const STATIC_MESSAGES = 8;
@@ -87,22 +89,16 @@ function StaticComposer({ repo, tall = false }: { repo: string; tall?: boolean }
   useComposerArrival(box, !tall);
   return (
     <div className="cv2-cstack" aria-hidden>
-      <div ref={box} className="cv2-composer">
-        <div className={tall ? "cv2-draft tall cv2-mute" : "cv2-draft cv2-mute"}>{PLACEHOLDER_LABEL}</div>
-        <div className="cv2-cfoot">
-          <span className="cv2-ctl icon">
-            <Glyph name="plus" size={16} />
-          </span>
-          <span className="cv2-ctl">
-            <span className="cv2-skel-chip" />
-          </span>
-          <span className="cv2-grow" />
-          <span className="cv2-send" data-mode="disabled" style={{ opacity: 0.4 }}>
-            <span className="glyph">
-              <Glyph name="arrow-up" size={16} />
-            </span>
-          </span>
-        </div>
+      <ComposerShell
+        ref={box}
+        frame={tall ? "home" : "dock"}
+        className="cv2-composer"
+        field={<p className={cn(composerFieldClass, "text-muted-foreground", tall && "min-h-[3.5rem] max-[760px]:min-h-[3.25rem]")}>{PLACEHOLDER_LABEL}</p>}
+        leading={<><span className={cn(composerIconButtonClass, "grid place-items-center")}><Glyph name="plus" size={16} /></span><span className="cv2-skel-chip" /></>}
+        action={<ComposerPrimaryAction face="send" disabled tabIndex={-1} />}
+      />
+      <div className="composer-tray composer-tray--dock">
+        <div className="composer-tray__row"><div className="composer-tray__capsule"><span className="composer-tray__item"><span className="cv2-skel-chip" /></span></div></div>
       </div>
       <div className="cv2-strip">
         <span className="s">

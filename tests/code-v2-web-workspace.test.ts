@@ -195,7 +195,7 @@ test("the limited state offers Resume at reset and Switch model, in the composer
 test("the streaming state is calm: no glow, a stop button, the queue as one control, the live row with its clock", () => {
   const f = fixture("streaming");
   const html = renderWorkspace({ model: f.model, ui: f.ui });
-  assert.match(html, /class="cv2-composer" data-state="running"/);
+  assert.match(html, /class="[^"]*\bcv2-composer\b[^"]*"[^>]*data-state="running"/);
   assert.doesNotMatch(html, /cv2-glow|cv2-composer working|cv2-composer needs/);
   assert.match(html, /data-mode="stop"/);
   assert.match(html, /Queued \(1\)/);
@@ -203,19 +203,21 @@ test("the streaming state is calm: no glow, a stop button, the queue as one cont
   assert.match(html, /Changed 3 files/);
 });
 
-test("the composer shows its model, orchestrator, mode and add, more and send controls", () => {
+test("Code uses the shared entry row and keeps agent setup underneath the composer", () => {
   const f = fixture("model-picker");
   const html = renderWorkspace({ model: { ...f.model }, ui: {} });
-  const foot = html.slice(html.indexOf('class="cv2-cfoot"'), html.indexOf('class="cv2-strip"'));
-  assert.match(foot, /aria-label="Add"/);
+  const foot = html.slice(html.indexOf("data-composer-row"), html.indexOf("cv2-tools-row"));
+  const tools = html.slice(html.indexOf("cv2-tools-row"), html.indexOf('class="cv2-strip"'));
+  assert.match(foot, /aria-label="Add files and more"/);
   assert.match(foot, /aria-label="Model: Opus 5\.5, High"/);
-  assert.match(foot, /aria-label="Mode: Accept edits"/);
-  assert.match(foot, /aria-label="More options"/);
+  assert.match(foot, /aria-label="Send"/);
+  assert.doesNotMatch(foot, /aria-label="(?:Mode:|Orchestrator|Skills)/);
+  assert.match(tools, /aria-label="Mode: Accept edits"/);
   // The mic waits for the shared dictation check (G36), which runs after
   // hydration so the server and first client render agree; dictation-support.test.ts
   // pins that the v2 composer draws it from that check.
   assert.doesNotMatch(foot, /aria-label="Dictate"/, "no mic before this browser's dictation support is known");
-  assert.match(foot, /aria-label="Orchestrator"/);
+  assert.match(tools, /aria-label="Orchestrator"/);
   assert.doesNotMatch(foot, /Lead \+|Best of|Auto-edit|>Plan</);
   const team = renderWorkspace({ model: { ...f.model, interactionMode: "plan", routing: fixture("needs-you").model.routing }, ui: {} });
   assert.ok(team.includes(`${teamSummary(fixture("needs-you").model.routing)}"`), "the chip names the configured roles");

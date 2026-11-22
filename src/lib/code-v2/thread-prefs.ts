@@ -99,6 +99,7 @@ export function webCodeThreadKey(input: { conversationId: string; deviceId?: str
 }
 
 /** The local (this tab) draft key for a thread, or the landing's. */
-export function codeDraftKey(conversationId: string | null): string {
+export function codeDraftKey(conversationId: string | null, projectId?: string): string {
+  if (!conversationId && projectId) return `code:project:${projectId}:new`;
   return `code:${conversationId ?? "new"}`;
 }

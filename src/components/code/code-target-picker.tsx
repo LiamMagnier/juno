@@ -456,12 +456,12 @@ export function CodeTargetPicker({
   }, [repoLoad, repoQuery]);
 
   // The chip's label reflects the current target's selection (each target keeps
-  // its own, so toggling back and forth never loses a pick). "Pick a project" /
+  // its own, so toggling back and forth never loses a pick). "Choose a folder" /
   // "Pick a repository" is the same sentence the composer's gate hint uses, so
   // the thing that is missing is named identically in both places.
   const chipLabel =
     target === "device"
-      ? selectedWorkspace?.name ?? "Pick a project"
+      ? selectedWorkspace?.name ?? "Choose a folder"
       : selectedRepo?.fullName ?? "Pick a repository";
   const hasSelection = target === "device" ? !!selectedWorkspace : !!selectedRepo;
   /*
@@ -485,8 +485,8 @@ export function CodeTargetPicker({
           aria-label={
             target === "device"
               ? selectedWorkspace
-                ? `Runs in ${selectedWorkspace.name}. Change the project`
-                : "No project picked yet — pick one"
+                ? `Runs in ${selectedWorkspace.name}. Change the folder`
+                : "Choose a local folder"
               : selectedRepo
                 ? `Runs on ${selectedRepo.fullName}, from ${branch}. Change the repository or the base branch`
                 : "No repository picked yet — pick one"
