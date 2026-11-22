@@ -3,6 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { LibraryNavigation } from "@/components/library/library-navigation";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { ContextTokenMark } from "@/components/chat/context-token-mark";
 import { DriveBrowserControls, useDriveBrowser } from "@/components/drive/drive-browser-controls";
@@ -18,10 +20,10 @@ import { driveWebUrl } from "@/lib/projects/project-sources-shared";
 import { formatBytes } from "@/lib/utils";
 
 const endpoint = "/api/connectors/google-drive/files";
-const driveHref = "/library?view=drive";
-const connectHref = `/api/connectors/google-drive/connect?return=${encodeURIComponent(driveHref)}`;
-
 export function LibraryGoogleDrive({ connectError }: { connectError: string | null }) {
+  const hrefFor = useWorkspaceHref();
+  const filesHref = hrefFor("/library?view=files");
+  const connectHref = `/api/connectors/google-drive/connect?return=${encodeURIComponent(hrefFor("/library?view=drive"))}`;
   const browser = useDriveBrowser(endpoint, true);
   const { entries, error, setError, loading, loadingMore, cursor, pageError, load, search, parent, enter } = browser;
   const [importing, setImporting] = React.useState<string | null>(null);
@@ -30,6 +32,7 @@ export function LibraryGoogleDrive({ connectError }: { connectError: string | nu
   const pending = React.useRef(false);
   const reconnect = error?.code === "connector_reconnect";
   const needsConnect = reconnect || error?.code === "connector_not_connected";
+  const needsSetup = error?.code === "not_configured";
   const unavailable = error?.code === "not_enabled" || error?.code === "not_configured";
 
   async function importFile(entry: DriveBrowseEntry) {
@@ -62,16 +65,17 @@ export function LibraryGoogleDrive({ connectError }: { connectError: string | nu
 
   return (
     <AppPage measure="wide">
-      <AppPageHeader backHref="/library" backLabel="Back to Library" eyebrow="Library" heading="Google Drive"
+      <AppPageHeader heading="Google Drive"
         lede="Browse your Drive and import the files you want to use in Alevr."
-        actions={imported.size > 0 ? <Button variant="outline" asChild><Link href="/library?view=files">View imported files</Link></Button> : undefined}
+        actions={imported.size > 0 ? <Button variant="outline" asChild><Link href={filesHref}>View imported files</Link></Button> : undefined}
       />
-      {connectError && <p role="status" className="mb-4 text-ui text-muted-foreground">{connectError === "denied" ? "Google Drive connection was canceled." : "Google Drive couldn’t connect. Try again."}</p>}
+      <LibraryNavigation active="drive" />
+      {connectError && connectError !== "not_configured" && <p role="status" className="mb-4 text-ui text-muted-foreground">{connectError === "denied" ? "Google Drive connection was canceled." : "Google Drive couldn’t connect. Try again."}</p>}
       {needsConnect || unavailable || error?.code === "connector_blocked" ? (
         <EmptyState size="panel" icon={GoogleDriveMark}
-          title={needsConnect ? (reconnect ? "Reconnect Google Drive" : "Connect Google Drive") : "Google Drive unavailable"}
-          description={needsConnect && !reconnect ? "Authorize read-only access to open your folders and import selected files." : error?.message}
-          action={needsConnect ? <Button asChild><a href={connectHref}>{reconnect ? "Reconnect Google Drive" : "Connect Google Drive"}</a></Button> : error?.code === "connector_blocked" ? <Button variant="outline" asChild><Link href="/settings?section=connectors">Open Apps settings</Link></Button> : undefined}
+          title={needsConnect ? (reconnect ? "Reconnect Google Drive" : "Connect Google Drive") : needsSetup ? "Google Drive needs setup" : "Google Drive unavailable"}
+          description={needsConnect && !reconnect ? "Authorize read-only access to open your folders and import selected files." : needsSetup ? "Ask your Alevr administrator to enable the Google Drive connection. You can still upload files directly to Library." : error?.message}
+          action={needsConnect ? <Button asChild><a href={connectHref}>{reconnect ? "Reconnect Google Drive" : "Connect Google Drive"}</a></Button> : error?.code === "connector_blocked" ? <Button variant="outline" asChild><Link href="/settings?section=connectors">Open Apps settings</Link></Button> : unavailable ? <Button variant="outline" asChild><Link href={filesHref}>Browse Library files</Link></Button> : undefined}
         />
       ) : (
         <div className="space-y-4">
