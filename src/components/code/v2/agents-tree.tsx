@@ -43,6 +43,7 @@ import type { ModelSelection } from "@/lib/code-v2/contracts";
 /** How the dock names a model (dock.tsx `modelLabelFor`), passed in to keep the two files acyclic. */
 export type ModelLabeler = (selection: ModelSelection) => string;
 import { cn } from "@/lib/utils";
+import { useMediaQuery, PHONE_QUERY } from "@/hooks/use-media-query";
 
 /** Token top-ups a person can pick for one agent (inside agent-core's bounds). */
 export const AGENT_TOP_UP_TOKENS = [50_000, 100_000, 200_000] as const;
@@ -459,24 +460,39 @@ export function AgentsTreePane({
   selectedId,
   onSelect,
   modelLabel,
+  historical = false,
 }: {
   model: WorkspaceModel;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   modelLabel: ModelLabeler;
+  historical?: boolean;
 }) {
   const [runBudgetUsd, setRunBudgetUsd] = React.useState<number | undefined>(model.routing.budget?.maxUsd);
   React.useEffect(() => setRunBudgetUsd((prev) => (prev === undefined || (model.routing.budget?.maxUsd ?? 0) > prev ? model.routing.budget?.maxUsd : prev)), [model.routing.budget?.maxUsd]);
   const runLive = model.state === "running" || model.state === "waiting";
-  const root = React.useMemo(() => buildAgentTree(model.items, { running: runLive, budgetUsd: runBudgetUsd }), [model.items, runLive, runBudgetUsd]);
+  const root = React.useMemo(() => buildAgentTree(model.items, { running: runLive, budgetUsd: historical ? undefined : runBudgetUsd }), [model.items, runLive, runBudgetUsd, historical]);
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set());
   const expanded = React.useMemo(() => new Set(allIds(root).filter((id) => !collapsed.has(id))), [root, collapsed]);
   const selected = (selectedId && findNode(root, selectedId)) || root;
   const [focusedId, setFocusedId] = React.useState<string>(selected.id);
   const rowRefs = React.useRef(new Map<string, HTMLLIElement>());
+  const phone = useMediaQuery(PHONE_QUERY);
+  const [mobileDetail, setMobileDetail] = React.useState(false);
+  const detailVisible = phone && (mobileDetail || selected.id !== LEAD_NODE_ID);
+  const backRef = React.useRef<HTMLButtonElement>(null);
+  const restoreRow = React.useRef(false);
   const rows = React.useMemo(() => visibleRows(root, expanded), [root, expanded]);
   const fallbackFocus = rows.some((row) => row.id === selected.id) ? selected.id : root.id;
   const focus = rows.some((row) => row.id === focusedId) ? focusedId : fallbackFocus;
+  React.useEffect(() => {
+    if (!phone) return;
+    if (detailVisible) backRef.current?.focus({ preventScroll: true });
+    else if (restoreRow.current) {
+      restoreRow.current = false;
+      rowRefs.current.get(focus)?.focus({ preventScroll: true });
+    }
+  }, [phone, detailVisible, focus]);
 
   // One clock for every live row; nothing ticks once the run has settled.
   const counts = countLive(root);
@@ -501,7 +517,10 @@ export function AgentsTreePane({
       return next;
     });
   };
-  const select = (id: string) => onSelect(id === LEAD_NODE_ID ? null : id);
+  const select = (id: string) => {
+    onSelect(id === LEAD_NODE_ID ? null : id);
+    if (phone) setMobileDetail(true);
+  };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLUListElement>) => {
     if (!(e.target instanceof HTMLElement) || e.target.getAttribute("role") !== "treeitem") return;
@@ -519,23 +538,29 @@ export function AgentsTreePane({
     ? "No subagents yet"
     : [
         active > 0 ? `${active} active` : null,
-        counts.waiting > 0 ? `${counts.waiting} waiting` : null,
+        counts.waiting > 0 ? `${counts.waiting} need you` : null,
         counts.paused > 0 ? `${counts.paused} paused` : null,
       ].filter(Boolean).join(" · ") || `${counts.total} ${counts.total === 1 ? "agent" : "agents"} finished`;
 
   return (
     <div className="cv2-dock-pane cv2-agents">
-      <div className="cv2-dockbar">
-        <span className="cv2-m">Agents</span>
-        <span className="cv2-mute cv2-small cv2-trunc cv2-grow">{summary}</span>
+      <div className="cv2-run-heading">
+        {detailVisible ? (
+          <button ref={backRef} type="button" className="cv2-btn ghost" onClick={() => {
+            restoreRow.current = true;
+            onSelect(null);
+            setMobileDetail(false);
+          }}><Glyph name="arrow-left" size={16} /> All agents</button>
+        ) : <h2>{historical ? "Previous run" : "Current run"}</h2>}
+        <span className="cv2-mute cv2-small cv2-trunc">{historical && detailVisible ? "Previous run" : summary}</span>
       </div>
-      <div className="cv2-atree-wrap">
+      <div className="cv2-atree-wrap" hidden={detailVisible}>
         <ul role="tree" aria-label="Agents in this run" className="cv2-atree" onKeyDown={onKeyDown}>
           <TreeRow node={root} now={now} expanded={expanded} focusedId={focus} selectedId={selected.id} onSelect={select} onToggle={toggle} onFocusRow={moveFocus} rowRefs={rowRefs} />
         </ul>
       </div>
-      <div className="cv2-dockscroll cv2-adetail-wrap">
-        <AgentDetailPanel key={selected.id} node={selected} model={model} now={now} runBudgetUsd={runBudgetUsd} onRunBudget={setRunBudgetUsd} modelLabel={modelLabel} />
+      <div className="cv2-dockscroll cv2-adetail-wrap" hidden={phone && !detailVisible}>
+        <AgentDetailPanel key={selected.id} node={selected} model={model} now={now} runBudgetUsd={historical ? undefined : runBudgetUsd} onRunBudget={setRunBudgetUsd} modelLabel={modelLabel} />
       </div>
     </div>
   );

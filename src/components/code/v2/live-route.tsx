@@ -835,6 +835,7 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
 
   const usage = useEnv && env.view?.usage ? env.view.usage : undefined;
   const model: WorkspaceModel = {
+    teamAvailable: !meta.isCloud,
     thread: {
       id: conversation.id,
       // The app's copy first: a rename (here or from the sidebar) shows at once.

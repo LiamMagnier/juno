@@ -15,8 +15,7 @@ export const PRESET_LABELS: Record<RolePreset, string> = {
 
 export const PRESET_SENTENCES: Record<RolePreset, string> = {
   solo: "One model does the whole run. Simple, and the cheapest.",
-  "lead-workers":
-    "The lead plans and delegates. Workers run in parallel, each on its own branch of the plan. The reviewer reads every diff before you do.",
+  "lead-workers": "The lead can delegate independent tasks to workers and combine their results.",
   "best-of-n": "The same prompt runs once per candidate, each in its own worktree. You compare them and keep one.",
   "plan-build-verify":
     "The architect plans the structure first. Builders implement the plan in parallel. The verifier reviews and tests the result before you see it.",
@@ -64,10 +63,12 @@ export function withPreset(routing: RoleRouting, preset: RolePreset): RoleRoutin
   if (preset === "lead-workers") {
     const count = clampCount(routing.workers?.length ?? 3, WORKERS_MIN, WORKERS_MAX) || 3;
     return {
-      ...routing,
+      orchestrator: lead,
       preset,
       workers: Array.from({ length: count }, (_, i) => routing.workers?.[i] ?? workerModel),
       reviewer: routing.reviewer ?? lead,
+      ...(routing.explorer ? { explorer: routing.explorer } : {}),
+      ...(routing.compaction ? { compaction: routing.compaction } : {}),
       budget: routing.budget ?? { maxUsd: DEFAULT_BUDGET_USD },
     };
   }

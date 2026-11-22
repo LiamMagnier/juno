@@ -12,8 +12,8 @@
  * CodeV2TeamChip.swift / CodeV2TeamEditor.swift.
  */
 import * as React from "react";
-import type { ModelSelection, ProviderInstance, RolePreset, RoleRouting } from "@/lib/code-v2/contracts";
-import { estimateRunUsd, formatBudget, parseBudget, CANDIDATES_MAX, CANDIDATES_MIN } from "@/lib/code-v2/orchestrate";
+import type { ModelSelection, ProviderInstance, RoleRouting } from "@/lib/code-v2/contracts";
+import { estimateRunUsd, formatBudget, orchestrateLabel, parseBudget, CANDIDATES_MAX, CANDIDATES_MIN, withCount } from "@/lib/code-v2/orchestrate";
 import {
   BUILDERS_MAX,
   BUILDERS_MIN,
@@ -31,17 +31,15 @@ import {
   withBuilderCount,
   withTeamPreset,
   withTeamRole,
-  type TeamPreset,
   type TeamRole,
   type TeamScope,
   type TeamStorage,
 } from "@/lib/code-v2/team";
-import { withCount, withPreset } from "@/lib/code-v2/orchestrate";
 import { teamFromDefault } from "@/lib/code-v2/code-prefs";
 import { useCodePrefs } from "./use-code-prefs";
 import { formatUsd } from "@/lib/code-v2/tier-view";
 import { EFFORT_LABELS, effectiveEffort, findInstance, modelLabel, ratesFor, shortLabel } from "./model-info";
-import { ComposerPopover, Glyph, ModelMark, Segmented } from "./primitives";
+import { ComposerPopover, Glyph, ModelMark } from "./primitives";
 import type { RoleTab } from "./pickers";
 
 const ROLE_TAB: Record<TeamRole, RoleTab> = { architect: "architect", builder: "workers", verifier: "reviewer", explorer: "explorer" };
@@ -52,11 +50,6 @@ function storage(): TeamStorage | null {
   } catch {
     return null;
   }
-}
-
-/** A preset as the team editor builds it (Plan → Build → Verify gets its builders and cap). */
-function buildPreset(routing: RoleRouting, preset: RolePreset): RoleRouting {
-  return (TEAM_PRESETS as readonly string[]).includes(preset) ? withTeamPreset(routing, preset as TeamPreset) : withPreset(routing, preset);
 }
 
 /**
@@ -77,7 +70,7 @@ export function useTeamDefault(routing: RoleRouting, lead: ModelSelection, scope
       if (stored.preset !== "solo") setRouting(stored);
       return;
     }
-    const fromAccount = teamFromDefault(account.team, lead, buildPreset);
+    const fromAccount = teamFromDefault(account.team, lead, withTeamPreset);
     if (fromAccount) {
       seeded.current = true;
       setRouting(fromAccount);
@@ -103,13 +96,13 @@ export function TeamChip({ routing, open, onToggle }: { routing: RoleRouting; op
       className="cv2-ctl cv2-team-chip"
       aria-haspopup="dialog"
       aria-expanded={open}
-      aria-label={summary ? `Team: ${summary}` : "Team"}
-      title={summary ? `Team: ${summary} (⇧⌘O)` : "Choose who plans, builds and verifies (⇧⌘O)"}
+      aria-label={summary ? `Orchestrator: ${TEAM_PRESET_COPY[routing.preset].label}. ${summary}` : "Orchestrator"}
+      title={summary ?? "Choose how agents work together"}
       data-team={summary ? "set" : "solo"}
       onClick={onToggle}
     >
       <Glyph name="agents" size={14} />
-      <span className="v cv2-trunc">{summary ?? "Team"}</span>
+      <span className="v cv2-trunc">{summary ? orchestrateLabel(routing) : "Orchestrator"}</span>
       <Glyph name="chevron-down" size={12} className="chev" />
     </button>
   );
@@ -173,8 +166,10 @@ export function TeamEditor({
 
   const role = (r: TeamRole, extra?: React.ReactNode, remove?: () => void) => {
     const sel = teamRoleSelection(routing, r) ?? lead;
-    const copy = TEAM_ROLE_COPY[r];
-    const phase = r === "architect" ? "plan" : r === "builder" ? "build" : r === "verifier" ? "verify" : null;
+    const copy = preset === "lead-workers" && r !== "explorer"
+      ? r === "builder" ? { name: "Worker", duty: "Takes tasks assigned by the lead" } : { name: "Reviewer", duty: "Checks a change when the lead requests it" }
+      : TEAM_ROLE_COPY[r];
+    const phase = preset !== "plan-build-verify" ? null : r === "architect" ? "plan" : r === "builder" ? "build" : r === "verifier" ? "verify" : null;
     return (
       <div key={r} className="cv2-team-role" data-role={r}>
         <button type="button" className="cv2-team-role-main" onClick={() => onPickRole(ROLE_TAB[r])} aria-label={`${copy.name}: ${modelLabel(instances, sel)}. Change`}>
@@ -199,16 +194,20 @@ export function TeamEditor({
   };
 
   return (
-    <ComposerPopover open={open} onClose={onClose} width={460} align="left" offset={0} label="Team" anchorRef={anchorRef} className="cv2-team-pop">
+    <ComposerPopover open={open} onClose={onClose} width={460} align="left" offset={0} label="Orchestrator" anchorRef={anchorRef} className="cv2-team-pop">
       <div className="cv2-team-head">
-        <Segmented<TeamPreset>
-          id="cv2-team-preset"
-          label="Team preset"
-          value={preset}
-          options={TEAM_PRESETS.map((p) => ({ value: p, label: TEAM_PRESET_COPY[p].label }))}
-          onChange={(p) => onChange(withTeamPreset({ ...routing, orchestrator: lead }, p))}
-        />
-        <p className="cv2-team-line">{TEAM_PRESET_COPY[preset].line}</p>
+        <div className="cv2-orchestrator-heading">
+          <span className="cv2-m">Orchestrator</span>
+          <button type="button" className="cv2-iconbtn" aria-label="Close orchestrator" onClick={onClose}><Glyph name="close" size={16} /></button>
+        </div>
+        <div role="group" aria-label="Run mode" className="cv2-orchestrator-modes">
+          {TEAM_PRESETS.map((p) => (
+            <button key={p} type="button" aria-pressed={preset === p} className="cv2-orchestrator-mode" onClick={() => onChange(withTeamPreset({ ...routing, orchestrator: lead }, p))}>
+              <span>{TEAM_PRESET_COPY[p].label}</span>
+              <span className="cv2-mute">{TEAM_PRESET_COPY[p].line}</span>
+            </button>
+          ))}
+        </div>
       </div>
       <div className="cv2-pop-body">
         <div className="cv2-team-role cv2-team-lead" data-role="lead">
@@ -221,10 +220,10 @@ export function TeamEditor({
             <Glyph name="chevron-right" size={14} className="cv2-mute" />
           </button>
         </div>
-        {preset === "plan-build-verify" && (
+        {(preset === "plan-build-verify" || preset === "lead-workers") && (
           <>
-            {role("architect")}
-            {role("builder", <Stepper value={builders} min={BUILDERS_MIN} max={BUILDERS_MAX} label="Builders" onChange={(n) => onChange(withBuilderCount(routing, n))} />)}
+            {preset === "plan-build-verify" && role("architect")}
+            {role("builder", <Stepper value={builders} min={BUILDERS_MIN} max={BUILDERS_MAX} label={preset === "lead-workers" ? "Workers" : "Builders"} onChange={(n) => onChange(withBuilderCount(routing, n))} />)}
             {role("verifier")}
             {routing.explorer ? (
               role("explorer", undefined, () => onChange(withTeamRole(routing, "explorer", undefined)))

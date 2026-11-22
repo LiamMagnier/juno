@@ -439,14 +439,21 @@ export function CodeComposer({
       });
       if (!res.ok) throw new Error("conversation");
       const { conversation } = (await res.json()) as { conversation: ClientConversation };
-      seedThreadMode(conversation.id);
       if (routing.preset !== "solo") {
-        await fetch(`/api/code/routing/${conversation.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ routing: effectiveRouting }),
-        }).catch(() => undefined);
+        try {
+          const configured = await fetch(`/api/code/routing/${conversation.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ routing: effectiveRouting }),
+          });
+          if (!configured.ok) throw new Error("Could not save the orchestrator");
+        } catch {
+          void fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" }).catch(() => undefined);
+          toast.error("Couldn’t save the orchestrator. Check the team models or try again.");
+          return false;
+        }
       }
+      seedThreadMode(conversation.id);
       setPendingCodePrompt(conversation.id, seedThreadSkills(landingSkills, conversation.id, text), attachments);
       upsertConversation({ ...conversation, ...(selection.instanceId === "alevr" ? { model: selection.model } : {}) });
       openSession(conversation.id);

@@ -11,6 +11,7 @@
  * collapsed to an "N unmodified lines" bar, and no accept/reject per hunk).
  */
 import * as React from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { Markdown } from "@/components/chat/markdown";
 import { ComputerTimeline } from "@/components/code/computer-timeline";
 import type { FileChangeEntry, ProviderInstance, SubagentItem, TurnItem } from "@/lib/code-v2/contracts";
@@ -24,6 +25,8 @@ import { agentStep, isCandidate, teamHead, LogRow, lineFor } from "./thread";
 import type { WorkspaceModel } from "./types";
 import { XtermView } from "./xterm-view";
 import { AgentsTreePane } from "./agents-tree";
+import { selectAgentRun } from "@/lib/code-v2/agent-tree";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 
 export interface DockFocus {
@@ -662,14 +665,20 @@ function AgentDetail({ agent, model, onBack }: { agent: SubagentItem; model: Wor
   );
 }
 
-function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; selectedId: string | null; onSelect: (id: string | null) => void }) {
+function AgentsPane({ model, selectedId, onSelect, historical, onConfigure }: { model: WorkspaceModel; selectedId: string | null; onSelect: (id: string | null) => void; historical: boolean; onConfigure?: () => void }) {
   const agents = latestAgents(model.items);
   const selected = agents.find((a) => a.agentId === selectedId);
   const [pick, setPick] = React.useState<string | null>(null);
-  const best = model.routing.preset === "best-of-n" || agents.some(isCandidate);
-  if (!agents.length) return <div className="cv2-dock-empty">No agents in this session. Choose Team or Best of N under the composer&apos;s options to fan out.</div>;
+  const best = agents.some(isCandidate);
+  if (!agents.length) return (
+    <div className="cv2-agents-empty">
+      <span className="cv2-agents-empty-icon"><Glyph name="agents" size={20} /></span>
+      <h2>No subagents in this run</h2>
+      {onConfigure && <button type="button" className="cv2-btn" onClick={onConfigure}>Configure orchestrator <Glyph name="chevron-right" size={14} /></button>}
+    </div>
+  );
   // A team or delegated run: the live tree with its controls (REA backlog 10).
-  if (!best) return <AgentsTreePane model={model} selectedId={selectedId} onSelect={onSelect} modelLabel={(s) => modelLabelFor(s.model, model.instances, s.instanceId)} />;
+  if (!best) return <AgentsTreePane model={model} selectedId={selectedId} onSelect={onSelect} historical={historical} modelLabel={(s) => modelLabelFor(s.model, model.instances, s.instanceId)} />;
   if (selected) return <AgentDetail key={selected.agentId} agent={selected} model={model} onBack={() => onSelect(null)} />;
   const elapsed = Math.max(0, ...agents.map((a) => a.elapsedMs ?? 0));
   const costs = agents.map((a) => a.costUsd).filter((c): c is number => c !== undefined);
@@ -721,14 +730,14 @@ function AgentsPane({ model, selectedId, onSelect }: { model: WorkspaceModel; se
           {chosen && <button type="button" className="cv2-link" onClick={() => onSelect(chosen.agentId)}>Open trace</button>}
           {kept ? (
             <span className="cv2-mute">Kept {String.fromCharCode(65 + agents.indexOf(kept))}. The other worktrees were removed.</span>
-          ) : (
+          ) : !historical && model.actions.keepCandidate ? (
             <>
               <span className="cv2-mute cv2-small cv2-grow">The others&apos; worktrees are removed.</span>
-              <button type="button" className="cv2-btn ink" disabled={!chosen || chosen.status === "running"} onClick={() => chosen && model.actions.keepCandidate?.(chosen.agentId)}>
+              <button type="button" className="cv2-btn ink" disabled={chosen?.status !== "completed" || agents.some((agent) => agent.status === "running" || agent.status === "waiting")} onClick={() => chosen && model.actions.keepCandidate?.(chosen.agentId)}>
                 Keep {String.fromCharCode(65 + Math.max(0, agents.indexOf(chosen!)))}
               </button>
             </>
-          )}
+          ) : <span className="cv2-mute">Candidate results are read-only here.</span>}
         </div>
       </div>
     );
@@ -771,7 +780,7 @@ function ScreenPane({ model, resolveScreenshot }: { model: WorkspaceModel; resol
 export function visibleTabs(model: WorkspaceModel): DockTab[] {
   const tabs: DockTab[] = ["changes", "terminal", "files"];
   if (model.previewUrl) tabs.push("preview");
-  if (model.items.some((i) => i.kind === "subagent")) tabs.push("agents");
+  if (model.teamAvailable !== false || model.items.some((i) => i.kind === "subagent")) tabs.push("agents");
   if (model.items.some((i) => i.kind === "computer_action")) tabs.push("screen");
   return tabs;
 }
@@ -784,6 +793,7 @@ export function Dock({
   selectedAgentId,
   onSelectAgent,
   onMention,
+  onConfigureOrchestrator,
   resolveScreenshot,
   composer,
   exit,
@@ -795,6 +805,7 @@ export function Dock({
   selectedAgentId: string | null;
   onSelectAgent: (id: string | null) => void;
   onMention?: (path: string) => void;
+  onConfigureOrchestrator?: () => void;
   resolveScreenshot?: (ref: string) => string | null;
   /** The composer, re-parented into the panel while expanded. */
   composer?: React.ReactNode;
@@ -805,12 +816,17 @@ export function Dock({
   const tab = tabs.includes(dock.tab) ? dock.tab : dock.tab === "preview" ? "preview" : tabs[0];
   const shownTabs = tabs.includes(tab) ? tabs : [...tabs, tab];
   const handle = React.useRef<HTMLDivElement>(null);
+  const closeButton = React.useRef<HTMLButtonElement>(null);
+  const returnFocus = React.useRef<HTMLElement | null>(null);
+  const overlay = useMediaQuery("(max-width: 1023px)");
+  const modal = overlay && exit?.state !== "closed";
   const [dragging, setDragging] = React.useState(false);
   const [width, setWidth] = React.useState<number | null>(dock.width && dock.width !== 460 ? dock.width : null);
   const frame = React.useRef(0);
+  const agentRun = React.useMemo(() => selectAgentRun(model.items, focus.target), [model.items, focus.target]);
   const counts: Partial<Record<DockTab, number>> = {
     changes: aggregateChanges(model.items).length || undefined,
-    agents: latestAgents(model.items).length || undefined,
+    agents: latestAgents(agentRun.items).length || undefined,
   };
   const bodyRight = () => (handle.current?.closest(".cv2-main") as HTMLElement | null)?.getBoundingClientRect().right ?? window.innerWidth;
   const onPointerDown = (e: React.PointerEvent) => {
@@ -832,7 +848,7 @@ export function Dock({
     dispatch({ type: "release", width: Math.min(w, 760) });
   };
 
-  return (
+  const pane = (
     <aside
       className="cv2-dock"
       style={width ? { ["--dock-w" as string]: `${width}px` } : undefined}
@@ -841,6 +857,7 @@ export function Dock({
       inert={exit?.state === "closed"}
       onAnimationEnd={exit?.onAnimationEnd}
     >
+      {modal && <Dialog.Title className="cv2-sr">Workspace panel</Dialog.Title>}
       <div
         ref={handle}
         className="cv2-dock-handle"
@@ -875,7 +892,7 @@ export function Dock({
         <button type="button" className="cv2-iconbtn cv2-wide" aria-label={dock.expanded ? "Restore the panel" : "Expand the panel"} title={dock.expanded ? "Restore (⌘⇧D)" : "Expand (⌘⇧D)"} aria-pressed={dock.expanded} onClick={() => dispatch({ type: "toggle-expand" })}>
           <Glyph name={dock.expanded ? "collapse" : "expand"} size={16} />
         </button>
-        <button type="button" className="cv2-iconbtn" aria-label="Close the panel" title="Close" onClick={() => dispatch({ type: "close" })}>
+        <button ref={closeButton} type="button" className="cv2-iconbtn cv2-dock-close" aria-label="Close the panel" title="Close" onClick={() => dispatch({ type: "close" })}>
           <Glyph name="close" size={16} />
         </button>
       </div>
@@ -884,12 +901,35 @@ export function Dock({
         {tab === "terminal" && <TerminalPane model={model} focus={focus} />}
         {tab === "files" && <FilesPane model={model} focus={focus} onMention={onMention} />}
         {tab === "preview" && <PreviewPane model={model} />}
-        {tab === "agents" && <AgentsPane model={model} selectedId={selectedAgentId} onSelect={onSelectAgent} />}
+        {tab === "agents" && <AgentsPane
+          key={agentRun.turnId}
+          model={{ ...model, items: agentRun.items, state: agentRun.historical ? "idle" : model.state, actions: agentRun.historical ? { ...model.actions, controlAgent: undefined, stopAgent: undefined, messageAgent: undefined } : model.actions }}
+          selectedId={selectedAgentId}
+          onSelect={onSelectAgent}
+          historical={agentRun.historical}
+          onConfigure={onConfigureOrchestrator}
+        />}
         {tab === "screen" && <ScreenPane model={model} resolveScreenshot={resolveScreenshot} />}
         {tab === "plan" && <div className="cv2-dock-empty">The plan is in the thread.</div>}
       </div>
       {dock.expanded && composer && <div className="cv2-cwrap" style={{ paddingTop: 8 }}>{composer}</div>}
     </aside>
+  );
+  if (!modal) return pane;
+  return (
+    <Dialog.Root open onOpenChange={(open) => { if (!open) dispatch({ type: "close" }); }}>
+      <Dialog.Content asChild aria-describedby={undefined}
+        onOpenAutoFocus={(event) => {
+          returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          event.preventDefault();
+          closeButton.current?.focus({ preventScroll: true });
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (document.activeElement === document.body) returnFocus.current?.focus({ preventScroll: true });
+        }}
+      >{pane}</Dialog.Content>
+    </Dialog.Root>
   );
 }
 

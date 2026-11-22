@@ -299,13 +299,12 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     if (detailChosen.current) writeStored(DETAIL_KEY, detail);
   }, [detail]);
   React.useEffect(() => dispatch({ type: "thread-changed", threadId: model.thread.id }), [model.thread.id]);
-  // The dock reads the whole session (every change, command and file), so
-  // opening it brings in the turns a paged thread has not loaded yet, as
-  // Chat's outputs panel does.
+  // Changes and Terminal can read the entire session. The Agents panel reads
+  // one run, including older runs opened from the already loaded transcript.
   const loadAllHistory = model.history?.hasOlder ? model.history.loadOlder : null;
   React.useEffect(() => {
-    if (dock.open && loadAllHistory) void loadAllHistory({ all: true });
-  }, [dock.open, loadAllHistory]);
+    if (dock.open && dock.tab !== "agents" && loadAllHistory) void loadAllHistory({ all: true });
+  }, [dock.open, dock.tab, loadAllHistory]);
   React.useEffect(() => {
     const on = () => setHidden(document.visibilityState === "hidden");
     document.addEventListener("visibilitychange", on);
@@ -331,6 +330,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   const seenAgents = React.useRef<Set<string> | null>(null);
   const [unseenAgents, setUnseenAgents] = React.useState<string[]>([]);
   const agentsInView = dock.open && dock.tab === "agents";
+  const hasAgentsPanel = model.teamAvailable !== false || model.items.some((item) => item.kind === "subagent");
   React.useEffect(() => {
     seenAgents.current = null;
     setUnseenAgents([]);
@@ -359,7 +359,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   const openDock = React.useCallback(
     (req: DockRequest) => {
       setFocus({ target: req.target, scope: req.scope, turnId: req.turnId });
-      if (req.tab === "agents" && req.target) setAgentId(req.target);
+      if (req.tab === "agents") setAgentId(req.target ?? null);
       dispatch({ type: "open", tab: req.tab, threadId: model.thread.id });
     },
     [model.thread.id],
@@ -540,6 +540,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       onOpenDock={(tab) => openDock({ tab })}
       onFocusChange={setComposerFocus}
       tall={empty}
+      team={model.teamAvailable !== false}
     />
     </>
   );
@@ -585,6 +586,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   ];
   const moreMenu: MenuEntry[] = [
     ...(!empty ? [{ id: "find", label: "Find in this session", icon: <Glyph name="search" size={16} />, trail: <Kbd k="mod+f" mac={mac} />, onSelect: () => setPaletteMode("session") }] : []),
+    { id: "terminal", label: "Terminal", icon: <Glyph name="terminal" size={16} />, trail: <Kbd k="mod+j" mac={mac} />, onSelect: () => openDock({ tab: "terminal" }) },
     ...(model.actions.commit ? [{ id: "commit", label: "Commit…", icon: <Glyph name="commit" size={16} />, onSelect: () => model.actions.commit?.() }] : []),
     { id: "pr", label: "Create pull request…", icon: <Glyph name="pull-request" size={16} />, onSelect: () => composer.current?.setDraft("/pr ") },
     { id: "files", label: "Files", icon: <Glyph name="file-tree" size={16} />, trail: <Kbd k="mod+p" mac={mac} />, onSelect: () => openDock({ tab: "files" }) },
@@ -700,20 +702,24 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
             {!empty && <button type="button" className="cv2-iconbtn cv2-wide" aria-label="Find in this session" title="Find in this session" onClick={() => setPaletteMode("session")}>
               <Glyph name="search" />
             </button>}
-            <button type="button" className="cv2-iconbtn" aria-pressed={dock.open && dock.tab === "terminal"} aria-label="Terminal" title={`Terminal (${mac ? "⌘J" : "Ctrl J"})`} onClick={() => toggleDock("terminal")}>
+            <button type="button" className="cv2-iconbtn cv2-wide" aria-pressed={dock.open && dock.tab === "terminal"} aria-label="Terminal" title={`Terminal (${mac ? "⌘J" : "Ctrl J"})`} onClick={() => toggleDock("terminal")}>
               <Glyph name="terminal" />
             </button>
+            {hasAgentsPanel && (
+              <button type="button" className="cv2-iconbtn cv2-badged cv2-agents-trigger" aria-label="Agents" title="Agents" aria-pressed={agentsInView} onClick={() => agentsInView ? dispatch({ type: "close" }) : openDock({ tab: "agents" })}>
+                <Glyph name="agents" />
+                <NewAgentsBadge count={unseenAgents.length} />
+              </button>
+            )}
             <button
               type="button"
-              className="cv2-iconbtn cv2-badged"
-              aria-pressed={dock.open && dock.tab !== "terminal"}
+              className="cv2-iconbtn"
+              aria-pressed={dock.open && dock.tab === "changes"}
               aria-label="Changes and panel"
               title={`Changes (${mac ? "⌘D" : "Ctrl D"})`}
-              // New agents waiting to be seen: this opens on them.
-              onClick={() => (unseenAgents.length ? openDock({ tab: "agents" }) : dock.open && dock.tab !== "terminal" ? dispatch({ type: "close" }) : openDock({ tab: dock.tab === "terminal" ? "changes" : dock.tab }))}
+              onClick={() => dock.open && dock.tab === "changes" ? dispatch({ type: "close" }) : openDock({ tab: "changes" })}
             >
               <Glyph name="panel-right" />
-              <NewAgentsBadge count={unseenAgents.length} />
             </button>
             <button type="button" className="cv2-iconbtn" aria-label="More" aria-haspopup="menu" aria-expanded={headMenu === "more"} onClick={() => setHeadMenu(headMenu === "more" ? null : "more")}>
               <Glyph name="more" />
@@ -804,6 +810,10 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
                 selectedAgentId={agentId}
                 onSelectAgent={setAgentId}
                 onMention={(p) => composer.current?.setDraft(`@${p} `)}
+                onConfigureOrchestrator={model.teamAvailable === false || model.child ? undefined : () => {
+                  dispatch({ type: "close" });
+                  setPopover("team");
+                }}
                 resolveScreenshot={resolveScreenshot}
                 composer={dock.expanded && !empty ? composerNode : undefined}
               />

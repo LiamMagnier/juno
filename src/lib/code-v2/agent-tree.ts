@@ -9,6 +9,7 @@
  */
 import type { ApprovalRequestItem, SubagentItem, TurnItem } from "./contracts";
 import { TEAM_PHASE_VALUES } from "./contracts";
+import { groupTurns } from "./turns";
 
 /** What a node is doing, in the tree's own vocabulary. */
 export type AgentNodeState = "thinking" | "tool" | "waiting" | "queued" | "paused" | "done" | "failed" | "stopped";
@@ -54,6 +55,24 @@ export function latestAgentItems(items: readonly TurnItem[]): SubagentItem[] {
   const by = new Map<string, SubagentItem>();
   for (const i of items) if (i.kind === "subagent") by.set(i.agentId, i);
   return [...by.values()];
+}
+
+/** Keep the lead, delegated tasks, and their trace in the same turn. The
+ * transcript can still open a historical task directly by its agent ID. */
+export function selectAgentRun(items: readonly TurnItem[], target?: string) {
+  const turns = groupTurns(items);
+  const latest = turns.at(-1);
+  const turn = (target && [...turns].reverse().find((entry) => entry.items.some((item) => item.kind === "subagent" && item.agentId === target))) || latest;
+  if (!turn) return { items: [], historical: false, turnId: undefined };
+  const turnIds = new Set(turn.items.map((item) => item.turnId).filter(Boolean));
+  turnIds.add(turn.id);
+  const agentIds = new Set(latestAgentItems(turn.items).map((item) => item.agentId));
+  const ownItems = new Set(turn.items);
+  return {
+    items: items.filter((item) => ownItems.has(item) || (item.kind !== "subagent" && item.agentId && agentIds.has(item.agentId) && (!item.turnId || turnIds.has(item.turnId)))),
+    historical: turn !== latest,
+    turnId: turn.id,
+  };
 }
 
 type ToolItem = Extract<TurnItem, { kind: "command_execution" | "file_change" | "search" | "web_search" | "computer_action" }>;

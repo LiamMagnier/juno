@@ -129,9 +129,9 @@ test("tiers and rates: the chosen tier wins, subscriptions cost nothing to Alevr
 
 test("dock: tabs appear with their content, agents fold to their newest state, diffs parse to hunks", () => {
   const streaming = fixture("streaming").model;
-  // One tab strip: Changes, Terminal, Files, and only when relevant Preview, Agents, Screen (the plan lives in the thread).
-  assert.deepEqual(visibleTabs(streaming), ["changes", "terminal", "files"]);
-  assert.deepEqual(visibleTabs({ ...streaming, previewUrl: "http://localhost:3000" }), ["changes", "terminal", "files", "preview"]);
+  assert.deepEqual(visibleTabs(streaming), ["changes", "terminal", "files", "agents"]);
+  assert.deepEqual(visibleTabs({ ...streaming, teamAvailable: false }), ["changes", "terminal", "files"]);
+  assert.deepEqual(visibleTabs({ ...streaming, previewUrl: "http://localhost:3000" }), ["changes", "terminal", "files", "preview", "agents"]);
   const needs = fixture("needs-you").model;
   assert.ok(visibleTabs(needs).includes("agents") && !visibleTabs(needs).includes("plan"));
   const items: TurnItem[] = [
@@ -203,7 +203,7 @@ test("the streaming state is calm: no glow, a stop button, the queue as one cont
   assert.match(html, /Changed 3 files/);
 });
 
-test("the composer at rest shows +, the model trigger, the Team chip, the mode, the options menu and send; the mic once dictation is known", () => {
+test("the composer shows its model, orchestrator, mode and add, more and send controls", () => {
   const f = fixture("model-picker");
   const html = renderWorkspace({ model: { ...f.model }, ui: {} });
   const foot = html.slice(html.indexOf('class="cv2-cfoot"'), html.indexOf('class="cv2-strip"'));
@@ -215,11 +215,11 @@ test("the composer at rest shows +, the model trigger, the Team chip, the mode, 
   // hydration so the server and first client render agree; dictation-support.test.ts
   // pins that the v2 composer draws it from that check.
   assert.doesNotMatch(foot, /aria-label="Dictate"/, "no mic before this browser's dictation support is known");
-  // Team lane: the Team chip is always there; Solo shows nothing extra.
-  assert.match(foot, /aria-label="Team"/);
+  assert.match(foot, /aria-label="Orchestrator"/);
   assert.doesNotMatch(foot, /Lead \+|Best of|Auto-edit|>Plan</);
   const team = renderWorkspace({ model: { ...f.model, interactionMode: "plan", routing: fixture("needs-you").model.routing }, ui: {} });
-  assert.ok(team.includes(`aria-label="Team: ${teamSummary(fixture("needs-you").model.routing)}"`), "the chip names the team");
+  assert.ok(team.includes(`${teamSummary(fixture("needs-you").model.routing)}"`), "the chip names the configured roles");
+  assert.match(team, /aria-label="Orchestrator: Lead \+ workers\./);
   assert.match(team, /aria-label="Mode: Plan"/);
   const full = renderWorkspace({ model: { ...f.model, runtimeMode: "full" }, ui: {} });
   assert.match(full, /aria-label="Mode: Full access"/);

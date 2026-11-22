@@ -153,7 +153,7 @@
 .cv2-main { position: relative; display: flex; min-width: 0; min-height: 0; height: 100%; background: hsl(var(--background)); overflow: hidden; }
 .cv2-left { position: relative; flex: 1; display: grid; grid-template-rows: 48px minmax(0, 1fr); min-width: 0; min-height: 0; }
 .cv2-main.expanded .cv2-left { display: none; }
-.cv2-top { display: flex; align-items: center; gap: .5rem; padding-inline: 1rem; min-width: 0; }
+.cv2-top { display: flex; align-items: center; gap: .5rem; padding-inline: 1rem; min-width: 0; border-bottom: 1px solid hsl(var(--border) / .7); }
 .cv2-crumb { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 500; }
 .cv2-crumb .proj { color: hsl(var(--muted-foreground)); white-space: nowrap; }
 .cv2-crumb .slash { color: hsl(var(--muted-foreground) / 0.6); font-weight: 400; }
@@ -333,11 +333,11 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 @media (max-width: 640px) { .cv2-plan { margin: 0 6px -10px; } .cv2-plan-head { min-height: 44px; } }
 .cv2-cwrap { position: relative; padding: 0 32px 18px; }
 .cv2-cstack { display: flex; flex-direction: column; }
-.cv2-composer { position: relative; z-index: 2; background: hsl(var(--card)); border: 1px solid var(--cv2-edge); --cv2-composer-inset: .625rem; border-radius: var(--web-composer-radius, 30px); padding: .75rem var(--cv2-composer-inset) var(--cv2-composer-inset); transition: border-color var(--dur-fast, 120ms) var(--cv2-ease); }
+.cv2-composer { position: relative; z-index: 2; background: hsl(var(--card)); border: 1px solid var(--cv2-edge); --cv2-composer-inset: .625rem; border-radius: var(--web-composer-radius, 30px); padding: 1rem var(--cv2-composer-inset) var(--cv2-composer-inset); transition: border-color var(--dur-fast, 120ms) var(--cv2-ease); }
 .dark .cv2-composer { box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04); }
 .cv2-composer:focus-within { border-color: var(--cv2-edge-focus); }
 .cv2-composer.needs, .cv2-composer.needs:focus-within { border-color: hsl(var(--signal)); }
-.cv2-draft { display: block; width: 100%; resize: none; border: 0; outline: none; background: transparent; font: inherit; line-height: 22px; min-height: 44px; max-height: 40vh; color: hsl(var(--foreground)); padding: 0 6px 0 0; }
+.cv2-draft { display: block; width: 100%; resize: none; border: 0; outline: none; background: transparent; font: inherit; font-size: 1rem; line-height: 1.5; min-height: 44px; max-height: 40vh; color: hsl(var(--foreground)); padding: 0 .5rem; }
 .cv2-draft.tall { min-height: 66px; }
 /* iOS Safari zooms the page into a focused field under 16px (Chat's composer
    keeps 16px for the same reason, composer-shell.tsx), and the /code landing
@@ -345,14 +345,14 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 @media (pointer: coarse) { .cv2-draft { font-size: 16px; } }
 .cv2-draft::placeholder { color: hsl(var(--muted-foreground) / 0.9); }
 .cv2-draft:focus-visible { outline: none; }
-.cv2-cfoot { display: flex; align-items: center; gap: 2px; margin-top: 6px; margin-left: -6px; min-width: 0; }
-.cv2-ctl { height: 28px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; color: hsl(var(--muted-foreground)); white-space: nowrap; min-width: 0; transition: background-color var(--dur-fast, 120ms) var(--cv2-ease), color var(--dur-fast, 120ms) var(--cv2-ease); }
+.cv2-cfoot { display: flex; align-items: center; gap: 2px; margin-top: 4px; min-width: 0; }
+.cv2-ctl { height: 34px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; border-radius: theme("borderRadius.control"); color: hsl(var(--muted-foreground)); white-space: nowrap; min-width: 0; transition: background-color var(--dur-fast, 120ms) var(--cv2-ease), color var(--dur-fast, 120ms) var(--cv2-ease); }
 .cv2-ctl:hover, .cv2-ctl[aria-expanded="true"] { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
-.cv2-ctl.icon { width: 28px; padding: 0; justify-content: center; }
+.cv2-ctl.icon { width: 34px; padding: 0; justify-content: center; }
 .cv2-ctl .v { color: hsl(var(--foreground)); }
 .cv2-ctl .chev { opacity: 0.7; }
 .cv2-csep { width: 1px; height: 16px; background: hsl(var(--border)); margin: 0 4px; flex: none; }
-.cv2-send { position: relative; width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); margin-left: 2px; transition: opacity var(--dur-fast, 120ms) var(--cv2-ease), transform var(--dur-press, 90ms) var(--cv2-ease); }
+.cv2-send { position: relative; width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; background: hsl(var(--foreground)); color: hsl(var(--background)); margin-left: 2px; transition: opacity var(--dur-fast, 120ms) var(--cv2-ease), transform var(--dur-press, 90ms) var(--cv2-ease); }
 .cv2-send:active { transform: scale(0.94); }
 .cv2-send:disabled { opacity: 0.4; }
 .cv2-composer .cv2-send { border-radius: calc(var(--web-composer-radius, 30px) - var(--cv2-composer-inset)); }
@@ -532,6 +532,7 @@ button.cv2-wl:hover .verb { color: hsl(var(--foreground)); }
 .cv2-tab:hover { color: hsl(var(--foreground)); }
 .cv2-tab[aria-selected="true"] { color: hsl(var(--foreground)); background: hsl(var(--selected)); font-weight: 500; }
 .cv2-tab .n { font-size: 12px; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; font-weight: 400; }
+.cv2-dock-close { flex: none; position: sticky; inset-inline-end: 0; background: hsl(var(--background)); }
 .cv2-dockbar { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 10px 0 12px; border-bottom: 1px solid hsl(var(--border)); flex: none; min-width: 0; position: relative; }
 .cv2-dockbar .n { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cv2-dockscroll { flex: 1; overflow: auto; min-height: 0; }
@@ -711,7 +712,7 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
   .cv2-empty .spacer-bottom { order: 2; }
   .cv2-empty > .cv2-col { order: 3; }
   .cv2-empty h1 { font-size: 24px; margin-bottom: 18px; padding: 0 8px; }
-  .cv2-composer { padding: 10px 8px 6px 14px; }
+  .cv2-composer { padding: .75rem var(--cv2-composer-inset) var(--cv2-composer-inset); }
   .cv2-strip { margin: -1px 16px 0; }
   .cv2-strip .s .lbl-long { display: none; }
   .cv2-ctl .v { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
@@ -751,6 +752,16 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
   .cv2-files.split .tree { display: none; }
 }
 
+@media (max-width: 639px) {
+  .cv2-top { padding-inline: .5rem; }
+  .cv2-top .cv2-iconbtn, .cv2-dock .cv2-iconbtn { width: 44px; height: 44px; }
+  .cv2-dock { top: auto; max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 1.5rem); height: 85dvh; padding-bottom: env(safe-area-inset-bottom, 0px); border-radius: theme("borderRadius.panel") theme("borderRadius.panel") 0 0; overflow: hidden; animation: cv2-sheet-up var(--dur-slow) var(--ease-drawer) both; }
+  .cv2-dock[data-state="closed"] { animation: cv2-sheet-down var(--dur-base) var(--ease-in) both; }
+  .cv2-dock .cv2-tabs { height: 52px; }
+  .cv2-dock .cv2-tab { min-height: 44px; }
+  .cv2-cwrap { padding-bottom: max(.75rem, env(safe-area-inset-bottom, 0px)); }
+}
+
 /* ── Reduced motion / transparency / hidden ─────────────────────────── */
 /* The app's tiers, as the OS path and Settings › Motion › Reduced run them
    everywhere else (postcss/motion-preference.cjs compiles this block's
@@ -787,28 +798,34 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
    the disc out; the team chip's word goes first. */
 .cv2-cfoot { container: cv2foot / inline-size; }
 .cv2-cfoot > .cv2-ctl:not(.icon) { flex-shrink: 1; min-width: 3rem; }
-.cv2-cfoot > .cv2-team-chip { flex-shrink: 4; }
+.cv2-cfoot > .cv2-team-chip { flex-shrink: 1; }
 .cv2-cfoot > :is(.cv2-ctl.icon, .cv2-ring, .cv2-send) { flex-shrink: 0; }
+.cv2-queue-count { display: none; }
 @container cv2foot (max-width: 640px) {
-  .cv2-cfoot .cv2-team-chip .v { display: none; }
+  .cv2-cfoot .cv2-team-chip[data-team="set"] .v { max-width: 8ch; }
 }
 @container cv2foot (max-width: 520px) {
   .cv2-cfoot .cv2-ctl .eff, .cv2-cfoot .cv2-ctl[data-mode] .v { display: none; }
 }
 @container cv2foot (max-width: 420px) {
-  .cv2-cfoot > .cv2-team-chip, .cv2-cfoot > .cv2-skills-chip:not([data-active]) { display: none; }
-  .cv2-cfoot > .cv2-skills-chip .v { display: none; }
-  /* Chat's phone rung (lib/model-chip-label.ts, rung 3): the lab mark goes
-     before the name is cut, "Opus 5.5" rather than the mark and "Opu…". */
+  .cv2-cfoot > :is(.cv2-skills-chip, .cv2-ring, .cv2-dictate-trigger) { display: none; }
+  .cv2-cfoot > :is(.cv2-team-chip, .cv2-ctl[data-mode], .cv2-queue-trigger) { flex: 0 0 36px; min-width: 0; padding: 0; justify-content: center; }
+  .cv2-cfoot > :is(.cv2-team-chip, .cv2-ctl[data-mode], .cv2-queue-trigger) :is(.v, .chev, .cv2-queue-label) { display: none; }
+  .cv2-cfoot > .cv2-queue-trigger .cv2-queue-count { display: inline; font-variant-numeric: tabular-nums; }
   .cv2-cfoot > .cv2-model-chip > .mark { display: none; }
+  .cv2-composer.voice-glow-host .cv2-cfoot > :is(.cv2-team-chip, .cv2-model-chip, .cv2-ctl[data-mode], .cv2-queue-trigger) { display: none; }
 }
 @media (max-width: 720px) { .cv2-team-chip .v { max-width: 150px; } }
 .cv2-team-chip[data-team="solo"] .v { color: hsl(var(--muted-foreground)); }
 
 .cv2-team-head { padding: .75rem; display: flex; flex-direction: column; gap: .5rem; }
-.cv2-team-head .cv2-seg { width: 100%; }
-.cv2-team-head .cv2-seg button { flex: 1; }
-.cv2-team-line { margin: 0; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
+.cv2-orchestrator-heading { display: flex; align-items: center; justify-content: space-between; padding-inline: .25rem; }
+.cv2-orchestrator-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.cv2-orchestrator-mode { display: grid; align-content: start; gap: .25rem; padding: .625rem .75rem; min-height: 4.5rem; text-align: start; border: 1px solid hsl(var(--border)); border-radius: theme("borderRadius.control"); transition: background-color var(--dur-fast) var(--cv2-ease), border-color var(--dur-fast) var(--cv2-ease); }
+.cv2-orchestrator-mode > span:first-child { font-weight: 550; }
+.cv2-orchestrator-mode > .cv2-mute { font-size: .75rem; line-height: 1rem; }
+.cv2-orchestrator-mode:hover { background: hsl(var(--accent) / .55); }
+.cv2-orchestrator-mode[aria-pressed="true"] { background: hsl(var(--selected)); border-color: hsl(var(--foreground) / .34); }
 
 .cv2-team-role { display: flex; align-items: center; gap: 6px; margin: 0 6px; padding-right: 6px; border-radius: 8px; transition: background-color var(--dur-press) var(--cv2-ease); }
 .cv2-team-role:hover { background: hsl(var(--accent)); }
@@ -835,6 +852,12 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
    selected node's detail below. Status is always a word as well as a mark;
    the only motion is the meter's fill and the caret, both Tier A/B. */
 .cv2-agents { container: cv2agents / inline-size; }
+.cv2-run-heading { display: flex; justify-content: space-between; align-items: center; gap: .625rem; min-height: 52px; padding-inline: 1rem; border-bottom: 1px solid hsl(var(--border) / .7); }
+.cv2-run-heading h2 { margin: 0; font-size: .875rem; font-weight: 550; white-space: nowrap; }
+.cv2-run-heading .cv2-btn { min-height: 44px; padding-inline: .25rem; }
+.cv2-agents-empty { display: grid; justify-items: center; align-content: center; gap: .75rem; padding: 2rem 1rem; text-align: center; flex: 1; }
+.cv2-agents-empty h2 { font-size: .875rem; font-weight: 550; }
+.cv2-agents-empty-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: theme("borderRadius.control"); color: hsl(var(--muted-foreground)); background: hsl(var(--muted)); }
 .cv2-atree-wrap { flex: 0 1 auto; max-height: 46%; min-height: 3rem; overflow: auto; border-bottom: 1px solid hsl(var(--border)); padding: 4px 0; overscroll-behavior: contain; }
 .cv2-atree, .cv2-agroup { list-style: none; margin: 0; padding: 0; }
 .cv2-aitem { outline: none; }
@@ -864,6 +887,12 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
 .cv2-astats .cv2-ameter { display: inline-block; vertical-align: middle; margin-inline-start: 8px; width: 56px; }
 
 .cv2-adetail-wrap { padding: 0; }
+.cv2-agents [hidden] { display: none; }
+@media (max-width: 639px) {
+  .cv2-atree-wrap { flex: 1; max-height: none; border-bottom: 0; }
+  .cv2-anode { min-height: 52px; }
+  .cv2-acontrols .cv2-btn, .cv2-agents-empty .cv2-btn { min-height: 44px; }
+}
 .cv2-adetail { display: flex; flex-direction: column; gap: .75rem; padding: 1rem 1rem 0; min-height: 100%; }
 .cv2-adetail-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .cv2-adetail-head h3 { margin: 0; font-size: 14px; line-height: 20px; flex: 1; min-width: 0; }

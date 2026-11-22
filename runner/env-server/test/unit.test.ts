@@ -274,7 +274,10 @@ test("team brief: only a vendor agent leading a Plan → Build → Verify team g
   const brief = teamBrief(routing, "claude-agent") ?? "";
   assert.match(brief, /role "architect"[\s\S]*3 builders[\s\S]*gpt-6.1-sol \(codex:default\)[\s\S]*\$2\.00/);
   assert.equal(teamBrief(routing, "alevr"), undefined, "Alevr's engine runs the team itself");
-  assert.equal(teamBrief({ ...routing, preset: "lead-workers" }, "codex"), undefined);
+  const delegated = teamBrief({ ...routing, preset: "lead-workers" }, "codex");
+  assert.match(delegated ?? "", /independent tasks.*spawn_subagent/);
+  assert.match(delegated ?? "", /wait_subagent.*before summarizing/);
+  assert.doesNotMatch(delegated ?? "", /three phases/);
   assert.equal(teamBrief(undefined, "codex"), undefined);
   const input = { text: "do it" };
   assert.equal(withTeamBrief(input, routing, "codex", "plan"), input);

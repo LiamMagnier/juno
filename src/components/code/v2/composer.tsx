@@ -764,8 +764,7 @@ export const Composer = React.forwardRef<
       : []),
     ...(tier ? [{ id: "context", label: "Context window", icon: <Glyph name="layers" size={16} />, trail: formatTokens(tier.tokens), onSelect: () => setTimeout(() => setPopover("context"), 0) }] : []),
     ...(team || skills ? ([{ kind: "sep", id: "s1" }] satisfies MenuEntry[]) : []),
-    ...(team ? ([{ id: "team", label: "Team…", icon: <Glyph name="agents" size={16} />, trail: orchestrateLabel(routing), onSelect: () => setTimeout(() => setPopover("team"), 0) }] satisfies MenuEntry[]) : []),
-    // A narrow row folds the Team and Skills chips into this menu (code-v2.css, cv2foot), so both live here too.
+    ...(team ? ([{ id: "team", label: "Orchestrator…", icon: <Glyph name="agents" size={16} />, trail: orchestrateLabel(routing), onSelect: () => setTimeout(() => setPopover("team"), 0) }] satisfies MenuEntry[]) : []),
     ...(skills
       ? ([
           {
@@ -777,6 +776,7 @@ export const Composer = React.forwardRef<
           },
         ] satisfies MenuEntry[])
       : []),
+    ...(speechSupported && !call ? [{ id: "dictation", label: "Dictate", icon: <Glyph name="mic" size={16} />, onSelect: () => setDictating(true) }] : []),
   ];
   const composerMode = composerModeOf(model.runtimeMode, model.interactionMode);
   const modeInfo = composerModeInfo(composerMode);
@@ -1005,8 +1005,9 @@ export const Composer = React.forwardRef<
             )}
             <span className="cv2-grow" />
             {model.queue.length > 0 && (
-              <button type="button" className="cv2-ctl" aria-haspopup="menu" aria-expanded={popover === "queue"} onClick={() => toggle("queue")}>
-                Queued ({model.queue.length})
+              <button type="button" className="cv2-ctl cv2-queue-trigger" aria-label={`Queued (${model.queue.length})`} aria-haspopup="menu" aria-expanded={popover === "queue"} onClick={() => toggle("queue")}>
+                <span className="cv2-queue-label">Queued ({model.queue.length})</span>
+                <span className="cv2-queue-count" aria-hidden="true">{model.queue.length}</span>
                 <Glyph name="chevron-down" size={12} className="chev" />
               </button>
             )}
@@ -1028,7 +1029,7 @@ export const Composer = React.forwardRef<
             ) : (
               <>
                 {connected && speechSupported && (
-                  <button type="button" className="cv2-ctl icon" aria-label="Dictate" title="Dictate" aria-pressed={dictating} onClick={() => setDictating(true)}>
+                  <button type="button" className="cv2-ctl icon cv2-dictate-trigger" aria-label="Dictate" title="Dictate" aria-pressed={dictating} onClick={() => setDictating(true)}>
                     <Glyph name="mic" size={16} />
                   </button>
                 )}
