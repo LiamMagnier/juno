@@ -907,6 +907,19 @@
   }
 }
 
+@media (max-width: 639px) {
+  /* A sheet's rows stay under the same tap target while it opens. */
+  .cmenu.cmenu.cmenu[data-composer-add][data-state="open"],
+  .cmenu.cmenu.cmenu[data-composer-add] .animate-stage-in {
+    animation: composer-add-fade-in var(--dur-fast) var(--ease-out-soft) both;
+  }
+  .cmenu.cmenu.cmenu[data-composer-add][data-state="closed"] {
+    animation: composer-add-fade-out var(--dur-fast) var(--ease-out-soft) both;
+  }
+}
+@keyframes composer-add-fade-in { from { opacity: 0; } }
+@keyframes composer-add-fade-out { to { opacity: 0; } }
+
 /* Rows: concentric with the shell (12 − 6 = 6), 32px, the `ui` rung (13.5 on
    a 20px line). The fill is the glide's, so a row's own highlight is cleared. */
 .cmenu.cmenu [role^="menuitem"] {

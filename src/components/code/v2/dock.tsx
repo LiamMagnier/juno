@@ -670,7 +670,7 @@ function AgentsPane({ model, selectedId, onSelect, historical, onConfigure }: { 
   const selected = agents.find((a) => a.agentId === selectedId);
   const [pick, setPick] = React.useState<string | null>(null);
   const best = agents.some(isCandidate);
-  if (!agents.length) return (
+  if (!agents.length && model.routing.preset !== "lead-workers") return (
     <div className="cv2-agents-empty">
       <span className="cv2-agents-empty-icon"><Glyph name="agents" size={20} /></span>
       <h2>No subagents in this run</h2>

@@ -10,6 +10,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -288,6 +289,7 @@ export function PlusMenu({
   label,
   tooltip,
   sections,
+  sectionLabels,
   className,
 }: {
   open: boolean;
@@ -297,6 +299,7 @@ export function PlusMenu({
   label: string;
   tooltip: string;
   sections: PlusMenuSection[];
+  sectionLabels?: readonly (string | undefined)[];
   className?: string;
 }) {
   /** A menu opened from the keyboard appears in the same frame (F0); by pointer it pops from the trigger (F2). */
@@ -431,11 +434,13 @@ export function PlusMenu({
             style={compact ? ({ "--stage-dx": "-4px" } as React.CSSProperties) : undefined}
           >
             {sections
-              .filter((section) => section.length > 0)
-              .map((section, i) => (
-                <React.Fragment key={i}>
+              .map((items, i) => ({ items, label: sectionLabels?.[i], key: i }))
+              .filter(({ items }) => items.length > 0)
+              .map(({ items, label: heading, key }, i) => (
+                <React.Fragment key={key}>
                   {i > 0 && <PlusMenuSeparator />}
-                  {section.map((item) =>
+                  {heading && <DropdownMenuLabel className="px-2 pb-0.5 pt-1 text-label font-normal text-muted-foreground">{heading}</DropdownMenuLabel>}
+                  {items.map((item) =>
                     item.kind === "action" ? (
                       <PlusMenuRow
                         key={item.id}

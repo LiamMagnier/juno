@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  * mass inside the 18-unit live area (the brim spans 3 to 21, the crown's
  * shoulders top out near 4.8 and the lenses end at 19, so the figure's optical
  * centre lands on y = 12). At interface sizes the line is the family's one
- * 1.5px non-scaling stroke (`icon ag` + `width`, signature.css §12); larger
+ * 1.5px non-scaling stroke (`data-interface-icon` in signature.css); larger
  * marks take a line that grows with them, as the set's empty-state glyphs do.
  *
  * WHY SHADES, NOT SPECTACLES. The lenses are flat across the top and joined by
@@ -94,6 +94,7 @@ export function IncognitoGlyph({
       data-gesture={gesture ?? undefined}
       // `overflow-visible`: the hat travels up to 3 units above its rest
       // while it settles, past the viewBox's top edge.
+      data-interface-icon={size <= 24 ? "" : undefined}
       className={cn("icon ag incognito-mark shrink-0 overflow-visible", className)}
     >
       {/* The fills' opacity is a presentation attribute, so the cut is right

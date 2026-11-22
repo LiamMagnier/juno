@@ -5,7 +5,7 @@ import { Loader2, Send } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
-import { RealtimeVoice, voiceCallParts, type VoiceCallParts } from "@/components/voice/realtime-voice";
+import { RealtimeVoice, VoiceCallNotices, voiceCallParts, type VoiceCallParts } from "@/components/voice/realtime-voice";
 import { useOptionalApp } from "@/components/app/app-provider";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { ActionIcons } from "@/lib/app-icons";
@@ -50,20 +50,8 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  * Open / closed for the voice call, in the shape a composer's primary action
  * wants.
  *
- * `onOpenVoiceMode` is deliberately `undefined` — never a no-op — whenever
- * voice is unavailable or already live. Every composer in the product decides
- * whether its primary button is a voice launcher by testing the mere existence
- * of this prop (`showVoiceButton` in chat/composer.tsx:589 and
- * work-thread-composer.tsx:273), so a defined-but-inert handler leaves wave
- * bars on a build with no relay and a second launcher pointing at a call that
- * is already on screen.
- *
- * The plan check is here and not optional. `useWorkVoice` gates only on the
- * relay URL, so on a free plan its launcher draws, the panel mounts, and
- * /api/voice/relay-token answers 403 "Voice mode requires a paid plan." — a
- * sentence that lands inside an opened voice panel instead of a button that
- * never appeared. Chat gets this right (`PLANS[quota.plan].voice` in
- * chat-view.tsx:1198) and Code copies chat, not Work.
+ * The same token endpoint as Chat discovers the relay when the call starts.
+ * Entitlement is checked here and again by the token endpoint.
  */
 export function useCodeVoice({ disabled = false }: { disabled?: boolean } = {}): {
   /** True when the panel should be mounted. */
@@ -77,11 +65,7 @@ export function useCodeVoice({ disabled = false }: { disabled?: boolean } = {}):
   // app provider, where there is no plan to ask and so no voice.
   const plan = useOptionalApp()?.quota.plan;
   const [open, setOpen] = React.useState(false);
-  // Read as a whole member expression: Next inlines NEXT_PUBLIC_* at build
-  // time by textual substitution, so destructuring `process.env` first would
-  // leave nothing to substitute and voice would be off in every build.
-  const configured = Boolean(process.env.NEXT_PUBLIC_VOICE_RELAY_URL);
-  const available = configured && !!plan && PLANS[plan].voice;
+  const available = !!plan && PLANS[plan].voice;
 
   const openVoice = React.useCallback(() => setOpen(true), []);
   const close = React.useCallback(() => setOpen(false), []);
@@ -504,7 +488,7 @@ export function useCodeVoiceCall({
   briefing: CodeVoiceBriefingInput;
   send: CodeVoiceSend;
   reply?: CodeVoiceReply;
-}): VoiceCallParts | undefined {
+}): (VoiceCallParts & { notices: React.ReactNode }) | undefined {
   const voice = useRealtimeVoice();
   const voiceRef = React.useRef(voice);
   voiceRef.current = voice;
@@ -567,5 +551,5 @@ export function useCodeVoiceCall({
     if (voiceRef.current.sendText(text)) pushes.current.add(text.trim());
   }, [open, reply?.running, reply?.latest, reply]);
 
-  return open ? voiceCallParts({ voice, onClose: close }) : undefined;
+  return open ? { ...voiceCallParts({ voice, onClose: close }), notices: <VoiceCallNotices voice={voice} /> } : undefined;
 }

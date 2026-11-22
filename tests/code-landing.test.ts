@@ -147,13 +147,17 @@ test("/code/new is a redirect rather than a second composer", () => {
 
 /* ─────────────────────── The composer's row, as specified ───────────────── */
 
-test("Code landing and sessions use Chat’s composer shell and put workspace setup below it", () => {
+test("Code landing and sessions render Chat’s composer and put workspace setup below it", () => {
   const composer = read(COMPOSER);
   assert.match(composer, /workspaceControls=\{[\s\S]*?<CodeEnvironmentChip[\s\S]*?<CodeTargetPicker/);
   assert.match(composer, /variant="landing"/);
   assert.doesNotMatch(composer, /ModelSelector|ModeChip/);
   const v2 = read("src/components/code/v2/composer.tsx");
-  assert.match(v2, /<ComposerShell[\s\S]*?composer-tray--dock[\s\S]*?\{workspaceControls\}/);
+  assert.match(v2, /<ChatComposerSurface[\s\S]*?composer-tray--dock[\s\S]*?\{workspaceControls\}/);
+  const chat = read("src/components/chat/composer.tsx");
+  assert.match(chat, /<ChatComposerSurface\b/);
+  assert.match(chat, /<ChatComposerField\b/);
+  assert.match(v2, /<ChatComposerField\b/);
   assert.match(v2, /<ModelPicker\b/);
 });
 
@@ -161,7 +165,7 @@ test("thinking effort stays inside the model popover", () => {
   // FLAT_UI.md §4: effort is chosen inside the model picker (its effort stage),
   // never as a chip of its own on the row.
   const v2 = read("src/components/code/v2/composer.tsx");
-  assert.match(v2, /initialView=\{popover === "context" \? "context" : popover === "catalog" \? "models" : "effort"\}/, "the model chip opens on effort");
+  assert.match(v2, /initialView=\{popover === "context" \? "context" : popover === "catalog" \? "models" : "effort"\}/, "the search and effort stages stay in the model popover");
   assert.ok(!/<ReasoningSlider/.test(read(COMPOSER)), "effort must not be mounted on the landing's row");
 });
 

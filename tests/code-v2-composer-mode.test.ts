@@ -79,10 +79,12 @@ test("Code keeps permissions in the tray and uses Chat's dictation and Code's ca
   assert.match(src, /<DictationSwap active=\{dictating\}/);
   // The call is the composer, as in Chat: voiceCallParts through useCodeVoiceCall, the glow around the shell.
   assert.match(src, /useCodeVoiceCall\(\{ open: voice\.open, onClose: voice\.close, briefing: voiceBriefing, send: voiceSend/);
-  assert.match(src, /<VoiceComposerFrame call=\{call\}>/);
-  assert.match(src, /call\?\.end/);
+  assert.match(src, /<ChatComposerSurface[\s\S]*?voice=\{call\}/);
+  const shared = readFileSync("src/components/chat/composer-surface.tsx", "utf8");
+  assert.match(shared, /<VoiceComposerFrame call=\{voice \?\? undefined\}>/);
+  assert.match(shared, /voice\?\.end/);
   assert.doesNotMatch(src, /<CodeVoicePanel/);
-  assert.match(src, /<ComposerPrimaryAction face="voice"[^>]*aria-label="Start voice conversation"/);
+  assert.match(src, /face: "voice",\s*"aria-label": "Start voice conversation"/);
   assert.doesNotMatch(src, /useSpeechRecognition/);
   // A spoken line takes the same road as a typed one while a turn runs.
   assert.match(src, /if \(canSteer\) void actions\.steer\(text\);\s*else actions\.queue\(text\);/);

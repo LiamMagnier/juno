@@ -266,6 +266,7 @@ export function ModelPicker({
   title = "Choose model",
   align = "left",
   offset = 0,
+  inline = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -287,6 +288,8 @@ export function ModelPicker({
   title?: string;
   align?: "left" | "right";
   offset?: number;
+  /** Reuse the catalogue inside the team dialog without a second overlay. */
+  inline?: boolean;
 }) {
   const mac = useIsMac();
   const labs = React.useMemo(() => labTiles(instances), [instances]);
@@ -331,7 +334,7 @@ export function ModelPicker({
     const m = inst.models?.find((x) => x.id === modelId);
     const keepEffort = editing.effort && m?.effortLevels?.includes(editing.effort) ? editing.effort : m?.defaultEffort;
     commit({ instanceId: inst.id, model: modelId, ...(keepEffort ? { effort: keepEffort } : {}) });
-    if (!tabs.length) onClose();
+    if (!tabs.length && !inline) onClose();
   };
   const onKey = (e: React.KeyboardEvent) => {
     const modKey = mac ? e.metaKey : e.ctrlKey;
@@ -360,9 +363,7 @@ export function ModelPicker({
   const selInstance = findInstance(instances, editing.instanceId);
   const usage = usageLine(selInstance);
 
-  return (
-    <ComposerPopover open={open} onClose={onClose} width={380} align={align} offset={offset} label={title} anchorRef={anchorRef}>
-      <div className="cv2-pop-grab" aria-hidden />
+  const content = (
       <div onKeyDown={onKey} style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
         {tabs.length > 0 && view === "models" && (
           <div className="cv2-roles" role="tablist" aria-label="Role">
@@ -434,7 +435,7 @@ export function ModelPicker({
               <div className="cv2-picker-main">
                 <label className="cv2-pop-search">
                   <Glyph name="search" size={16} />
-                  <input autoFocus placeholder="Search models" value={query} onChange={(e) => (setQuery(e.target.value), setHi(0))} aria-label="Search models" />
+                  <input autoFocus={!inline} placeholder="Search models" value={query} onChange={(e) => (setQuery(e.target.value), setHi(0))} aria-label="Search models" />
                 </label>
                 <div className="cv2-pop-body">
                   <div key={searching ? "q" : tabKey(rail)} className="cv2-picker-list" role="listbox" aria-label={searching ? "Models" : rail.type === "subscriptions" ? SUBSCRIPTIONS_TITLE : labs.find((l) => rail.type === "lab" && l.lab === rail.lab)?.name ?? "Models"}>
@@ -484,7 +485,7 @@ export function ModelPicker({
             </div>
             {findModel(instances, editing) && (
               <>
-                {tabs.length > 0 && (
+                {(tabs.length > 0 || levels.length > 0) && (
                 <div className="cv2-pop-foot">
                   <span>Effort</span>
                   <span className="cv2-grow" />
@@ -519,6 +520,11 @@ export function ModelPicker({
           </>
         )}
       </div>
+  );
+  return inline ? content : (
+    <ComposerPopover open={open} onClose={onClose} width={380} align={align} offset={offset} label={title} anchorRef={anchorRef}>
+      <div className="cv2-pop-grab" aria-hidden />
+      {content}
     </ComposerPopover>
   );
 }

@@ -228,7 +228,7 @@ export function ComposerPopover({
       setPlace({ down: !!down, style: {} });
       return;
     }
-    const box = marker.getBoundingClientRect();
+    const box = (anchorRef?.current ?? marker).getBoundingClientRect();
     setPlace(
       placeComposerPopover({
         anchor: box,
@@ -240,7 +240,7 @@ export function ComposerPopover({
         down: !!down,
       }),
     );
-  }, [align, down, offset, width]);
+  }, [align, anchorRef, down, offset, width]);
 
   React.useLayoutEffect(() => {
     if (!mounted) {

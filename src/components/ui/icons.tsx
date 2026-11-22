@@ -86,11 +86,10 @@ function numeric(value: number | string | undefined): number | undefined {
 
 /**
  * The line a glyph paints, in device-independent pixels, per rendered size:
- * crisp at 14 (1.25), the house 1.5 for controls, then growing with the
- * box so a 32 px empty-state glyph is not a hairline.
+ * 1.5 for interface controls, then growing with an illustration’s box.
  */
 function lineFor(px: number): number {
-  const target = px <= 14 ? 1.25 : px <= 24 ? 1.5 : px * 0.068;
+  const target = px <= 24 ? 1.5 : px * 0.068;
   return Math.round(((target * 24) / px) * 1000) / 1000;
 }
 
@@ -130,6 +129,7 @@ function glyph(concept: string, displayName: string): IconComponent {
         strokeLinejoin="round"
         className={cn("icon ag", className)}
         style={mirrored ? { transform: "scaleX(-1)", ...style } : style}
+        data-interface-icon={px <= 24 ? "" : undefined}
         data-glyph={displayName}
         data-m={g.m}
         data-on={on && g.on ? "" : undefined}

@@ -124,7 +124,8 @@ const fixture = (id: string) => {
 
 test("pane: an ARIA tree with levels, states in words, and the selected agent's controls", () => {
   const f = fixture("subagents");
-  const html = renderToStaticMarkup(React.createElement(AgentsTreePane, { model: f.model, selectedId: "w2", onSelect: () => undefined, modelLabel: (s) => s.model }));
+  const model = { ...f.model, routing: { ...f.model.routing, preset: "plan-build-verify" as const } };
+  const html = renderToStaticMarkup(React.createElement(AgentsTreePane, { model, selectedId: "w2", onSelect: () => undefined, modelLabel: (s) => s.model }));
   assert.match(html, /role="tree"[^>]*aria-label="Agents in this run"/);
   assert.match(html, /role="treeitem"[^>]*aria-level="1"/);
   assert.match(html, /role="group"/);
@@ -159,9 +160,11 @@ test("pane: the lead offers run controls, and a reader without controls sees no 
   assert.doesNotMatch(html, /Steer Worker 2/);
 });
 
-test("workspace: the Agents dock shows the tree for a delegated run and keeps Best of N's compare", () => {
+test("workspace: the Agents dock shows the grid for a Swarm, a tree for phased runs, and keeps Best of N's compare", () => {
   const sub = fixture("subagents");
-  assert.match(renderToStaticMarkup(React.createElement(CodeWorkspace, { model: sub.model, ui: sub.ui })), /role="tree"/);
+  assert.match(renderToStaticMarkup(React.createElement(CodeWorkspace, { model: sub.model, ui: sub.ui })), /aria-label="Swarm agents"/);
+  const phased = { ...sub.model, routing: { ...sub.model.routing, preset: "plan-build-verify" as const } };
+  assert.match(renderToStaticMarkup(React.createElement(CodeWorkspace, { model: phased, ui: sub.ui })), /role="tree"/);
   const best = fixture("best-of-n");
   const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: best.model, ui: best.ui }));
   assert.doesNotMatch(html, /role="tree"/);

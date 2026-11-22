@@ -747,8 +747,7 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
             ) : (
               <motion.span key="send" className={FACE_LAYER} {...FACE_MOTION} aria-hidden="true">
                 {/* An up arrow, the send mark people already read in every
-                    assistant; the paper plane read as e-mail. Heavier line on
-                    the disc (signature.css) so it holds against the fill. */}
+                    assistant. */}
                 <ArrowUp className="size-[18px]" />
               </motion.span>
             )}

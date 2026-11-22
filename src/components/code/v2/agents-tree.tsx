@@ -34,7 +34,7 @@ import {
   type AgentNodeState,
   type AgentTreeNode,
 } from "@/lib/code-v2/agent-tree";
-import { formatDuration } from "@/lib/code-v2/turns";
+import { describeItem, formatDuration } from "@/lib/code-v2/turns";
 import { Glyph, LiveMark } from "./primitives";
 import { LogRow, lineFor } from "./thread";
 import type { AgentControlRequestInput, WorkspaceModel } from "./types";
@@ -166,9 +166,9 @@ function TreeRow({ node, now, expanded, focusedId, selectedId, onSelect, onToggl
   );
 }
 
-function allIds(node: AgentTreeNode, out: string[] = []): string[] {
-  if (node.children.length) out.push(node.id);
-  for (const c of node.children) allIds(c, out);
+function allNodes(node: AgentTreeNode, out: AgentTreeNode[] = []): AgentTreeNode[] {
+  out.push(node);
+  for (const c of node.children) allNodes(c, out);
   return out;
 }
 
@@ -455,6 +455,71 @@ function AgentDetailPanel({ node, model, now, runBudgetUsd, onRunBudget, modelLa
   );
 }
 
+function SwarmGrid({ agents, selected, selection, modelLabel, onSelect }: {
+  agents: readonly AgentTreeNode[];
+  selected: string;
+  selection: ModelSelection;
+  modelLabel: ModelLabeler;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <ul className="cv2-swarm-grid" aria-label="Swarm agents">
+      {agents.map((node) => (
+        <li key={node.id}>
+          <button type="button" className="cv2-swarm-card" data-agent-id={node.id} aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
+            <span className="flex w-full items-center justify-between gap-1.5">
+              <span className="cv2-m cv2-trunc">{node.label}</span>
+              <StateMark state={node.state} />
+            </span>
+            <span className="cv2-small cv2-trunc">{modelLabel(node.agent?.model ?? selection)}</span>
+            <span className={cn("cv2-small", node.state === "waiting" ? "cv2-sig" : "cv2-mute")}>{AGENT_NODE_STATE_LABEL[node.state]}</span>
+            {node.agent && <span className="cv2-swarm-task cv2-small cv2-mute">{node.agent.task || node.agent.title || node.step}</span>}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SwarmActivity({ items, agents, now, onSelect }: {
+  items: readonly TurnItem[];
+  agents: readonly AgentTreeNode[];
+  now: number;
+  onSelect: (id: string) => void;
+}) {
+  const recent = [];
+  const seen = new Set<string>();
+  const byId = new Map(agents.map((node) => [node.id, node]));
+  for (let i = items.length - 1; i >= 0 && recent.length < 30; i--) {
+    const item = items[i];
+    if (item.kind === "reasoning" || item.kind === "user_message" || seen.has(item.id)) continue;
+    const agent = byId.get(item.agentId ?? LEAD_NODE_ID);
+    if (!agent) continue;
+    const step = describeItem(item, now);
+    const label = item.kind === "subagent"
+      ? [AGENT_NODE_STATE_LABEL[agent.state], item.title || item.task].filter(Boolean).join(" · ")
+      : item.kind === "assistant_message" && item.agentId && !item.streaming
+        ? item.text
+        : step && [step.verb, step.object].filter(Boolean).join(" ");
+    if (!label) continue;
+    seen.add(item.id);
+    recent.push({ id: item.id, agent, text: label.length > 180 ? `${label.slice(0, 179)}…` : label });
+  }
+  if (!recent.length) return <p className="px-4 py-3 cv2-small cv2-mute">Agent activity will appear here as the run progresses.</p>;
+  return (
+    <ol className="cv2-swarm-activity" aria-label="Swarm activity">
+      {recent.map(({ id, agent, text }) => (
+        <li key={id}>
+          <button type="button" className="flex flex-col gap-1" data-agent-id={agent.id} onClick={() => onSelect(agent.id)}>
+            <span className="cv2-m">{agent.label}</span>
+            <span className="w-full break-words cv2-small cv2-mute">{text}</span>
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export function AgentsTreePane({
   model,
   selectedId,
@@ -472,8 +537,12 @@ export function AgentsTreePane({
   React.useEffect(() => setRunBudgetUsd((prev) => (prev === undefined || (model.routing.budget?.maxUsd ?? 0) > prev ? model.routing.budget?.maxUsd : prev)), [model.routing.budget?.maxUsd]);
   const runLive = model.state === "running" || model.state === "waiting";
   const root = React.useMemo(() => buildAgentTree(model.items, { running: runLive, budgetUsd: historical ? undefined : runBudgetUsd }), [model.items, runLive, runBudgetUsd, historical]);
+  const swarm = model.routing.preset === "lead-workers";
+  const [view, setView] = React.useState<"grid" | "tree" | "activity">(swarm ? "grid" : "tree");
+  const allAgents = React.useMemo(() => allNodes(root), [root]);
+  const viewRoot = React.useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set());
-  const expanded = React.useMemo(() => new Set(allIds(root).filter((id) => !collapsed.has(id))), [root, collapsed]);
+  const expanded = React.useMemo(() => new Set(allAgents.filter((node) => node.children.length && !collapsed.has(node.id)).map((node) => node.id)), [allAgents, collapsed]);
   const selected = (selectedId && findNode(root, selectedId)) || root;
   const [focusedId, setFocusedId] = React.useState<string>(selected.id);
   const rowRefs = React.useRef(new Map<string, HTMLLIElement>());
@@ -490,9 +559,13 @@ export function AgentsTreePane({
     if (detailVisible) backRef.current?.focus({ preventScroll: true });
     else if (restoreRow.current) {
       restoreRow.current = false;
-      rowRefs.current.get(focus)?.focus({ preventScroll: true });
+      if (view === "tree") rowRefs.current.get(focus)?.focus({ preventScroll: true });
+      else {
+        const buttons = Array.from(viewRoot.current?.querySelectorAll<HTMLButtonElement>("[data-agent-id]") ?? []);
+        (buttons.find((button) => button.dataset.agentId === focus) ?? buttons[0])?.focus({ preventScroll: true });
+      }
     }
-  }, [phone, detailVisible, focus]);
+  }, [phone, detailVisible, focus, view]);
 
   // One clock for every live row; nothing ticks once the run has settled.
   const counts = countLive(root);
@@ -519,7 +592,10 @@ export function AgentsTreePane({
   };
   const select = (id: string) => {
     onSelect(id === LEAD_NODE_ID ? null : id);
-    if (phone) setMobileDetail(true);
+    if (phone) {
+      setFocusedId(id);
+      setMobileDetail(true);
+    }
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLUListElement>) => {
@@ -551,13 +627,25 @@ export function AgentsTreePane({
             onSelect(null);
             setMobileDetail(false);
           }}><Glyph name="arrow-left" size={16} /> All agents</button>
-        ) : <h2>{historical ? "Previous run" : "Current run"}</h2>}
+        ) : <h2>{historical ? "Previous run" : swarm ? "Swarm" : "Current run"}</h2>}
         <span className="cv2-mute cv2-small cv2-trunc">{historical && detailVisible ? "Previous run" : summary}</span>
       </div>
-      <div className="cv2-atree-wrap" hidden={detailVisible}>
-        <ul role="tree" aria-label="Agents in this run" className="cv2-atree" onKeyDown={onKeyDown}>
-          <TreeRow node={root} now={now} expanded={expanded} focusedId={focus} selectedId={selected.id} onSelect={select} onToggle={toggle} onFocusRow={moveFocus} rowRefs={rowRefs} />
-        </ul>
+      <div hidden={detailVisible} className="cv2-roles cv2-swarm-view" role="group" aria-label="Agent view">
+        {(["grid", "tree", "activity"] as const).map((mode) => (
+          <button key={mode} type="button" aria-pressed={view === mode} className="capitalize" onClick={() => setView(mode)}>{mode}</button>
+        ))}
+      </div>
+      <div ref={viewRoot} className="cv2-atree-wrap" hidden={detailVisible}>
+        {view === "tree" ? (
+          <ul role="tree" aria-label="Agents in this run" className="cv2-atree" onKeyDown={onKeyDown}>
+            <TreeRow node={root} now={now} expanded={expanded} focusedId={focus} selectedId={selected.id} onSelect={select} onToggle={toggle} onFocusRow={moveFocus} rowRefs={rowRefs} />
+          </ul>
+        ) : view === "grid" ? (
+          <>
+            <SwarmGrid agents={allAgents} selected={selected.id} selection={model.selection} modelLabel={modelLabel} onSelect={select} />
+            {counts.total === 0 && <p className="px-4 pb-3 cv2-small cv2-mute">{runLive ? "Workers appear here as the lead assigns tasks." : "Send a task to start a Swarm."}</p>}
+          </>
+        ) : <SwarmActivity items={model.items} agents={allAgents} now={now} onSelect={select} />}
       </div>
       <div className="cv2-dockscroll cv2-adetail-wrap" hidden={phone && !detailVisible}>
         <AgentDetailPanel key={selected.id} node={selected} model={model} now={now} runBudgetUsd={historical ? undefined : runBudgetUsd} onRunBudget={setRunBudgetUsd} modelLabel={modelLabel} />

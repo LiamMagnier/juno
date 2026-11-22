@@ -24,7 +24,7 @@ export type TeamPreset = (typeof TEAM_PRESETS)[number];
 
 export const TEAM_PRESET_COPY: Record<TeamPreset, { label: string; line: string }> = {
   solo: { label: "Solo", line: "One model does everything." },
-  "lead-workers": { label: "Lead + workers", line: "The lead delegates independent tasks as needed and combines the results." },
+  "lead-workers": { label: "Swarm", line: "The lead delegates independent work in parallel and brings the results together." },
   "plan-build-verify": { label: "Plan → Build → Verify", line: "An architect plans, builders work in parallel, and a verifier checks the result." },
   "best-of-n": { label: "Best of N", line: "Compare different attempts at the same task in separate worktrees." },
 };

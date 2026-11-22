@@ -167,6 +167,17 @@ for (const s of STATES) {
   });
 }
 
+test("Swarm shows the real run roster with model names and agent states", () => {
+  const f = fixture("subagents");
+  const html = renderWorkspace({ model: f.model, ui: f.ui });
+  assert.match(html, /aria-label="Swarm agents"/);
+  assert.match(html, /data-agent-id="w2a"/);
+  assert.match(html, /Hook audit/);
+  assert.match(html, /DeepSeek/i);
+  assert.match(html, /Paused/);
+  assert.match(html, /aria-label="Agent view"/);
+});
+
 test("the needs-you state takes the composer over with the asker and the three decisions", () => {
   const f = fixture("needs-you");
   const html = renderWorkspace({ model: f.model, ui: f.ui });
@@ -197,7 +208,7 @@ test("the streaming state is calm: no glow, a stop button, the queue as one cont
   const html = renderWorkspace({ model: f.model, ui: f.ui });
   assert.match(html, /class="[^"]*\bcv2-composer\b[^"]*"[^>]*data-state="running"/);
   assert.doesNotMatch(html, /cv2-glow|cv2-composer working|cv2-composer needs/);
-  assert.match(html, /data-mode="stop"/);
+  assert.match(html, /data-face="stop"/);
   assert.match(html, /Queued \(1\)/);
   assert.match(html, /Running<\/span>/);
   assert.match(html, /Changed 3 files/);
@@ -221,7 +232,7 @@ test("Code uses the shared entry row and keeps agent setup underneath the compos
   assert.doesNotMatch(foot, /Lead \+|Best of|Auto-edit|>Plan</);
   const team = renderWorkspace({ model: { ...f.model, interactionMode: "plan", routing: fixture("needs-you").model.routing }, ui: {} });
   assert.ok(team.includes(`${teamSummary(fixture("needs-you").model.routing)}"`), "the chip names the configured roles");
-  assert.match(team, /aria-label="Orchestrator: Lead \+ workers\./);
+  assert.match(team, /aria-label="Orchestrator: Swarm\./);
   assert.match(team, /aria-label="Mode: Plan"/);
   const full = renderWorkspace({ model: { ...f.model, runtimeMode: "full" }, ui: {} });
   assert.match(full, /aria-label="Mode: Full access"/);
@@ -273,7 +284,7 @@ test("Connections names subscriptions by the owner's rules and lists Antigravity
   assert.match(offline, /aria-disabled="true"/);
 });
 
-test("the model chip opens slider-first: the chat's effort panel, the model's name leading to the catalogue; the catalogue on its own keeps context and usage", () => {
+test("the Code model catalogue keeps model search, effort and context beside the separate effort panel", () => {
   const f = fixture("model-picker");
   const effort = renderWorkspace({ model: f.model, ui: { popover: "model" } });
   assert.match(effort, /aria-label="Thinking effort"/);
@@ -284,5 +295,5 @@ test("the model chip opens slider-first: the chat's effort panel, the model's na
   assert.match(catalog, /aria-label="Search models"/);
   assert.match(catalog, />Context</);
   assert.doesNotMatch(catalog, /aria-label="Thinking effort"/);
-  assert.doesNotMatch(catalog, /id="picker-effort-lead"/, "effort lives on the panel, not the catalogue footer");
+  assert.match(catalog, /aria-label="Effort"/, "the catalogue exposes effort without closing model search");
 });
