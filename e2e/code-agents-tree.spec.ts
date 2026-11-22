@@ -89,7 +89,7 @@ test("the lead's Stop run asks once more before it stops", async ({ page }) => {
   await expect(page.getByText("Every agent stops and keeps its work so far.")).toBeVisible();
 });
 
-test("at phone width the pane fits without a sideways scroll", async ({ page }) => {
+test("at phone width the pane fits and an agent opens in its own view", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openGallery(page, "state=subagents&bare=1", { phone: true });
   const overflow = await page.evaluate(() => {
@@ -97,5 +97,15 @@ test("at phone width the pane fits without a sideways scroll", async ({ page }) 
     return pane ? pane.scrollWidth - pane.clientWidth : -1;
   });
   expect(overflow).toBeLessThanOrEqual(1);
-  await expect(page.getByRole("tree", { name: "Agents in this run" })).toBeVisible();
+  const tree = page.getByRole("tree", { name: "Agents in this run" });
+  await expect(tree).toBeVisible();
+  await rowLine(page, "Worker 2").click();
+  await expect(page.getByRole("heading", { name: "Worker 2" })).toBeVisible();
+  await expect(tree).toBeHidden();
+  const back = page.getByRole("button", { name: "All agents" });
+  await expect(back).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath("agent-detail-phone.png"), animations: "disabled" });
+  await back.click();
+  await expect(tree).toBeVisible();
+  await expect(tree.getByRole("treeitem", { name: /^Worker 2,/ })).toBeFocused();
 });
