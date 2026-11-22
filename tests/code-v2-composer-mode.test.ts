@@ -73,16 +73,16 @@ test("setting a mode is one write when the thread offers it", () => {
   assert.deepEqual(split, ["auto", "plan"]);
 });
 
-test("the v2 composer keeps the mode on the row and uses Chat's dictation and Code's call", () => {
+test("Code keeps permissions in the tray and uses Chat's dictation and Code's call", () => {
   const src = readFileSync("src/components/code/v2/composer.tsx", "utf8");
-  assert.match(src, /aria-label=\{`Mode: \$\{modeInfo\.label\}`\}/);
+  assert.match(src, /role="group" aria-label="Code tools"[\s\S]*?aria-label=\{`Mode: \$\{modeInfo\.label\}`\}/);
   assert.match(src, /<DictationSwap active=\{dictating\}/);
   // The call is the composer, as in Chat: voiceCallParts through useCodeVoiceCall, the glow around the shell.
   assert.match(src, /useCodeVoiceCall\(\{ open: voice\.open, onClose: voice\.close, briefing: voiceBriefing, send: voiceSend/);
   assert.match(src, /<VoiceComposerFrame call=\{call\}>/);
-  assert.match(src, /call\.end/);
+  assert.match(src, /call\?\.end/);
   assert.doesNotMatch(src, /<CodeVoicePanel/);
-  assert.match(src, /aria-label="Voice conversation"/);
+  assert.match(src, /<ComposerPrimaryAction face="voice"[^>]*aria-label="Start voice conversation"/);
   assert.doesNotMatch(src, /useSpeechRecognition/);
   // A spoken line takes the same road as a typed one while a turn runs.
   assert.match(src, /if \(canSteer\) void actions\.steer\(text\);\s*else actions\.queue\(text\);/);
