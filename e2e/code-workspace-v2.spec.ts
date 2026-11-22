@@ -264,6 +264,7 @@ test("Code reads an answer aloud and downloads the visible conversation", async 
   const markdown = await readFile(path, "utf8");
   expect(markdown).toContain("Add a health check route that returns ok.");
   expect(markdown).toContain("Added");
+  await expect(page.locator('[role="menu"][aria-label="Export session"]')).toHaveCount(0);
 
   await page.evaluate(() => {
     window.print = () => {
