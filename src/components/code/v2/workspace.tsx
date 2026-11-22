@@ -586,6 +586,8 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   ];
   const moreMenu: MenuEntry[] = [
     ...(!empty ? [{ id: "find", label: "Find in this session", icon: <Glyph name="search" size={16} />, trail: <Kbd k="mod+f" mac={mac} />, onSelect: () => setPaletteMode("session") }] : []),
+    { id: "search-sessions", label: "Search sessions", icon: <Glyph name="search" size={16} />, onSelect: () => setPaletteMode("commands") },
+    ...(model.actions.newThread ? [{ id: "new-session", label: "New session", icon: <Glyph name="plus" size={16} />, onSelect: () => model.actions.newThread?.() }] : []),
     { id: "terminal", label: "Terminal", icon: <Glyph name="terminal" size={16} />, trail: <Kbd k="mod+j" mac={mac} />, onSelect: () => openDock({ tab: "terminal" }) },
     ...(model.actions.commit ? [{ id: "commit", label: "Commit…", icon: <Glyph name="commit" size={16} />, onSelect: () => model.actions.commit?.() }] : []),
     { id: "pr", label: "Create pull request…", icon: <Glyph name="pull-request" size={16} />, onSelect: () => composer.current?.setDraft("/pr ") },
@@ -655,7 +657,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
 
   return (
     <div
-      className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)}
+      className={cn("cv2 cv2-app cv2-session-surface", !(sidebar && sideOpen) && "no-side", className)}
       data-motion={ui.reducedMotion ? "reduced" : undefined}
       data-hidden={hidden ? "true" : undefined}
       data-composer-focus={composerFocus ? "true" : undefined}

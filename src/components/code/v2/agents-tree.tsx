@@ -496,7 +496,7 @@ export function AgentsTreePane({
 
   // One clock for every live row; nothing ticks once the run has settled.
   const counts = countLive(root);
-  const ticking = counts.live > 0 || runLive;
+  const ticking = !historical && (counts.live > 0 || runLive);
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
     if (!ticking) return;

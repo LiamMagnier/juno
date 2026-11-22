@@ -127,7 +127,7 @@ export function CodeSessionStatic({
   starting?: boolean;
 }) {
   return (
-    <div className="cv2 cv2-app no-side" role="status" aria-busy="true" aria-label={LOADING_LABEL} style={{ height: "100%" }}>
+    <div className="cv2 cv2-app no-side cv2-session-surface" role="status" aria-busy="true" aria-label={LOADING_LABEL} style={{ height: "100%" }}>
       <main className="cv2-main">
         <div className="cv2-left">
           <header className="cv2-top">

@@ -33,7 +33,7 @@ test("the Agents panel separates the current run from a historical child and its
   const items: TurnItem[] = [
     { id: "u1", kind: "user_message", text: "Previous task", createdAt: at, turnId: "old" },
     agent({ agentId: "first", turnId: "old", status: "completed" }),
-    { id: "a1", kind: "assistant_message", text: "Previous result", agentId: "first", createdAt: at, turnId: "old" },
+    { id: "a1", kind: "assistant_message", text: "Previous result", streaming: false, agentId: "first", createdAt: at, turnId: "old" },
     { id: "u2", kind: "user_message", text: "Current task", createdAt: at, turnId: "current" },
     agent({ agentId: "second", turnId: "current" }),
     { id: "c1", kind: "command_execution", callId: "c", command: "npm test", status: "running", agentId: "second", createdAt: at, turnId: "current" },

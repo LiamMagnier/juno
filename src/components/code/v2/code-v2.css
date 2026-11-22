@@ -762,6 +762,12 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
   .cv2-cwrap { padding-bottom: max(.75rem, env(safe-area-inset-bottom, 0px)); }
 }
 
+@media (width < 768px) {
+  .app-main-canvas[data-product="code"]:has(.cv2-session-surface) > .workspace-mobile-toolbar { display: none; }
+  .cv2-session-surface .cv2-left { grid-template-rows: calc(48px + env(safe-area-inset-top, 0px)) minmax(0, 1fr); }
+  .cv2-session-surface .cv2-top { padding-block-start: env(safe-area-inset-top, 0px); }
+}
+
 /* ── Reduced motion / transparency / hidden ─────────────────────────── */
 /* The app's tiers, as the OS path and Settings › Motion › Reduced run them
    everywhere else (postcss/motion-preference.cjs compiles this block's
@@ -817,6 +823,7 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
 }
 @media (max-width: 720px) { .cv2-team-chip .v { max-width: 150px; } }
 .cv2-team-chip[data-team="solo"] .v { color: hsl(var(--muted-foreground)); }
+.cv2-team-chip[data-team="set"] { background: hsl(var(--selected)); color: hsl(var(--foreground)); }
 
 .cv2-team-head { padding: .75rem; display: flex; flex-direction: column; gap: .5rem; }
 .cv2-orchestrator-heading { display: flex; align-items: center; justify-content: space-between; padding-inline: .25rem; }
