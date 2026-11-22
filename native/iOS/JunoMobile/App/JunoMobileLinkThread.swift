@@ -604,6 +604,29 @@ struct JunoMobileLinkCommandRow: View {
 }
 
 
+/// An agent's state in the face's vocabulary, and the swarm map's link for it.
+fileprivate extension CodeV2.Subagent {
+  var faceState: JunoAgentState {
+    switch status {
+    case .running: .working
+    case .waiting: .waiting
+    case .completed: .done
+    case .failed: .blocked
+    case .interrupted: .sleeping
+    }
+  }
+
+  var swarmLink: JunoSwarmMember.Link {
+    switch status {
+    case .running: .working
+    case .waiting: .waiting
+    case .completed: .done
+    case .failed: .failed
+    case .interrupted: .quiet
+    }
+  }
+}
+
 struct JunoMobileLinkSubagentRow: View {
   let agent: CodeV2.Subagent
   @Environment(\.junoInspectSubagent) private var inspect
@@ -620,8 +643,9 @@ struct JunoMobileLinkSubagentRow: View {
 
   var body: some View {
     Button { inspect(agent.agentId) } label: {
-    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-      JunoIconView(.agents, size: 13).foregroundStyle(Color.junoTertiaryInk).frame(width: 16)
+    HStack(alignment: .center, spacing: JunoSpace.snug) {
+      // Its face, seeded as the web and the Mac seed it, so the agent looks the same everywhere.
+      JunoAgentFace(avatar: .seeded(agent.agentId), state: agent.faceState, size: JunoAgentFaceSize.sm)
       VStack(alignment: .leading, spacing: JunoSpace.micro) {
         // Named for its work ("Reset form checker"), as on the web and the Mac.
         Text(CodeV2AgentNames.displayName(for: agent))
@@ -947,6 +971,23 @@ struct JunoMobileLinkAgentsView: View {
               if let deliveryError { JunoInlineError(message: deliveryError) }
             }
           } else {
+            if !agents.isEmpty {
+              // The run at a glance: the lead and its agents' faces, work flowing along each link.
+              let names = CodeV2AgentNames.displayNames(in: model.openSnapshot?.items ?? [])
+              JunoSwarmMap(
+                leadState: agents.contains { $0.status == .running || $0.status == .waiting } ? .working : .done,
+                members: agents.map { agent in
+                  JunoSwarmMember(
+                    id: agent.agentId,
+                    name: names[agent.agentId] ?? CodeV2AgentNames.displayName(for: agent),
+                    avatar: .seeded(agent.agentId),
+                    state: agent.faceState,
+                    link: agent.swarmLink
+                  )
+                },
+                selectedID: selectedID
+              ) { id in selectedID = id }
+            }
             agentGroup("Active", agents: agents.filter { $0.status == .running || $0.status == .waiting })
             agentGroup("Done", agents: agents.filter { $0.status != .running && $0.status != .waiting })
           }

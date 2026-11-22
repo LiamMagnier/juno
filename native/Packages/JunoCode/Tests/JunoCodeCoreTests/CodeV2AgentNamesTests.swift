@@ -17,18 +17,19 @@ final class CodeV2AgentNamesTests: XCTestCase {
     }
 
     func testNamesMatchTheSharedFixture() throws {
-        let cases = try XCTUnwrap(try fixture()["cases"] as? [[Any]])
+        let cases = try XCTUnwrap(fixture()["cases"] as? [[Any]])
         XCTAssertGreaterThanOrEqual(cases.count, 20)
         for entry in cases {
             let text: (Any) -> String? = { $0 as? String }
-            let role = try XCTUnwrap(CodeV2.AgentRole(rawValue: try XCTUnwrap(entry[3] as? String)))
+            let raw = try XCTUnwrap(entry[3] as? String)
+            let role = try XCTUnwrap(CodeV2.AgentRole(rawValue: raw))
             let source = CodeV2AgentNames.Source(id: "a", label: text(entry[0]), title: text(entry[1]), task: text(entry[2]), role: role)
             XCTAssertEqual(CodeV2AgentNames.displayName(source), entry[4] as? String, "\(entry)")
         }
     }
 
     func testRepeatsAreToldApartAfterTheFirst() throws {
-        let repeats = try XCTUnwrap(try fixture()["repeats"] as? [String: [String]])
+        let repeats = try XCTUnwrap(fixture()["repeats"] as? [String: [String]])
         let tasks = try XCTUnwrap(repeats["tasks"])
         let sources = tasks.enumerated().map { CodeV2AgentNames.Source(id: "a\($0.offset)", task: $0.element, role: .worker) }
         let names = CodeV2AgentNames.displayNames(sources)

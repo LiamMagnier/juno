@@ -74,6 +74,32 @@ public struct CodeV2AgentNode: Identifiable, Equatable, Sendable {
         }
     }
 
+    /// The agent's face: seeded from its id exactly as the web seeds it
+    /// (`defaultAgentAvatar(node.id)`), so a run's faces match everywhere.
+    public var avatar: JunoAgentAvatar { .seeded(agentId) }
+
+    /// The face's state, in Orbit's vocabulary.
+    public var faceState: JunoAgentState {
+        switch status {
+        case .running: .working
+        case .waiting: .waiting
+        case .completed: .done
+        case .failed: .blocked
+        case .interrupted: .sleeping
+        }
+    }
+
+    /// How the swarm map draws its link to the lead.
+    public var swarmLink: JunoSwarmMember.Link {
+        switch status {
+        case .running: .working
+        case .waiting: .waiting
+        case .completed: .done
+        case .failed: .failed
+        case .interrupted: .quiet
+        }
+    }
+
     var glyphState: CodeV2StateGlyph.State {
         switch status {
         case .running: .running
@@ -202,7 +228,7 @@ struct CodeV2AgentLine: View {
     var body: some View {
         Button(action: select) {
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                Text(node.title)
+                Text(node.roleLabel)
                     .studioType(.text)
                     .foregroundStyle(Studio.Ink.primary)
                     .underline(hovering || isSelected, color: Studio.Ink.tertiary)
@@ -298,6 +324,17 @@ public struct CodeV2AgentsPane: View {
                 .frame(height: 40)
                 ScrollView {
                     VStack(spacing: 0) {
+                        // The run at a glance: the lead and its agents' faces, work flowing along each link.
+                        JunoSwarmMap(
+                            leadState: nodes.contains { $0.status == .running || $0.status == .waiting } ? .working : .done,
+                            members: nodes.map { node in
+                                JunoSwarmMember(id: node.agentId, name: node.roleLabel, avatar: node.avatar, state: node.faceState, link: node.swarmLink)
+                            },
+                            selectedID: selected,
+                            needsYouTint: Studio.Signal.edge
+                        ) { id in selected = id }
+                        .padding(.horizontal, JunoSpace.regular)
+                        .padding(.bottom, JunoSpace.snug)
                         agentSection("Active", nodes.filter { $0.status == .running || $0.status == .waiting })
                         agentSection("Done", nodes.filter { $0.status != .running && $0.status != .waiting })
                     }
@@ -320,9 +357,10 @@ public struct CodeV2AgentsPane: View {
 
     private func row(_ node: CodeV2AgentNode) -> some View {
         HStack(alignment: .center, spacing: JunoSpace.snug) {
+            JunoAgentFace(avatar: node.avatar, state: node.faceState, size: JunoAgentFaceSize.sm)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: JunoSpace.tight + 2) {
-                    Text(node.title).studioType(.text).foregroundStyle(Studio.Ink.primary).lineLimit(1)
+                    Text(node.roleLabel).studioType(.text).foregroundStyle(Studio.Ink.primary).lineLimit(1)
                     CodeV2Mark(id: CodeV2Marks.markID(model: node.selection.model, instanceId: node.selection.instanceId), size: 13)
                     Text(CodeV2Formatting.modelName(node.selection.model)).studioType(.small).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
                 }
@@ -344,7 +382,8 @@ public struct CodeV2AgentsPane: View {
                 Button { selected = nil } label: {
                     HStack(spacing: JunoSpace.tight) {
                         JunoIconView(.chevronLeft, size: 12)
-                        Text(node.title)
+                        JunoAgentFace(avatar: node.avatar, state: node.faceState, size: 22)
+                        Text(node.roleLabel)
                     }
                     .studioType(.textMedium)
                     .foregroundStyle(Studio.Ink.primary)
@@ -365,7 +404,7 @@ public struct CodeV2AgentsPane: View {
             .frame(height: 40)
             ScrollView {
                 VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                    Text("Task from the lead").studioType(.small).foregroundStyle(Studio.Ink.secondary)
+                    Text("Brief from the lead").studioType(.small).foregroundStyle(Studio.Ink.secondary)
                     Text(node.task).studioType(.text).foregroundStyle(Studio.Ink.primary).textSelection(.enabled)
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(node.steps, id: \.id) { item in

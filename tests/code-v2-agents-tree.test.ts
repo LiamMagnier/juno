@@ -9,7 +9,7 @@ import { test } from "node:test";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { AgentsTreePane } from "@/components/code/v2/agents-tree";
+import { AgentsTreePane, stageLayout } from "@/components/code/v2/agents-tree";
 import { CodeWorkspace } from "@/components/code/v2/workspace";
 import { AGENT_NODE_STATE_LABEL, LEAD_NODE_ID, buildAgentTree, countLive, findNode, selectAgentRun, treeKey, visibleRows } from "@/lib/code-v2/agent-tree";
 import { sendAgentControl, type AgentControlTransport } from "@/lib/code-v2/agent-control-client";
@@ -221,4 +221,26 @@ test("client: on a direct socket the key rides as the env server's request id", 
     { type: "agent.message", params: { sessionId: "s1", agentId: "w1", text: "Only the route.", requestId: "agent-control:k3" } },
     { type: "turn.interrupt", params: { sessionId: "s1" } },
   ]);
+});
+
+test("the swarm map's layout: the same places as the Mac and the iPhone (JunoSwarmMapTests.swift)", () => {
+  const node = (id: string, depth: number, children: ReturnType<typeof node>[] = []): Parameters<typeof stageLayout>[0][number] =>
+    ({ id, depth, children, label: id, state: "thinking", step: "" }) as Parameters<typeof stageLayout>[0][number];
+  const c = node("c", 2);
+  const a = node("a", 1, [c]);
+  const { spots, more } = stageLayout([a, c, node("b", 1), node("d", 1), node("e", 1)]);
+  const at = Object.fromEntries(spots.map((s) => [s.node.id, s]));
+  const near = (x: number, y: number) => assert.ok(Math.abs(x - y) < 0.01, `${x} ≈ ${y}`);
+  assert.equal(more, 0);
+  near(at.a!.x, 306.07);
+  near(at.a!.y, 48.5);
+  near(at.b!.y, 147.5);
+  near(at.d!.x, 93.93);
+  near(at.c!.x, 342.31);
+  near(at.c!.y, 38.35);
+  assert.deepEqual(at.a!.parent, { x: 200, y: 98 });
+  const one = stageLayout([node("x", 1)]);
+  near(one.spots[0]!.x, 200);
+  near(one.spots[0]!.y, 28);
+  assert.equal(stageLayout(Array.from({ length: 13 }, (_, i) => node(`m${i}`, 1))).more, 3);
 });
