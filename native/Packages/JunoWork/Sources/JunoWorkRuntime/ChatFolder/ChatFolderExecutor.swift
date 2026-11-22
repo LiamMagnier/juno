@@ -294,11 +294,19 @@ public final class ChatFolderExecutor: Sendable {
         }
         let timeout = min(max(call.integer("timeout_seconds") ?? Self.defaultCommandTimeout, 1), Self.maximumCommandTimeout)
         let place = cwdPath.map { "\(folderName)/\($0.value)" } ?? folderName
+        // Refused before the card: a reflex "Allow" must never be what stands
+        // between a dangerous command and this Mac.
+        if let refusal = system.screen(command, folderRoot: root) {
+            return .failed(refusal)
+        }
+        // The server's command guard says why a command deserves a second look.
+        let caution = call.string("caution")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = caution.flatMap { $0.isEmpty ? nil : " Look twice: \($0)" } ?? ""
         try await ask(
             call, .command,
             title: "Run this command?",
             detail: "$ \(command)\nin \(place)",
-            explanation: "It runs on this Mac, starting in \(place). It can change files only inside this folder, can't reach the internet, and stops after \(timeout) seconds."
+            explanation: "It runs on this Mac, starting in \(place). It can change files only inside this folder, can't reach the internet, and stops after \(timeout) seconds.\(note)"
         )
         let outcome = try await system.run(
             ChatFolderCommandRequest(

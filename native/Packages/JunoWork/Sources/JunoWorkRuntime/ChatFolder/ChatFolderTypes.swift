@@ -206,4 +206,15 @@ public protocol ChatFolderSystem: Sendable {
     func open(_ url: URL, reveal: Bool) async -> Bool
     /// The text of a document that is not plain text (PDF, Word, RTF), or nil.
     func extractText(from url: URL) async -> String?
+    /// Why this Mac refuses a command before anyone is asked about it — what
+    /// no folder command needs, or a Mac that cannot sandbox it — or nil to
+    /// let it go to the approval card. Checked after the server's own guard
+    /// (src/lib/sandbox/command-guard.ts), so an older or tampered server
+    /// still cannot get past it.
+    func screen(_ command: String, folderRoot: URL) -> String?
+}
+
+public extension ChatFolderSystem {
+    /// Test doubles and systems without a classifier refuse nothing here.
+    func screen(_ command: String, folderRoot: URL) -> String? { nil }
 }

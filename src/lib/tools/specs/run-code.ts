@@ -59,6 +59,7 @@ export function runCodeDescription(manifestLine?: string | null, checkRunAvailab
     "Files attached to this conversation are in inputs/ (read-only), under their own names. The working directory is shared by every run in this reply, so a file one run writes is there for the next.",
     "Every file a run writes outside inputs/ is attached to the conversation automatically and shown to the user: save charts as PNG files and refer to them by name. Images you save are shown back to you.",
     "The sandbox has no internet access, cannot install packages and cannot reach the user's computer.",
+    "A safety check reads every program before it runs and refuses what could harm a computer or leak secrets (root access, wiping disks, downloading and running scripts, reverse shells, mining, reading keys); when it refuses, explain that to the user instead of rewording the program.",
     "Use it to compute over data, transform or read files, make charts, spreadsheets, documents or slides, or check a calculation. Do not use it for simple arithmetic.",
     "Read the result before answering. When a run fails, read stderr, fix the program and run it again. State only results a run actually returned, and say plainly when something could not be done.",
     checkRunAvailable

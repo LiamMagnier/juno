@@ -56,6 +56,10 @@ final class ChatFolderExecutorTests: XCTestCase {
         private(set) var commands: [ChatFolderCommandRequest] = []
         private(set) var opened: [(URL, Bool)] = []
         var commandOutcome = ChatFolderCommandOutcome(exitCode: 0, output: "hello", timedOut: false, truncated: false, contained: true)
+        /// What `screen` refuses with, when set.
+        var refusal: String?
+
+        func screen(_ command: String, folderRoot: URL) -> String? { refusal }
 
         func run(_ request: ChatFolderCommandRequest) async throws -> ChatFolderCommandOutcome {
             lock.withLock { commands.append(request) }
@@ -391,6 +395,28 @@ final class ChatFolderExecutorTests: XCTestCase {
         let slow = await run.perform(call(.runCommand, ["command": .string("sleep 999")]))
         XCTAssertEqual(slow.outcome, .failed)
         XCTAssertTrue(slow.output.hasPrefix("Stopped after 60 seconds."))
+    }
+
+    func testAScreenedCommandIsRefusedBeforeAnyoneIsAsked() async throws {
+        let folder = try makeFolder()
+        let gate = RecordingGate(.allowOnce)
+        let system = FakeSystem()
+        system.refusal = "This Mac refused the command before asking: Disk erasure is never allowed. Nothing ran."
+        let run = try executor(folder, gate: gate, system: system)
+        let result = await run.perform(call(.runCommand, ["command": .string("diskutil eraseDisk JHFS+ X disk2")]))
+        XCTAssertEqual(result.outcome, .failed)
+        XCTAssertEqual(result.output, system.refusal)
+        XCTAssertTrue(gate.requests.isEmpty, "no approval card for a command that will never run")
+        XCTAssertTrue(system.commands.isEmpty)
+    }
+
+    func testTheServersCautionIsOnTheApprovalCard() async throws {
+        let folder = try makeFolder()
+        let gate = RecordingGate(.allowOnce)
+        let run = try executor(folder, gate: gate)
+        _ = await run.perform(call(.runCommand, ["command": .string("rm -rf build"), "caution": .string("It deletes files and folders, and that cannot be undone.")]))
+        let card = try XCTUnwrap(gate.requests.first)
+        XCTAssertTrue(card.explanation.hasSuffix("Look twice: It deletes files and folders, and that cannot be undone."), card.explanation)
     }
 
     func testOpenRevealsOrOpensInsideTheFolder() async throws {

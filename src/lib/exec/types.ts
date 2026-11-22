@@ -131,6 +131,8 @@ export interface ExecRunFacts {
 /** Stable failure codes, mapped onto L1's ToolErrorCode and the capability contract. */
 export type ExecErrorCode =
   | "invalid_arguments"
+  /** The command guard (src/lib/sandbox/command-guard.ts) refused it before it ran. */
+  | "blocked"
   | "capability_unavailable"
   | "sandbox_error"
   | "outcome_unknown"

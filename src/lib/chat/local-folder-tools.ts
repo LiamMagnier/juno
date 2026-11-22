@@ -14,6 +14,7 @@ import {
   type LocalFolderToolId,
 } from "@/lib/chat/local-folder";
 import { awaitLocalToolResult, type LocalToolResult } from "@/lib/chat/local-folder-bridge";
+import { blockedNotice, blockedText, guardCommand } from "@/lib/sandbox/command-guard";
 
 /*
  * The folder tools as the chat route offers them (src/lib/chat/local-folder.ts
@@ -62,6 +63,18 @@ export function createLocalFolderTools(input: {
         if (!check.ok) {
           return { ok: false, text: check.error, body: check.error, status: "failed", error: { code: "invalid_args" } };
         }
+        let args = check.args;
+        if (id === "folder_run_command") {
+          // The command guard runs here, before the Mac is asked: a command it
+          // refuses never reaches the approval card, so a reflex "Allow" can't run it.
+          const screen = guardCommand(typeof args.command === "string" ? args.command : "", "mac-folder");
+          if (screen.risk === "block") {
+            const text = blockedText(screen, "on the user's Mac");
+            return { ok: false, text, body: blockedNotice(screen), status: "failed", error: { code: "blocked" } };
+          }
+          // A command worth a second look carries why, and the Mac's approval card says it.
+          if (screen.risk === "caution" && screen.reason) args = { ...args, caution: screen.reason };
+        }
         const callId = issue();
         // Running from here: the row says so, and the turn's stall watchdog is
         // held while the Mac works or the person reads the approval card. The
@@ -75,7 +88,7 @@ export function createLocalFolderTools(input: {
           timeoutMs: BRIDGE_TIMEOUT_MS,
           signal,
         });
-        input.send({ type: "local_tool", call: { id: callId, tool: id, args: check.args } });
+        input.send({ type: "local_tool", call: { id: callId, tool: id, args } });
         const result = await waiting;
         const text = localToolText(input.folder, id, result);
         const body = result.output || text;

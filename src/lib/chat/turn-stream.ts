@@ -667,7 +667,10 @@ export class TurnStream {
     record.status = status;
     record.endedAt = new Date(this.now()).toISOString();
     const code = outcomeStatus === "outcome_unknown" ? "outcome_unknown" : ev.error?.code ?? defaultErrorCode(status);
-    if (code && status !== "succeeded") record.error = { code };
+    // A refusal says why (the command guard's reason, the broker's rule), so
+    // the row reads that sentence instead of a generic "Blocked by your settings".
+    const why = code === "blocked" ? ev.result.split("\n").map((l) => l.trim()).find(Boolean)?.slice(0, 300) : undefined;
+    if (code && status !== "succeeded") record.error = why ? { code, detail: why } : { code };
     else delete record.error;
     if (typeof ev.durationMs === "number" && Number.isFinite(ev.durationMs) && ev.durationMs >= 0) {
       record.durationMs = ev.durationMs;

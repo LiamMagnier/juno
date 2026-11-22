@@ -22,6 +22,7 @@ import type {
 
 const ERROR_CODES: Record<ExecErrorCode, ToolErrorCode> = {
   invalid_arguments: "invalid_args",
+  blocked: "blocked",
   capability_unavailable: "unavailable",
   sandbox_error: "tool_error",
   outcome_unknown: "outcome_unknown",

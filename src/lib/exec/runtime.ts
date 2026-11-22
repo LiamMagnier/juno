@@ -67,6 +67,7 @@ import {
   type SkillMount,
   type ToolRunStatus,
 } from "@/lib/exec/types";
+import { blockedNotice, blockedText, guardProgram } from "@/lib/sandbox/command-guard";
 
 // ── small helpers ────────────────────────────────────────────────────────────
 
@@ -557,6 +558,9 @@ export async function executeRunCode(
   const checkRunAvailable = options.checkRunAvailable ?? true;
   const parsed = parseRunCodeArgs(raw, ctx.surface);
   if ("error" in parsed) return refused("invalid_arguments", parsed.error);
+  // Before anything else, and before the host is even asked: what no run needs never reaches the sandbox.
+  const screen = guardProgram(parsed.language, parsed.code, "cloud-sandbox");
+  if (screen.risk === "block") return { ...refused("blocked", blockedText(screen, "in the sandbox")), body: blockedNotice(screen) };
   if (ctx.private) {
     return refused("capability_unavailable", "Code does not run in private chats, because what it produces would have to be kept. Nothing was run.");
   }

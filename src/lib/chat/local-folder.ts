@@ -277,7 +277,7 @@ export const LOCAL_FOLDER_TOOLS: Readonly<Record<LocalFolderToolId, LocalFolderT
     id: "folder_run_command",
     label: "Run a command",
     description:
-      "Run a shell command (zsh) on the user's Mac, starting in the shared folder (or a folder inside it). It can write only inside the shared folder and has no network. Use it for conversions and tools like textutil, sips, pandoc, unzip, git or python3. Asks the user first. Output is capped.",
+      "Run a shell command (zsh) on the user's Mac, starting in the shared folder (or a folder inside it). It can write only inside the shared folder and has no network. Use it for conversions and tools like textutil, sips, pandoc, unzip, git or python3. Asks the user first. Commands that could harm the Mac, control other apps or read passwords and keys are refused before the user is asked. Output is capped.",
     parameters: object(
       {
         command: { type: "string", description: "The command line to run." },

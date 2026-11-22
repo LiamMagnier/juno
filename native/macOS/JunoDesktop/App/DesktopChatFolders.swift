@@ -364,6 +364,25 @@ extension EnvironmentValues {
 /// What the chat's folder calls need from macOS beyond the file service: a
 /// contained shell, Launch Services and document text.
 struct DesktopChatFolderSystem: ChatFolderSystem {
+    /// Alevr Code's own classifier, the one its agents answer to, refuses what
+    /// no folder command needs (root, disks, raw devices, deleting outside the
+    /// folder, anything it cannot parse). And a folder command runs inside the
+    /// kernel sandbox or not at all: on a Mac without `sandbox-exec` it used to
+    /// run with the person's full permissions after one click.
+    func screen(_ command: String, folderRoot: URL) -> String? {
+        if case let .forbidden(reason) = CommandClassifier().classify(command) {
+            // Code's refusal of a preview server names Code's own tools; a chat has none.
+            let why = reason.contains(CommandClassifier.previewServerRefusalMarker)
+                ? "A server would run until the time limit, and folder commands can't reach it."
+                : reason
+            return "This Mac refused the command before asking: \(why) Nothing ran."
+        }
+        guard CommandExecutionService.contained(workspaceRootURL: folderRoot).isContained else {
+            return "This Mac can't sandbox commands right now, so it won't run them in your folder. Nothing ran."
+        }
+        return nil
+    }
+
     func run(_ request: ChatFolderCommandRequest) async throws -> ChatFolderCommandOutcome {
         // Alevr Code's executor, contained: the kernel sandbox lets the command
         // write only inside the folder (and the per-user temp and toolchain
