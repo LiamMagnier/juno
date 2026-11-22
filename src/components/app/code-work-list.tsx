@@ -61,6 +61,7 @@ import {
   type ThreadSummary,
 } from "@/lib/code-v2/thread-sections";
 import { cn } from "@/lib/utils";
+import { intentPrefetch } from "@/lib/intent-prefetch";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DeviceLinkTransport, EnvClient } from "@/lib/code-v2/env-client";
 import { reducedMotionAt } from "@/lib/motion-preference";
@@ -136,6 +137,7 @@ function WorkRow({
   href,
   onOpen,
   actions,
+  linkRouter,
 }: {
   t: ThreadSummary;
   active: boolean;
@@ -143,6 +145,7 @@ function WorkRow({
   href?: string;
   onOpen?: (id: string) => void;
   actions?: WorkRowActions;
+  linkRouter?: ReturnType<typeof useRouter>;
 }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [renaming, setRenaming] = React.useState(false);
@@ -210,6 +213,7 @@ function WorkRow({
   const label = state ? `${t.title}. ${state}` : t.title;
   return (
     <div
+      data-code-session-row=""
       data-flip={t.id}
       data-active={active ? "" : undefined}
       data-conversation-row={t.id}
@@ -223,8 +227,9 @@ function WorkRow({
           : undefined
       }
     >
+      <span className="code-sidebar-session-icon" aria-hidden="true"><Icon name="terminal" size={15} /></span>
       {href ? (
-        <Link href={href} prefetch={false} onClick={() => onOpen?.(t.id)} aria-current={active ? "page" : undefined} title={label} className={cls}>
+        <Link href={href} prefetch={false} {...(linkRouter && intentPrefetch(linkRouter, href))} onNavigate={() => onOpen?.(t.id)} aria-current={active ? "page" : undefined} title={label} className={cls}>
           {inner}
         </Link>
       ) : (
@@ -279,6 +284,7 @@ export function CodeWorkList({
   removalTargets = [],
   onRemoveProject,
   rowActions,
+  linkRouter,
 }: {
   threads: readonly ThreadSummary[];
   activeId?: string;
@@ -288,6 +294,7 @@ export function CodeWorkList({
   onRemoveProject?: (project: RemovableCodeProject) => Promise<void>;
   /** Each row's menu (rename, pin, share, archive, delete); without it rows have none. */
   rowActions?: WorkRowActions;
+  linkRouter?: ReturnType<typeof useRouter>;
 }) {
   const [removing, setRemoving] = React.useState<RemovableCodeProject | null>(null);
   const [removalError, setRemovalError] = React.useState<string | null>(null);
@@ -305,7 +312,7 @@ export function CodeWorkList({
   const order = [...list.active, ...(showSettled ? list.settled : [])].map((t) => `${t.id}.${t.state}`).join(",");
   useFlip(root, order);
   const row = (t: ThreadSummary) => (
-    <WorkRow key={t.id} t={t} active={t.id === activeId} now={now} href={hrefFor?.(t.id)} onOpen={onOpen} actions={rowActions} />
+    <WorkRow key={t.id} t={t} active={t.id === activeId} now={now} href={hrefFor?.(t.id)} onOpen={onOpen} actions={rowActions} linkRouter={linkRouter} />
   );
 
   return (
@@ -327,46 +334,47 @@ export function CodeWorkList({
       >
         {removalError && <p role="alert" className="text-ui text-destructive">{removalError}</p>}
       </ConfirmDialog>
-      {/* The filter is the list's first heading: `Section`'s heading recipe
-          (12 px annotation on the 16 px edge, ink that answers the pointer),
-          with its chevron always drawn because it opens a menu. */}
+      {/* The project filter stays beside the sessions it filters. */}
       <div className="group/section">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="flex h-7 max-w-full select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground data-[state=open]:text-foreground coarse:h-11"
-            >
-              {/* As wide as its text, like the row's project name: `title-fade-hug`. */}
-              <span className="shell-annot title-fade title-fade-hug min-w-0">{project ?? "All projects"}</span>
-              <ChevronDown aria-hidden className="size-3 shrink-0" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className={MENU_W}>
-            <DropdownMenuRadioGroup value={project ?? ""} onValueChange={(v) => setProject(v || null)}>
-              <DropdownMenuRadioItem value="">All projects</DropdownMenuRadioItem>
-              {projects.length > 0 && <DropdownMenuSeparator />}
-              {projects.map((p) => onRemoveProject && removalTargets.some((t) => t.name === p) ? (
-                <DropdownMenuSub key={p}>
-                  <DropdownMenuSubTrigger>{p}</DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuItem onSelect={() => setProject(p)}>Show sessions</DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    {removalTargets.filter((t) => t.name === p).map((target) => (
-                      <DropdownMenuItem key={target.id} onSelect={() => { setRemovalError(null); setRemoving(target); }}>
-                        Remove from Alevr…{removalTargets.filter((t) => t.name === p).length > 1 ? ` (${target.path})` : ""}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              ) : <DropdownMenuRadioItem key={p} value={p}>{p}</DropdownMenuRadioItem>)}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="code-sidebar-session-head">
+          <h2 className="code-sidebar-label">Sessions</h2>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="code-sidebar-filter flex min-w-0 select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground data-[state=open]:text-foreground"
+              >
+                <Icon name="folder" size={14} className="shrink-0" />
+                <span className="shell-annot title-fade title-fade-hug min-w-0">{project ?? "All projects"}</span>
+                <ChevronDown aria-hidden className="size-3 shrink-0" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className={MENU_W}>
+              <DropdownMenuRadioGroup value={project ?? ""} onValueChange={(v) => setProject(v || null)}>
+                <DropdownMenuRadioItem value="">All projects</DropdownMenuRadioItem>
+                {projects.length > 0 && <DropdownMenuSeparator />}
+                {projects.map((p) => onRemoveProject && removalTargets.some((t) => t.name === p) ? (
+                  <DropdownMenuSub key={p}>
+                    <DropdownMenuSubTrigger>{p}</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem onSelect={() => setProject(p)}>Show sessions</DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {removalTargets.filter((t) => t.name === p).map((target) => (
+                        <DropdownMenuItem key={target.id} onSelect={() => { setRemovalError(null); setRemoving(target); }}>
+                          Remove from Alevr…{removalTargets.filter((t) => t.name === p).length > 1 ? ` (${target.path})` : ""}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                ) : <DropdownMenuRadioItem key={p} value={p}>{p}</DropdownMenuRadioItem>)}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <div className="pt-1">{list.active.map(row)}</div>
       </div>
       {list.active.length === 0 && list.settled.length === 0 && (
-        <p className="px-2 pb-2 pt-3 text-ui text-muted-foreground" aria-live="polite">
+        <p className="code-sidebar-empty px-2 pb-2 pt-3 text-ui text-muted-foreground" aria-live="polite">
           No sessions{project ? ` in ${project}` : ""} yet.
         </p>
       )}
@@ -458,7 +466,7 @@ export function CodeShellList({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <>
-      <CodeWorkList removalTargets={removalTargets} onRemoveProject={removeProject} threads={threads} activeId={activeId} hrefFor={(id) => `/code/${id}`} onOpen={() => onNavigate?.()} rowActions={rowActions} />
+      <CodeWorkList removalTargets={removalTargets} onRemoveProject={removeProject} threads={threads} activeId={activeId} hrefFor={(id) => `/code/${id}`} onOpen={() => onNavigate?.()} rowActions={rowActions} linkRouter={router} />
       {session.ui}
     </>
   );
