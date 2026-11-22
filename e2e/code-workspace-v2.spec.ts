@@ -212,7 +212,7 @@ test("the Swarm grid and activity follow persisted Code task events", async ({ p
   const workerTwo = grid.getByRole("button", { name: /Worker 2.*Sonnet/i });
   await expect(grid.getByRole("listitem")).toHaveCount(3);
   await expect(workerTwo).toBeVisible();
-  await expect(workerTwo.locator(".agent-face[data-state=thinking]")).toBeVisible();
+  await expect(workerTwo.locator(".agent-face[data-state=working]")).toBeVisible();
   await expect(grid.getByRole("button", { name: /Worker 1/ }).locator(".agent-face[data-state=done]")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("code-swarm-live.png"), animations: "disabled" });
   await panel.getByRole("button", { name: /^activity$/i }).click();
@@ -251,8 +251,11 @@ test("Code reads an answer aloud and downloads the visible conversation", async 
   }
 
   await page.screenshot({ path: testInfo.outputPath("code-thread.png"), animations: "disabled" });
-  await page.locator(".cv2-crumb").getByRole("button", { name: "QA · Code session" }).click();
-  await page.getByRole("menuitem", { name: "Export", exact: true }).click();
+  const openExport = async () => {
+    await page.locator(".cv2-crumb").getByRole("button", { name: "QA · Code session" }).click();
+    await page.getByRole("menuitem", { name: "Export", exact: true }).click();
+  };
+  await openExport();
   const started = page.waitForEvent("download");
   await page.getByRole("menuitem", { name: "Download Markdown", exact: true }).click();
   const download = await started;
@@ -261,4 +264,16 @@ test("Code reads an answer aloud and downloads the visible conversation", async 
   const markdown = await readFile(path, "utf8");
   expect(markdown).toContain("Add a health check route that returns ok.");
   expect(markdown).toContain("Added");
+
+  await page.evaluate(() => {
+    window.print = () => {
+      const transcript = document.querySelector("[data-print-document]");
+      document.body.dataset.printedTranscript = transcript?.textContent ?? "";
+      window.dispatchEvent(new Event("afterprint"));
+    };
+  });
+  await openExport();
+  await page.getByRole("menuitem", { name: "Print or save as PDF", exact: true }).click();
+  await expect(page.locator("body")).toHaveAttribute("data-printed-transcript", /Add a health check route/);
+  await expect(page.locator("[data-print-document]")).toHaveCount(0);
 });

@@ -460,7 +460,7 @@ function AgentDetailPanel({ node, model, now, runBudgetUsd, onRunBudget, modelLa
 }
 
 const ORBIT_STATE: Record<AgentNodeState, AgentState> = {
-  thinking: "thinking",
+  thinking: "working",
   tool: "working",
   waiting: "waiting",
   queued: "idle",
@@ -493,7 +493,7 @@ function SwarmGrid({ agents, selected, selection, modelLabel, onSelect, animate 
       {agents.map((node) => {
         const model = modelLabel(node.agent?.model ?? selection);
         return (
-          <li key={node.id}>
+          <li key={node.id} className={node.id === LEAD_NODE_ID ? "cv2-swarm-lead" : undefined}>
             <button type="button" className="cv2-swarm-card" data-state={node.state} data-agent-id={node.id} aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
               <span className="cv2-swarm-card-head">
                 <SwarmFace node={node} animate={animate} />

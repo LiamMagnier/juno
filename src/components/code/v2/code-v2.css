@@ -825,6 +825,7 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
   padding: .5rem 1rem .75rem;
 }
 .cv2-swarm-grid > li { min-width: 0; }
+.cv2-swarm-lead { grid-column: 1 / -1; }
 .cv2 .cv2-swarm-card {
   display: flex;
   flex-direction: column;
@@ -843,6 +844,13 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
   background: hsl(var(--primary) / .045);
   border-color: hsl(var(--primary) / .46);
 }
+.cv2 .cv2-swarm-lead .cv2-swarm-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 0;
+}
+.cv2-swarm-lead .cv2-swarm-open { display: none; }
 .cv2 .cv2-swarm-card[data-state="waiting"]:not([aria-pressed="true"]) {
   border-color: hsl(var(--signal) / .5);
 }

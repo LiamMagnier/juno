@@ -125,6 +125,7 @@
   color: hsl(var(--foreground));
   font-weight: 500;
 }
+[data-sidebar-product="code"] .code-sidebar-new .sidebar-nav-glyph { color: hsl(var(--primary)); }
 [data-sidebar-product="code"] .code-sidebar-new:hover {
   background: hsl(var(--sidebar-hover));
   border-color: hsl(var(--foreground) / .18);
