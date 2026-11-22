@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { AgentFace } from "@/components/agents/agent-face";
+import { defaultAgentAvatar } from "@/lib/agents/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -260,7 +262,9 @@ function TeamEditor({
                       aria-label={`${role.label}: ${modelLabel(instances, role.selection)}. Change model`}
                     >
                       <span className="flex w-full items-center gap-2 text-ui font-medium">
-                        <span className="grid size-7 shrink-0 place-items-center rounded-xs bg-background text-muted-foreground"><Glyph name={role.icon} size={15} /></span>
+                        {swarm
+                          ? <AgentFace avatar={defaultAgentAvatar(role.id)} size={28} still />
+                          : <span className="grid size-7 shrink-0 place-items-center rounded-xs bg-background text-muted-foreground"><Glyph name={role.icon} size={15} /></span>}
                         <span className="min-w-0 grow">{role.label}</span>
                         <Glyph name="chevron-right" size={13} className="shrink-0 text-muted-foreground" />
                       </span>

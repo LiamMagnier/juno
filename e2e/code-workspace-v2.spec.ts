@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, test, type Locator } from "@playwright/test";
 import { readQaFixtures } from "./support/fixtures";
 
@@ -84,7 +85,12 @@ test("Code opens Agents directly and keeps the composer usable at narrow widths"
   }
   await page.screenshot({ path: testInfo.outputPath("code-landing.png"), animations: "disabled" });
   if (isMobile) await page.getByRole("button", { name: "Open menu", exact: true }).click();
+  const nav = page.getByRole("navigation", { name: "Primary" });
+  await expect(nav.getByText("Workspace", { exact: true })).toBeVisible();
+  await expect(nav.getByText("Tools", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sessions", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Pull requests", exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("code-sidebar.png"), animations: "disabled" });
   await page.getByRole("link", { name: /QA · Code session/ }).click();
   if (isMobile) {
     await expect(page.getByRole("button", { name: "Open menu", exact: true })).toBeHidden();
@@ -206,6 +212,8 @@ test("the Swarm grid and activity follow persisted Code task events", async ({ p
   const workerTwo = grid.getByRole("button", { name: /Worker 2.*Sonnet/i });
   await expect(grid.getByRole("listitem")).toHaveCount(3);
   await expect(workerTwo).toBeVisible();
+  await expect(workerTwo.locator(".agent-face[data-state=thinking]")).toBeVisible();
+  await expect(grid.getByRole("button", { name: /Worker 1/ }).locator(".agent-face[data-state=done]")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("code-swarm-live.png"), animations: "disabled" });
   await panel.getByRole("button", { name: /^activity$/i }).click();
   const activity = panel.getByRole("list", { name: "Swarm activity" });
@@ -217,4 +225,40 @@ test("the Swarm grid and activity follow persisted Code task events", async ({ p
     await panel.getByRole("button", { name: "All agents" }).click();
     await expect(workerTwo).toBeFocused();
   }
+});
+
+test("Code reads an answer aloud and downloads the visible conversation", async ({ page }, testInfo) => {
+  const { qaCodeSessionId } = readQaFixtures();
+  expect(qaCodeSessionId).toBeTruthy();
+  await page.goto(`/code/${qaCodeSessionId}`);
+
+  const answer = page.getByRole("toolbar", { name: "Answer actions" }).last();
+  await expect(answer.getByRole("button", { name: "Read aloud" })).toBeVisible();
+  let finishSpeech!: () => void;
+  const speechResponse = new Promise<void>((resolve) => { finishSpeech = resolve; });
+  await page.route("**/api/voice/tts", async (route) => {
+    await speechResponse;
+    await route.fulfill({ status: 503, json: { error: "Speech service test" } });
+  });
+  try {
+    const request = page.waitForRequest((req) => new URL(req.url()).pathname === "/api/voice/tts");
+    await answer.getByRole("button", { name: "Read aloud" }).click();
+    expect((await request).postDataJSON().text).toContain("Added");
+    await answer.getByRole("button", { name: "Stop reading" }).click();
+    await expect(answer.getByRole("button", { name: "Read aloud" })).toBeVisible();
+  } finally {
+    finishSpeech();
+  }
+
+  await page.screenshot({ path: testInfo.outputPath("code-thread.png"), animations: "disabled" });
+  await page.locator(".cv2-crumb").getByRole("button", { name: "QA · Code session" }).click();
+  await page.getByRole("menuitem", { name: "Export", exact: true }).click();
+  const started = page.waitForEvent("download");
+  await page.getByRole("menuitem", { name: "Download Markdown", exact: true }).click();
+  const download = await started;
+  expect(download.suggestedFilename()).toBe("qa-code-session.md");
+  const path = await download.path();
+  const markdown = await readFile(path, "utf8");
+  expect(markdown).toContain("Add a health check route that returns ok.");
+  expect(markdown).toContain("Added");
 });

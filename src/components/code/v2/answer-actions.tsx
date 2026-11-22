@@ -14,6 +14,7 @@
  */
 import * as React from "react";
 import { Glyph } from "./primitives";
+import { Volume2 } from "@/components/ui/icons";
 
 export type AnswerFeedback = "UP" | "DOWN" | null;
 
@@ -23,13 +24,15 @@ export interface AnswerActionsProps {
   latest?: boolean;
   feedback?: AnswerFeedback;
   onFeedback?: (value: AnswerFeedback) => void;
+  speaking?: boolean;
+  onSpeak?: () => void;
   /** Runs the turn's prompt again (after undoing its changes, when the host can). */
   onRetry?: () => void;
   /** What Retry will do, said in its tooltip. */
   retryTitle?: string;
 }
 
-export function AnswerActions({ text, latest, feedback = null, onFeedback, onRetry, retryTitle }: AnswerActionsProps) {
+export function AnswerActions({ text, latest, feedback = null, onFeedback, speaking = false, onSpeak, onRetry, retryTitle }: AnswerActionsProps) {
   const [copied, setCopied] = React.useState<"yes" | "failed" | null>(null);
   React.useEffect(() => {
     if (!copied) return;
@@ -47,7 +50,7 @@ export function AnswerActions({ text, latest, feedback = null, onFeedback, onRet
   };
 
   return (
-    <div className="cv2-answer-actions" role="toolbar" aria-label="Answer actions" data-latest={latest ? "true" : undefined}>
+    <div className="cv2-answer-actions" role="toolbar" aria-label="Answer actions" data-latest={latest || speaking ? "true" : undefined}>
       <button type="button" className="cv2-iconbtn" aria-label={copied === "yes" ? "Copied" : copied === "failed" ? "Could not copy" : "Copy"} title="Copy" onClick={() => void copy()}>
         <Glyph name={copied === "yes" ? "check" : "copy"} size={15} />
       </button>
@@ -74,6 +77,11 @@ export function AnswerActions({ text, latest, feedback = null, onFeedback, onRet
             <Glyph name="thumbs-down" size={15} />
           </button>
         </>
+      )}
+      {onSpeak && (
+        <button type="button" className="cv2-iconbtn" aria-label={speaking ? "Stop reading" : "Read aloud"} title={speaking ? "Stop reading" : "Read aloud"} onClick={onSpeak}>
+          {speaking ? <Glyph name="stop" size={15} /> : <Volume2 className="size-[15px]" motion="none" />}
+        </button>
       )}
       {onRetry && (
         <button type="button" className="cv2-iconbtn" aria-label="Retry" title={retryTitle ?? "Retry"} onClick={onRetry}>

@@ -285,6 +285,7 @@ export const Composer = React.forwardRef<
     setApprovalIndex: (i: number) => void;
     onOpenDock: (tab: "changes" | "agents" | "terminal") => void;
     onFocusChange?: (focused: boolean) => void;
+    onVoiceOpenChange?: (open: boolean) => void;
     /** Empty state: three lines tall. */
     tall?: boolean;
     /**
@@ -308,7 +309,7 @@ export const Composer = React.forwardRef<
     /** The outer box, for the landing-to-session travel. */
     stackRef?: React.Ref<HTMLDivElement>;
   }
->(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange, tall, variant = "session", gate = null, under, initialDraft, readOnly = false, onStartingPoint, workspaceControls, team = true, stackRef }, ref) {
+>(function Composer({ model, popover, setPopover, approvalIndex, setApprovalIndex, onOpenDock, onFocusChange, onVoiceOpenChange, tall, variant = "session", gate = null, under, initialDraft, readOnly = false, onStartingPoint, workspaceControls, team = true, stackRef }, ref) {
   const mac = useIsMac();
   const landing = variant === "landing";
   const { actions, instances, selection } = model;
@@ -438,6 +439,10 @@ export const Composer = React.forwardRef<
 
   const [dictating, setDictating] = React.useState(false);
   const voice = useCodeVoice({ disabled: dictating || !connected });
+  React.useEffect(() => {
+    onVoiceOpenChange?.(voice.open);
+    if (voice.open) return () => onVoiceOpenChange?.(false);
+  }, [onVoiceOpenChange, voice.open]);
 
   /**
    * A finished line, as the send button would send it: send, or queue / steer

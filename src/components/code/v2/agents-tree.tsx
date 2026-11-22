@@ -18,6 +18,9 @@
  * global tiers (the meter's fill is a Tier A change).
  */
 import * as React from "react";
+import { AgentFace } from "@/components/agents/agent-face";
+import { defaultAgentAvatar } from "@/lib/agents/avatar";
+import type { AgentState } from "@/lib/agents/state-labels";
 import { Markdown } from "@/components/chat/markdown";
 import type { AgentControlResult, TurnItem } from "@/lib/code-v2/contracts";
 import {
@@ -314,6 +317,7 @@ function AgentDetailPanel({ node, model, now, runBudgetUsd, onRunBudget, modelLa
   return (
     <section className="cv2-adetail" aria-labelledby={headingId}>
       <header className="cv2-adetail-head">
+        <SwarmFace node={node} animate={false} size={40} />
         <h3 id={headingId} className="cv2-m cv2-trunc">{node.label}</h3>
         <span className={cn("cv2-achip", node.state === "waiting" && "cv2-sig")} data-state={node.state}>
           <StateMark state={node.state} animate={live} />
@@ -455,28 +459,59 @@ function AgentDetailPanel({ node, model, now, runBudgetUsd, onRunBudget, modelLa
   );
 }
 
-function SwarmGrid({ agents, selected, selection, modelLabel, onSelect }: {
+const ORBIT_STATE: Record<AgentNodeState, AgentState> = {
+  thinking: "thinking",
+  tool: "working",
+  waiting: "waiting",
+  queued: "idle",
+  paused: "sleeping",
+  done: "done",
+  failed: "blocked",
+  stopped: "sleeping",
+};
+
+function SwarmFace({ node, animate, size = 36 }: { node: AgentTreeNode; animate: boolean; size?: number }) {
+  return <AgentFace
+    avatar={defaultAgentAvatar(node.id)}
+    state={ORBIT_STATE[node.state]}
+    size={size}
+    live={animate && isLive(node.state) && node.state !== "paused"}
+    still={!animate}
+  />;
+}
+
+function SwarmGrid({ agents, selected, selection, modelLabel, onSelect, animate }: {
   agents: readonly AgentTreeNode[];
   selected: string;
   selection: ModelSelection;
   modelLabel: ModelLabeler;
   onSelect: (id: string) => void;
+  animate: boolean;
 }) {
   return (
     <ul className="cv2-swarm-grid" aria-label="Swarm agents">
-      {agents.map((node) => (
-        <li key={node.id}>
-          <button type="button" className="cv2-swarm-card" data-agent-id={node.id} aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
-            <span className="flex w-full items-center justify-between gap-1.5">
-              <span className="cv2-m cv2-trunc">{node.label}</span>
-              <StateMark state={node.state} />
-            </span>
-            <span className="cv2-small cv2-trunc">{modelLabel(node.agent?.model ?? selection)}</span>
-            <span className={cn("cv2-small", node.state === "waiting" ? "cv2-sig" : "cv2-mute")}>{AGENT_NODE_STATE_LABEL[node.state]}</span>
-            {node.agent && <span className="cv2-swarm-task cv2-small cv2-mute">{node.agent.task || node.agent.title || node.step}</span>}
-          </button>
-        </li>
-      ))}
+      {agents.map((node) => {
+        const model = modelLabel(node.agent?.model ?? selection);
+        return (
+          <li key={node.id}>
+            <button type="button" className="cv2-swarm-card" data-state={node.state} data-agent-id={node.id} aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
+              <span className="cv2-swarm-card-head">
+                <SwarmFace node={node} animate={animate} />
+                <span className="cv2-swarm-identity">
+                  <span className="cv2-m cv2-trunc">{node.label}</span>
+                  <span className="cv2-small cv2-mute cv2-trunc" title={model}>{model}</span>
+                </span>
+                <Glyph name="chevron-right" size={13} className="cv2-swarm-open cv2-mute" />
+              </span>
+              <span className={cn("cv2-swarm-state cv2-small", node.state === "waiting" ? "cv2-sig" : "cv2-mute")}>
+                <StateMark state={node.state} />
+                {AGENT_NODE_STATE_LABEL[node.state]}
+              </span>
+              {node.agent && <span className="cv2-swarm-task cv2-small">{node.agent.task || node.agent.title || node.step}</span>}
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -510,9 +545,12 @@ function SwarmActivity({ items, agents, now, onSelect }: {
     <ol className="cv2-swarm-activity" aria-label="Swarm activity">
       {recent.map(({ id, agent, text }) => (
         <li key={id}>
-          <button type="button" className="flex flex-col gap-1" data-agent-id={agent.id} onClick={() => onSelect(agent.id)}>
-            <span className="cv2-m">{agent.label}</span>
-            <span className="w-full break-words cv2-small cv2-mute">{text}</span>
+          <button type="button" className="cv2-swarm-event" data-agent-id={agent.id} onClick={() => onSelect(agent.id)}>
+            <SwarmFace node={agent} animate={false} size={24} />
+            <span className="min-w-0">
+              <span className="cv2-m block">{agent.label}</span>
+              <span className="break-words cv2-small cv2-mute">{text}</span>
+            </span>
           </button>
         </li>
       ))}
@@ -642,7 +680,7 @@ export function AgentsTreePane({
           </ul>
         ) : view === "grid" ? (
           <>
-            <SwarmGrid agents={allAgents} selected={selected.id} selection={model.selection} modelLabel={modelLabel} onSelect={select} />
+            <SwarmGrid agents={allAgents} selected={selected.id} selection={model.selection} modelLabel={modelLabel} onSelect={select} animate={!historical} />
             {counts.total === 0 && <p className="px-4 pb-3 cv2-small cv2-mute">{runLive ? "Workers appear here as the lead assigns tasks." : "Send a task to start a Swarm."}</p>}
           </>
         ) : <SwarmActivity items={model.items} agents={allAgents} now={now} onSelect={select} />}

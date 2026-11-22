@@ -102,7 +102,7 @@ type DraftIo = { read(): { text: string; editing: boolean }; apply(text: string)
 
 export function CodeV2Route({ conversation, project, initialMessages, initialHistory }: CodeV2RouteProps) {
   const router = useRouter();
-  const { conversations, updateConversation, upsertConversation, features } = useApp();
+  const { conversations, updateConversation, upsertConversation, features, settings } = useApp();
   const meta = useCodeTaskMeta(conversation.id);
   const { presence } = useDevicePresence(conversation.codeWorkspaceKey ?? null, conversation.codeWorkspaceName?.trim() || null, !(meta.loaded && meta.isCloud));
   const session = useCodeSession({
@@ -896,6 +896,14 @@ export function CodeV2Route({ conversation, project, initialMessages, initialHis
         sidebar={false}
         byok={byok}
         resolveScreenshot={resolveScreenshot}
+        voiceId={settings.voiceId}
+        loadExportItems={async () => {
+          const messages = await session.loadOlderMessages({ all: true });
+          return messages ? legacyToItems({
+            messages: messages as unknown as LegacySessionInput["messages"],
+            status: session.status,
+          }).items : null;
+        }}
         // Never over a task the landing just sent: the Connections sheet used to open as the first prompt went.
         firstRun={!instances.some((i) => i.kind !== "alevr" && (i.status === "ready" || i.status === "limited")) && !keys.length && items.length === 0 && !firstItems && !handoff.pending()}
         onProbe={env.ready ? env.probe : undefined}

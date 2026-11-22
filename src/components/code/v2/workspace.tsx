@@ -40,6 +40,10 @@ import type { MessageMatch } from "@/lib/code-v2/palette-search";
 import { usePaletteMessageSearch } from "./use-palette-search";
 import { lastPrompt } from "@/lib/code-v2/answer-actions";
 import { DURATION } from "@/lib/design/tokens.generated";
+import { CHAT_EXPORT_COPY, downloadTextFile, type ChatExportKind } from "@/components/chat/conversation-export-menu";
+import { conversationExportFileName, conversationExportTurns, conversationMarkdown, type ExportTurn } from "@/components/chat/conversation-export";
+import { ConversationPrint } from "@/components/chat/conversation-print";
+import { codeExportMessages } from "@/lib/code-v2/session-transcript";
 import { cachedCodePrefs, useCodePrefs } from "./use-code-prefs";
 
 const WIDTH_KEY = "alevr.code.dockWidth";
@@ -90,6 +94,9 @@ export interface CodeWorkspaceProps {
   /** Draw skeleton lines while the session loads. */
   loading?: boolean;
   resolveScreenshot?: (ref: string) => string | null;
+  /** Fetch the whole visible transcript when the session is paged. */
+  loadExportItems?: () => Promise<readonly TurnItem[] | null>;
+  voiceId?: string | null;
   className?: string;
 }
 
@@ -248,7 +255,7 @@ function Shortcuts({ onClose, exit }: { onClose: () => void; exit: ExitProps }) 
   );
 }
 
-export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, onRefreshSubscriptions, onSetup, onManaged, firstRun, loading, resolveScreenshot, className }: CodeWorkspaceProps) {
+export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, onRefreshSubscriptions, onSetup, onManaged, firstRun, loading, resolveScreenshot, loadExportItems, voiceId, className }: CodeWorkspaceProps) {
   const mac = useIsMac();
   const [dock, dispatch] = React.useReducer(dockReducer, undefined, () => {
     const s = initialDockState(readStored(WIDTH_KEY, Number) ?? undefined);
@@ -279,6 +286,10 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   const [agentId, setAgentId] = React.useState<string | null>(ui.selectedAgentId ?? null);
   const [approvalIndex, setApprovalIndex] = React.useState(0);
   const [composerFocus, setComposerFocus] = React.useState(false);
+  const [voiceOpen, setVoiceOpen] = React.useState(false);
+  const [printJob, setPrintJob] = React.useState<{ title: string; exportedAt: Date; turns: ExportTurn[] } | null>(null);
+  const exportRequest = React.useRef<symbol | null>(null);
+  React.useEffect(() => () => { exportRequest.current = null; }, [model.thread.id]);
   const [hidden, setHidden] = React.useState(false);
   const [renaming, setRenaming] = React.useState(false);
   // One toast system on this screen: the app's (sonner), not a second bottom-centre pill.
@@ -540,12 +551,42 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       setApprovalIndex={setApprovalIndex}
       onOpenDock={(tab) => openDock({ tab })}
       onFocusChange={setComposerFocus}
+      onVoiceOpenChange={setVoiceOpen}
       tall={empty}
       team={model.teamAvailable !== false}
     />
     </>
   );
 
+  const exportSession = async (kind: ChatExportKind) => {
+    if (exportRequest.current) return;
+    const request = Symbol();
+    exportRequest.current = request;
+    try {
+      const items = model.history?.hasOlder ? await loadExportItems?.() : model.items;
+      if (exportRequest.current !== request) return;
+      if (!items) {
+        notify.error("Couldn’t export. The start of this session didn’t load.");
+        return;
+      }
+      const input = { title: model.thread.title, messages: codeExportMessages(items), exportedAt: new Date() };
+      if (kind === "print") {
+        setPrintJob({ title: input.title, exportedAt: input.exportedAt, turns: conversationExportTurns(input) });
+      } else if (kind === "copy") {
+        await navigator.clipboard.writeText(conversationMarkdown(input));
+        if (exportRequest.current === request) notify.success("Copied the session as Markdown.");
+      } else {
+        downloadTextFile(conversationExportFileName(input.title, input.exportedAt), conversationMarkdown(input));
+      }
+    } catch {
+      if (exportRequest.current === request) notify.error(kind === "copy" ? "Couldn’t copy. Try Download Markdown." : "Couldn’t export this session.");
+    } finally {
+      if (exportRequest.current === request) exportRequest.current = null;
+    }
+  };
+
+  const canExport = (!model.history?.hasOlder || !!loadExportItems)
+    && model.items.some((item) => !item.agentId && (item.kind === "user_message" || item.kind === "assistant_message"));
   const a = model.actions;
   const sessionMenu: MenuEntry[] = [
     ...(a.renameThread ? [{ id: "rename", label: "Rename", icon: <Glyph name="rename" size={16} />, onSelect: rename }] : []),
@@ -554,6 +595,19 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       : []),
     ...(a.shareThread ? [{ id: "share", label: "Share…", icon: <Glyph name="share" size={16} />, onSelect: () => a.shareThread?.() }] : []),
     { id: "copy", label: "Copy reference", icon: <Glyph name="copy" size={16} />, onSelect: () => run("thread.copyReference") },
+    ...(canExport ? [{
+      id: "export",
+      label: CHAT_EXPORT_COPY.heading,
+      icon: <Glyph name="download" size={16} />,
+      sub: {
+        title: "Export session",
+        entries: [
+          { id: "copy", label: CHAT_EXPORT_COPY.copy, onSelect: () => void exportSession("copy") },
+          { id: "download", label: CHAT_EXPORT_COPY.download, onSelect: () => void exportSession("download") },
+          { id: "print", label: CHAT_EXPORT_COPY.print, onSelect: () => void exportSession("print") },
+        ],
+      },
+    }] : []),
     ...(checkpoints.length && model.actions.rollback
       ? [
           {
@@ -788,6 +842,8 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
                   onRetry={retryLast}
                   onResend={model.actions.resend}
                   onEditMessage={(text) => composer.current?.setDraft(text)}
+                  voiceId={voiceId}
+                  readingBlocked={voiceOpen}
                   feedbackFor={model.actions.feedbackFor}
                   onFeedback={model.actions.setFeedback}
                   starting={model.starting}
@@ -827,6 +883,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
             </>
           )}
       </main>
+      {printJob && <ConversationPrint {...printJob} onDone={() => setPrintJob(null)} />}
       {palettePresence.mounted && (
         <Palette
           exit={exitOf(palettePresence)}
