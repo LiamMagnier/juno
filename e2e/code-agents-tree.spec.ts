@@ -19,6 +19,8 @@ async function openGallery(page: Page, query = "state=subagents&bare=1", { phone
     const agentsTab = page.getByRole("tab", { name: /Agents/ });
     if (await agentsTab.count()) await agentsTab.first().click();
   }
+  // A Swarm opens on its faces; the keyboard tree is the second view.
+  await page.getByRole("button", { name: /^tree$/i }).click({ timeout: 30_000 });
   await expect(page.getByRole("tree", { name: "Agents in this run" })).toBeVisible({ timeout: 30_000 });
 }
 

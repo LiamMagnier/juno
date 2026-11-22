@@ -208,18 +208,21 @@ test("the Swarm roster names agents for their work and follows persisted Code ta
   await expect(page.getByRole("button", { name: /^Orchestrator: Swarm/ })).toBeVisible();
   await page.getByRole("button", { name: "Agents", exact: true }).click();
   const panel = page.getByRole("tabpanel", { name: "Agents" });
-  const roster = panel.getByRole("tree", { name: "Agents in this run" });
+  const grid = panel.getByRole("list", { name: "Swarm agents" });
   await expect(panel.getByRole("heading", { name: "Swarm" })).toBeVisible();
-  // Named for their work, never "Worker 1" / "Worker 2".
-  const mapper = roster.getByRole("treeitem", { name: /^Auth middleware mapper, Done/ });
-  const checker = roster.getByRole("treeitem", { name: /^Reset form checker, Thinking, Inspecting the reset page/ });
-  await expect(roster.getByRole("treeitem")).toHaveCount(3);
-  await expect(mapper).toBeVisible();
-  await expect(checker).toBeVisible();
+  // Named for their work, never "Worker 1" / "Worker 2", each with its face.
+  const mapper = grid.getByRole("button", { name: /^Auth middleware mapper, Done/ });
+  const checker = grid.getByRole("button", { name: /^Reset form checker, Thinking, Inspecting the reset page, .*Sonnet/i });
+  await expect(grid.getByRole("listitem")).toHaveCount(2);
+  await expect(checker.locator(".agent-face[data-state=working]")).toBeVisible();
+  await expect(mapper.locator(".agent-face[data-state=done]")).toBeVisible();
   await expect(panel.getByText(/Worker \d/)).toHaveCount(0);
   await expect(panel.getByText("1 of 2 done")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("code-swarm-live.png"), animations: "disabled" });
-  await checker.locator(":scope > .cv2-anode").click();
+  await panel.getByRole("button", { name: /^activity$/i }).click();
+  await expect(panel.getByRole("list", { name: "Swarm activity" }).getByText(/Check the password reset form/)).toBeVisible();
+  await panel.getByRole("button", { name: /^grid$/i }).click();
+  await checker.click();
   await expect(panel.getByRole("heading", { name: "Reset form checker" })).toBeVisible();
   if (isMobile) {
     await panel.getByRole("button", { name: "All agents" }).click();

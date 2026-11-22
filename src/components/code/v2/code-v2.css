@@ -825,11 +825,160 @@ button.cv2-set-row:hover { background: hsl(var(--accent) / 0.6); }
 .cv2-runstrip > [data-state="failed"] { background: hsl(var(--destructive)); }
 .cv2-runstrip > [data-state="paused"], .cv2-runstrip > [data-state="stopped"] { background: hsl(var(--muted-foreground) / .3); }
 
+/* The view switch: Grid (the constellation and the cards), Tree, Activity. */
+.cv2-swarm-view { display: inline-flex; gap: 2px; margin: 0 1rem .75rem; padding: 3px; align-self: flex-start; flex: none; border-radius: theme("borderRadius.control"); background: hsl(var(--muted)); }
+.cv2 .cv2-swarm-view button { height: 28px; padding: 0 12px; border-radius: 7px; color: hsl(var(--muted-foreground)); transition: background-color var(--dur-fast), color var(--dur-fast); }
+.cv2 .cv2-swarm-view button:hover { color: hsl(var(--foreground)); }
+.cv2 .cv2-swarm-view button[aria-pressed="true"] { background: hsl(var(--background)); color: hsl(var(--foreground)); box-shadow: 0 1px 2px hsl(var(--foreground) / .08), 0 0 0 1px hsl(var(--border) / .6); }
+@media (pointer: coarse) { .cv2 .cv2-swarm-view button { min-height: 44px; } }
+
+/* The constellation. The lead in the middle on the orbit its agents ride;
+   a link from each agent to whoever started it. The links are the motion:
+   work flows out along a working agent's link, a waiting agent's link beats
+   in coral, a finished one settles into a quiet line. A new agent travels
+   out from the lead to its place (the one entrance in the panel). */
+.cv2-stage {
+  position: relative;
+  height: 196px;
+  margin: 0 1rem .75rem;
+  flex: none;
+  border-radius: theme("borderRadius.panel");
+  background: hsl(var(--muted) / .55);
+  box-shadow: inset 0 0 0 1px hsl(var(--border) / .6);
+  container: cv2stage / inline-size;
+}
+.cv2-stage-links { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.cv2-stage-links .orbit { fill: none; stroke: hsl(var(--border)); stroke-width: 1; stroke-dasharray: 2 6; }
+.cv2-stage-links line {
+  stroke: hsl(var(--border));
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 1;
+  transition: stroke var(--dur-base) var(--ease-out-soft), opacity var(--dur-base) var(--ease-out-soft);
+}
+.cv2-stage-links line:not([data-home]) { opacity: 0; }
+.cv2-stage-links line[data-state="thinking"],
+.cv2-stage-links line[data-state="tool"] { stroke: hsl(var(--presence) / .7); stroke-width: 2; stroke-dasharray: 3 7; animation: cv2-flow var(--loop-beat) linear infinite; }
+.cv2-stage-links line[data-state="waiting"] { stroke: hsl(var(--signal)); stroke-width: 2; animation: cv2-beat var(--loop-breathe) var(--ease-breathe) infinite; }
+.cv2-stage-links line[data-state="done"] { stroke: hsl(var(--foreground) / .3); }
+.cv2-stage-links line[data-state="failed"] { stroke: hsl(var(--destructive) / .7); stroke-dasharray: 2 4; }
+.cv2-stage-links line[data-state="paused"],
+.cv2-stage-links line[data-state="stopped"],
+.cv2-stage-links line[data-state="queued"] { stroke-dasharray: 1 5; }
+@keyframes cv2-flow { to { stroke-dashoffset: -10; } }
+@keyframes cv2-beat { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
+
+.cv2 .cv2-stage-face {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  padding: 3px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  transition: left var(--dur-emphasis) var(--ease-out-strong), top var(--dur-emphasis) var(--ease-out-strong), transform var(--dur-fast) var(--ease-out-soft);
+}
+.cv2 .cv2-stage-face:hover { transform: translate(-50%, -50%) scale(calc(1 + .06 * var(--motion-shift, 1))); }
+.cv2 .cv2-stage-face[data-selected]::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px hsl(var(--ring) / .55);
+  pointer-events: none;
+}
+.cv2-stage-lead { z-index: 2; }
+.cv2-stage-name {
+  position: absolute;
+  top: calc(100% + 1px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 8.5rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  line-height: 16px;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+.cv2-stage-face[data-selected] .cv2-stage-name,
+.cv2-stage-face:hover .cv2-stage-name { color: hsl(var(--foreground)); }
+.cv2-stage-face[data-state="waiting"] .cv2-stage-name { color: hsl(var(--signal-ink)); }
+/* A helper an agent started sits close to it: its name shows on hover or when picked. */
+.cv2-stage-face[data-nested]:not([data-selected]):not(:hover) .cv2-stage-name { display: none; }
+/* A narrow dock has no room for every name: the selected and hovered face keep theirs. */
+@container cv2stage (max-width: 439px) {
+  .cv2-stage-face:not([data-selected]):not(:hover) .cv2-stage-name { display: none; }
+}
+.cv2-stage-more { position: absolute; right: 10px; bottom: 8px; }
+
+/* One card per agent: its face, its name, its model, what it is doing or found. */
+.cv2-swarm-grid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+  gap: .625rem;
+  margin: 0;
+  padding: 0 1rem .875rem;
+}
+.cv2-swarm-grid > li { min-width: 0; }
+.cv2 .cv2-swarm-card {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  width: 100%;
+  height: 100%;
+  padding: .75rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: theme("borderRadius.panel");
+  background: hsl(var(--card));
+  text-align: start;
+  transition: background-color var(--dur-fast), border-color var(--dur-fast), transform var(--dur-press) var(--ease-out-soft);
+}
+.cv2 .cv2-swarm-card:hover { border-color: hsl(var(--foreground) / .3); }
+.cv2 .cv2-swarm-card:active { transform: scale(calc(1 - .01 * var(--motion-shift, 1))); }
+.cv2 .cv2-swarm-card[aria-pressed="true"] { border-color: hsl(var(--primary) / .5); background: hsl(var(--primary) / .04); }
+.cv2 .cv2-swarm-card[data-state="waiting"]:not([aria-pressed="true"]) { border-color: hsl(var(--signal) / .55); }
+.cv2 .cv2-swarm-card:focus-visible { border-radius: theme("borderRadius.panel"); }
+.cv2-swarm-card-head { display: flex; align-items: center; gap: .625rem; width: 100%; min-width: 0; }
+.cv2-swarm-card-head > .agent-face { flex: none; }
+.cv2-swarm-identity { flex: 1; min-width: 0; display: grid; }
+.cv2-swarm-time { align-self: flex-start; white-space: nowrap; }
+.cv2-swarm-state { display: flex; align-items: center; gap: .375rem; min-height: 16px; }
+.cv2 .cv2-swarm-card .cv2-swarm-task {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: hsl(var(--foreground));
+}
+.cv2-swarm-card[data-state="done"] .cv2-swarm-task,
+.cv2-swarm-card[data-state="stopped"] .cv2-swarm-task { color: hsl(var(--muted-foreground)); }
+
+/* Activity: what each agent did, newest first. */
+.cv2-swarm-activity { list-style: none; display: grid; gap: 2px; margin: 0; padding: 0 .5rem .75rem; }
+.cv2 .cv2-swarm-event { display: flex; gap: .625rem; align-items: flex-start; width: 100%; padding: .5rem; border-radius: theme("borderRadius.control"); text-align: start; transition: background-color var(--dur-fast); }
+.cv2 .cv2-swarm-event:hover { background: hsl(var(--accent)); }
+.cv2-swarm-event-head { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; min-width: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* As specific as the state rules above, and after them, so it wins. */
+  .cv2-stage-links line[data-state] { animation: none; opacity: 1; }
+  .cv2 .cv2-stage-face { transition: none; }
+  .cv2 .cv2-stage-face:hover, .cv2 .cv2-swarm-card:active { transform: translate(-50%, -50%); }
+  .cv2 .cv2-swarm-card:active { transform: none; }
+}
+.cv2[data-hidden="true"] .cv2-stage-links line[data-state] { animation-play-state: paused; }
+
 .cv2-agents-empty { display: grid; justify-items: center; align-content: center; gap: .75rem; padding: 2rem 1rem; text-align: center; flex: 1; }
 .cv2-agents-empty h2 { font-size: 14px; font-weight: 500; }
 .cv2-agents-empty-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: theme("borderRadius.control"); color: hsl(var(--muted-foreground)); background: hsl(var(--muted)); }
 @media (pointer: coarse) { .cv2-agents-empty .cv2-btn { min-height: 44px; } }
-.cv2-atree-wrap { flex: 0 1 auto; max-height: 50%; min-height: 3rem; overflow: auto; border-block: 1px solid hsl(var(--border) / .7); padding: 4px 0; overscroll-behavior: contain; }
+.cv2-atree-wrap { flex: 0 1 auto; max-height: 50%; min-height: 3rem; overflow: auto; border-bottom: 1px solid hsl(var(--border) / .7); padding: 0 0 4px; overscroll-behavior: contain; }
+.cv2-atree-wrap[data-view="grid"] { max-height: 64%; }
+.cv2-atree-wrap[data-view="tree"] .cv2-runstrip { margin-top: 2px; }
 .cv2-agents-hint { margin: 0; padding: .25rem 1rem .75rem 2.75rem; }
 .cv2-atree, .cv2-agroup { list-style: none; margin: 0; padding: 0; }
 /* A child hangs from a guide under its parent's chevron, so who started whom

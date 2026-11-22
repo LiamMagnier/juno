@@ -170,12 +170,12 @@ for (const s of STATES) {
 test("Swarm shows the real run roster with model names and agent states", () => {
   const f = fixture("subagents");
   const html = renderWorkspace({ model: f.model, ui: f.ui });
-  // One roster: the tree, each row named for its work, with its model in one word.
-  assert.match(html, /role="tree" aria-label="Agents in this run"/);
-  assert.match(html, /aria-label="Hook audit, Paused/);
-  assert.match(html, /class="m cv2-trunc" title="DeepSeek[^"]*">DeepSeek/);
+  // The Swarm's grid: a face and a card per agent, named for its work, with its model and its state in words.
+  assert.match(html, /aria-label="Swarm agents"/);
+  assert.match(html, /data-agent-id="w2a"/);
+  assert.match(html, /aria-label="Hook audit, Paused, Find every reader of useCartTotal, DeepSeek[^"]*"/);
   assert.match(html, /Client-side total updater/);
-  assert.doesNotMatch(html, /aria-label="Agent view"/);
+  assert.match(html, /aria-label="Agent view"/);
 });
 
 test("the needs-you state takes the composer over with the asker and the three decisions", () => {

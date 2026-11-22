@@ -167,12 +167,15 @@ test("pane: the lead offers run controls, and a reader without controls sees no 
   assert.doesNotMatch(html, /Steer Client-side total updater/);
 });
 
-test("workspace: the Agents dock shows one roster for a Swarm and for phased runs, and keeps Best of N's compare", () => {
+test("workspace: a Swarm opens on its faces, a phased run on its tree, and Best of N keeps its compare", () => {
   const sub = fixture("subagents");
   const swarm = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: sub.model, ui: sub.ui }));
   assert.match(swarm, /<h2>Swarm<\/h2>/);
-  assert.match(swarm, /role="tree"/);
-  assert.doesNotMatch(swarm, /aria-label="Agent view"|aria-label="Swarm agents"|aria-label="Swarm activity"/, "one view, not a grid, a tree and a feed of the same agents");
+  assert.match(swarm, /aria-label="Agent view"/);
+  assert.match(swarm, /aria-label="Swarm agents"/, "the cards");
+  assert.match(swarm, /class="cv2-stage"/, "the constellation");
+  assert.match(swarm, /class="agent-face/, "with faces");
+  assert.doesNotMatch(swarm, /Worker \d/, "named for their work");
   const phased = { ...sub.model, routing: { ...sub.model.routing, preset: "plan-build-verify" as const } };
   assert.match(renderToStaticMarkup(React.createElement(CodeWorkspace, { model: phased, ui: sub.ui })), /role="tree"/);
   const best = fixture("best-of-n");
