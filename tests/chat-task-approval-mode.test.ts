@@ -133,7 +133,10 @@ test("the composer shows the chip only where a task can start, and hides it whil
   const view = read("../src/components/chat/chat-view.tsx");
   assert.match(view, /const tasksPossible = !privateMode && PLANS\[quota\.plan\]\.agents;/);
   const composer = read("../src/components/chat/composer.tsx");
-  assert.match(composer, /\{taskModeControl && modality === "chat" && !steerMode && \(/);
+  // The shared surface receives this row only for Chat outside steer mode.
+  assert.match(composer, /context=\{modality === "chat" && !steerMode && \(\s*<>\s*\{taskModeControl && \(/);
+  const surface = read("../src/components/chat/composer-surface.tsx");
+  assert.match(surface, /trailing=\{voice \? voice\.controls : \(\s*<>\s*\{context\}/);
   // The Permissions page no longer promises a control that does not exist.
   const permissions = read("../src/app/(app)/permissions/page.tsx");
   assert.match(permissions, /in a chat’s composer/);

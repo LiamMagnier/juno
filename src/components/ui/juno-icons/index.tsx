@@ -828,7 +828,8 @@ export function Icon({ name, size: sizeProp = 20, state = "rest", title, value, 
     setTurned(state === "active");
   }
 
-  const strokePx = px ?? iconStrokePx(size);
+  const interfaceIcon = line == null && px == null && size <= 24;
+  const strokePx = px ?? (interfaceIcon ? 1.5 : iconStrokePx(size));
   const sw = line ?? Math.round(((strokePx * 24) / size) * 1000) / 1000;
   const dpr = React.useSyncExternalStore(subscribeDpr, dprNow, dprServer);
   const fits = fitOn && line == null && size >= 12 && size <= 32;
@@ -860,6 +861,7 @@ export function Icon({ name, size: sizeProp = 20, state = "rest", title, value, 
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className ? `ji ${className}` : "ji"}
+      data-interface-icon={interfaceIcon ? "" : undefined}
       data-icon={name}
       data-state={state}
       data-turned={turned ? "" : undefined}

@@ -53,7 +53,7 @@ const ON: Record<string, string> = {
 };
 
 /** Aliases and side doors that would turn a gate on behind the test's back. */
-const ALSO_CLEARED = ["AGENT_COMPUTER_PROVIDER", "AGENT_PAYMENTS_TEST_PROVIDER"];
+const ALSO_CLEARED = ["AGENT_COMPUTER_PROVIDER", "AGENT_PAYMENTS_TEST_PROVIDER", "CONNECTOR_GOOGLE_DRIVE_CLIENT_ID", "CONNECTOR_GOOGLE_DRIVE_CLIENT_SECRET"];
 
 const firstParty = (id: string) => () => {
   const def = firstPartyDefinitions("https://alevr.example", process.env).find((d) => d.id === id);

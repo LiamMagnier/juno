@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { toast } from "sonner";
 import { ChevronRight, Folder, Loader2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
@@ -26,8 +27,8 @@ interface Picked {
 }
 
 /** Where the connect flow brings the person back to: this project, with the picker open. */
-export function driveConnectHref(projectId: string): string {
-  return `/api/connectors/google-drive/connect?return=${encodeURIComponent(`/projects/${projectId}?drive=1`)}`;
+export function driveConnectHref(projectId: string, hrefFor = (href: string) => href): string {
+  return `/api/connectors/google-drive/connect?return=${encodeURIComponent(hrefFor(`/projects/${encodeURIComponent(projectId)}?drive=1`))}`;
 }
 
 /**
@@ -66,6 +67,7 @@ export function ProjectDriveDialog({
 }) {
   const browser = useDriveBrowser(`/api/projects/${encodeURIComponent(projectId)}/sources/drive`, open && drive?.enabled === true && drive.connected);
   const { entries, error, setError, pageError, loading, loadingMore, cursor, load, search, parent, enter, changeLocation } = browser;
+  const hrefFor = useWorkspaceHref();
   const [selected, setSelected] = React.useState<Map<string, Picked>>(new Map());
   const [includeSubfolders, setIncludeSubfolders] = React.useState(true);
   const [adding, setAdding] = React.useState(false);
@@ -236,7 +238,7 @@ export function ProjectDriveDialog({
             </Button>
             {needsConnect ? (
               <Button asChild>
-                <a href={driveConnectHref(projectId)}>
+                <a href={driveConnectHref(projectId, hrefFor)}>
                   <GoogleDriveMark className="size-4" />
                   {reconnect ? "Reconnect Google Drive" : "Connect Google Drive"}
                 </a>

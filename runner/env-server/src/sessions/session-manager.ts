@@ -82,6 +82,7 @@ interface LiveSession {
   idleWaiters: (() => void)[];
   /** The running turn was started by a timer, not a person (a resume at the usage reset). */
   unattendedTurn?: boolean;
+  projectContext?: string;
 }
 
 export interface SessionManagerOptions {
@@ -368,6 +369,13 @@ export class SessionManager {
     if (!gate.enabled) throw new WireError("not_ready", gate.reason ?? `${instance.label} is not available.`);
     if (instance.status === "not-installed") throw new WireError("not_ready", instance.statusMessage ?? `${instance.label} is not installed.`);
     if (instance.status === "signed-out") throw new WireError("not_ready", instance.statusMessage ?? `Sign in to ${instance.label} first.`);
+    if (params.projectContext !== undefined) {
+      const context = params.projectContext;
+      if (context !== null && (typeof context !== "string" || context.length > 90_000)) {
+        throw new WireError("bad_request", "Invalid Alevr project context.");
+      }
+      live.projectContext = context || undefined;
+    }
     const log = live.log;
     // skills lane: an input that names its skills sets the thread's selection
     // (all but the `/name` ones); one that does not runs under the selection.
@@ -1004,7 +1012,8 @@ export class SessionManager {
       const skillText = await this.skillInstructions(cwd, params.input.skills ?? []);
       const engineKind = instance.kind === "alevr" || instance.kind === "byok";
       const { skills: _skills, ...bareInput } = params.input;
-      const turnInput: UserInput = skillText && !engineKind ? { ...bareInput, text: `${skillText}\n\n${bareInput.text}` } : bareInput;
+      const context = [engineKind ? "" : skillText, live.projectContext].filter(Boolean).join("\n\n");
+      const turnInput: UserInput = context ? { ...bareInput, text: `${context}\n\n${bareInput.text}` } : bareInput;
       // Interrupted while the runtime was starting: nothing was sent yet.
       if (abort.signal.aborted) throw new TurnStoppedEarly();
       result = await provider.runTurn({

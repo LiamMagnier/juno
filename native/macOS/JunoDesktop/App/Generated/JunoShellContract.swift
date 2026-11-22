@@ -14,7 +14,7 @@ enum JunoShellContract {
     /// Bumped when the contract's shape changes.
     static let version = 2
     /// SHA-256 of the contract this was generated from.
-    static let digest = "454af1268ac276292dccdfc9336c201e62f128512f148149104dd4ca0bc6b0b9"
+    static let digest = "cedffdf1092a782d72115a81fc7a61bf70977a93cf586680540b9d7374ea23ed"
 }
 
 /// An account's plan, lowest to highest (`Plan` in prisma/schema.prisma,

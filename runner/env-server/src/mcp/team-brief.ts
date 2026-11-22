@@ -22,9 +22,21 @@ const name = (s: ModelSelection | undefined) => (s ? `${s.model} (${s.instanceId
 
 /** The brief, or undefined when the routing is not a team or the lead is Alevr's own engine. */
 export function teamBrief(routing: RoleRouting | undefined, leadKind: ProviderKind | null): string | undefined {
-  if (!routing || routing.preset !== "plan-build-verify" || leadKind === "alevr" || leadKind === "byok") return undefined;
+  if (!routing || !leadKind || leadKind === "alevr" || leadKind === "byok") return undefined;
   const builders = Math.max(1, routing.workers?.length ?? 1);
   const budget = routing.budget?.maxUsd !== undefined ? ` The run's budget is $${routing.budget.maxUsd.toFixed(2)}; spawn_subagent refuses work once it is spent, so stop and report.` : "";
+  if (routing.preset === "lead-workers") {
+    return [
+      "<alevr_team>",
+      `You lead this run. For independent tasks, use the alevr MCP tool spawn_subagent with role "worker" and omit model and instanceId to use the configured worker. Run no more than ${builders} workers at once.`,
+      "Give each worker a self-contained brief with its own scope and expected result. Keep overlapping edits sequential. Use wait_subagent to collect the results before summarizing.",
+      ...(routing.explorer ? ['Use role "explorer" for read-only codebase research when it helps.'] : []),
+      ...(routing.reviewer ? ['Use role "reviewer" to check the changes when a separate review would help.'] : []),
+      `Keep small tasks with the lead and report any incomplete or failed work.${budget}`,
+      "</alevr_team>",
+    ].join("\n");
+  }
+  if (routing.preset !== "plan-build-verify") return undefined;
   return [
     "<alevr_team>",
     "You lead a team in Alevr. Work in three phases, in order, using the alevr MCP tools (spawn_subagent, then wait_subagent):",

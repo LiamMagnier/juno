@@ -52,11 +52,11 @@ test("?type= reads the enum in any case, and anything else as All", () => {
 });
 
 test("a chip writes ?type= into the URL and All takes it out, keeping the rest", () => {
-  assert.equal(homeHrefForType("", "DESIGN"), "/artifacts?type=DESIGN");
-  assert.equal(homeHrefForType("?type=DESIGN", "ALL"), "/artifacts");
-  assert.equal(homeHrefForType("?type=DESIGN&q=hero", "ALL"), "/artifacts?q=hero");
-  assert.equal(homeHrefForType("?type=HTML", "MERMAID"), "/artifacts?type=MERMAID");
-  assert.equal(homeHrefForType("?q=hero", "SVG"), "/artifacts?q=hero&type=SVG");
+  assert.equal(homeHrefForType("", "DESIGN"), "/library?type=DESIGN&view=artifacts");
+  assert.equal(homeHrefForType("?type=DESIGN", "ALL"), "/library?view=artifacts");
+  assert.equal(homeHrefForType("?type=DESIGN&q=hero", "ALL"), "/library?q=hero&view=artifacts");
+  assert.equal(homeHrefForType("?type=HTML", "MERMAID"), "/library?type=MERMAID&view=artifacts");
+  assert.equal(homeHrefForType("?q=hero", "SVG"), "/library?q=hero&type=SVG&view=artifacts");
 });
 
 test("?new=design is the only New request understood today", () => {
@@ -215,7 +215,7 @@ test("startDesign throws the route's reason when it gives one, else the generic 
 // ── Facts about the page and the tile ─────────────────────────────────────
 
 test("the home no longer claims to hold everything, and opens every row at /a/{id}", () => {
-  const page = code("src/app/(app)/artifacts/page.tsx");
+  const page = code("src/components/library/library-artifacts.tsx");
   // X-list "Lede copy": generated images and task files are not listed here.
   assert.doesNotMatch(page, /Everything Juno built with you/);
   // Grid tile and list row, both.

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -19,12 +20,11 @@ import { useEnvLink } from "@/components/code/v2/use-env-link";
 import { useDevicePresence } from "@/components/code/code-session-meta";
 import { useApp } from "@/components/app/app-provider";
 import { openSettings } from "@/components/settings/settings-sections";
-import { CodeIcons, StatusIcons } from "@/lib/app-icons";
+import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import {
   CLOUD_RUNTIME_APPROVALS,
   applyComposerMode,
   cloudPermissionMode,
-  composerModeInfo,
   composerModeOf,
   landingMode,
   projectModeKey,
@@ -41,7 +41,6 @@ import type { ModelSelection, ProviderInstance, ProviderModel, RoleRouting } fro
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
-import { CodeStartingPoints } from "@/components/code/code-landing-actions";
 import { seedThreadSkills, useLandingSkills } from "@/components/code/code-landing-skills";
 import { useCodePrefs } from "@/components/code/v2/use-code-prefs";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
@@ -110,7 +109,7 @@ const PREFILL_NOTES: Record<CodePrefillNote, string> = {
     "That link named an environment. Nothing here chooses one yet, so this run gets the default.",
 };
 
-const PICK_PROJECT_LABEL = "Pick a project to start";
+const PICK_FOLDER_LABEL = "Choose a folder to start";
 const PICK_REPOSITORY_LABEL = "Pick a repository to start";
 const STARTING_LABEL = "Starting…";
 const START_FAILED_MESSAGE = "Couldn’t start the session. Check your connection and try again.";
@@ -147,6 +146,7 @@ const NOOP = () => undefined;
 export function CodeComposer({
   className,
   prefill,
+  project,
 }: {
   className?: string;
   /**
@@ -156,6 +156,7 @@ export function CodeComposer({
    * do what `/chat?q=` does.
    */
   prefill?: CodePrefill;
+  project?: { id: string; name: string };
 }) {
   const router = useRouter();
   const { upsertConversation, removeConversation, features } = useApp();
@@ -172,7 +173,7 @@ export function CodeComposer({
   const draftIo = React.useRef<DraftIo | null>(null);
   const landingDraft = React.useMemo<DraftChannel>(
     () => ({
-      key: codeDraftKey(null),
+      key: codeDraftKey(null, project?.id),
       attach: (io) => {
         draftIo.current = io;
         return () => {
@@ -182,7 +183,7 @@ export function CodeComposer({
       changed: NOOP,
       cleared: NOOP,
     }),
-    [],
+    [project?.id],
   );
 
   // —— Target (Device ⇄ Cloud) ——
@@ -431,6 +432,7 @@ export function CodeComposer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind: "code",
+          projectId: project?.id,
           codeWorkspaceName: w.name,
           codeWorkspacePath: w.path,
           codeWorkspaceKey: w.key ?? undefined,
@@ -439,20 +441,27 @@ export function CodeComposer({
       });
       if (!res.ok) throw new Error("conversation");
       const { conversation } = (await res.json()) as { conversation: ClientConversation };
-      seedThreadMode(conversation.id);
       if (routing.preset !== "solo") {
-        await fetch(`/api/code/routing/${conversation.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ routing: effectiveRouting }),
-        }).catch(() => undefined);
+        try {
+          const configured = await fetch(`/api/code/routing/${conversation.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ routing: effectiveRouting }),
+          });
+          if (!configured.ok) throw new Error("Could not save the orchestrator");
+        } catch {
+          void fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" }).catch(() => undefined);
+          toast.error("Couldn’t save the orchestrator. Check the team models or try again.");
+          return false;
+        }
       }
+      seedThreadMode(conversation.id);
       setPendingCodePrompt(conversation.id, seedThreadSkills(landingSkills, conversation.id, text), attachments);
       upsertConversation({ ...conversation, ...(selection.instanceId === "alevr" ? { model: selection.model } : {}) });
       openSession(conversation.id);
       return true;
     },
-    [effectiveRouting, landingSkills, openSession, routing.preset, seedThreadMode, selection, upsertConversation],
+    [effectiveRouting, landingSkills, openSession, project?.id, routing.preset, seedThreadMode, selection, upsertConversation],
   );
 
   const startCloud = React.useCallback(
@@ -465,6 +474,7 @@ export function CodeComposer({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             kind: "code",
+            projectId: project?.id,
             codeWorkspaceName: repo.name,
             codeWorkspacePath: `${repo.owner}/${repo.name}`,
             model,
@@ -549,7 +559,7 @@ export function CodeComposer({
       }
       return false;
     },
-    [discardOrphanCloudSession, landingSkills, openSession, seedThreadMode, selection, upsertConversation],
+    [discardOrphanCloudSession, landingSkills, openSession, project?.id, seedThreadMode, selection, upsertConversation],
   );
 
   /** The composer's send: words, attachments or both start the session. */
@@ -589,7 +599,7 @@ export function CodeComposer({
   }, []);
 
   const [popover, setPopover] = React.useState<PopoverName>(null);
-  const gateHint = !hasTarget ? (target === "device" ? PICK_PROJECT_LABEL : PICK_REPOSITORY_LABEL) : null;
+  const gateHint = !hasTarget ? (target === "device" ? PICK_FOLDER_LABEL : PICK_REPOSITORY_LABEL) : null;
 
   /*
    * One line for everything the link asked for and did not get — the parser's
@@ -673,36 +683,12 @@ export function CodeComposer({
       <StatusIcons.info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
       <span>{prefillMessage}</span>
     </p>
-  ) : (
-    <p aria-live="polite" className="mt-2.5 px-5 text-caption text-muted-foreground">
-      <span className="font-medium text-muted-foreground">{composerModeInfo(mode).label}</span> {composerModeInfo(mode).description}
-    </p>
-  );
+  ) : startingPointHint ? (
+    <p role="status" className="mt-2 px-4 text-caption text-muted-foreground">Finish or clear your draft before choosing a starting point.</p>
+  ) : null;
 
   return (
     <div className={cn("relative isolate w-full", className)}>
-      {/* The tray (owner, 2026-10-03): where this runs and which project, as
-          chips on a shelf tucked under the composer's top edge. Everything
-          else is on the composer's own row, exactly as in the session. */}
-      <div className="composer-tray composer-tray--top">
-        <div className="composer-tray__row">
-          <CodeEnvironmentChip target={target} onTargetChange={switchTarget} disabled={submitting} />
-          <CodeTargetPicker
-            target={target}
-            selectedWorkspace={selectedWorkspace}
-            onSelectWorkspace={setSelectedWorkspace}
-            selectedRepo={selectedRepo}
-            onSelectRepo={(r) => {
-              setSelectedRepo(r);
-              setBaseRef("");
-              if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
-            }}
-            baseRef={baseRef}
-            onBaseRefChange={setBaseRef}
-            disabled={submitting}
-          />
-        </div>
-      </div>
       <div className="cv2 cv2-landing">
         <Composer
           ref={composer}
@@ -719,10 +705,35 @@ export function CodeComposer({
           initialDraft={prefill?.prompt ?? ""}
           readOnly={!interactive}
           under={under}
+          onStartingPoint={interactive && !submitting ? chooseStartingPoint : undefined}
+          workspaceControls={
+            <div className="composer-tray__capsule">
+              {project && (
+                <Link className="composer-tray__item min-w-0" href={`/projects/${encodeURIComponent(project.id)}?surface=code`}>
+                  <AppIcons.projects className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span className="max-w-24 truncate">{project.name}</span>
+                </Link>
+              )}
+              <CodeEnvironmentChip target={target} onTargetChange={switchTarget} disabled={submitting} />
+              <CodeTargetPicker
+                target={target}
+                selectedWorkspace={selectedWorkspace}
+                onSelectWorkspace={setSelectedWorkspace}
+                selectedRepo={selectedRepo}
+                onSelectRepo={(repo) => {
+                  setSelectedRepo(repo);
+                  setBaseRef("");
+                  if (repo.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
+                }}
+                baseRef={baseRef}
+                onBaseRefChange={setBaseRef}
+                disabled={submitting}
+              />
+            </div>
+          }
           stackRef={stack}
         />
       </div>
-      <CodeStartingPoints onChoose={chooseStartingPoint} disabled={!interactive || submitting} showDraftHint={startingPointHint} />
     </div>
   );
 }

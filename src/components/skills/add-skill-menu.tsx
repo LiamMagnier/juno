@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { ChevronDown, GraduationCap, Plus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +33,7 @@ export function AddSkillMenu({
   onWrite: () => void;
   onCreateWithJuno: () => void;
 }) {
+  const hrefFor = useWorkspaceHref();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -55,7 +57,7 @@ export function AddSkillMenu({
           Import from GitHub…
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/skills/new?import=file">Import SKILL.md…</Link>
+          <Link href={hrefFor("/skills/new?import=file")}>Import SKILL.md…</Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

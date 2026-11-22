@@ -17,6 +17,7 @@ const ROUTE = readFileSync(new URL("../src/app/api/library/route.ts", import.met
 const PAGE = readFileSync(new URL("../src/app/(app)/library/page.tsx", import.meta.url), "utf8");
 const LIBRARY_HOME = readFileSync(new URL("../src/components/library/library-home.tsx", import.meta.url), "utf8");
 const LIBRARY_FILES = readFileSync(new URL("../src/components/library/library-files-page.tsx", import.meta.url), "utf8");
+const LIBRARY_NAV = readFileSync(new URL("../src/components/library/library-navigation.tsx", import.meta.url), "utf8");
 const LIBRARY_TRASH = readFileSync(new URL("../src/components/library/library-trash.tsx", import.meta.url), "utf8");
 
 /*
@@ -65,20 +66,21 @@ test("the library route searches, filters and sorts in the database", () => {
 test("the library page keeps the e2e contract: an h1 that says library", () => {
   // /library with no view opens the unified Library, whose page header (an
   // h1, AppPageHeader) says Library; the e2e suite visits exactly that URL.
-  assert.match(PAGE, /return params\.get\("view"\) === "files" \? <LibraryFilesPage \/> : <LibraryHome \/>;/);
-  assert.match(LIBRARY_HOME, /<AppPageHeader heading=\{FEATURE_NAMES\.library\.label\}/);
-  // The other views keep their own headings, and both stay reachable from it.
-  assert.match(PAGE, /if \(params\.get\("view"\) === "trash"\) return <LibraryTrash \/>;/);
+  assert.match(PAGE, /return view === "files" \? <LibraryFilesPage \/> : <LibraryHome \/>;/);
+  assert.match(LIBRARY_HOME, /<AppPageHeader heading=\{mediaOnly \? "Media" : FEATURE_NAMES\.library\.label\}/);
+  // Dedicated Library views keep their own headings.
+  assert.match(PAGE, /if \(view === "trash"\) return <LibraryTrash \/>;/);
   assert.match(LIBRARY_TRASH, /<AppPageHeader heading="Recently deleted"/);
   assert.match(LIBRARY_FILES, /heading=\{deletedView \? "Recently deleted" : "Uploaded files"\}/);
-  assert.match(LIBRARY_HOME, /href="\/library\?view=trash"/);
+  assert.match(LIBRARY_HOME, /href=\{hrefFor\("\/library\?view=trash"\)\}/);
   // Upload happens in place (and by dropping anywhere on the page), with the
   // same uploader and plan limit the file manager uses.
   assert.match(LIBRARY_HOME, /useLibraryUploads\(/);
   assert.match(LIBRARY_HOME, /useFileDrop\(\{ onFiles: uploads\.add/);
   assert.match(LIBRARY_HOME, /accept=\{ACCEPT_ATTRIBUTE\}/);
   // The file manager (bulk selection, name and size sorts) stays one press away.
-  assert.match(LIBRARY_HOME, /href="\/library\?view=files"/);
+  assert.match(LIBRARY_HOME, /<LibraryNavigation active=/);
+  assert.match(LIBRARY_NAV, /\["files", "Files", "\/library\?view=files"\]/);
 });
 
 test("a sort the route does not offer falls back to newest, prototype keys included", () => {

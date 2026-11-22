@@ -15,8 +15,7 @@ import { FEATURE_NAMES } from "@/lib/brand/names";
  *
  * What the chat shell owes the merge at First light, held in one place:
  *
- *   - the sidebar links to Artifacts. Designs open within Artifacts and keep
- *     the same destination in the panel and the rail;
+ *   - the sidebar links to Library, where files and artifacts can be found;
  *   - ⌘K still answers the word "design", and every design row lands on
  *     Artifacts filtered to designs, never on the retired `/design` page;
  *   - no word keys two destinations, which is how "canvas" used to offer two
@@ -34,20 +33,16 @@ function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
-test("the sidebar exposes Library, Artifacts, Apps and Skills as separate destinations", () => {
+test("Library is shared, tools stay in Code, and Artifacts has no separate sidebar row", () => {
   const sidebar = withoutComments(SIDEBAR);
-  const start = sidebar.indexOf('const workspaceShortcuts = [');
-  assert.ok(start >= 0);
-  const primary = sidebar.slice(start, sidebar.indexOf("] as const;", start));
-  const hrefs = [...primary.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(hrefs, ["/library", "/artifacts", "/connections", "/skills"]);
-  assert.match(primary, /label: FEATURE_NAMES\.library\.label, active: pathname === "\/library", codeOnly: true/);
-  assert.match(sidebar, /workspaceShortcuts\.filter\(\(item\) => !\("codeOnly" in item\) \|\| isCode\)/);
-  assert.match(primary, /label: "Artifacts", active: pathname\?\.startsWith\("\/artifacts"\)/);
-
-  // Nowhere else in the column either: not a pinned row, not the rail.
-  assert.ok(!sidebar.includes('"/design"'), "no sidebar row links to /design");
-  assert.ok(!/label: "Design"/.test(sidebar), "no row is labelled Design");
+  const destinations = sidebar.slice(sidebar.indexOf("const primaryDestinations = "), sidebar.indexOf("const primaryDestinations = ") + 2100);
+  const [code, chat] = destinations.split("] as const) : ([");
+  assert.match(code, /href: "\/library\?surface=code"/);
+  assert.match(code, /href: "\/connections\?surface=code"/);
+  assert.match(code, /href: "\/skills\?surface=code"/);
+  assert.match(chat, /href: "\/library"/);
+  assert.doesNotMatch(chat.split("] as const)")[0], /href: "\/(?:connections|skills|artifacts|design)/);
+  assert.doesNotMatch(code, /href: "\/(?:artifacts|design)/);
 });
 
 type PaletteRow = { id: string; label: string; keywords: string; href: string };
@@ -90,15 +85,15 @@ test("⌘K sends every design row to Artifacts, and New design opens its presets
   assert.ok(!rows.some((r) => r.href === "/design" || r.href.startsWith("/design/")), "nothing goes to the Design page");
 
   const byLabel = new Map(rows.map((r) => [r.label, r]));
-  assert.equal(byLabel.get("New design")?.href, "/artifacts?type=DESIGN&new=design");
-  assert.equal(byLabel.get("Open Designs")?.href, "/artifacts?type=DESIGN");
-  assert.equal(byLabel.get(FEATURE_NAMES.artifacts.label)?.href, "/artifacts");
+  assert.equal(byLabel.get("New design")?.href, "/library?view=artifacts&type=DESIGN&new=design");
+  assert.equal(byLabel.get("Open Designs")?.href, "/library?view=artifacts&type=DESIGN");
+  assert.equal(byLabel.get(FEATURE_NAMES.artifacts.label)?.href, "/library?view=artifacts");
 
   // "Design" is still a word that finds designs: typing it offers the list
   // and the way to make one, and nothing that leads anywhere else.
   const found = rows.filter((r) => atWordStart(r.label.toLowerCase(), "design") || atWordStart(r.keywords, "design"));
   assert.ok(found.length > 0, "typing design finds something");
-  for (const r of found) assert.match(r.href, /^\/artifacts\?type=DESIGN/, `${r.label} leads to designs`);
+  for (const r of found) assert.match(r.href, /^\/library\?view=artifacts&type=DESIGN/, `${r.label} leads to designs`);
 });
 
 test("no word keys two of the design and artifact destinations", () => {
@@ -112,7 +107,7 @@ test("no word keys two of the design and artifact destinations", () => {
 
   // Matching is at word starts, so two rows collide when either's word BEGINS
   // the other's — "frame" and "frames" — not only when they are equal.
-  const merged = rows.filter((r) => r.href.startsWith("/artifacts"));
+  const merged = rows.filter((r) => r.href.startsWith("/library?view=artifacts"));
   assert.equal(merged.length, 3, "New design, Open Designs and Open Artifacts");
   for (const a of merged) {
     for (const word of a.keywords.split(/\s+/).filter(Boolean)) {

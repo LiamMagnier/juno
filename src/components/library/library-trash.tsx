@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
@@ -79,6 +80,7 @@ function fileNote(item: LibraryItem): string {
 /** Trash is owned by the object; deleting its original chat cannot erase it. */
 export function LibraryTrash() {
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
   const files = useLibrary({ q: "", kind: "all", sort: "newest", deleted: true });
   const [artifacts, setArtifacts] = React.useState<TrashedArtifact[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -106,7 +108,7 @@ export function LibraryTrash() {
   };
   const loading = (artifacts === null && !error) || (files.items === null && !files.error);
   const empty = artifacts?.length === 0 && files.items?.length === 0 && !error && !files.error;
-  return <AppPage measure="wide"><AppPageHeader heading="Recently deleted" backHref="/library" backLabel="Library" lede={`Bring files and things ${PRODUCT_NAME} made back to your Library. Things ${PRODUCT_NAME} made are removed for good after the date on their row.`} />
+  return <AppPage measure="wide"><AppPageHeader heading="Recently deleted" backHref={hrefFor("/library")} backLabel="Library" lede={`Bring files and things ${PRODUCT_NAME} made back to your Library. Things ${PRODUCT_NAME} made are removed for good after the date on their row.`} />
     {error || files.error ? <p role="alert" className="mb-6 flex flex-wrap items-center gap-2 text-ui text-muted-foreground">{error || "Couldn’t load deleted files."} <Button variant="secondary" size="sm" onClick={() => { void load(); void files.reload(); }}><ActionIcons.refresh className="size-4" aria-hidden="true" />Try again</Button></p> : null}
     {loading ? <TrashSkeleton /> : empty ? (
       <div className="grid min-h-[min(48vh,28rem)] place-items-center">
@@ -114,7 +116,7 @@ export function LibraryTrash() {
           icon={StatusIcons.info}
           title="Nothing in Recently deleted"
           description={`When you delete a file or something ${PRODUCT_NAME} made, it waits here so you can bring it back.`}
-          action={<Button variant="secondary" size="sm" asChild><Link href="/library">Back to Library</Link></Button>}
+          action={<Button variant="secondary" size="sm" asChild><Link href={hrefFor("/library")}>Back to Library</Link></Button>}
         />
       </div>
     ) : (

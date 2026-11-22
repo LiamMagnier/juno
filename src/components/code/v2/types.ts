@@ -81,6 +81,7 @@ export interface DeviceInfo {
 }
 
 export interface WorkspaceThread {
+  project?: { id: string; name: string };
   id: string;
   title: string;
   repo: string;
@@ -170,6 +171,8 @@ export interface WorkspaceModel {
   instances: ProviderInstance[];
   selection: ModelSelection;
   routing: RoleRouting;
+  /** The cloud task path currently runs a single model. */
+  teamAvailable?: boolean;
   runtimeMode: RuntimeMode;
   interactionMode: InteractionMode;
   /** Files of the workspace for @mentions and the Files tab (relative paths). */

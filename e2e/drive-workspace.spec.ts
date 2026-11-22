@@ -75,27 +75,29 @@ test("a project retries a failed Drive check and adds a picked folder", async ({
 
 test("Code's starting points preserve drafts and the shared sidebar exposes workspace tools", async ({ page, isMobile }) => {
   await page.goto("/code");
-  const draft = page.getByRole("textbox", { name: "Message" });
+  const draft = page.getByRole("combobox", { name: "Message" });
   await expect(draft).toBeVisible();
   await draft.fill("A draft to keep");
-  await expect(draft).toHaveValue("A draft to keep");
-  await page.getByRole("button", { name: "Review changes" }).click();
-  await expect(draft).toHaveValue("A draft to keep");
+  await expect(draft).toHaveText("A draft to keep");
+  await page.getByRole("button", { name: "Add files and more" }).click();
+  await page.getByRole("menuitem", { name: "Starting points" }).click();
+  await page.getByRole("menuitem", { name: "Review changes" }).click();
+  await expect(draft).toHaveText("A draft to keep");
   const draftHint = page.getByText("Finish or clear your draft before choosing a starting point.");
   await expect(draftHint).toBeVisible();
   await draft.fill("");
-  await page.getByRole("button", { name: "Review changes" }).click();
-  await expect(draft).toHaveValue(/^Review the current changes/);
+  await page.getByRole("button", { name: "Add files and more" }).click();
+  await page.getByRole("menuitem", { name: "Starting points" }).click();
+  await page.getByRole("menuitem", { name: "Review changes" }).click();
+  await expect(draft).toHaveText(/^Review the current changes/);
   await expect(draftHint).toBeHidden();
   if (isMobile) await page.getByRole("button", { name: "Open menu", exact: true }).click();
   const primary = page.getByRole("navigation", { name: "Primary" });
-  await expect(primary.getByRole("link", { name: "Artifacts" })).toHaveAttribute("href", "/artifacts");
-  await expect(primary.getByRole("link", { name: "Apps & plugins" })).toHaveAttribute("href", "/connections");
-  await expect(primary.getByRole("link", { name: "Skills" })).toHaveAttribute("href", "/skills");
-  if (isMobile) await page.getByRole("button", { name: "Close menu", exact: true }).click();
-
-  const recent = page.getByRole("region", { name: "Recent sessions" });
-  await recent.getByRole("link", { name: /QA · Code session/ }).click();
+  await expect(primary.getByRole("link", { name: "Artifacts" })).toHaveCount(0);
+  await expect(primary.getByRole("link", { name: "Library" })).toHaveAttribute("href", "/library?surface=code");
+  await expect(primary.getByRole("link", { name: "Apps & plugins" })).toHaveAttribute("href", "/connections?surface=code");
+  await expect(primary.getByRole("link", { name: "Skills" })).toHaveAttribute("href", "/skills?surface=code");
+  await page.getByRole("link", { name: /QA · Code session/ }).click();
   if (isMobile) {
     await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("menuitem", { name: /Find in this session/ }).click();

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { formatCodeProjectContext } from "@/lib/projects/code-context";
+import { loadProjectLineage } from "@/lib/projects/project-tree-server";
 import { getCurrentUser } from "@/lib/session";
 import { getConversationThread, getConversationThreadPage } from "@/lib/queries";
 import { MAX_PAGE_MESSAGES } from "@/lib/chat/history-page";
@@ -15,10 +17,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  const searchParams = new URL(req.url).searchParams;
+  if (searchParams.get("view") === "code-project-context") {
+    const thread = await prisma.conversation.findFirst({
+      where: { id, userId: user.id, kind: "code" },
+      select: { projectId: true },
+    });
+    if (!thread) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const project = thread.projectId ? await loadProjectLineage(user.id, thread.projectId) : null;
+    return NextResponse.json({ context: project ? formatCodeProjectContext(project.merged) : null });
+  }
   // `?limit=N`: the newest N messages and a `history` cursor for the rest (the
   // web's dropped-stream recovery poll). Without it the thread is whole — the
   // contract the Mac and iPhone apps read (NativeThreadClient.swift).
-  const limitParam = new URL(req.url).searchParams.get("limit");
+  const limitParam = searchParams.get("limit");
   const limit = limitParam === null ? null : Number(limitParam);
   if (limit !== null && (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_MESSAGES)) {
     return NextResponse.json({ error: "Invalid limit" }, { status: 400 });

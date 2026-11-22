@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ContextComposerField, rememberContextItem, type ContextFieldElement } from "./context-composer-field";
+import { rememberContextItem, type ContextFieldElement } from "./context-composer-field";
 import { type ContextToken, rangesForStoredText } from "@/lib/chat/context-tokens";
 import {
   appendToDraft,
@@ -20,14 +20,13 @@ import { placeComposerLayer, preferredLayerSide, type LayerPlacement, type Layer
 import { TIMING } from "@/lib/interaction";
 import type { MentionItem, MentionSearchResult } from "@/lib/mentions/types";
 import type { VoiceCallParts } from "@/components/voice/realtime-voice";
-import { VoiceComposerFrame } from "@/components/voice/voice-composer-glow";
+import { ChatComposerField, ChatComposerSurface } from "./composer-surface";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
   AudioLines,
   Crop,
-  Mic,
   Plus,
   Scan,
   Search,
@@ -49,11 +48,7 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   ComposerAttachmentRow,
-  ComposerPrimaryAction,
   ComposerArmedMark,
-  ComposerShell,
-  composerFieldClass,
-  composerIconButtonClass,
   useComposerAutosize,
   type ComposerPrimaryFace,
 } from "@/components/ui/composer-shell";
@@ -64,7 +59,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  PlusMenu,
   PlusMenuRow,
   PlusMenuSeparator,
   type PlusMenuItem,
@@ -3123,16 +3117,13 @@ function ComposerImpl({
           // DictationSwap; this wrapper only carries the drop target.
           className="w-full"
         >
-        <VoiceComposerFrame call={voiceCall}>
-        <ComposerShell
+        <ChatComposerSurface
+          voice={voiceCall}
           // The box every layer the composer opens is placed outside of.
           ref={shellRef}
           frame={frame === "landing" ? "home" : "dock"}
           dimmed={controlsLocked && !steerMode}
           className={cn(
-            "chat-composer max-h-[min(37.5rem,65dvh)]",
-            // In a call the glow's layers sit under the shell's contents.
-            voiceCall && "voice-glow-host",
             // Private mode redraws the edge dashed; every other state's border
             // and focus lift come from `.composer-surface` itself.
             privateMode && "border-dashed border-foreground/25",
@@ -3465,8 +3456,8 @@ function ComposerImpl({
                * with `text-indent` reserving exactly their width. Its layers
                * (the @ palette, a token's popover) open outside this box.
                */
-              <div className="relative">
-                <ContextComposerField
+              <ChatComposerField
+                  home={frame === "landing"}
                   key={submissionScope}
                   conversationId={conversationId}
                   privateMode={privateMode}
@@ -3512,147 +3503,64 @@ function ComposerImpl({
                       ? `composer-palette-${Math.min(slashIndex, slash.items.length - 1)}`
                       : undefined
                   }
-                  // 16px in EVERY state (composerFieldClass): iOS Safari zooms
-                  // into a focused field below 16px. The home's field is taller
-                  // at rest; density elsewhere comes from the autosize caps.
-                  className={cn(composerFieldClass, frame === "landing" && "min-h-[3.5rem] max-[760px]:min-h-[3.25rem]")}
-                />
-              </div>
+              />
             )
           }
-          leading={
-            <>
-              <PlusMenu
-                open={plusOpen}
-                onOpenChange={setPlusOpen}
-                disabled={plusLocked}
-                label={armedSummary ? `Add files and more: ${armedSummary}` : "Add files and more"}
-                tooltip="Add files and more"
-                sections={plusSections}
+          add={{
+            open: plusOpen,
+            onOpenChange: setPlusOpen,
+            disabled: plusLocked,
+            label: armedSummary ? `Add files and more: ${armedSummary}` : "Add files and more",
+            tooltip: "Add files and more",
+            sections: plusSections,
+          }}
+          model={
+            <div className={cn("flex min-w-0", controlsLocked && "pointer-events-none")}>
+              <ModelSelector
+                value={model}
+                onChange={changeModel}
+                disabled={controlsLocked}
+                thinking={thinkingControl}
+                effortLabel={effortLabel}
+                speed={chipSpeed}
+                pro={chipPro}
+                inComposer
               />
-              {!voiceCall && (
-                <div className={cn("flex min-w-0", controlsLocked && "pointer-events-none")}>
-                  <ModelSelector
-                    value={model}
-                    onChange={changeModel}
-                    disabled={controlsLocked}
-                    thinking={thinkingControl}
-                    effortLabel={effortLabel}
-                    speed={chipSpeed}
-                    pro={chipPro}
-                    inComposer
-                  />
-                </div>
-              )}
-              {/* What is armed for the next message, as pills in the row
-                  beside the + that armed it (owner, 6 Nov 2026: inside the
-                  text they read as misplaced). */}
-              {leadMarks.length > 0 && (
-                <span className="composer-armed-row flex min-w-0 items-center gap-1.5">{leadMarks}</span>
-              )}
-              {voiceCall?.status}
-            </>
+            </div>
           }
-          trailing={
-            voiceCall ? voiceCall.controls : <>
-              {taskModeControl && modality === "chat" && !steerMode && (
+          armed={leadMarks.length > 0 && <span className="composer-armed-row flex min-w-0 items-center gap-1.5">{leadMarks}</span>}
+          context={modality === "chat" && !steerMode && (
+            <>
+              {taskModeControl && (
                 <div className={cn("shrink-0", controlsLocked && "pointer-events-none")}>{taskModeControl}</div>
               )}
-              {modality === "chat" && !steerMode && contextUsage}
-              {speechSupported && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => setDictating(true)}
-                      disabled={controlsLocked || dictating || voiceActive}
-                      aria-label="Dictate"
-                      aria-pressed={dictating}
-                      className={composerIconButtonClass}
-                    >
-                      <Mic className="size-4" motion="none" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Dictate</TooltipContent>
-                </Tooltip>
-              )}
-              {/* No voice button here any more: it is the primary slot's face
-                  whenever there is nothing to send. Two ways to start the same
-                  call, eight pixels apart, is one more than the row can spend —
-                  and this one costs nothing, because the slot it moved into was
-                  otherwise disabled. */}
+              {contextUsage}
             </>
-          }
-          action={
-                // In a call End keeps the primary slot; a typed draft puts
-                // Send beside it, never in its place (voice audit D6).
-                <>
-                {(!voiceCall || canSend) && <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ComposerPrimaryAction
-                      face={PRIMARY_FACES[primaryFace]}
-                      onClick={
-                        primaryFace === "stop"
-                          ? onStop
-                          : primaryFace === "voice"
-                            ? onOpenVoiceMode
-                            : () => void submit()
-                      }
-                      disabled={
-                        primaryFace === "stop"
-                          ? status === "stopping" || status === "checking"
-                          : // Voice is never short of something to do; only the
-                            // send face can have an empty draft behind it.
-                            primaryFace !== "voice" && !canSend
-                      }
-                      aria-label={
-                        primaryFace === "stop"
-                          ? status === "stopping"
-                            ? "Stopping generation"
-                            : // The caller names what Stop ends. A delegated run
-                              // and a streaming answer are both "stop" on this
-                              // button and they end very different things, and
-                              // the one word the button can afford has to be the
-                              // right one.
-                              (steerMode && steering ? steering.stopLabel : "Stop generating")
-                          : primaryFace === "voice"
-                            ? "Start voice conversation"
-                            : submitting
-                              ? "Sending message"
-                              : uploading
-                              ? "Send (waiting for the attachment to finish uploading)"
-                              : steerMode && steering
-                                ? steering.sendLabel
-                                : "Send message"
-                      }
-                      aria-busy={submitting && primaryFace === "send" ? true : undefined}
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {/* Send is disabled while an attachment uploads, and used
-                        to say nothing about it: pressing Enter did nothing,
-                        silently, and the only clue was a progress ring on a
-                        56px tile. The button now names its own blocker. */}
-                    {primaryFace === "stop"
-                      ? steerMode && steering
-                        ? steering.stopLabel
-                        : "Stop"
-                      : primaryFace === "voice"
-                        ? "Voice conversation"
-                        : uploading
-                          ? "Waiting for the upload to finish"
-                          : steerMode && steering
-                            ? steering.sendLabel
-                            : "Send"}
-                  </TooltipContent>
-                </Tooltip>}
-                {voiceCall?.end}
-                </>
-          }
+          )}
+          dictate={speechSupported ? {
+            active: dictating,
+            disabled: controlsLocked || dictating || voiceActive,
+            onOpen: () => setDictating(true),
+          } : undefined}
+          primary={(!voiceCall || canSend) ? {
+            face: PRIMARY_FACES[primaryFace],
+            onClick: primaryFace === "stop" ? onStop : primaryFace === "voice" ? onOpenVoiceMode : () => void submit(),
+            disabled: primaryFace === "stop"
+              ? status === "stopping" || status === "checking"
+              : primaryFace !== "voice" && !canSend,
+            "aria-label": primaryFace === "stop"
+              ? status === "stopping" ? "Stopping generation" : (steerMode && steering ? steering.stopLabel : "Stop generating")
+              : primaryFace === "voice" ? "Start voice conversation"
+              : submitting ? "Sending message"
+              : uploading ? "Send (waiting for the attachment to finish uploading)"
+              : steerMode && steering ? steering.sendLabel : "Send message",
+            "aria-busy": submitting && primaryFace === "send" ? true : undefined,
+            tooltip: primaryFace === "stop" ? (steerMode && steering ? steering.stopLabel : "Stop")
+              : primaryFace === "voice" ? "Voice conversation"
+              : uploading ? "Waiting for the upload to finish"
+              : steerMode && steering ? steering.sendLabel : "Send",
+          } : undefined}
         />
-        </VoiceComposerFrame>
 
             <input
               ref={fileInputRef}

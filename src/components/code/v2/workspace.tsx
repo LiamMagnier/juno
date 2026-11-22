@@ -9,6 +9,7 @@
  * be shown and tested without a backend.
  */
 import * as React from "react";
+import Link from "next/link";
 import type { DockTab } from "@/lib/code-v2/dock";
 import { dockReducer, initialDockState } from "@/lib/code-v2/dock";
 import { COMMAND_TITLES, DEFAULT_KEYBINDINGS, resolveKeybinding, type KeyContext } from "@/lib/code-v2/keymap";
@@ -39,6 +40,10 @@ import type { MessageMatch } from "@/lib/code-v2/palette-search";
 import { usePaletteMessageSearch } from "./use-palette-search";
 import { lastPrompt } from "@/lib/code-v2/answer-actions";
 import { DURATION } from "@/lib/design/tokens.generated";
+import { CHAT_EXPORT_COPY, downloadTextFile, type ChatExportKind } from "@/components/chat/conversation-export-menu";
+import { conversationExportFileName, conversationExportTurns, conversationMarkdown, type ExportTurn } from "@/components/chat/conversation-export";
+import { ConversationPrint } from "@/components/chat/conversation-print";
+import { codeExportMessages } from "@/lib/code-v2/session-transcript";
 import { cachedCodePrefs, useCodePrefs } from "./use-code-prefs";
 
 const WIDTH_KEY = "alevr.code.dockWidth";
@@ -89,6 +94,9 @@ export interface CodeWorkspaceProps {
   /** Draw skeleton lines while the session loads. */
   loading?: boolean;
   resolveScreenshot?: (ref: string) => string | null;
+  /** Fetch the whole visible transcript when the session is paged. */
+  loadExportItems?: () => Promise<readonly TurnItem[] | null>;
+  voiceId?: string | null;
   className?: string;
 }
 
@@ -247,7 +255,7 @@ function Shortcuts({ onClose, exit }: { onClose: () => void; exit: ExitProps }) 
   );
 }
 
-export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, onRefreshSubscriptions, onSetup, onManaged, firstRun, loading, resolveScreenshot, className }: CodeWorkspaceProps) {
+export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, onRefreshSubscriptions, onSetup, onManaged, firstRun, loading, resolveScreenshot, loadExportItems, voiceId, className }: CodeWorkspaceProps) {
   const mac = useIsMac();
   const [dock, dispatch] = React.useReducer(dockReducer, undefined, () => {
     const s = initialDockState(readStored(WIDTH_KEY, Number) ?? undefined);
@@ -278,6 +286,10 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   const [agentId, setAgentId] = React.useState<string | null>(ui.selectedAgentId ?? null);
   const [approvalIndex, setApprovalIndex] = React.useState(0);
   const [composerFocus, setComposerFocus] = React.useState(false);
+  const [voiceOpen, setVoiceOpen] = React.useState(false);
+  const [printJob, setPrintJob] = React.useState<{ title: string; exportedAt: Date; turns: ExportTurn[] } | null>(null);
+  const exportRequest = React.useRef<symbol | null>(null);
+  React.useEffect(() => () => { exportRequest.current = null; }, [model.thread.id]);
   const [hidden, setHidden] = React.useState(false);
   const [renaming, setRenaming] = React.useState(false);
   // One toast system on this screen: the app's (sonner), not a second bottom-centre pill.
@@ -299,13 +311,12 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
     if (detailChosen.current) writeStored(DETAIL_KEY, detail);
   }, [detail]);
   React.useEffect(() => dispatch({ type: "thread-changed", threadId: model.thread.id }), [model.thread.id]);
-  // The dock reads the whole session (every change, command and file), so
-  // opening it brings in the turns a paged thread has not loaded yet, as
-  // Chat's outputs panel does.
+  // Changes and Terminal can read the entire session. The Agents panel reads
+  // one run, including older runs opened from the already loaded transcript.
   const loadAllHistory = model.history?.hasOlder ? model.history.loadOlder : null;
   React.useEffect(() => {
-    if (dock.open && loadAllHistory) void loadAllHistory({ all: true });
-  }, [dock.open, loadAllHistory]);
+    if (dock.open && dock.tab !== "agents" && loadAllHistory) void loadAllHistory({ all: true });
+  }, [dock.open, dock.tab, loadAllHistory]);
   React.useEffect(() => {
     const on = () => setHidden(document.visibilityState === "hidden");
     document.addEventListener("visibilitychange", on);
@@ -331,6 +342,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   const seenAgents = React.useRef<Set<string> | null>(null);
   const [unseenAgents, setUnseenAgents] = React.useState<string[]>([]);
   const agentsInView = dock.open && dock.tab === "agents";
+  const hasAgentsPanel = model.teamAvailable !== false || model.items.some((item) => item.kind === "subagent");
   React.useEffect(() => {
     seenAgents.current = null;
     setUnseenAgents([]);
@@ -359,7 +371,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   const openDock = React.useCallback(
     (req: DockRequest) => {
       setFocus({ target: req.target, scope: req.scope, turnId: req.turnId });
-      if (req.tab === "agents" && req.target) setAgentId(req.target);
+      if (req.tab === "agents") setAgentId(req.target ?? null);
       dispatch({ type: "open", tab: req.tab, threadId: model.thread.id });
     },
     [model.thread.id],
@@ -539,11 +551,42 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       setApprovalIndex={setApprovalIndex}
       onOpenDock={(tab) => openDock({ tab })}
       onFocusChange={setComposerFocus}
+      onVoiceOpenChange={setVoiceOpen}
       tall={empty}
+      team={model.teamAvailable !== false}
     />
     </>
   );
 
+  const exportSession = async (kind: ChatExportKind) => {
+    if (exportRequest.current) return;
+    const request = Symbol();
+    exportRequest.current = request;
+    try {
+      const items = model.history?.hasOlder ? await loadExportItems?.() : model.items;
+      if (exportRequest.current !== request) return;
+      if (!items) {
+        notify.error("Couldn’t export. The start of this session didn’t load.");
+        return;
+      }
+      const input = { title: model.thread.title, messages: codeExportMessages(items), exportedAt: new Date() };
+      if (kind === "print") {
+        setPrintJob({ title: input.title, exportedAt: input.exportedAt, turns: conversationExportTurns(input) });
+      } else if (kind === "copy") {
+        await navigator.clipboard.writeText(conversationMarkdown(input));
+        if (exportRequest.current === request) notify.success("Copied the session as Markdown.");
+      } else {
+        downloadTextFile(conversationExportFileName(input.title, input.exportedAt), conversationMarkdown(input));
+      }
+    } catch {
+      if (exportRequest.current === request) notify.error(kind === "copy" ? "Couldn’t copy. Try Download Markdown." : "Couldn’t export this session.");
+    } finally {
+      if (exportRequest.current === request) exportRequest.current = null;
+    }
+  };
+
+  const canExport = (!model.history?.hasOlder || !!loadExportItems)
+    && model.items.some((item) => !item.agentId && (item.kind === "user_message" || item.kind === "assistant_message"));
   const a = model.actions;
   const sessionMenu: MenuEntry[] = [
     ...(a.renameThread ? [{ id: "rename", label: "Rename", icon: <Glyph name="rename" size={16} />, onSelect: rename }] : []),
@@ -552,6 +595,19 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
       : []),
     ...(a.shareThread ? [{ id: "share", label: "Share…", icon: <Glyph name="share" size={16} />, onSelect: () => a.shareThread?.() }] : []),
     { id: "copy", label: "Copy reference", icon: <Glyph name="copy" size={16} />, onSelect: () => run("thread.copyReference") },
+    ...(canExport ? [{
+      id: "export",
+      label: CHAT_EXPORT_COPY.heading,
+      icon: <Glyph name="download" size={16} />,
+      sub: {
+        title: "Export session",
+        entries: [
+          { id: "copy", label: CHAT_EXPORT_COPY.copy, onSelect: () => void exportSession("copy") },
+          { id: "download", label: CHAT_EXPORT_COPY.download, onSelect: () => void exportSession("download") },
+          { id: "print", label: CHAT_EXPORT_COPY.print, onSelect: () => void exportSession("print") },
+        ],
+      },
+    }] : []),
     ...(checkpoints.length && model.actions.rollback
       ? [
           {
@@ -585,6 +641,9 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
   ];
   const moreMenu: MenuEntry[] = [
     ...(!empty ? [{ id: "find", label: "Find in this session", icon: <Glyph name="search" size={16} />, trail: <Kbd k="mod+f" mac={mac} />, onSelect: () => setPaletteMode("session") }] : []),
+    { id: "search-sessions", label: "Search sessions", icon: <Glyph name="search" size={16} />, onSelect: () => setPaletteMode("commands") },
+    ...(model.actions.newThread ? [{ id: "new-session", label: "New session", icon: <Glyph name="plus" size={16} />, onSelect: () => model.actions.newThread?.() }] : []),
+    { id: "terminal", label: "Terminal", icon: <Glyph name="terminal" size={16} />, trail: <Kbd k="mod+j" mac={mac} />, onSelect: () => openDock({ tab: "terminal" }) },
     ...(model.actions.commit ? [{ id: "commit", label: "Commit…", icon: <Glyph name="commit" size={16} />, onSelect: () => model.actions.commit?.() }] : []),
     { id: "pr", label: "Create pull request…", icon: <Glyph name="pull-request" size={16} />, onSelect: () => composer.current?.setDraft("/pr ") },
     { id: "files", label: "Files", icon: <Glyph name="file-tree" size={16} />, trail: <Kbd k="mod+p" mac={mac} />, onSelect: () => openDock({ tab: "files" }) },
@@ -653,7 +712,7 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
 
   return (
     <div
-      className={cn("cv2 cv2-app", !(sidebar && sideOpen) && "no-side", className)}
+      className={cn("cv2 cv2-app cv2-session-surface", !(sidebar && sideOpen) && "no-side", className)}
       data-motion={ui.reducedMotion ? "reduced" : undefined}
       data-hidden={hidden ? "true" : undefined}
       data-composer-focus={composerFocus ? "true" : undefined}
@@ -672,7 +731,11 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
             <Glyph name="sidebar-toggle" />
           </button>
           <div className="cv2-crumb" ref={crumbRef}>
-            <span className="proj">{model.thread.repo}</span>
+            {model.thread.project ? (
+              <Link className="proj cv2-shared-project truncate hover:underline focus-visible:underline" href={`/projects/${encodeURIComponent(model.thread.project.id)}?surface=code`} title={model.thread.repo}>
+                {model.thread.project.name}
+              </Link>
+            ) : <span className="proj">{model.thread.repo}</span>}
             <span className="slash" aria-hidden>
               /
             </span>
@@ -700,20 +763,24 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
             {!empty && <button type="button" className="cv2-iconbtn cv2-wide" aria-label="Find in this session" title="Find in this session" onClick={() => setPaletteMode("session")}>
               <Glyph name="search" />
             </button>}
-            <button type="button" className="cv2-iconbtn" aria-pressed={dock.open && dock.tab === "terminal"} aria-label="Terminal" title={`Terminal (${mac ? "⌘J" : "Ctrl J"})`} onClick={() => toggleDock("terminal")}>
+            <button type="button" className="cv2-iconbtn cv2-wide" aria-pressed={dock.open && dock.tab === "terminal"} aria-label="Terminal" title={`Terminal (${mac ? "⌘J" : "Ctrl J"})`} onClick={() => toggleDock("terminal")}>
               <Glyph name="terminal" />
             </button>
+            {hasAgentsPanel && (
+              <button type="button" className="cv2-iconbtn cv2-badged cv2-agents-trigger" aria-label="Agents" title="Agents" aria-pressed={agentsInView} onClick={() => agentsInView ? dispatch({ type: "close" }) : openDock({ tab: "agents" })}>
+                <Glyph name="agents" />
+                <NewAgentsBadge count={unseenAgents.length} />
+              </button>
+            )}
             <button
               type="button"
-              className="cv2-iconbtn cv2-badged"
-              aria-pressed={dock.open && dock.tab !== "terminal"}
+              className="cv2-iconbtn"
+              aria-pressed={dock.open && dock.tab === "changes"}
               aria-label="Changes and panel"
               title={`Changes (${mac ? "⌘D" : "Ctrl D"})`}
-              // New agents waiting to be seen: this opens on them.
-              onClick={() => (unseenAgents.length ? openDock({ tab: "agents" }) : dock.open && dock.tab !== "terminal" ? dispatch({ type: "close" }) : openDock({ tab: dock.tab === "terminal" ? "changes" : dock.tab }))}
+              onClick={() => dock.open && dock.tab === "changes" ? dispatch({ type: "close" }) : openDock({ tab: "changes" })}
             >
               <Glyph name="panel-right" />
-              <NewAgentsBadge count={unseenAgents.length} />
             </button>
             <button type="button" className="cv2-iconbtn" aria-label="More" aria-haspopup="menu" aria-expanded={headMenu === "more"} onClick={() => setHeadMenu(headMenu === "more" ? null : "more")}>
               <Glyph name="more" />
@@ -775,6 +842,8 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
                   onRetry={retryLast}
                   onResend={model.actions.resend}
                   onEditMessage={(text) => composer.current?.setDraft(text)}
+                  voiceId={voiceId}
+                  readingBlocked={voiceOpen}
                   feedbackFor={model.actions.feedbackFor}
                   onFeedback={model.actions.setFeedback}
                   starting={model.starting}
@@ -804,12 +873,17 @@ export function CodeWorkspace({ model, ui = {}, sidebar = true, byok, onProbe, o
                 selectedAgentId={agentId}
                 onSelectAgent={setAgentId}
                 onMention={(p) => composer.current?.setDraft(`@${p} `)}
+                onConfigureOrchestrator={model.teamAvailable === false || model.child ? undefined : () => {
+                  dispatch({ type: "close" });
+                  setPopover("team");
+                }}
                 resolveScreenshot={resolveScreenshot}
                 composer={dock.expanded && !empty ? composerNode : undefined}
               />
             </>
           )}
       </main>
+      {printJob && <ConversationPrint {...printJob} onDone={() => setPrintJob(null)} />}
       {palettePresence.mounted && (
         <Palette
           exit={exitOf(palettePresence)}

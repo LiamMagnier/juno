@@ -21,6 +21,10 @@
  *   agent. "Waiting for you" is the only coral in the thread.
  */
 import * as React from "react";
+import { USER_BUBBLE_CLASS } from "@/components/chat/user-bubble";
+import { useTts } from "@/hooks/use-tts";
+import { speechForReply } from "@/lib/chat/tool-run-speech";
+import { toast } from "sonner";
 import { Markdown } from "@/components/chat/markdown";
 import type {
   ComputerActionItem,
@@ -59,6 +63,8 @@ export interface DockRequest {
 
 export interface ThreadProps {
   items: readonly TurnItem[];
+  voiceId?: string | null;
+  readingBlocked?: boolean;
   /**
    * Older turns still to read above `items` (paged history). Scrolling near
    * the top reads the next page, and the turn the reader is on holds still as
@@ -418,7 +424,7 @@ function Steps({ turn, items, detail, props, now }: { turn: Turn; items: TurnIte
     if (item.kind === "user_message") {
       out.push(
         <div key={item.id} className="cv2-you-wrap" style={{ margin: "8px 0" }}>
-          <div className="cv2-you">{item.text}</div>
+          <div className={cn("cv2-you", USER_BUBBLE_CLASS)}>{item.text}</div>
           <div className="cv2-you-cap">{item.delivery === "steer" ? "Steered" : "Queued"}</div>
         </div>,
       );
@@ -540,7 +546,7 @@ function UserBubble({ turn, revert, edit }: { turn: Turn; revert?: { onConfirm: 
   const u = turn.user!;
   return (
     <div className="cv2-you-wrap" data-turn-start>
-      <div className="cv2-you">
+      <div className={cn("cv2-you", USER_BUBBLE_CLASS)}>
         {u.attachments?.length ? (
           <div className="files">
             {u.attachments.map((a, i) => (
@@ -581,6 +587,10 @@ function UserBubble({ turn, revert, edit }: { turn: Turn; revert?: { onConfirm: 
         ) : (
           <>
             <span className="cv2-tnum">{clock(u.createdAt)}</span>
+            {u.text && <button type="button" aria-label="Copy prompt" onClick={async () => {
+              try { await navigator.clipboard.writeText(u.text); toast.success("Copied the prompt."); }
+              catch { toast.error("Couldn’t copy the prompt."); }
+            }}><Glyph name="copy" size={14} /></button>}
             {edit && (
               // Nothing to undo: straight into the composer. Otherwise the same confirm as Revert.
               <button type="button" onClick={() => (edit.plan.rollbackTo ? setConfirm("edit") : edit.onConfirm())}>
@@ -609,6 +619,8 @@ function TurnView({
   edit,
   retry,
   latest,
+  speaking,
+  onSpeak,
 }: {
   turn: Turn;
   props: ThreadProps;
@@ -619,6 +631,8 @@ function TurnView({
   edit?: { plan: EditPlan; onConfirm: () => void };
   retry?: { plan: RetryPlan; onConfirm: () => void };
   latest: boolean;
+  speaking: boolean;
+  onSpeak?: () => void;
 }) {
   const vis = turnVisibility(turn, props.detailLevel, unfolded);
   const steps = stepItems(turn);
@@ -668,6 +682,8 @@ function TurnView({
           latest={latest}
           feedback={props.feedbackFor?.(turn.id) ?? null}
           onFeedback={props.onFeedback ? (value) => props.onFeedback?.(turn.id, value) : undefined}
+          speaking={speaking}
+          onSpeak={onSpeak}
           onRetry={retry?.onConfirm}
           retryTitle={retry ? retryTitle(retry.plan) : undefined}
         />
@@ -696,6 +712,31 @@ function TurnRail({ turns, onJump, current }: { turns: Turn[]; onJump: (id: stri
 }
 
 export function Thread(props: ThreadProps) {
+  const { speak, stop } = useTts();
+  const [reading, setReading] = React.useState<{ id: string } | null>(null);
+  React.useEffect(() => {
+    if (!props.readingBlocked) return;
+    stop();
+    setReading(null);
+  }, [props.readingBlocked, stop]);
+
+  const readAnswer = (id: string, text: string) => {
+    if (reading?.id === id) {
+      stop();
+      setReading(null);
+      return;
+    }
+    const spoken = speechForReply(text, undefined);
+    if (!spoken) {
+      toast.message("This answer has no text to read aloud.");
+      return;
+    }
+    const request = { id };
+    setReading(request);
+    void speak(spoken, props.voiceId).catch(() => toast.error("Couldn’t read this answer.")).finally(() => {
+      setReading((current) => current === request ? null : current);
+    });
+  };
   const { items, state } = props;
   const turns = React.useMemo(() => groupTurns(items, { state }), [items, state]);
   const live = state === "running" || state === "waiting";
@@ -848,6 +889,8 @@ export function Thread(props: ThreadProps) {
         {turns.map((turn, i) => (
           <TurnView
             key={turn.id}
+            speaking={reading?.id === turn.id}
+            onSpeak={turn.answer && !props.readingBlocked ? () => readAnswer(turn.id, turn.answer!.text) : undefined}
             turn={turn}
             props={props}
             now={now}

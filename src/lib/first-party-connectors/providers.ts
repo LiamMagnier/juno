@@ -9,6 +9,11 @@ export function isFirstPartyId(id: string): id is FirstPartyId {
 /** Separate from sign-in OAuth: linking mail must never change login scopes. */
 export function firstPartyDefinitions(appUrl: string, vars: Readonly<Record<string, string | undefined>>): ConnectorDef[] {
   const google = { clientId: vars.CONNECTOR_GOOGLE_CLIENT_ID, clientSecret: vars.CONNECTOR_GOOGLE_CLIENT_SECRET };
+  const driveClientId = vars.CONNECTOR_GOOGLE_DRIVE_CLIENT_ID?.trim();
+  const driveClientSecret = vars.CONNECTOR_GOOGLE_DRIVE_CLIENT_SECRET?.trim();
+  const drive = driveClientId || driveClientSecret
+    ? { clientId: driveClientId, clientSecret: driveClientSecret }
+    : google;
   const microsoft = { clientId: vars.CONNECTOR_MICROSOFT_CLIENT_ID, clientSecret: vars.CONNECTOR_MICROSOFT_CLIENT_SECRET };
   const specs: Array<{ id: FirstPartyId; label: string; description: string; scope: string }> = [
     { id: "gmail", label: "Gmail", description: "Search and read mail, create drafts, and send with your approval.", scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose" },
@@ -30,7 +35,7 @@ export function firstPartyDefinitions(appUrl: string, vars: Readonly<Record<stri
       // client type irreversibly; do not silently require that owner setting.
       pkce: !slack,
       authorizeParams: slack ? { user_scope: spec.scope } : ms ? {} : { access_type: "offline", prompt: "consent" },
-      cfg: { ...(slack ? { clientId: vars.CONNECTOR_SLACK_CLIENT_ID, clientSecret: vars.CONNECTOR_SLACK_CLIENT_SECRET } : ms ? microsoft : google), mcpUrl: `${appUrl.replace(/\/$/, "")}/api/mcp/first-party/${spec.id}` },
+      cfg: { ...(slack ? { clientId: vars.CONNECTOR_SLACK_CLIENT_ID, clientSecret: vars.CONNECTOR_SLACK_CLIENT_SECRET } : ms ? microsoft : spec.id === "google-drive" ? drive : google), mcpUrl: `${appUrl.replace(/\/$/, "")}/api/mcp/first-party/${spec.id}` },
       async fetchAccountLabel(accessToken) {
         const url = slack ? "https://slack.com/api/auth.test" : ms ? "https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName" : spec.id === "gmail" ? "https://gmail.googleapis.com/gmail/v1/users/me/profile" : "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)";
         // Calendar-only scopes cannot call Drive's about endpoint.

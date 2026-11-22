@@ -3,6 +3,7 @@
 import * as React from "react";
 import { motion } from "framer-motion";
 import { usePathname, useRouter } from "next/navigation";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { useTheme } from "next-themes";
 import {
   BookOpen,
@@ -731,6 +732,7 @@ function FilterChip({
  */
 function SearchPalette() {
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [type, setType] = React.useState<SearchType | "all">("all");
@@ -745,10 +747,10 @@ function SearchPalette() {
 
   const go = React.useCallback(
     (href: string) => {
-      router.push(href);
+      router.push(hrefFor(href));
       setOpen(false);
     },
-    [router]
+    [hrefFor, router]
   );
 
   /*
@@ -1208,6 +1210,7 @@ function SearchPalette() {
  */
 function CommandMenu() {
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
   const pathname = usePathname();
   // The rows' key hints print the platform's own modifier: a Windows or Linux
   // reader was shown "⌘" for four shortcuts their keyboard cannot make.
@@ -1235,10 +1238,10 @@ function CommandMenu() {
 
   const go = React.useCallback(
     (href: string) => {
-      router.push(href);
+      router.push(hrefFor(href));
       setOpen(false);
     },
-    [router]
+    [hrefFor, router]
   );
 
   const toggleTheme = React.useCallback(() => {
@@ -1396,7 +1399,7 @@ function CommandMenu() {
          from a preset used to mean opening the Design page first; this is
          that page's preset grid, one command away
          (docs/design/artifacts-design/04-MERGE-PLAN.md §4.6). */
-      { id: "new-design", group: "Actions", label: "New design", icon: AppIcons.design, keywords: "mockup wireframe prototype", run: () => go("/artifacts?type=DESIGN&new=design") },
+      { id: "new-design", group: "Actions", label: "New design", icon: AppIcons.design, keywords: "mockup wireframe prototype", run: () => go("/library?view=artifacts&type=DESIGN&new=design") },
       /* "New scheduled task" is now "New automation" and lands on the editor
          rather than on a list: scheduled tasks are retired into Automations,
          and its old keywords ride along so the words people type for it still
@@ -1448,8 +1451,8 @@ function CommandMenu() {
          Artifacts keeps the words for everything else it holds. Matching is
          at word starts, so no word here may begin another row's word either:
          "frame" on one row would still find "frames" on another. */
-      { id: "design", group: "Actions", label: "Open Designs", icon: AppIcons.design, keywords: "canvas frames screens figma", run: () => go("/artifacts?type=DESIGN") },
-      { id: "artifacts", group: "Actions", label: FEATURE_NAMES.artifacts.label, icon: AppIcons.artifacts, keywords: "documents generated made", run: () => go("/artifacts") },
+      { id: "design", group: "Actions", label: "Open Designs", icon: AppIcons.design, keywords: "canvas frames screens figma", run: () => go("/library?view=artifacts&type=DESIGN") },
+      { id: "artifacts", group: "Actions", label: FEATURE_NAMES.artifacts.label, icon: AppIcons.artifacts, keywords: "documents generated made", run: () => go("/library?view=artifacts") },
       { id: "activity", group: "Actions", label: `Open ${FEATURE_NAMES.activity.label}`, icon: AppIcons.activity, keywords: "running needs you approvals tasks runs research code status ready blocked", run: () => go("/activity") },
       { id: "library", group: "Actions", label: `Open ${FEATURE_NAMES.library.label}`, icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
       { id: "connections", group: "Actions", label: `Open ${FEATURE_NAMES.apps.label}`, icon: AppIcons.connections, keywords: "apps connections plugins integrations github mcp connectors", run: () => go("/connections") },

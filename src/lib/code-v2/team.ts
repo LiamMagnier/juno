@@ -19,14 +19,14 @@
 import type { AgentRole, EffortLevel, ModelSelection, RolePreset, RoleRouting, TeamPhase } from "@/lib/code-v2/contracts";
 import { DEFAULT_BUDGET_USD, WORKERS_MAX, WORKERS_MIN, withCount, withPreset } from "@/lib/code-v2/orchestrate";
 
-/** The presets the editor offers, in order. `lead-workers` stays readable but is not offered. */
-export const TEAM_PRESETS = ["solo", "plan-build-verify", "best-of-n"] as const satisfies readonly RolePreset[];
+export const TEAM_PRESETS = ["solo", "lead-workers", "plan-build-verify", "best-of-n"] as const satisfies readonly RolePreset[];
 export type TeamPreset = (typeof TEAM_PRESETS)[number];
 
 export const TEAM_PRESET_COPY: Record<TeamPreset, { label: string; line: string }> = {
   solo: { label: "Solo", line: "One model does everything." },
-  "plan-build-verify": { label: "Plan → Build → Verify", line: "One model plans, others build in parallel, another checks the result." },
-  "best-of-n": { label: "Best of N", line: "Several models try the same task. You keep the best." },
+  "lead-workers": { label: "Swarm", line: "The lead delegates independent work in parallel and brings the results together." },
+  "plan-build-verify": { label: "Plan → Build → Verify", line: "An architect plans, builders work in parallel, and a verifier checks the result." },
+  "best-of-n": { label: "Best of N", line: "Compare different attempts at the same task in separate worktrees." },
 };
 
 export const TEAM_ROLES = ["architect", "builder", "verifier", "explorer"] as const;
@@ -60,11 +60,8 @@ export const TEAM_PHASE_LABELS: Record<TeamPhase, string> = { plan: "Plan", buil
 export const BUILDERS_MIN = WORKERS_MIN;
 export const BUILDERS_MAX = WORKERS_MAX;
 
-/** The editor's view of a preset: `lead-workers` reads as the team it closest resembles. */
 export function teamPresetOf(routing: RoleRouting | undefined): TeamPreset {
-  if (!routing || routing.preset === "solo") return "solo";
-  if (routing.preset === "best-of-n") return "best-of-n";
-  return "plan-build-verify";
+  return routing?.preset ?? "solo";
 }
 
 /** Switch preset. Plan → Build → Verify fills each role from the lead, two builders and a $4 cap. */

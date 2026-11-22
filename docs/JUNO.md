@@ -779,7 +779,16 @@ the model (see §6.3).
 
   **Add from Google Drive / OneDrive** (`src/lib/cloud-files/`, picker
   `cloud-file-picker.tsx`): the + menu draws each row only while that first-party
-  connector (`google-drive`, `microsoft-365`) is connected. The picker lists recent
+  connector (`google-drive`, `microsoft-365`) is connected.
+  Google Drive needs a Google OAuth web client with the Drive API enabled and
+  `https://www.googleapis.com/auth/drive.readonly` allowed on the consent screen.
+  Set `CONNECTOR_GOOGLE_DRIVE_CLIENT_ID` and `CONNECTOR_GOOGLE_DRIVE_CLIENT_SECRET`
+  together in the deployment environment, or use the shared
+  `CONNECTOR_GOOGLE_CLIENT_ID` and `CONNECTOR_GOOGLE_CLIENT_SECRET` pair. Register
+  `https://chat.liams.dev/api/connectors/google-drive/callback` as an authorized
+  redirect URI for production. Leave `CLOUD_ATTACH_ENABLED` unset to enable
+  configured Google Drive, set it to `1` to also allow OneDrive, or set it to
+  `0` to disable both. The picker lists recent
   files or searches (`GET /api/connectors/[id]/files`); picked files are fetched
   server-side with the person's own token (`POST …/files/attach`). Google Docs,
   Sheets and Slides export as .docx / .xlsx / .pptx, falling back to PDF or text

@@ -815,19 +815,18 @@ export function AppSidebar({
   // The shared shell destinations keep their cross-platform order. Direct
   // tools and Library access from Code are shortcuts specific to the web.
   const primaryDestinations = isCode ? ([
+    { href: "/projects?surface=code", kind: "projects", label: FEATURE_NAMES.projects.label, active: pathname?.startsWith("/projects") },
+    { href: "/library?surface=code", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" },
+    { href: "/connections?surface=code", kind: "connections", label: "Apps & plugins", active: pathname?.startsWith("/connections") },
+    { href: "/skills?surface=code", kind: "skills", label: "Skills", active: pathname?.startsWith("/skills") },
+    { href: "/code/pulls", kind: "pulls", label: "Pull requests", active: pathname === "/code/pulls" },
     { href: "/code/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: pathname === "/code/customize" },
   ] as const) : ([
     { href: "/activity", kind: "activity", label: FEATURE_NAMES.activity.label, active: pathname === "/activity" },
-    { href: "/projects", kind: "projects", label: FEATURE_NAMES.projects.label, active: pathname === "/projects" },
+    { href: "/projects", kind: "projects", label: FEATURE_NAMES.projects.label, active: pathname?.startsWith("/projects") },
     { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" },
     { href: "/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: pathname?.startsWith("/customize") || pathname?.startsWith("/automations") },
   ] as const);
-  const workspaceShortcuts = [
-    { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library", codeOnly: true },
-    { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname?.startsWith("/artifacts") },
-    { href: "/connections", kind: "connections", label: "Apps & plugins", active: pathname?.startsWith("/connections") },
-    { href: "/skills", kind: "skills", label: "Skills", active: pathname?.startsWith("/skills") },
-  ] as const;
 
   const sidebarProjects = React.useMemo(
     () =>
@@ -1332,6 +1331,7 @@ export function AppSidebar({
              made the one row people press most read as the chunkiest. */
           icon={<SidebarMotionIcon kind={isCode ? "new-session" : "new"} />}
           label={isCode ? "New session" : FEATURE_NAMES.newChat.label}
+          featured={isCode}
           newChatTrigger={!isCode}
           moves
           trailing={isCode ? undefined : <Kbd>{chordLabel(`${mod}⇧O`, mod)}</Kbd>}
@@ -1404,22 +1404,33 @@ export function AppSidebar({
         )}
         aria-label="Primary"
       >
-        {[...primaryDestinations, ...workspaceShortcuts.filter((item) => !("codeOnly" in item) || isCode)].map((item) => (
-          <NavRow
-            key={item.href}
-            collapsed={collapsed}
-            href={item.href}
-            active={!!item.active}
-            onClick={() => setSidebarOpen(false)}
-            icon={<SidebarMotionIcon kind={item.kind} />}
-            label={item.label}
-            signal={item.kind === "activity" && activityNeedsYou > 0 ? <ActivityNeedsYouBadge count={activityNeedsYou} compact={collapsed} /> : undefined}
-            detail={item.kind === "activity" && activityNeedsYou > 0 ? `${activityNeedsYou} ${FEATURE_NAMES.needsYou.label.toLowerCase()}` : undefined}
-            moves
-            layoutId={`nav-${item.kind}`}
-            transition={layoutTransition}
-            reveal={revealOnMount}
-          />
+        {(isCode && !collapsed
+          ? [
+              { title: "Workspace", items: primaryDestinations.slice(0, 2) },
+              { title: "Tools", items: primaryDestinations.slice(2) },
+            ]
+          : [{ title: "", items: primaryDestinations }]
+        ).map(({ title, items }) => (
+          <div key={title} className={title ? "code-sidebar-group" : "contents"}>
+            {title && <div className="code-sidebar-label">{title}</div>}
+            {items.map((item) => (
+              <NavRow
+                key={item.href}
+                collapsed={collapsed}
+                href={item.href}
+                active={!!item.active}
+                onClick={() => setSidebarOpen(false)}
+                icon={<SidebarMotionIcon kind={item.kind} />}
+                label={item.label}
+                signal={item.kind === "activity" && activityNeedsYou > 0 ? <ActivityNeedsYouBadge count={activityNeedsYou} compact={collapsed} /> : undefined}
+                detail={item.kind === "activity" && activityNeedsYou > 0 ? `${activityNeedsYou} ${FEATURE_NAMES.needsYou.label.toLowerCase()}` : undefined}
+                moves
+                layoutId={`nav-${item.kind}`}
+                transition={layoutTransition}
+                reveal={revealOnMount}
+              />
+            ))}
+          </div>
         ))}
       </nav>
     </>
@@ -1431,6 +1442,7 @@ export function AppSidebar({
         key="sidebar"
         ref={rootRef}
         data-collapsed={collapsed ? "" : undefined}
+        data-sidebar-product={product}
         className={cn(
           // The phone drawer's fills are re-based for its ground, on the
           // ground's own hue, by AppShell's DRAWER_CLASS.
@@ -2421,6 +2433,7 @@ function NavRow({
   reveal = false,
   moves = false,
   newChatTrigger = false,
+  featured = false,
 }: {
   href?: string;
   onClick?: () => void;
@@ -2435,6 +2448,7 @@ function NavRow({
   moves?: boolean;
   /** Lets the new chat's arrival focus yield from this specific control. */
   newChatTrigger?: boolean;
+  featured?: boolean;
   /** A hint that shows under the pointer only (a shortcut's keycap). */
   trailing?: React.ReactNode;
   /**
@@ -2467,6 +2481,7 @@ function NavRow({
   const cls = cn(
     navRowClass(collapsed, !!active),
     "jicon-trigger workspace-nav-row",
+    featured && "code-sidebar-new",
     // While its popover is open the row wears the selected fill, as the More
     // trigger and the account row do for theirs.
     Trigger && "sidebar-row-selected-on-open data-[state=open]:text-foreground"

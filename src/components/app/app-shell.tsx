@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { useUiPref } from "@/lib/ui-prefs";
 import { framerReducedMotion } from "@/lib/motion-preference";
@@ -112,6 +112,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { sidebarOpen, setSidebarOpen, activeConversationId, conversations } = useApp();
   const router = useRouter();
   const pathname = usePathname();
+  const requestedSurface = useSearchParams().get("surface");
   const [motionPreference] = useUiPref("motion");
 
   const [collapsed, setCollapsed] = React.useState(false);
@@ -207,7 +208,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
    * mounts twice (the desktop aside and the phone drawer) and two copies of a
    * derivation are two things that can disagree.
    */
-  const product = productOf(pathname, activeConversation?.kind ?? null);
+  const product = productOf(pathname, activeConversation?.kind ?? null, requestedSurface);
 
   const applyWidth = React.useCallback((w: number) => {
     widthRef.current = w;

@@ -95,7 +95,11 @@ test("roles map onto RoleRouting: Architect → architect, Builder → workers, 
   assert.equal(withBudget(team, undefined).budget, undefined);
 
   assert.equal(teamPresetOf(team), "plan-build-verify");
-  assert.equal(teamPresetOf({ ...team, preset: "lead-workers" }), "plan-build-verify");
+  const delegated = withTeamPreset(team, "lead-workers");
+  assert.equal(teamPresetOf(delegated), "lead-workers");
+  assert.equal(delegated.architect, undefined, "a dynamic team has no dedicated planning stage");
+  assert.deepEqual(delegated.workers, team.workers);
+  assert.deepEqual(delegated.reviewer, team.reviewer);
   assert.equal(teamPresetOf(undefined), "solo");
   assert.equal(teamPresetOf(withTeamPreset(team, "best-of-n")), "best-of-n");
   assert.equal(withTeamPreset(team, "solo").preset, "solo");

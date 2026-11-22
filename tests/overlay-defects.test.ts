@@ -130,7 +130,7 @@ test("every confirmation is the one ConfirmDialog: one width, Cancel first and f
     "src/app/(app)/permissions/[hostId]/page.tsx",
     "src/app/(app)/connections/page.tsx",
     "src/app/(app)/assistants/page.tsx",
-    "src/app/(app)/artifacts/page.tsx",
+    "src/components/library/library-artifacts.tsx",
     "src/app/(app)/automations/[id]/page.tsx",
     "src/components/chat/session-expired-dialog.tsx",
   ]) {

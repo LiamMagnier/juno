@@ -69,6 +69,7 @@ export interface CodeV2RouteProps {
     codeWorkspacePath?: string | null;
     codeWorkspaceKey?: string | null;
   };
+  project?: { id: string; name: string };
   initialMessages: ClientMessage[];
   /** The newest page of a longer session (lib/chat/history-page.ts). Absent: the whole session. */
   initialHistory?: ConversationHistory;
@@ -99,9 +100,9 @@ const CLOUD_STARTING_LABEL = "Starting in the cloud…";
 /** What the composer gave a draft back with, when a send could not go. */
 type DraftIo = { read(): { text: string; editing: boolean }; apply(text: string): void; restore?(text: string, attachments: ClientAttachment[]): void };
 
-export function CodeV2Route({ conversation, initialMessages, initialHistory }: CodeV2RouteProps) {
+export function CodeV2Route({ conversation, project, initialMessages, initialHistory }: CodeV2RouteProps) {
   const router = useRouter();
-  const { conversations, updateConversation, upsertConversation, features } = useApp();
+  const { conversations, updateConversation, upsertConversation, features, settings } = useApp();
   const meta = useCodeTaskMeta(conversation.id);
   const { presence } = useDevicePresence(conversation.codeWorkspaceKey ?? null, conversation.codeWorkspaceName?.trim() || null, !(meta.loaded && meta.isCloud));
   const session = useCodeSession({
@@ -338,6 +339,13 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
     }
   }
 
+  async function getProjectContext(): Promise<string | null | undefined> {
+    if (!project) return undefined;
+    const response = await fetch(`/api/conversations/${conversation.id}?view=code-project-context`);
+    if (!response.ok) throw new Error("Couldn’t load project context. Try again.");
+    return ((await response.json()) as { context: string | null }).context;
+  }
+
   // Skills lane: the account's skills and, when this thread runs on a Mac,
   // the Mac's and the project's (skills.list over the device link).
   const envClient = useEnv ? env.client : null;
@@ -475,9 +483,10 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
     const draft = rest?.trim() ?? "";
     if (meta.isCloud && meta.repoOwner && meta.repoName) {
       // A cloud thread starts on the landing, with this repository and branch already picked.
-      if (draft) writeComposerDraft(codeDraftKey(null), { text: draft, tokens: [] });
+      if (draft) writeComposerDraft(codeDraftKey(null, project?.id), { text: draft, tokens: [] });
       const q = new URLSearchParams({ repositories: `${meta.repoOwner}/${meta.repoName}` });
       if (meta.baseRef) q.set("branch", meta.baseRef);
+      if (project) q.set("project", project.id);
       router.push(`/code?${q}`);
       return;
     }
@@ -487,6 +496,7 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind: "code",
+          projectId: project?.id,
           codeWorkspaceName: conversation.codeWorkspaceName ?? undefined,
           codeWorkspacePath: conversation.codeWorkspacePath ?? undefined,
           codeWorkspaceKey: conversation.codeWorkspaceKey ?? undefined,
@@ -530,9 +540,9 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
         const files = await filesForMac(attachments, text);
         if (!files) return false;
         try {
-          const sessionId = await ensureEnvSession();
+          const [sessionId, projectContext] = await Promise.all([ensureEnvSession(), getProjectContext()]);
           const active = await skills.take();
-          return await client.request("turn.start", { sessionId, input: { text, ...(files.length ? { attachments: files } : {}), ...(active ? { skills: active } : {}) }, selection, routing: effectiveRouting.preset === "solo" ? undefined : effectiveRouting, ...modesRef.current });
+          return await client.request("turn.start", { sessionId, input: { text, ...(files.length ? { attachments: files } : {}), ...(active ? { skills: active } : {}) }, projectContext, selection, routing: effectiveRouting.preset === "solo" ? undefined : effectiveRouting, ...modesRef.current });
         } catch (error) {
           // The words and files go back to the composer rather than vanishing with the error.
           toast.error(error instanceof Error && error.message ? error.message : SEND_FAILED_MESSAGE);
@@ -653,9 +663,10 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
     // Retry and the error row's Retry: the turn's own message again (with its attachments on a Mac thread).
     async resend(message) {
       if (useEnv && env.client) {
-        const sessionId = await ensureEnvSession();
+        const [sessionId, projectContext] = await Promise.all([ensureEnvSession(), getProjectContext()]);
         return env.client.request("turn.start", {
           sessionId,
+          projectContext,
           input: { text: message.text, ...(message.attachments?.length ? { attachments: message.attachments } : {}) },
           selection,
           routing: effectiveRouting.preset === "solo" ? undefined : effectiveRouting,
@@ -835,9 +846,11 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
 
   const usage = useEnv && env.view?.usage ? env.view.usage : undefined;
   const model: WorkspaceModel = {
+    teamAvailable: !meta.isCloud,
     thread: {
       id: conversation.id,
       // The app's copy first: a rename (here or from the sidebar) shows at once.
+      project,
       title: conversations.find((c) => c.id === conversation.id)?.title || conversation.title || "Code session",
       repo: meta.repoOwner && meta.repoName ? `${meta.repoOwner}/${meta.repoName}` : (conversation.codeWorkspaceName ?? "Code session"),
       branch: meta.branch ?? undefined,
@@ -883,6 +896,14 @@ export function CodeV2Route({ conversation, initialMessages, initialHistory }: C
         sidebar={false}
         byok={byok}
         resolveScreenshot={resolveScreenshot}
+        voiceId={settings.voiceId}
+        loadExportItems={async () => {
+          const messages = await session.loadOlderMessages({ all: true });
+          return messages ? legacyToItems({
+            messages: messages as unknown as LegacySessionInput["messages"],
+            status: session.status,
+          }).items : null;
+        }}
         // Never over a task the landing just sent: the Connections sheet used to open as the first prompt went.
         firstRun={!instances.some((i) => i.kind !== "alevr" && (i.status === "ready" || i.status === "limited")) && !keys.length && items.length === 0 && !firstItems && !handoff.pending()}
         onProbe={env.ready ? env.probe : undefined}

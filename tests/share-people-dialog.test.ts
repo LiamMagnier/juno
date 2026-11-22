@@ -71,7 +71,7 @@ test("the dialog offers Specific people and Anyone with the link, starting on Sp
   const source = read("src/components/share/share-dialog.tsx");
   assert.match(source, /const start: ShareAudienceChoice = peopleAllowed \? \(initialAudience \?\? "people"\) : "link";/);
   // Only an entry that names something public by name opens on the link: an artifact's "Publish…".
-  const opensOnLink = ["src/components/artifacts/artifact-lifecycle-actions.tsx", "src/components/canvas/canvas-panel.tsx", "src/components/chat/chat-view.tsx", "src/components/app/app-sidebar.tsx", "src/app/(app)/artifacts/page.tsx", "src/components/research/report-export.tsx"].filter((file) => /initialAudience="link"/.test(read(file)));
+  const opensOnLink = ["src/components/artifacts/artifact-lifecycle-actions.tsx", "src/components/canvas/canvas-panel.tsx", "src/components/chat/chat-view.tsx", "src/components/app/app-sidebar.tsx", "src/components/library/library-artifacts.tsx", "src/components/research/report-export.tsx"].filter((file) => /initialAudience="link"/.test(read(file)));
   assert.deepEqual(opensOnLink, ["src/components/artifacts/artifact-lifecycle-actions.tsx"]);
   assert.match(source, /<SegmentedControl[\s\S]*?ariaLabel="Who can open it"/);
   // Each choice leads to its own panel; the link side is today's link and publish panels, unchanged.

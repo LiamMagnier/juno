@@ -157,7 +157,7 @@ export function ComposerFileInputs({
   fileInputRef,
   onFiles,
 }: {
-  imageInputRef: React.RefObject<HTMLInputElement | null>;
+  imageInputRef?: React.RefObject<HTMLInputElement | null>;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onFiles: (files: FileList) => void;
 }) {
@@ -168,7 +168,7 @@ export function ComposerFileInputs({
   };
   return (
     <>
-      <input ref={imageInputRef} type="file" multiple accept="image/*" className="hidden" onChange={handle} />
+      {imageInputRef && <input ref={imageInputRef} type="file" multiple accept="image/*" className="hidden" onChange={handle} />}
       <input ref={fileInputRef} type="file" multiple accept={ACCEPT_ATTRIBUTE} className="hidden" onChange={handle} />
     </>
   );

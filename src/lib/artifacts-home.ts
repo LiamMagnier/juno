@@ -60,8 +60,8 @@ export function homeHrefForType(currentSearch: string, filter: HomeTypeFilter): 
   const params = new URLSearchParams(currentSearch);
   if (filter === "ALL") params.delete("type");
   else params.set("type", filter);
-  const query = params.toString();
-  return query ? `/artifacts?${query}` : "/artifacts";
+  params.set("view", "artifacts");
+  return `/library?${params}`;
 }
 
 /**

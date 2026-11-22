@@ -113,14 +113,6 @@
   box-shadow: none;
 }
 
-/* The send arrow sits on a solid disc, where a 1.5px line thins against the
-   fill; it takes a heavier line there (2.25 units of 24 is 1.7px at 18px). */
-.composer-primary-action[data-face="send"] .ag,
-.composer-primary-action[data-face="stop"] .ag {
-  /* Screen pixels: interface glyphs draw a non-scaling line (§12). */
-  stroke-width: 1.75px;
-}
-
 /* Sidebar destinations: 18px glyphs in full ink (owner, 16 Nov 2026: "make
    them black"), the label's companion in the same ink rather than a grey
    hint beside it (app-sidebar.tsx, NavRow). They were the second ink at rest. */
@@ -985,142 +977,11 @@ section[data-sidebar-section]:not(:first-child) {
   }
 }
 
-/* ── 13. The Code composer on Chat's geometry (code/v2/composer.tsx) ─────────
-   Owner, 7 Nov 2026: rework Code's composer so the two modes read as one
-   product. Same 28px corner, hairline and resting shadow as Chat's surface;
-   the text on a 16/20 inset; the controls row 10px in from the edge, its
-   controls round 32px pills; an 8px gap, then a 36px disc concentric with
-   the corner (28 − 10 = 18). */
-.cv2-composer.cv2-composer {
-  border-radius: 28px;
-  padding: 16px 10px 10px 20px;
-  border-color: hsl(30 8% 14% / 0.1);
-  box-shadow:
-    0 1px 1px hsl(30 10% 10% / 0.03),
-    0 2px 6px -2px hsl(220 10% 10% / 0.05),
-    0 10px 24px -14px hsl(30 10% 10% / 0.1);
-  transition:
-    border-color 160ms var(--ease-out-soft),
-    box-shadow 200ms var(--alv-ease-out);
-}
-.cv2-composer.cv2-composer:focus-within {
-  border-color: hsl(30 8% 14% / 0.17);
-  box-shadow:
-    0 1px 1px hsl(220 10% 10% / 0.04),
-    0 3px 8px -3px hsl(30 10% 10% / 0.07),
-    0 14px 32px -16px hsl(30 10% 10% / 0.14);
-}
-.dark .cv2-composer.cv2-composer {
-  border-color: hsl(40 10% 96% / 0.1);
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.05),
-    0 1px 2px hsl(0 0% 0% / 0.35),
-    0 12px 28px -14px hsl(0 0% 0% / 0.6);
-}
-.cv2-composer.needs.needs {
-  border-color: hsl(var(--signal));
-}
-.cv2-composer .cv2-draft {
-  font-size: 16px;
-  line-height: 24px;
-  padding-right: 10px;
-}
-.cv2-composer .cv2-cfoot {
-  gap: 2px;
-  margin-top: 10px;
-  margin-left: -10px;
-}
-.cv2-composer .cv2-ctl {
-  height: 32px;
-  padding: 0 8px 0 9px;
-  border-radius: 999px;
-  font-size: 13.5px;
-  color: hsl(var(--foreground) / 0.62);
-  transition:
-    background-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
-    color 160ms cubic-bezier(0.23, 1, 0.32, 1),
-    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.cv2-composer .cv2-ctl:active {
-  transform: scale(0.97);
-}
-.cv2-composer .cv2-ctl.icon {
-  width: 32px;
-  padding: 0;
-}
-.cv2-composer .cv2-ctl:hover,
-.cv2-composer .cv2-ctl[aria-expanded="true"] {
-  background: hsl(var(--foreground) / 0.055);
-  color: hsl(var(--foreground));
-}
-.cv2-composer .cv2-ctl .v {
-  font-weight: 450;
-}
-.cv2-composer .cv2-send {
-  width: 36px;
-  height: 36px;
-  margin-left: 6px;
-}
-/* The disc wears Chat's four faces (composer-shell.tsx, the primary action),
-   so the two modes read as one product: Send in the accent, flat, like every
-   primary; Stop the ink disc; empty, the quiet voice entry; disabled, a tone
-   step with the third ink rather than a faded accent. Code's disc was graphite
-   with a drop shadow while Chat's took the accent (owner, 15 Nov 2026: the
-   accent everywhere). */
-.cv2-composer .cv2-send:not([data-mode="voice"]):not([data-mode="stop"]):not(:disabled) {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-}
-.cv2-composer .cv2-send[data-mode="stop"] {
-  background: hsl(var(--foreground));
-  color: hsl(var(--background));
-}
-.cv2-composer .cv2-send:disabled {
-  opacity: 1;
-  background: hsl(var(--secondary));
-  color: hsl(var(--ink-tertiary));
-}
-.cv2-composer .cv2-send[data-mode="voice"] {
-  background: hsl(var(--secondary));
-  color: hsl(var(--muted-foreground));
-}
-@media (hover: hover) and (pointer: fine) {
-  .cv2-composer .cv2-send:not([data-mode="voice"]):not([data-mode="stop"]):not(:disabled):hover {
-    filter: brightness(1.06);
-  }
-  .cv2-composer .cv2-send[data-mode="voice"]:hover {
-    background: hsl(var(--selected));
-    color: hsl(var(--foreground));
-  }
-}
-.cv2-composer .cv2-send .ag {
-  stroke-width: 1.75px;
-}
-.cv2-composer .cv2-send:active {
-  transform: scale(0.95);
-}
-/* 44px under a coarse pointer, the touch minimum, as on Chat's row. */
-@media (pointer: coarse) {
-  .cv2-composer .cv2-ctl { height: 44px; }
-  .cv2-composer .cv2-ctl.icon { width: 44px; }
-  .cv2-composer .cv2-send { width: 44px; height: 44px; }
-}
-@media (max-width: 640px) {
-  .cv2-composer.cv2-composer { padding: 14px 8px 8px 16px; }
-  .cv2-composer .cv2-cfoot { margin-left: -8px; }
-}
-
-/* ── 12. One line weight for every interface glyph ────────────────────────
-   icons.tsx draws a stroke chosen for the size in the glyph's class, so a
-   glyph that CSS then resized (the sidebar's 18px, the menus' 18px) painted
-   another weight: eight strokes measured on one screen. Every glyph at an
-   interface size (12 to 24px) now draws one 1.5px line whatever size it
-   ends up, so a menu, the sidebar and the composer read as one drawing.
-   Larger glyphs (empty states) keep a stroke that grows with them. */
-svg.ag:is([width="12"], [width="14"], [width="15"], [width="16"], [width="18"], [width="20"], [width="22"], [width="24"]) {
+/* One screen-pixel weight for navigation, menus and toolbar glyphs. */
+svg[data-interface-icon] {
   stroke-width: 1.5px;
 }
-svg.ag:is([width="12"], [width="14"], [width="15"], [width="16"], [width="18"], [width="20"], [width="22"], [width="24"]) :is(path, circle, ellipse, line, polyline, polygon, rect) {
+svg[data-interface-icon] :is(path, circle, ellipse, line, polyline, polygon, rect):not(defs *, mask *, clipPath *) {
   vector-effect: non-scaling-stroke;
 }
 

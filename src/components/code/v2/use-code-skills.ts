@@ -313,6 +313,6 @@ export function useCodeSkills({
     clear,
     take,
     takeCloud,
-    manageHref: "/skills",
+    manageHref: "/skills?surface=code",
   };
 }

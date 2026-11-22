@@ -49,6 +49,7 @@ type Contract = {
     {
       actions: (KindItem & { id: string; label: string })[];
       destinations: string[];
+      webDestinations?: { destination: string; href?: string; label?: string }[];
       more: KindItem & {
         label: string;
         items: { destination: string; minPlan: string }[];
@@ -356,10 +357,12 @@ test("each product's destination rows are the contract's, in order", () => {
       kind: stringOf(property(row, "kind")),
       label: stringOf(property(row, "label")),
     }));
-    const expected = CONTRACT.sidebar[product].destinations.map((id) => {
+    const sidebar = CONTRACT.sidebar[product];
+    const links = sidebar.webDestinations ?? sidebar.destinations.map((destination) => ({ destination }));
+    const expected = links.map(({ destination: id, ...web }) => {
       const destination = destinationByID.get(id);
       assert.ok(destination, `destination ${id}`);
-      return { href: destination.href, kind: destination.kind, label: destination.label };
+      return { href: destination.href, kind: destination.kind, label: destination.label, ...web };
     });
     assert.deepEqual(drawn, expected, `${product}'s destinations`);
   }
@@ -510,6 +513,7 @@ test("every destination is navigable or explicitly retained for compatibility", 
   const placed = new Set(
     PRODUCT_IDS.flatMap((product) => [
       ...CONTRACT.sidebar[product].destinations,
+      ...(CONTRACT.sidebar[product].webDestinations ?? []).map((link) => link.destination),
       ...CONTRACT.sidebar[product].more.items.map((item) => item.destination),
     ]),
   );

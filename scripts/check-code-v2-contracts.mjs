@@ -401,7 +401,7 @@ function buildSchema() {
         runtimeMode: ref("RuntimeMode"),
         interactionMode: ref("InteractionMode"),
       },
-      { routing: ref("RoleRouting") },
+      { routing: ref("RoleRouting"), projectContext: { type: ["string", "null"], maxLength: 90_000 } },
     ),
     "turn.steer": obj({ ...sid, turnId: nonEmpty, input: ref("UserInput") }),
     "agent.message": obj({ ...sid, agentId: nonEmpty, text: nonEmpty }, { requestId: nonEmpty }),

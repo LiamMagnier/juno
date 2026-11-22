@@ -201,7 +201,9 @@ test("no facts, or no task, leaves the prompt exactly as it was", () => {
 
 test("the task route folds memory into the AGENT prompt only, never the transcript", () => {
   const route = src("src/app/api/code/tasks/route.ts");
-  assert.match(route, /const agentPrompt = foldMemoryIntoPrompt\(/);
+  assert.match(route, /const taskPrompt = foldMemoryIntoPrompt\(/);
+  assert.match(route, /const agentPrompt = project \? `\$\{formatCodeProjectContext\(project\.merged\)\}[^;]*\$\{taskPrompt\}` : taskPrompt;/);
+  assert.match(route, /prompt: agentPrompt,/);
   assert.match(route, /await getCodingMemory\(user\.id, prompt\)/);
   // The user's visible message is still the raw composer text.
   assert.match(route, /content: encryptMessageText\(prompt\)/);

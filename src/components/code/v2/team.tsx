@@ -1,23 +1,17 @@
 "use client";
 
-/**
- * The Team orchestrator in the composer (team lane): an always-visible chip
- * that says who is on the team ("Opus plans · Sonnet ×2 builds · GPT
- * verifies", or just "Team" when Solo) and a role editor: the preset (Solo,
- * Plan → Build → Verify, Best of N), one row per role with its model and
- * effort (the row opens the model picker on that role's tab, where the
- * catalogue keeps an Effort row), the builders' count, an optional Explorer,
- * and the budget cap. Also reachable from the composer's options menu and
- * ⇧⌘O. The logic is src/lib/code-v2/team.ts; the Mac twin is
- * CodeV2TeamChip.swift / CodeV2TeamEditor.swift.
- */
 import * as React from "react";
-import type { ModelSelection, ProviderInstance, RolePreset, RoleRouting } from "@/lib/code-v2/contracts";
-import { estimateRunUsd, formatBudget, parseBudget, CANDIDATES_MAX, CANDIDATES_MIN } from "@/lib/code-v2/orchestrate";
+import { AgentFace } from "@/components/agents/agent-face";
+import { defaultAgentAvatar } from "@/lib/agents/avatar";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+import type { ModelSelection, ProviderInstance, RoleRouting } from "@/lib/code-v2/contracts";
+import type { FeatureFlags } from "@/lib/code-v2/providers-view";
+import { estimateRunUsd, formatBudget, orchestrateLabel, parseBudget, CANDIDATES_MAX, CANDIDATES_MIN, withCount, withRoleModel, type RoleSlot } from "@/lib/code-v2/orchestrate";
 import {
   BUILDERS_MAX,
   BUILDERS_MIN,
-  TEAM_PHASE_LABELS,
   TEAM_PRESETS,
   TEAM_PRESET_COPY,
   TEAM_ROLE_COPY,
@@ -25,26 +19,19 @@ import {
   loadTeam,
   saveTeam,
   teamPresetOf,
-  teamRoleSelection,
   teamSummary,
   withBudget,
-  withBuilderCount,
   withTeamPreset,
   withTeamRole,
-  type TeamPreset,
-  type TeamRole,
   type TeamScope,
   type TeamStorage,
 } from "@/lib/code-v2/team";
-import { withCount, withPreset } from "@/lib/code-v2/orchestrate";
 import { teamFromDefault } from "@/lib/code-v2/code-prefs";
 import { useCodePrefs } from "./use-code-prefs";
 import { formatUsd } from "@/lib/code-v2/tier-view";
 import { EFFORT_LABELS, effectiveEffort, findInstance, modelLabel, ratesFor, shortLabel } from "./model-info";
-import { ComposerPopover, Glyph, ModelMark, Segmented } from "./primitives";
-import type { RoleTab } from "./pickers";
-
-const ROLE_TAB: Record<TeamRole, RoleTab> = { architect: "architect", builder: "workers", verifier: "reviewer", explorer: "explorer" };
+import { Glyph, ModelMark } from "./primitives";
+import { ModelPicker } from "./pickers";
 
 function storage(): TeamStorage | null {
   try {
@@ -52,11 +39,6 @@ function storage(): TeamStorage | null {
   } catch {
     return null;
   }
-}
-
-/** A preset as the team editor builds it (Plan → Build → Verify gets its builders and cap). */
-function buildPreset(routing: RoleRouting, preset: RolePreset): RoleRouting {
-  return (TEAM_PRESETS as readonly string[]).includes(preset) ? withTeamPreset(routing, preset as TeamPreset) : withPreset(routing, preset);
 }
 
 /**
@@ -77,7 +59,7 @@ export function useTeamDefault(routing: RoleRouting, lead: ModelSelection, scope
       if (stored.preset !== "solo") setRouting(stored);
       return;
     }
-    const fromAccount = teamFromDefault(account.team, lead, buildPreset);
+    const fromAccount = teamFromDefault(account.team, lead, withTeamPreset);
     if (fromAccount) {
       seeded.current = true;
       setRouting(fromAccount);
@@ -95,21 +77,32 @@ export function useTeamDefault(routing: RoleRouting, lead: ModelSelection, scope
   return save;
 }
 
-export function TeamChip({ routing, open, onToggle }: { routing: RoleRouting; open: boolean; onToggle: () => void }) {
-  const summary = teamSummary(routing);
+export function TeamChip({ routing, open, onToggle, triggerRef }: {
+  routing: RoleRouting;
+  open: boolean;
+  onToggle: () => void;
+  triggerRef: React.Ref<HTMLButtonElement>;
+}) {
+  const swarm = routing.preset === "lead-workers";
+  const workers = routing.workers ?? [];
+  const workerModels = new Set(workers.map((selection) => selection.model));
+  const summary = workerModels.size > 1 && (swarm || routing.preset === "plan-build-verify")
+    ? `${workers.length} ${swarm ? "workers" : "builders"} with different models`
+    : teamSummary(routing);
   return (
     <button
+      ref={triggerRef}
       type="button"
-      className="cv2-ctl cv2-team-chip"
+      className="composer-tray__item cv2-team-chip"
       aria-haspopup="dialog"
       aria-expanded={open}
-      aria-label={summary ? `Team: ${summary}` : "Team"}
-      title={summary ? `Team: ${summary} (⇧⌘O)` : "Choose who plans, builds and verifies (⇧⌘O)"}
+      aria-label={summary ? `Orchestrator: ${TEAM_PRESET_COPY[routing.preset].label}. ${summary}` : "Orchestrator"}
+      title={summary ?? "Choose how agents work together"}
       data-team={summary ? "set" : "solo"}
       onClick={onToggle}
     >
       <Glyph name="agents" size={14} />
-      <span className="v cv2-trunc">{summary ?? "Team"}</span>
+      <span className="v cv2-trunc">{swarm ? `Swarm · ${workers.length}` : summary ? orchestrateLabel(routing) : "Orchestrator"}</span>
       <Glyph name="chevron-down" size={12} className="chev" />
     </button>
   );
@@ -119,211 +112,226 @@ function RoleModel({ instances, selection }: { instances: readonly ProviderInsta
   const instance = findInstance(instances, selection.instanceId);
   const effort = effectiveEffort(instances, selection);
   return (
-    <span className="cv2-team-model">
+    <span className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
       {instance && <ModelMark modelId={selection.model} instance={instance} />}
       <span className="cv2-trunc">{shortLabel(instances, selection)}</span>
-      {effort && effort !== "none" && <span className="eff">{EFFORT_LABELS[effort]}</span>}
+      {effort && effort !== "none" && <span className="shrink-0">{EFFORT_LABELS[effort]}</span>}
     </span>
   );
 }
 
 function Stepper({ value, min, max, label, onChange }: { value: number; min: number; max: number; label: string; onChange: (n: number) => void }) {
   return (
-    <span className="cv2-stepper" role="group" aria-label={label}>
-      <button type="button" aria-label={`Fewer ${label.toLowerCase()}`} disabled={value <= min} onClick={() => onChange(value - 1)}>
+    <span className="inline-flex items-center gap-1 rounded-control border border-border p-0.5" role="group" aria-label={label}>
+      <Button type="button" variant="ghost" size="icon-sm" className="rounded-xs" aria-label={`Fewer ${label.toLowerCase()}`} disabled={value <= min} onClick={() => onChange(value - 1)}>
         <Glyph name="minus" size={12} />
-      </button>
-      <span className="n" aria-live="polite">
+      </Button>
+      <span className="min-w-7 text-center text-caption tabular-nums" aria-live="polite">
         ×{value}
       </span>
-      <button type="button" aria-label={`More ${label.toLowerCase()}`} disabled={value >= max} onClick={() => onChange(value + 1)}>
+      <Button type="button" variant="ghost" size="icon-sm" className="rounded-xs" aria-label={`More ${label.toLowerCase()}`} disabled={value >= max} onClick={() => onChange(value + 1)}>
         <Glyph name="plus" size={12} />
-      </button>
+      </Button>
     </span>
   );
 }
 
-export function TeamEditor({
-  open,
-  onClose,
-  instances,
-  routing,
-  lead,
-  onChange,
-  onPickRole,
-  anchorRef,
+type AgentSlot = {
+  id: string;
+  label: string;
+  icon: string;
+  selection: ModelSelection;
+  slot: RoleSlot;
+};
+
+function TeamEditor({
+  open, onClose, instances, flags, routing, lead, onChange, onLeadChange, onConnect,
 }: {
   open: boolean;
   onClose: () => void;
   instances: readonly ProviderInstance[];
+  flags?: FeatureFlags;
   routing: RoleRouting;
-  /** The composer's model: the lead, who runs the phases and writes the summary. */
   lead: ModelSelection;
   onChange: (r: RoleRouting) => void;
-  /** A role's model: the model picker on that role's tab. */
-  onPickRole: (tab: RoleTab) => void;
-  anchorRef?: React.RefObject<HTMLElement | null>;
+  onLeadChange: (selection: ModelSelection) => void;
+  onConnect?: () => void;
 }) {
   const preset = teamPresetOf(routing);
+  const [activeRole, setActiveRole] = React.useState<string | null>(null);
+  const returnFocus = React.useRef<string | null>(null);
+  const grid = React.useRef<HTMLUListElement>(null);
   const [budgetText, setBudgetText] = React.useState(formatBudget(routing.budget?.maxUsd));
   React.useEffect(() => setBudgetText(formatBudget(routing.budget?.maxUsd)), [routing.budget?.maxUsd]);
+  React.useEffect(() => {
+    if (!open) setActiveRole(null);
+  }, [open]);
+  React.useEffect(() => {
+    if (open && !activeRole && returnFocus.current) {
+      grid.current?.querySelector<HTMLButtonElement>(`[data-team-role="${returnFocus.current}"]`)?.focus({ preventScroll: true });
+      returnFocus.current = null;
+    }
+  }, [open, activeRole]);
   const budget = parseBudget(budgetText);
   const est = estimateRunUsd(routing, ratesFor(instances));
-  const builders = routing.workers?.length ?? 0;
+  const workers = routing.workers ?? [];
+  const swarm = preset === "lead-workers";
+  const phased = preset === "plan-build-verify";
+  const compare = preset === "best-of-n";
+  const supervised = swarm || phased;
+  const workerLabel = compare ? "Candidates" : phased ? "Builders" : "Workers";
+  const pickPreset = (next: RoleRouting["preset"]) => onChange(withTeamPreset({ ...routing, orchestrator: lead }, next));
 
-  const role = (r: TeamRole, extra?: React.ReactNode, remove?: () => void) => {
-    const sel = teamRoleSelection(routing, r) ?? lead;
-    const copy = TEAM_ROLE_COPY[r];
-    const phase = r === "architect" ? "plan" : r === "builder" ? "build" : r === "verifier" ? "verify" : null;
-    return (
-      <div key={r} className="cv2-team-role" data-role={r}>
-        <button type="button" className="cv2-team-role-main" onClick={() => onPickRole(ROLE_TAB[r])} aria-label={`${copy.name}: ${modelLabel(instances, sel)}. Change`}>
-          <span className="who">
-            <span className="n">
-              {copy.name}
-              {phase && <span className="ph">{TEAM_PHASE_LABELS[phase]}</span>}
-            </span>
-            <span className="d">{copy.duty}</span>
-          </span>
-          <RoleModel instances={instances} selection={sel} />
-          <Glyph name="chevron-right" size={14} className="cv2-mute" />
-        </button>
-        {extra}
-        {remove && (
-          <button type="button" className="cv2-ctl icon" aria-label={`Remove the ${copy.name.toLowerCase()}`} onClick={remove}>
-            <Glyph name="close" size={12} />
-          </button>
-        )}
-      </div>
-    );
+  const roles: AgentSlot[] = [{ id: "lead", label: "Lead", icon: "agents", selection: lead, slot: "orchestrator" }];
+  if (phased) {
+    roles.push({ id: "architect", label: "Architect", icon: "layers", selection: routing.architect ?? lead, slot: "architect" });
+  }
+  if (preset !== "solo") {
+    for (const [index, selection] of workers.entries()) {
+      const label = compare ? `Candidate ${String.fromCharCode(65 + index)}` : `${phased ? "Builder" : "Worker"} ${index + 1}`;
+      roles.push({ id: `worker-${index}`, label, icon: compare ? "git-branch" : "terminal", selection, slot: { candidate: index } });
+    }
+  }
+  if (supervised) {
+    roles.push({ id: "reviewer", label: phased ? "Verifier" : "Reviewer", icon: "check", selection: routing.reviewer ?? lead, slot: "reviewer" });
+    if (routing.explorer) {
+      roles.push({ id: "explorer", label: TEAM_ROLE_COPY.explorer.name, icon: "search", selection: routing.explorer, slot: "explorer" });
+    }
+  }
+  const editing = roles.find((role) => role.id === activeRole);
+  const updateModel = (selection: ModelSelection) => {
+    if (!editing) return;
+    if (editing.slot === "orchestrator") onLeadChange(selection);
+    else onChange(withRoleModel({ ...routing, orchestrator: lead }, editing.slot, selection));
   };
 
   return (
-    <ComposerPopover open={open} onClose={onClose} width={460} align="left" offset={0} label="Team" anchorRef={anchorRef} className="cv2-team-pop">
-      <div className="cv2-team-head">
-        <Segmented<TeamPreset>
-          id="cv2-team-preset"
-          label="Team preset"
-          value={preset}
-          options={TEAM_PRESETS.map((p) => ({ value: p, label: TEAM_PRESET_COPY[p].label }))}
-          onChange={(p) => onChange(withTeamPreset({ ...routing, orchestrator: lead }, p))}
-        />
-        <p className="cv2-team-line">{TEAM_PRESET_COPY[preset].line}</p>
-      </div>
-      <div className="cv2-pop-body">
-        <div className="cv2-team-role cv2-team-lead" data-role="lead">
-          <button type="button" className="cv2-team-role-main" onClick={() => onPickRole("lead")}>
-            <span className="who">
-              <span className="n">{preset === "solo" ? "Lead" : "Orchestrator"}</span>
-              <span className="d">{preset === "solo" ? "Plans, builds and checks" : "Coordinates the team and combines results"}</span>
-            </span>
-            <RoleModel instances={instances} selection={lead} />
-            <Glyph name="chevron-right" size={14} className="cv2-mute" />
-          </button>
-        </div>
-        {preset === "plan-build-verify" && (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="cv2-team-dialog max-w-[42rem]">
+        <DialogHeader>
+          <DialogTitle>Orchestrator</DialogTitle>
+          <DialogDescription>{editing ? `Choose a model for ${editing.label}.` : "Choose how Code runs this task."}</DialogDescription>
+        </DialogHeader>
+        {editing ? (
+          <div className="min-w-0 space-y-3 pb-4" key={editing.id}>
+            <Button autoFocus type="button" variant="ghost" className="-ms-2" onClick={() => setActiveRole(null)}>
+              <Glyph name="arrow-left" size={16} /> Back to team
+            </Button>
+            <div className="overflow-hidden rounded-panel border border-border">
+              <ModelPicker
+                key={editing.id}
+                inline
+                open
+                title={`Model for ${editing.label}`}
+                onClose={() => setActiveRole(null)}
+                instances={instances}
+                flags={flags}
+                selection={editing.selection}
+                onSelect={updateModel}
+                onConnect={onConnect ? () => { onClose(); onConnect(); } : undefined}
+              />
+            </div>
+          </div>
+        ) : (
           <>
-            {role("architect")}
-            {role("builder", <Stepper value={builders} min={BUILDERS_MIN} max={BUILDERS_MAX} label="Builders" onChange={(n) => onChange(withBuilderCount(routing, n))} />)}
-            {role("verifier")}
-            {routing.explorer ? (
-              role("explorer", undefined, () => onChange(withTeamRole(routing, "explorer", undefined)))
-            ) : (
-              <button type="button" className="cv2-mi cv2-team-add" onClick={() => onChange(withTeamRole(routing, "explorer", lead))}>
-                <Glyph name="plus" size={16} />
-                <span>Add an explorer</span>
-                <span className="cv2-mute">maps the code first, read-only</span>
-              </button>
-            )}
-          </>
-        )}
-        {preset === "best-of-n" && (
-          <>
-            {(routing.workers ?? []).map((w, i) => (
-              <div key={i} className="cv2-team-role" data-role="candidate">
-                <button type="button" className="cv2-team-role-main" onClick={() => onPickRole(`candidate:${i}`)}>
-                  <span className="who">
-                    <span className="n">Candidate {String.fromCharCode(65 + i)}</span>
-                  </span>
-                  <RoleModel instances={instances} selection={w} />
-                  <Glyph name="chevron-right" size={14} className="cv2-mute" />
-                </button>
+            <div>
+              <div role="group" aria-label="Run mode" className="grid grid-cols-2 gap-1 rounded-panel bg-muted p-1 sm:grid-cols-4">
+                {TEAM_PRESETS.map((mode) => (
+                  <button key={mode} type="button" aria-pressed={preset === mode} className={cn(
+                    "min-h-11 rounded-card px-2 py-1.5 text-ui font-medium transition-colors duration-fast",
+                    preset === mode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )} onClick={() => pickPreset(mode)}>
+                    {mode === "lead-workers" ? "Swarm" : mode === "plan-build-verify" ? "Plan and verify" : mode === "best-of-n" ? "Compare" : "Solo"}
+                  </button>
+                ))}
               </div>
-            ))}
-            {builders < CANDIDATES_MAX && (
-              <button type="button" className="cv2-mi cv2-team-add" onClick={() => onChange(withCount(routing, builders + 1))}>
-                <Glyph name="plus" size={16} />
-                <span>Add a candidate</span>
-              </button>
-            )}
-            {builders > CANDIDATES_MIN && (
-              <button type="button" className="cv2-mi cv2-team-add" onClick={() => onChange(withCount(routing, builders - 1))}>
-                <Glyph name="minus" size={16} />
-                <span className="cv2-mute">Remove the last candidate</span>
-              </button>
-            )}
+              <p className="mt-3 min-h-10 text-ui text-muted-foreground">{TEAM_PRESET_COPY[preset].line}</p>
+              <div className="mt-2 flex min-h-11 flex-wrap items-center justify-between gap-2">
+                <h3 className="text-ui font-semibold" id="code-team-models">{preset === "solo" ? "Model" : "Team models"}</h3>
+                {preset !== "solo" && (
+                  <Stepper value={workers.length} min={compare ? CANDIDATES_MIN : BUILDERS_MIN} max={compare ? CANDIDATES_MAX : BUILDERS_MAX} label={workerLabel} onChange={(n) => onChange(withCount(routing, n))} />
+                )}
+              </div>
+              <ul ref={grid} className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3" aria-labelledby="code-team-models">
+                {roles.map((role) => (
+                  <li key={role.id} className={preset === "solo" ? "col-span-full" : "min-w-0"}>
+                    <button type="button"
+                      className="group flex min-h-[5.25rem] w-full flex-col justify-between gap-2 rounded-panel border border-border bg-muted/35 p-2.5 text-start transition-colors duration-fast hover:border-foreground/20 hover:bg-accent"
+                      onClick={() => { returnFocus.current = role.id; setActiveRole(role.id); }}
+                      data-team-role={role.id}
+                      aria-label={`${role.label}: ${modelLabel(instances, role.selection)}. Change model`}
+                    >
+                      <span className="flex w-full items-center gap-2 text-ui font-medium">
+                        {swarm
+                          ? <AgentFace avatar={defaultAgentAvatar(role.id)} size={28} still />
+                          : <span className="grid size-7 shrink-0 place-items-center rounded-xs bg-background text-muted-foreground"><Glyph name={role.icon} size={15} /></span>}
+                        <span className="min-w-0 grow">{role.label}</span>
+                        <Glyph name="chevron-right" size={13} className="shrink-0 text-muted-foreground" />
+                      </span>
+                      <RoleModel instances={instances} selection={role.selection} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {preset !== "solo" && (
+                <details className="group mt-3 border-t border-border">
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-ui text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+                    Run limits{supervised ? " and explorer" : ""}
+                    <Glyph name="chevron-down" size={16} className="transition-transform duration-fast group-open:rotate-180 motion-reduce:transition-none" />
+                  </summary>
+                  <div className="grid gap-2 pb-3">
+                    <label className="flex flex-wrap items-center justify-between gap-2 text-ui">
+                      <span>Alevr spend limit</span>
+                      <input
+                        className="h-9 w-24 rounded-control border border-border bg-background px-2.5"
+                        value={budgetText}
+                        inputMode="decimal"
+                        aria-invalid={budget === null}
+                        placeholder="No cap"
+                        onChange={(event) => setBudgetText(event.target.value)}
+                        onBlur={() => { if (budget !== null && budget !== routing.budget?.maxUsd) onChange(withBudget(routing, budget)); }}
+                      />
+                    </label>
+                    {budget === null && <span role="status" className="text-caption text-destructive">Enter a dollar amount greater than zero.</span>}
+                    {est.usd > 0 && <span className="text-caption text-muted-foreground">Estimated run cost: {formatUsd(est.usd)}</span>}
+                    {supervised && (
+                      <Button type="button" variant="ghost" className="justify-start" onClick={() => onChange(withTeamRole(routing, "explorer", routing.explorer ? undefined : lead))}>
+                        <Glyph name={routing.explorer ? "minus" : "plus"} size={16} />
+                        {routing.explorer ? "Remove explorer" : "Add a read-only explorer"}
+                      </Button>
+                    )}
+                  </div>
+                </details>
+              )}
+            </div>
+            <DialogFooter className="!flex-row !justify-end">
+              <DialogClose asChild><Button type="button" size="sm">Done</Button></DialogClose>
+            </DialogFooter>
           </>
         )}
-      </div>
-      {preset !== "solo" && (
-        <div className="cv2-pop-foot">
-          <span>Stop at</span>
-          <input
-            className="cv2-budget"
-            value={budgetText}
-            inputMode="decimal"
-            aria-label="Budget cap in dollars"
-            aria-invalid={budget === null}
-            placeholder="No cap"
-            onChange={(e) => setBudgetText(e.target.value)}
-            onBlur={() => {
-              const b = parseBudget(budgetText);
-              if (b === null) return;
-              onChange(withBudget(routing, b));
-            }}
-          />
-          <span>of Alevr spend</span>
-          <span className="cv2-grow" />
-          <span className="cv2-tnum" title={est.subscriptionRoles ? "Roles on a subscription count against that plan, not this budget." : "Based on typical token use per role"}>
-            {est.usd > 0 ? `≈ ${formatUsd(est.usd)} a run` : est.subscriptionRoles || est.byokRoles ? "Billed to your plans" : ""}
-          </span>
-        </div>
-      )}
-    </ComposerPopover>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-/**
- * The composer's single insertion point: the chip, its editor, the project
- * default and ⇧⌘O. `popover` / `setPopover` are the composer's own, so the
- * editor closes when another popover opens.
- */
 export function ComposerTeam({
-  routing,
-  lead,
-  instances,
-  scope,
-  fresh,
-  setRouting,
-  popover,
-  setPopover,
-  onPickRole,
-  anchorRef,
+  routing, lead, instances, flags, scope, fresh, setRouting, popover, setPopover, onLeadChange, onConnect,
 }: {
   routing: RoleRouting;
   lead: ModelSelection;
   instances: readonly ProviderInstance[];
+  flags?: FeatureFlags;
   scope: TeamScope;
-  /** A thread with no messages yet starts from the project's last team. */
   fresh: boolean;
   setRouting: (r: RoleRouting) => void;
   popover: string | null;
   setPopover: (p: "team" | null) => void;
-  onPickRole: (tab: RoleTab) => void;
-  anchorRef?: React.RefObject<HTMLElement | null>;
+  onLeadChange: (selection: ModelSelection) => void;
+  onConnect?: () => void;
 }) {
   const save = useTeamDefault(routing, lead, scope, fresh, setRouting);
   const open = popover === "team";
+  const trigger = React.useRef<HTMLButtonElement>(null);
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "o") {
@@ -336,8 +344,8 @@ export function ComposerTeam({
   }, [open, setPopover]);
   return (
     <>
-      <TeamChip routing={routing} open={open} onToggle={() => setPopover(open ? null : "team")} />
-      <TeamEditor open={open} onClose={() => setPopover(null)} instances={instances} routing={routing} lead={lead} onChange={save} onPickRole={onPickRole} anchorRef={anchorRef} />
+      <TeamChip triggerRef={trigger} routing={routing} open={open} onToggle={() => setPopover(open ? null : "team")} />
+      <TeamEditor open={open} onClose={() => setPopover(null)} instances={instances} flags={flags} routing={routing} lead={lead} onChange={save} onLeadChange={onLeadChange} onConnect={onConnect} />
     </>
   );
 }

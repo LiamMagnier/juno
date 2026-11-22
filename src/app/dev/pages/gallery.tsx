@@ -8,7 +8,7 @@ import { AppShell } from "@/components/app/app-shell";
 import LibraryPage from "@/app/(app)/library/page";
 import ProjectsPage from "@/app/(app)/projects/page";
 import ProjectDetailPage from "@/app/(app)/projects/[id]/page";
-import ArtifactsPage from "@/app/(app)/artifacts/page";
+import { LibraryArtifacts } from "@/components/library/library-artifacts";
 import ConnectionsPage from "@/app/(app)/connections/page";
 import AutomationsPage from "@/app/(app)/automations/page";
 import SettingsPage from "@/app/(app)/settings/page";
@@ -244,7 +244,7 @@ function Page({ page }: { page: PageName }) {
     case "project":
       return <ProjectDetailPage />;
     case "artifacts":
-      return <ArtifactsPage />;
+      return <LibraryArtifacts />;
     case "connections":
       return <ConnectionsPage />;
     case "agents":

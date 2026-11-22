@@ -1,5 +1,6 @@
 "use client";
 
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -22,6 +23,7 @@ import { useProjects, useSkillDetail } from "@/components/skills/use-skill-detai
 export default function SkillPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
   const detail = useSkillDetail(id);
   const [deleting, setDeleting] = React.useState(false);
   const [moving, setMoving] = React.useState(false);
@@ -89,7 +91,7 @@ export default function SkillPage() {
             if (!ok) return;
             setDeleting(false);
             toast.success("Skill deleted.");
-            router.push("/skills");
+            router.push(hrefFor("/skills"));
           })
         }
       />

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { useRouter } from "next/navigation";
 import { intentPrefetch } from "@/lib/intent-prefetch";
 import { ArrowLeft, ChevronRight, CornerDownRight, Folder, MessageSquare, Pin, PinOff, Plus, Search } from "@/components/ui/icons";
@@ -551,13 +552,14 @@ export function ProjectBreadcrumbs({
   onDropInto?: (targetId: string | null, drag: ProjectDrag) => void;
   accept?: (drag: ProjectDrag, targetId: string | null) => boolean;
 }) {
+  const hrefFor = useWorkspaceHref();
   return (
     <nav aria-label="Folder path" className="pj flex min-w-0 flex-wrap items-center gap-x-0.5 gap-y-1">
-      <Crumb href="/projects" label="Projects" targetId={null} onDropInto={onDropInto} accept={accept} />
+      <Crumb href={hrefFor("/projects")} label="Projects" targetId={null} onDropInto={onDropInto} accept={accept} />
       {crumbs.map((crumb) => (
         <React.Fragment key={crumb.id}>
           <ChevronRight className="size-3 shrink-0 text-ink-tertiary" aria-hidden="true" />
-          <Crumb href={`/projects/${crumb.id}`} label={crumb.name} targetId={crumb.id} onDropInto={onDropInto} accept={accept} />
+          <Crumb href={hrefFor(`/projects/${crumb.id}`)} label={crumb.name} targetId={crumb.id} onDropInto={onDropInto} accept={accept} />
         </React.Fragment>
       ))}
       <span aria-current="page" className="sr-only">
@@ -662,6 +664,8 @@ export function ProjectTile({
   onDropInto?: (drag: ProjectDrag) => void;
 }) {
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
+  const projectHref = hrefFor(`/projects/${p.id}`);
   const drop = useDropTarget(
     (drag) => !!onDropInto && canDropInto(allProjects, drag, p.id),
     (drag) => onDropInto?.(drag)
@@ -682,11 +686,11 @@ export function ProjectTile({
 
   const nameLink = (
     <Link
-      href={`/projects/${p.id}`}
+      href={projectHref}
       // On aim, not on sight: every tile in view used to fire its own
       // partial prefetch on page load (lib/intent-prefetch.ts).
       prefetch={false}
-      {...intentPrefetch(router, `/projects/${p.id}`)}
+      {...intentPrefetch(router, projectHref)}
       draggable={false}
       className={cn(
         "block text-balance break-words text-foreground outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring",
@@ -834,7 +838,7 @@ export function ProjectTile({
                 <React.Fragment key={folder.id}>
                   {i > 0 && ", "}
                   <Link
-                    href={`/projects/${folder.id}`}
+                    href={hrefFor(`/projects/${folder.id}`)}
                     draggable={false}
                     className="rounded-sm underline-offset-[3px] outline-none transition-colors duration-fast hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline"
                   >

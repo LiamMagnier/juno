@@ -130,7 +130,8 @@ test("the public pages and Code's scope ring stay off text fields", () => {
   assert.doesNotMatch(publicCss, /:is\(button, a, input\):focus-visible/);
   assert.doesNotMatch(publicCss, /\.field-well:focus-within \{ border-color: hsl\(var\(--ring\)\)/);
   const cv2 = code("src/components/code/v2/code-v2.css");
-  assert.match(cv2, /\.cv2 :focus-visible:where\(:not\(textarea, \[contenteditable\], input:not\(/);
+  // The shared Chat composer supplies its own focus treatment in Code, too.
+  assert.match(cv2, /\.cv2 :focus-visible:where\(:not\(\.chat-composer \*, textarea, \[contenteditable\], input:not\(/);
   assert.doesNotMatch(cv2, /^\.cv2 :focus-visible \{/m);
   assert.match(cv2, /:root\[data-modality="keyboard"\] :is\(\.cv2-mini input, \.cv2-budget, \.cv2-keyfield input, \.cv2-preview-url, \.cv2-answer\):focus-visible/);
 });

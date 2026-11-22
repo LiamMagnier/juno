@@ -19,12 +19,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!user) return NextResponse.redirect(new URL("/sign-in", env.appUrl));
 
   const { id } = await params;
+  const returnTo = safeReturnPath(new URL(req.url).searchParams.get("return"));
+  const failure = (status: string) => {
+    const url = new URL(returnTo ?? "/connections", env.appUrl);
+    url.searchParams.set(returnTo ? "connect_error" : "error", status);
+    return NextResponse.redirect(url);
+  };
   const def = getConnector(id);
-  if (!def) return NextResponse.redirect(new URL("/connections?error=unknown", env.appUrl));
+  if (!def) return failure("unknown");
   // Credentials connectors don't have an OAuth flow — the dashboard collects
   // their credential in a dialog and posts it to /credentials instead.
-  if (def.kind === "credentials") return NextResponse.redirect(new URL("/connections?error=use_credentials", env.appUrl));
-  if (!isConnectorConfigured(def)) return NextResponse.redirect(new URL("/connections?error=not_configured", env.appUrl));
+  if (def.kind === "credentials") return failure("use_credentials");
+  if (!isConnectorConfigured(def)) return failure("not_configured");
 
   const nonce = randomBytes(16).toString("hex");
   // State binds the flow to this user + connector + nonce, signed so the
@@ -33,7 +39,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // `?return=` brings the person back to the page that sent them (a project
   // adding a Drive folder) instead of to Apps. Only a path on this site, and
   // it rides inside the signed state, so it cannot be swapped on the way back.
-  const returnTo = safeReturnPath(new URL(req.url).searchParams.get("return"));
   const state = signState(JSON.stringify({ u: user.id, c: def.id, n: nonce, ...(returnTo ? { r: returnTo } : {}) }));
 
   const jar = await cookies();
@@ -50,7 +55,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     flow = await buildAuthorizeUrl(def, state);
   } catch (err) {
     console.error("[connectors] failed to build authorize URL", def.id, err instanceof Error ? err.message : err);
-    return NextResponse.redirect(new URL("/connections?error=not_configured", env.appUrl));
+    return failure("not_configured");
   }
 
   // mcp_oauth flows return per-request secrets (PKCE verifier + the client we

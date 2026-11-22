@@ -78,9 +78,9 @@ test("the constant is the field, the controls row and the hairline, added up", (
 });
 
 test("the home's rest height is its taller field over the same row and edge", () => {
-  const composer = read("src/components/chat/composer.tsx");
-  const home = /frame === "landing" && "min-h-\[([\d.]+)rem\]/.exec(composer);
-  assert.ok(home, "composer.tsx gives the landing frame's field its min-height");
+  const composer = read("src/components/chat/composer-surface.tsx");
+  const home = /home && "min-h-\[([\d.]+)rem\]/.exec(composer);
+  assert.ok(home, "the shared editor gives the landing field its min-height");
   const declared = /export const COMPOSER_HOME_REST_HEIGHT = \{ pointer: (\d+), coarse: (\d+) \}/.exec(SHELL);
   assert.ok(declared, "COMPOSER_HOME_REST_HEIGHT is exported");
   const dock = /export const COMPOSER_REST_HEIGHT = \{ pointer: (\d+), coarse: (\d+) \}/.exec(SHELL)!;

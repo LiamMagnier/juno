@@ -11,7 +11,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { AgentsTreePane } from "@/components/code/v2/agents-tree";
 import { CodeWorkspace } from "@/components/code/v2/workspace";
-import { AGENT_NODE_STATE_LABEL, LEAD_NODE_ID, buildAgentTree, countLive, findNode, treeKey, visibleRows } from "@/lib/code-v2/agent-tree";
+import { AGENT_NODE_STATE_LABEL, LEAD_NODE_ID, buildAgentTree, countLive, findNode, selectAgentRun, treeKey, visibleRows } from "@/lib/code-v2/agent-tree";
 import { sendAgentControl, type AgentControlTransport } from "@/lib/code-v2/agent-control-client";
 import type { SubagentItem, TurnItem } from "@/lib/code-v2/contracts";
 import { STATES, makeActions } from "../src/app/dev/code-v2/fixtures";
@@ -27,6 +27,24 @@ const agent = (over: Partial<SubagentItem> & { agentId: string }): SubagentItem 
   model: { instanceId: "alevr", model: "anthropic:claude-sonnet-5-5" },
   status: "running",
   ...over,
+});
+
+test("the Agents panel separates the current run from a historical child and its trace", () => {
+  const items: TurnItem[] = [
+    { id: "u1", kind: "user_message", text: "Previous task", createdAt: at, turnId: "old" },
+    agent({ agentId: "first", turnId: "old", status: "completed" }),
+    { id: "a1", kind: "assistant_message", text: "Previous result", streaming: false, agentId: "first", createdAt: at, turnId: "old" },
+    { id: "u2", kind: "user_message", text: "Current task", createdAt: at, turnId: "current" },
+    agent({ agentId: "second", turnId: "current" }),
+    { id: "c1", kind: "command_execution", callId: "c", command: "npm test", status: "running", agentId: "second", createdAt: at, turnId: "current" },
+  ];
+  const current = selectAgentRun(items);
+  assert.equal(current.historical, false);
+  assert.equal(current.turnId, "current");
+  assert.deepEqual(current.items.map((item) => item.id), ["item-second", "c1"]);
+  const old = selectAgentRun(items, "first");
+  assert.equal(old.historical, true);
+  assert.deepEqual(old.items.map((item) => item.id), ["item-first", "a1"]);
 });
 
 test("tree: agents nest under the agent that started them, and each state is read from the thread", () => {
@@ -106,7 +124,8 @@ const fixture = (id: string) => {
 
 test("pane: an ARIA tree with levels, states in words, and the selected agent's controls", () => {
   const f = fixture("subagents");
-  const html = renderToStaticMarkup(React.createElement(AgentsTreePane, { model: f.model, selectedId: "w2", onSelect: () => undefined, modelLabel: (s) => s.model }));
+  const model = { ...f.model, routing: { ...f.model.routing, preset: "plan-build-verify" as const } };
+  const html = renderToStaticMarkup(React.createElement(AgentsTreePane, { model, selectedId: "w2", onSelect: () => undefined, modelLabel: (s) => s.model }));
   assert.match(html, /role="tree"[^>]*aria-label="Agents in this run"/);
   assert.match(html, /role="treeitem"[^>]*aria-level="1"/);
   assert.match(html, /role="group"/);
@@ -141,9 +160,11 @@ test("pane: the lead offers run controls, and a reader without controls sees no 
   assert.doesNotMatch(html, /Steer Worker 2/);
 });
 
-test("workspace: the Agents dock shows the tree for a delegated run and keeps Best of N's compare", () => {
+test("workspace: the Agents dock shows the grid for a Swarm, a tree for phased runs, and keeps Best of N's compare", () => {
   const sub = fixture("subagents");
-  assert.match(renderToStaticMarkup(React.createElement(CodeWorkspace, { model: sub.model, ui: sub.ui })), /role="tree"/);
+  assert.match(renderToStaticMarkup(React.createElement(CodeWorkspace, { model: sub.model, ui: sub.ui })), /aria-label="Swarm agents"/);
+  const phased = { ...sub.model, routing: { ...sub.model.routing, preset: "plan-build-verify" as const } };
+  assert.match(renderToStaticMarkup(React.createElement(CodeWorkspace, { model: phased, ui: sub.ui })), /role="tree"/);
   const best = fixture("best-of-n");
   const html = renderToStaticMarkup(React.createElement(CodeWorkspace, { model: best.model, ui: best.ui }));
   assert.doesNotMatch(html, /role="tree"/);

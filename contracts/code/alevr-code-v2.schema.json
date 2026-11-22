@@ -2704,6 +2704,13 @@
                 },
                 "routing": {
                   "$ref": "#/definitions/RoleRouting"
+                },
+                "projectContext": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 90000
                 }
               },
               "required": [

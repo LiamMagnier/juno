@@ -354,6 +354,28 @@ test("claude: no-cost probe reports account, models and usage windows", async ()
   assert.ok(!record.prompts.some((p) => p !== "<probe>"), "the probe sends no prompt");
 });
 
+test("a project brief reaches the runtime and stays out of the visible turn", async () => {
+  const { client, record } = await boot();
+  await client.command("provider.probe", { instanceId: "claude-agent:default" });
+  const selection = { instanceId: "claude-agent:default", model: "claude-opus-5-5" };
+  const sid = await openSession(client, tempDir("project-brief"), selection);
+  await assert.rejects(client.command("turn.start", {
+    sessionId: sid, input: { text: "Summarize the layout" }, selection, ...ask, projectContext: 1234,
+  }), /Invalid Alevr project context/);
+  const start = (text: string, projectContext: string | null) =>
+    client.command<{ turnId: string }>("turn.start", { sessionId: sid, input: { text }, selection, ...ask, projectContext });
+
+  const first = await start("Summarize the layout", "Project brief: use the checkout conventions.");
+  assert.equal((await client.turnCompleted(sid, first.turnId)).outcome, "completed");
+  assert.match(record.prompts.at(-1)!, /Project brief: use the checkout conventions\.[\s\S]*Summarize the layout/);
+  const message = items(client, sid).find((item) => item.kind === "user_message");
+  assert.equal(message?.text, "Summarize the layout");
+
+  const second = await start("Explain the result", null);
+  assert.equal((await client.turnCompleted(sid, second.turnId)).outcome, "completed");
+  assert.doesNotMatch(record.prompts.at(-1)!, /Project brief/);
+});
+
 test("claude: tool approval, plan capture, questions, steer and interrupt", async () => {
   const { client, record } = await boot();
   await client.command("provider.probe", { instanceId: "claude-agent:default" });
