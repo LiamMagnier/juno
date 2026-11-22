@@ -20,6 +20,15 @@ import { driveWebUrl } from "@/lib/projects/project-sources-shared";
 import { formatBytes } from "@/lib/utils";
 
 const endpoint = "/api/connectors/google-drive/files";
+/**
+ * What whoever runs Alevr does to turn this page on. The Drive browser signs
+ * in to Google with Alevr's own OAuth client (first-party-connectors), so a
+ * Google Drive connection made in Composio does not reach it; saying so here
+ * saves the owner from setting it up twice in the wrong place.
+ */
+export const DRIVE_SETUP_HELP =
+  "This page signs in to Google with its own OAuth client, so a Drive connection made in Composio doesn’t turn it on. Whoever runs Alevr sets CONNECTOR_GOOGLE_DRIVE_CLIENT_ID and CONNECTOR_GOOGLE_DRIVE_CLIENT_SECRET on the server and restarts it. You can still upload files directly to Library.";
+
 export function LibraryGoogleDrive({ connectError }: { connectError: string | null }) {
   const hrefFor = useWorkspaceHref();
   const filesHref = hrefFor("/library?view=files");
@@ -74,7 +83,7 @@ export function LibraryGoogleDrive({ connectError }: { connectError: string | nu
       {needsConnect || unavailable || error?.code === "connector_blocked" ? (
         <EmptyState size="panel" icon={GoogleDriveMark}
           title={needsConnect ? (reconnect ? "Reconnect Google Drive" : "Connect Google Drive") : needsSetup ? "Google Drive needs setup" : "Google Drive unavailable"}
-          description={needsConnect && !reconnect ? "Authorize read-only access to open your folders and import selected files." : needsSetup ? "Ask your Alevr administrator to enable the Google Drive connection. You can still upload files directly to Library." : error?.message}
+          description={needsConnect && !reconnect ? "Authorize read-only access to open your folders and import selected files." : needsSetup ? DRIVE_SETUP_HELP : error?.message}
           action={needsConnect ? <Button asChild><a href={connectHref}>{reconnect ? "Reconnect Google Drive" : "Connect Google Drive"}</a></Button> : error?.code === "connector_blocked" ? <Button variant="outline" asChild><Link href="/settings?section=connectors">Open Apps settings</Link></Button> : unavailable ? <Button variant="outline" asChild><Link href={filesHref}>Browse Library files</Link></Button> : undefined}
         />
       ) : (
