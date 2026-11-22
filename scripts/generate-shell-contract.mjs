@@ -130,6 +130,9 @@ for (const [productID, sidebar] of Object.entries(contract.sidebar ?? {})) {
   for (const id of sidebar.destinations ?? []) {
     if (!destinationIDs.has(id)) fail(`sidebar.${productID}.destinations: "${id}" is not a destination.`);
   }
+  for (const link of sidebar.webDestinations ?? []) {
+    if (!destinationIDs.has(link.destination)) fail(`sidebar.${productID}.webDestinations: "${link.destination}" is not a destination.`);
+  }
   for (const item of sidebar.more?.items ?? []) {
     if (!destinationIDs.has(item.destination)) fail(`sidebar.${productID}.more: "${item.destination}" is not a destination.`);
     checkPlan(item.minPlan, `sidebar.${productID}.more.${item.destination}`);

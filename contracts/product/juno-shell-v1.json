@@ -205,6 +205,14 @@
       "destinations": [
         "customize"
       ],
+      "webDestinations": [
+        { "destination": "projects", "href": "/projects?surface=code" },
+        { "destination": "library", "href": "/library?surface=code" },
+        { "destination": "connections", "href": "/connections?surface=code", "label": "Apps & plugins" },
+        { "destination": "skills", "href": "/skills?surface=code" },
+        { "destination": "pulls" },
+        { "destination": "customize" }
+      ],
       "more": {
         "label": "Archived",
         "kind": "more",
@@ -521,6 +529,10 @@
     "columns": 3
   },
   "platformDifferences": [
+    {
+      "platform": "Web",
+      "reason": "Code links to shared Projects, Library, Apps and Skills without leaving Code. Pull requests also has a web sidebar row."
+    },
     {
       "platform": "iPhone",
       "reason": "Chat, Orbit and Code use native tabs; search uses the system search tab. Library, Projects and Customize are in Chat navigation."

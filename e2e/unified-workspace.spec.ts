@@ -50,7 +50,7 @@ test("a Code session started from Projects is saved in that same project", async
     json: { workspaces: [{ id: "project-workspace", name: "Project repo", path: "/qa/project-repo", lastOpenedAt: "2026-11-22T00:00:00.000Z" }] },
   }));
   await page.goto(`/projects/${id}?surface=code`);
-  await expect(page.getByRole("textbox", { name: "Message Alevr", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Message Alevr", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Open in Code" }).click();
   await expect(page).toHaveURL(`/code?project=${id}`);
   await expect(page.getByRole("link", { name: "Code and Chat project" })).toHaveAttribute("href", `/projects/${id}?surface=code`);

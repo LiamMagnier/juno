@@ -819,7 +819,7 @@ export function AppSidebar({
     { href: "/library?surface=code", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" },
     { href: "/connections?surface=code", kind: "connections", label: "Apps & plugins", active: pathname?.startsWith("/connections") },
     { href: "/skills?surface=code", kind: "skills", label: "Skills", active: pathname?.startsWith("/skills") },
-    { href: "/code/pulls", kind: "code", label: "Pull requests", active: pathname === "/code/pulls" },
+    { href: "/code/pulls", kind: "pulls", label: "Pull requests", active: pathname === "/code/pulls" },
     { href: "/code/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: pathname === "/code/customize" },
   ] as const) : ([
     { href: "/activity", kind: "activity", label: FEATURE_NAMES.activity.label, active: pathname === "/activity" },
