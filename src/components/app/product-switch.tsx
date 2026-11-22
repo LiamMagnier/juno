@@ -1,5 +1,6 @@
 "use client";
 
+import { isSharedWorkspacePath } from "@/lib/workspace-surface";
 import * as React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -131,10 +132,11 @@ export const PRODUCTS = [
 export function productOf(
   pathname: string | null,
   activeConversationKind?: "chat" | "code" | null,
+  surface?: string | null,
 ): ProductSurface {
   if (pathname?.startsWith("/code")) return "code";
   if (pathname?.startsWith("/chat/") && activeConversationKind === "code") return "code";
-  return "chat";
+  return surface === "code" && isSharedWorkspacePath(pathname) ? "code" : "chat";
 }
 
 /** A surface the plan does not include is SHOWN, never hidden — a missing

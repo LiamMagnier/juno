@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { useRouter } from "next/navigation";
 
 import { toast } from "sonner";
@@ -33,6 +34,7 @@ import { useReducedMotion } from "@/lib/motion-preference";
  */
 export function SkillsLibraryPage({ importOnOpen = false }: { importOnOpen?: boolean }) {
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
   const reduce = useReducedMotion() ?? false;
   const { library, error, reload, setSkillEnabled, setSourceEnabled, removeSource } = useSkillLibrary();
 
@@ -158,7 +160,7 @@ export function SkillsLibraryPage({ importOnOpen = false }: { importOnOpen?: boo
         library={library}
         error={error}
         onRetry={() => void reload()}
-        skillHref={(skill) => `/skills/${skill.id}`}
+        skillHref={(skill) => hrefFor(`/skills/${skill.id}`)}
         highlightSourceId={highlight}
         actions={{
           onToggleSkill: (skill, enabled) => void setSkillEnabled(skill, enabled),
@@ -166,8 +168,8 @@ export function SkillsLibraryPage({ importOnOpen = false }: { importOnOpen?: boo
           onCheckUpdates: setUpdating,
           onRemoveSource: setRemoving,
           onImport: openImporter,
-          onWrite: () => router.push("/skills/new"),
-          onCreateWithJuno: () => router.push("/skills/teach"),
+          onWrite: () => router.push(hrefFor("/skills/new")),
+          onCreateWithJuno: () => router.push(hrefFor("/skills/teach")),
         }}
       />
 

@@ -11,7 +11,7 @@
  *
  * The redirects are checked by calling the page functions and reading the
  * error Next throws for `redirect()`, whose digest carries the target and the
- * status: `NEXT_REDIRECT;replace;/artifacts?type=DESIGN;307;`.
+ * status: `NEXT_REDIRECT;replace;/library?view=artifacts&type=DESIGN;307;`.
  *
  * Run: NODE_OPTIONS=--conditions=react-server npx tsx --test --experimental-test-module-mocks tests/artifact-routes.test.ts
  */
@@ -363,8 +363,8 @@ pageTest("a version that goes away between the two reads is a 404, not an empty 
 
 pageTest("/design is a 307 to Artifacts, filtered to designs", async () => {
   const { default: DesignRedirect } = await import("@/app/(app)/design/page");
-  assert.equal(DESIGNS_HOME, "/artifacts?type=DESIGN");
-  assert.deepEqual(await redirectOf(() => DesignRedirect()), { to: "/artifacts?type=DESIGN", status: 307 });
+  assert.equal(DESIGNS_HOME, "/library?view=artifacts&type=DESIGN");
+  assert.deepEqual(await redirectOf(() => DesignRedirect()), { to: "/library?view=artifacts&type=DESIGN", status: 307 });
 });
 
 pageTest("/design/{id} is a 307 to /a/{id}, without a read of its own", async () => {

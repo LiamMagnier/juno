@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,7 @@ import { PRODUCT_NAME } from "@/lib/brand/names";
  */
 export default function NewSkillPage() {
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [instructions, setInstructions] = React.useState("");
@@ -86,7 +88,7 @@ export default function NewSkillPage() {
     });
     setSaving(false);
     if (result.kind === "ok") {
-      router.push(`/skills/${result.value.id}`);
+      router.push(hrefFor(`/skills/${result.value.id}`));
       return;
     }
     // The one refusal this form can cause on its own: slugs are unique per
@@ -106,7 +108,7 @@ export default function NewSkillPage() {
         backHref="/skills"
         backLabel="Back to skills"
         actions={
-          <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => router.push("/skills/teach")}>
+          <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => router.push(hrefFor("/skills/teach"))}>
             <GraduationCap className="size-4" aria-hidden="true" />
             {`Teach ${PRODUCT_NAME} instead`}
           </Button>
@@ -200,7 +202,7 @@ export default function NewSkillPage() {
           <Button type="submit" disabled={!canSave} loading={saving}>
             Create skill
           </Button>
-          <Button type="button" variant="ghost" onClick={() => router.push("/skills")} disabled={saving || reading}>
+          <Button type="button" variant="ghost" onClick={() => router.push(hrefFor("/skills"))} disabled={saving || reading}>
             Cancel
           </Button>
         </div>

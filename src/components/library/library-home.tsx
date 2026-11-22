@@ -7,8 +7,9 @@ import { useApp } from "@/components/app/app-provider";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { ChevronRight, LayoutGrid, List, Search, Trash2, Upload } from "@/components/ui/icons";
-import { GoogleDriveMark } from "@/components/projects/google-drive-mark";
+import { LayoutGrid, List, Search, Trash2, Upload } from "@/components/ui/icons";
+import { LibraryNavigation } from "./library-navigation";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileVersionsDialog, RenameFileDialog } from "./library-dialogs";
@@ -53,7 +54,6 @@ import { staggerDelay } from "@/lib/motion";
  * the file manager (`?view=files`), one press away from the Files filter.
  */
 
-type Show = "all" | "made" | "files" | "media";
 type MediaKind = "all" | "image" | "video" | "audio";
 
 /** Pictures, video and sound: what the Media filter holds and Files leaves out. */
@@ -188,17 +188,15 @@ function useDeletedCount() {
   return count;
 }
 
-export function LibraryHome() {
+export function LibraryHome({ mediaOnly = false }: { mediaOnly?: boolean }) {
   const { quota } = useApp();
-  const [show, setShow] = React.useState<Show>("all");
+  const hrefFor = useWorkspaceHref();
   const [mediaKind, setMediaKind] = React.useState<MediaKind>("all");
-  /** Files and Media are both the uploaded files, split by type; neither shows made items. */
-  const filesOnly = show === "files" || show === "media";
   const [view, setView] = React.useState<"grid" | "list">("grid");
   const [query, setQuery] = React.useState("");
   const q = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS);
   const files = useLibrary({ q, kind: "all", sort: "newest", deleted: false });
-  const made = useMade(q, !filesOnly);
+  const made = useMade(q, !mediaOnly);
   const deletedCount = useDeletedCount();
   const [renameTarget, setRenameTarget] = React.useState<LibraryItem | null>(null);
   const [versionsTarget, setVersionsTarget] = React.useState<LibraryItem | null>(null);
@@ -220,8 +218,6 @@ export function LibraryHome() {
       /* Storage can be unavailable; the grid is the default. */
     }
     const params = new URLSearchParams(window.location.search);
-    const wanted = params.get("show");
-    if (wanted === "made" || wanted === "files" || wanted === "media") setShow(wanted);
     if (params.get("upload") === "1") fileInput.current?.click();
   }, []);
   const changeView = (next: "grid" | "list") => {
@@ -256,30 +252,29 @@ export function LibraryHome() {
 
   const visibleFiles = (files.items ?? []).filter((file) => {
     const kind = mediaKindOf(file.mimeType);
-    if (show === "files") return kind === null;
-    if (show === "media") return kind !== null && (mediaKind === "all" || kind === mediaKind);
+    if (mediaOnly) return kind !== null && (mediaKind === "all" || kind === mediaKind);
     return true;
   });
   const entries: LibraryEntry[] = [
-    ...(show !== "made" ? visibleFiles.map(entryFromFile) : []),
-    ...(!filesOnly ? (made.items ?? []).map(entryFromMade) : []),
+    ...visibleFiles.map(entryFromFile),
+    ...(!mediaOnly ? (made.items ?? []).map(entryFromMade) : []),
   ].sort((a, b) => b.at.localeCompare(a.at) || a.key.localeCompare(b.key));
 
-  const filesPending = show !== "made" && files.items === null && !files.error;
-  const madePending = !filesOnly && made.items === null && !made.error;
+  const filesPending = files.items === null && !files.error;
+  const madePending = !mediaOnly && made.items === null && !made.error;
   const pending = filesPending || madePending;
-  const failed = (show !== "made" && files.error) || (!filesOnly && made.error);
-  const hasMore = (show !== "made" && files.hasMore) || (!filesOnly && made.hasMore);
+  const failed = files.error || (!mediaOnly && made.error);
+  const hasMore = files.hasMore || (!mediaOnly && made.hasMore);
   const loadingMore = files.loadingMore || made.loadingMore;
-  const pendingUploads = show === "made" ? [] : uploads.uploads;
+  const pendingUploads = uploads.uploads;
   const empty = !pending && !failed && entries.length === 0 && pendingUploads.length === 0;
   /** Nothing could be shown at all: the page's error state, not a sentence over an empty page. */
   const failedOutright = failed && !pending && entries.length === 0 && pendingUploads.length === 0;
 
   const loadMoreRef = React.useRef<() => void>(() => {});
   loadMoreRef.current = () => {
-    if (show !== "made" && files.hasMore) void files.loadMore();
-    if (!filesOnly && made.hasMore) void made.loadMore();
+    if (files.hasMore) void files.loadMore();
+    if (!mediaOnly && made.hasMore) void made.loadMore();
   };
 
   // The next page as the end of the list comes into view; the button stays for keyboards.
@@ -292,25 +287,24 @@ export function LibraryHome() {
     }, { rootMargin: "400px 0px" });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore, loadingMore, show, entries.length]);
+  }, [hasMore, loadingMore, mediaOnly, entries.length]);
 
   // No count while part of the Library failed to load: "0 items" over a
   // failure read as an empty Library.
   const count = !hasMore && !pending && !failed ? entries.length : null;
-  const searching = query.trim() !== q || files.pending || (!filesOnly && made.pending);
+  const searching = query.trim() !== q || files.pending || (!mediaOnly && made.pending);
 
   return (
     <div className="relative h-full" {...handlers}>
       <AppPage measure="wide">
-        <AppPageHeader heading={FEATURE_NAMES.library.label}
-          backdrop
-          lede={`What ${PRODUCT_NAME} made and the files you gave it, newest first.`}
+        <AppPageHeader heading={mediaOnly ? "Media" : FEATURE_NAMES.library.label}
+          lede={mediaOnly ? undefined : "Find files, designs, and work you’ve created."}
           actions={
             <>
               {/* bg-background: the header's drawing (backdrop) runs behind this
                   corner, and a transparent button let it show through its words. */}
               <Button variant="ghost" asChild className="gap-2 border-foreground/10 bg-background px-3 font-normal coarse:min-w-11 text-muted-foreground hover:border-foreground/[0.16] hover:text-foreground active:scale-[0.97] dark:border-white/10 dark:hover:border-white/[0.16]">
-                <Link href="/library?view=trash">
+                <Link href={hrefFor("/library?view=trash")}>
                   <Trash2 className="size-4" aria-hidden="true" />
                   {/* A glyph and its count on a phone (G54), so both actions
                       share the title's line; the name stays for a screen reader. */}
@@ -334,37 +328,13 @@ export function LibraryHome() {
           onChange={(event) => {
             if (event.target.files?.length) {
               uploads.add(event.target.files);
-              if (show === "made") setShow("all");
             }
             event.target.value = "";
           }}
         />
 
-        {/* One row, one height (h-9): what to show on the left; search and the
-            view together on the right. Both segmented shells are the
-            primitive's 36px rung, so the row's four controls share a top and
-            bottom edge. Under 40rem search and the
-            view take their own full-width line beneath the filter. */}
-        <div className={cn("flex flex-wrap items-center justify-between gap-3", show === "media" ? "mb-3" : "mb-6")}>
-          <SegmentedControl
-            value={show}
-            onChange={setShow}
-            ariaLabel="Show"
-            columns="content"
-            className="workspace-filter-rail"
-            options={[
-              { value: "all", label: "All" },
-              { value: "made", label: FEATURE_NAMES.artifacts.label },
-              { value: "files", label: "Files" },
-              { value: "media", label: "Media" },
-            ]}
-          />
-          <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 @[40rem]/page:flex @[40rem]/page:w-auto @[40rem]/page:flex-none @[40rem]/page:justify-end">
-            {show === "files" ? (
-              <Button variant="ghost" asChild className="col-span-2 row-start-2 min-h-11 justify-self-start px-3 font-normal text-muted-foreground hover:text-foreground @[40rem]/page:min-h-0">
-                <Link href="/library?view=files">Manage files</Link>
-              </Button>
-            ) : null}
+        <LibraryNavigation active={mediaOnly ? "media" : "all"} />
+        <div className="mb-4 flex items-center justify-end gap-2">
             <SearchField
               value={query}
               onValueChange={setQuery}
@@ -383,18 +353,9 @@ export function LibraryHome() {
                 { value: "list", label: "List", icon: <List className="size-4" /> },
               ]}
             />
-          </div>
         </div>
 
-        {(show === "all" || show === "files") && !query.trim() && (
-          <Link href="/library?view=drive" className="mb-5 flex min-h-12 items-center gap-3 rounded-card border border-border px-3 text-ui transition-colors duration-fast hover:bg-accent">
-            <span className="grid size-8 shrink-0 place-items-center rounded-control bg-secondary"><GoogleDriveMark className="size-4" /></span>
-            <span className="font-medium">Google Drive</span>
-            <ChevronRight className="ms-auto size-4 shrink-0 text-muted-foreground rtl:rotate-180" aria-hidden="true" />
-          </Link>
-        )}
-
-        {show === "media" ? (
+        {mediaOnly ? (
           <div role="group" aria-label="Media type" className="mb-6 flex flex-wrap gap-2 motion-safe:animate-rise-in">
             {([
               ["all", "All media"],
@@ -473,7 +434,7 @@ export function LibraryHome() {
               ) : (
                 <EmptyState
                   icon={Upload}
-                  title={show === "files" ? "No files yet" : show === "media" ? "No media yet" : "Your Library starts here"}
+                  title={mediaOnly ? "No media yet" : "Your Library starts here"}
                   description={`Files you upload or share in chats, and the documents, decks and sites ${PRODUCT_NAME} makes, collect here. Drop files anywhere on this page to add them, up to ${limitMb} MB each.`}
                   action={
                     <>

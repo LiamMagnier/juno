@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, Check, ListChecks, Lock, MessageSquare } from "@/components/ui/icons";
@@ -118,6 +119,7 @@ function reteachView(loaded: TaughtSkillForEdit): View {
 
 export function TeachPage() {
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
   const params = useSearchParams();
   const reduce = useReducedMotion() ?? false;
   const draftId = params.get("draft");
@@ -202,7 +204,7 @@ export function TeachPage() {
         >
           {view.kind === "choose" ? (
             <TeachChooser
-              onWalk={() => router.push("/skills/teach?mode=walk")}
+              onWalk={() => router.push(hrefFor("/skills/teach?mode=walk"))}
               onChat={() => openSkillDraftingChat((href) => router.push(href))}
             />
           ) : view.kind === "loading" ? (
@@ -216,7 +218,7 @@ export function TeachPage() {
               tone="warning"
               action={
                 <Button asChild size="sm" variant="outline">
-                  <Link href="/skills/teach">Start over</Link>
+                  <Link href={hrefFor("/skills/teach")}>Start over</Link>
                 </Button>
               }
             >
@@ -254,7 +256,7 @@ export function TeachPage() {
                 onSaved={(saved) =>
                   setView({ kind: "saved", saved, conversationId: view.mode.source.conversationId ?? null })
                 }
-                onRevoked={() => router.push(`/skills/${view.mode.kind === "reteach" ? view.mode.skillId : ""}`)}
+                onRevoked={() => router.push(hrefFor(`/skills/${view.mode.kind === "reteach" ? view.mode.skillId : ""}`))}
               />
             </>
           ) : (
@@ -355,6 +357,7 @@ function TeachSaved({
   conversationId: string | null;
   reduce: boolean;
 }) {
+  const hrefFor = useWorkspaceHref();
   const on = saved.skill.enabled;
   return (
     <div className="rounded-card bg-muted/70 p-6 contrast-more:border contrast-more:border-border sm:p-8">
@@ -390,7 +393,7 @@ function TeachSaved({
       </p>
       <div className="mt-6 flex flex-wrap items-center gap-2">
         <Button asChild>
-          <Link href={`/skills/${saved.skill.id}`}>Open skill</Link>
+          <Link href={hrefFor(`/skills/${saved.skill.id}`)}>Open skill</Link>
         </Button>
         {conversationId ? (
           <Button asChild variant="outline">
@@ -398,7 +401,7 @@ function TeachSaved({
           </Button>
         ) : null}
         <Button asChild variant="ghost" className="font-normal text-muted-foreground hover:text-foreground">
-          <Link href="/skills/teach">Teach another</Link>
+          <Link href={hrefFor("/skills/teach")}>Teach another</Link>
         </Button>
       </div>
     </div>

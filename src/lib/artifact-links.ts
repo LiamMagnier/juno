@@ -22,7 +22,7 @@ import type { ArtifactType } from "@/lib/message-content";
 /** Where `/design` sends people now: Artifacts, filtered to designs. The value
  *  is the enum, not a plural noun, because that is what the home reads from
  *  `?type=` (the Artifacts home's contract). */
-export const DESIGNS_HOME = "/artifacts?type=DESIGN";
+export const DESIGNS_HOME = "/library?view=artifacts&type=DESIGN";
 
 /** Where a closed or missing artifact sends people back to. */
 export const ARTIFACTS_HOME = "/artifacts";

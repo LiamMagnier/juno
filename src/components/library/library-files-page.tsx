@@ -7,6 +7,7 @@ import { ArrowLeft, Search, Upload } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LibraryNavigation } from "./library-navigation";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
 import { LibraryBrowserSkeleton, LibraryGrid, LibraryList } from "@/components/library/library-browser";
@@ -228,8 +229,6 @@ export default function LibraryPage() {
     <div className="relative h-full" {...handlers}>
       <AppPage measure="wide">
         <AppPageHeader
-          backHref="/library"
-          backLabel="Library"
           // Recently deleted is a MODE, not a filter, so it has to be legible
           // in the heading.
           heading={deletedView ? "Recently deleted" : "Uploaded files"}
@@ -257,6 +256,8 @@ export default function LibraryPage() {
             )
           }
         />
+
+        <LibraryNavigation active="files" />
 
         <input
           ref={fileInput}

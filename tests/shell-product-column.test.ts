@@ -31,6 +31,15 @@ test("the path alone decides every route that is not a conversation", () => {
   assert.equal(productOf(null, null), "chat");
 });
 
+test("only shared workspace pages can opt in to the Code sidebar", () => {
+  for (const path of ["/library", "/projects/abc", "/skills/new", "/connections", "/artifacts"]) {
+    assert.equal(productOf(path, null, "code"), "code");
+    assert.equal(productOf(path, null, "chat"), "chat");
+  }
+  assert.equal(productOf("/chat", null, "code"), "chat");
+  assert.equal(productOf("/projects-old", null, "code"), "chat");
+});
+
 test("a Code session's kind is the tiebreak while you are inside it", () => {
   // The path says "chat" for the entire time somebody is in a Code session,
   // because /chat/<id> is where CodeSessionView is served.

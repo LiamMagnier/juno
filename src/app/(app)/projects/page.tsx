@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { LayoutGrid, List, Plus, Search } from "@/components/ui/icons";
@@ -69,6 +70,7 @@ type NameDialog = { mode: "folder"; parent: ProjectItem } | { mode: "rename"; pr
  */
 export default function ProjectsPage() {
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
   const [items, setItems] = React.useState<ProjectItem[] | null>(null);
   const [error, setError] = React.useState(false);
   // The list the shell already holds paints before the first frame; the read
@@ -166,7 +168,7 @@ export default function ProjectsPage() {
       window.dispatchEvent(new CustomEvent("projects:sync"));
       // Busy until the new page replaces this one, so a second click cannot
       // make a second project while the route is still changing.
-      router.push(`/projects/${d.id}`);
+      router.push(hrefFor(`/projects/${d.id}`));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong.");
       setCreateBusy(false);
@@ -201,7 +203,7 @@ export default function ProjectsPage() {
       // `finally` the moment the push was queued, while the route was still
       // changing, so the dialog sat there with an enabled "Create project"
       // and a second click made a second project.
-      router.push(`/projects/${d.id}`);
+      router.push(hrefFor(`/projects/${d.id}`));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong.");
       setNameBusy(false);

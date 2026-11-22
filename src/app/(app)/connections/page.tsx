@@ -2,6 +2,7 @@
 
 import { CustomizeFrame } from "@/components/customize/customize-nav";
 import * as React from "react";
+import { useWorkspaceHref } from "@/hooks/use-workspace-href";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Link2Off, Plus } from "@/components/ui/icons";
@@ -64,6 +65,8 @@ function connectorResultLabel(value: string): string {
 
 export default function ConnectionsPage() {
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
+  const connectionsHref = hrefFor("/connections");
   const { features } = useApp();
   const [connectors, setConnectors] = React.useState<ConnectorStatus[] | null>(null);
   const [composioConfigured, setComposioConfigured] = React.useState(false);
@@ -112,7 +115,7 @@ export default function ConnectionsPage() {
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const connected = params.get("connected");
-    const err = params.get("error");
+    const err = params.get("connect_error") ?? params.get("error");
     let settle: ReturnType<typeof setTimeout> | undefined;
     if (connected) {
       // The toast waits for the list: a custom server's id is not its name.
@@ -122,9 +125,9 @@ export default function ConnectionsPage() {
       settle = setTimeout(() => setConnectingId(null), 1400);
     }
     if (err) toast.error(ERRORS[err] ?? "Something went wrong connecting.");
-    if (connected || err) router.replace("/connections");
+    if (connected || err) router.replace(connectionsHref);
     return () => clearTimeout(settle);
-  }, [router]);
+  }, [connectionsHref, router]);
 
   // Once the list is in: say what connected, by name, and show where it went.
   React.useEffect(() => {
@@ -201,7 +204,7 @@ export default function ConnectionsPage() {
     }
     setConnectingId(c.id);
     // Full navigation — the OAuth flow redirects off-app and back.
-    window.location.href = `/api/connectors/${c.id}/connect`;
+    window.location.href = `/api/connectors/${c.id}/connect?return=${encodeURIComponent(connectionsHref)}`;
   };
 
   const credentialsConnected = (c: ConnectorStatus, accountLabel: string | null) => {

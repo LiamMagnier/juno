@@ -815,19 +815,18 @@ export function AppSidebar({
   // The shared shell destinations keep their cross-platform order. Direct
   // tools and Library access from Code are shortcuts specific to the web.
   const primaryDestinations = isCode ? ([
+    { href: "/projects?surface=code", kind: "projects", label: FEATURE_NAMES.projects.label, active: pathname?.startsWith("/projects") },
+    { href: "/library?surface=code", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" },
+    { href: "/connections?surface=code", kind: "connections", label: "Apps & plugins", active: pathname?.startsWith("/connections") },
+    { href: "/skills?surface=code", kind: "skills", label: "Skills", active: pathname?.startsWith("/skills") },
+    { href: "/code/pulls", kind: "code", label: "Pull requests", active: pathname === "/code/pulls" },
     { href: "/code/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: pathname === "/code/customize" },
   ] as const) : ([
     { href: "/activity", kind: "activity", label: FEATURE_NAMES.activity.label, active: pathname === "/activity" },
-    { href: "/projects", kind: "projects", label: FEATURE_NAMES.projects.label, active: pathname === "/projects" },
+    { href: "/projects", kind: "projects", label: FEATURE_NAMES.projects.label, active: pathname?.startsWith("/projects") },
     { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library" },
     { href: "/customize", kind: "customize", label: FEATURE_NAMES.customize.label, active: pathname?.startsWith("/customize") || pathname?.startsWith("/automations") },
   ] as const);
-  const workspaceShortcuts = [
-    { href: "/library", kind: "library", label: FEATURE_NAMES.library.label, active: pathname === "/library", codeOnly: true },
-    { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname?.startsWith("/artifacts") },
-    { href: "/connections", kind: "connections", label: "Apps & plugins", active: pathname?.startsWith("/connections") },
-    { href: "/skills", kind: "skills", label: "Skills", active: pathname?.startsWith("/skills") },
-  ] as const;
 
   const sidebarProjects = React.useMemo(
     () =>
@@ -1404,7 +1403,7 @@ export function AppSidebar({
         )}
         aria-label="Primary"
       >
-        {[...primaryDestinations, ...workspaceShortcuts.filter((item) => !("codeOnly" in item) || isCode)].map((item) => (
+        {primaryDestinations.map((item) => (
           <NavRow
             key={item.href}
             collapsed={collapsed}
