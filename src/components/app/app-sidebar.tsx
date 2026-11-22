@@ -1331,7 +1331,6 @@ export function AppSidebar({
              made the one row people press most read as the chunkiest. */
           icon={<SidebarMotionIcon kind={isCode ? "new-session" : "new"} />}
           label={isCode ? "New session" : FEATURE_NAMES.newChat.label}
-          featured={isCode}
           newChatTrigger={!isCode}
           moves
           trailing={isCode ? undefined : <Kbd>{chordLabel(`${mod}⇧O`, mod)}</Kbd>}
@@ -1404,33 +1403,25 @@ export function AppSidebar({
         )}
         aria-label="Primary"
       >
-        {(isCode && !collapsed
-          ? [
-              { title: "Workspace", items: primaryDestinations.slice(0, 2) },
-              { title: "Tools", items: primaryDestinations.slice(2) },
-            ]
-          : [{ title: "", items: primaryDestinations }]
-        ).map(({ title, items }) => (
-          <div key={title} className={title ? "code-sidebar-group" : "contents"}>
-            {title && <div className="code-sidebar-label">{title}</div>}
-            {items.map((item) => (
-              <NavRow
-                key={item.href}
-                collapsed={collapsed}
-                href={item.href}
-                active={!!item.active}
-                onClick={() => setSidebarOpen(false)}
-                icon={<SidebarMotionIcon kind={item.kind} />}
-                label={item.label}
-                signal={item.kind === "activity" && activityNeedsYou > 0 ? <ActivityNeedsYouBadge count={activityNeedsYou} compact={collapsed} /> : undefined}
-                detail={item.kind === "activity" && activityNeedsYou > 0 ? `${activityNeedsYou} ${FEATURE_NAMES.needsYou.label.toLowerCase()}` : undefined}
-                moves
-                layoutId={`nav-${item.kind}`}
-                transition={layoutTransition}
-                reveal={revealOnMount}
-              />
-            ))}
-          </div>
+        {/* One run of rows in both products, no group labels: Code's
+            destinations read with the same rhythm as Chat's, and its
+            sessions start as high in the column as Chat's Recent does. */}
+        {primaryDestinations.map((item) => (
+          <NavRow
+            key={item.href}
+            collapsed={collapsed}
+            href={item.href}
+            active={!!item.active}
+            onClick={() => setSidebarOpen(false)}
+            icon={<SidebarMotionIcon kind={item.kind} />}
+            label={item.label}
+            signal={item.kind === "activity" && activityNeedsYou > 0 ? <ActivityNeedsYouBadge count={activityNeedsYou} compact={collapsed} /> : undefined}
+            detail={item.kind === "activity" && activityNeedsYou > 0 ? `${activityNeedsYou} ${FEATURE_NAMES.needsYou.label.toLowerCase()}` : undefined}
+            moves
+            layoutId={`nav-${item.kind}`}
+            transition={layoutTransition}
+            reveal={revealOnMount}
+          />
         ))}
       </nav>
     </>
@@ -2433,7 +2424,6 @@ function NavRow({
   reveal = false,
   moves = false,
   newChatTrigger = false,
-  featured = false,
 }: {
   href?: string;
   onClick?: () => void;
@@ -2448,7 +2438,6 @@ function NavRow({
   moves?: boolean;
   /** Lets the new chat's arrival focus yield from this specific control. */
   newChatTrigger?: boolean;
-  featured?: boolean;
   /** A hint that shows under the pointer only (a shortcut's keycap). */
   trailing?: React.ReactNode;
   /**
@@ -2481,7 +2470,6 @@ function NavRow({
   const cls = cn(
     navRowClass(collapsed, !!active),
     "jicon-trigger workspace-nav-row",
-    featured && "code-sidebar-new",
     // While its popover is open the row wears the selected fill, as the More
     // trigger and the account row do for theirs.
     Trigger && "sidebar-row-selected-on-open data-[state=open]:text-foreground"

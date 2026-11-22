@@ -227,7 +227,6 @@ function WorkRow({
           : undefined
       }
     >
-      <span className="code-sidebar-session-icon" aria-hidden="true"><Icon name="terminal" size={15} /></span>
       {href ? (
         <Link href={href} prefetch={false} {...(linkRouter && intentPrefetch(linkRouter, href))} onNavigate={() => onOpen?.(t.id)} aria-current={active ? "page" : undefined} title={label} className={cls}>
           {inner}
@@ -334,17 +333,19 @@ export function CodeWorkList({
       >
         {removalError && <p role="alert" className="text-ui text-destructive">{removalError}</p>}
       </ConfirmDialog>
-      {/* The project filter stays beside the sessions it filters. */}
+      {/* "Sessions" on the list's 16px edge in the section voice (sidebar-section.tsx),
+          and the project filter beside it as the same quiet ink: a label on the
+          list, never a box beside it. */}
       <div className="group/section">
-        <div className="code-sidebar-session-head">
-          <h2 className="code-sidebar-label">Sessions</h2>
+        <div className="flex min-h-7 items-center justify-between gap-1 coarse:min-h-11">
+          <h2 className="shell-annot shrink-0 select-none px-2 text-label text-muted-foreground">Sessions</h2>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="code-sidebar-filter flex min-w-0 select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground data-[state=open]:text-foreground"
+                aria-label={`Show sessions from: ${project ?? "All projects"}`}
+                className="flex h-7 min-w-0 max-w-[66%] select-none items-center gap-1 rounded-control px-2 text-left text-label text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground data-[state=open]:text-foreground coarse:h-11"
               >
-                <Icon name="folder" size={14} className="shrink-0" />
                 <span className="shell-annot title-fade title-fade-hug min-w-0">{project ?? "All projects"}</span>
                 <ChevronDown aria-hidden className="size-3 shrink-0" />
               </button>
@@ -374,7 +375,7 @@ export function CodeWorkList({
         <div className="pt-1">{list.active.map(row)}</div>
       </div>
       {list.active.length === 0 && list.settled.length === 0 && (
-        <p className="code-sidebar-empty px-2 pb-2 pt-3 text-ui text-muted-foreground" aria-live="polite">
+        <p className="px-2 pb-2 pt-1 text-ui text-muted-foreground" aria-live="polite">
           No sessions{project ? ` in ${project}` : ""} yet.
         </p>
       )}
