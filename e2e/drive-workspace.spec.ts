@@ -75,21 +75,21 @@ test("a project retries a failed Drive check and adds a picked folder", async ({
 
 test("Code's starting points preserve drafts and the shared sidebar exposes workspace tools", async ({ page, isMobile }) => {
   await page.goto("/code");
-  const draft = page.getByRole("textbox", { name: "Message" });
+  const draft = page.getByRole("combobox", { name: "Message" });
   await expect(draft).toBeVisible();
   await draft.fill("A draft to keep");
-  await expect(draft).toHaveValue("A draft to keep");
+  await expect(draft).toHaveText("A draft to keep");
   await page.getByRole("button", { name: "Add files and more" }).click();
   await page.getByRole("menuitem", { name: "Starting points" }).click();
   await page.getByRole("menuitem", { name: "Review changes" }).click();
-  await expect(draft).toHaveValue("A draft to keep");
+  await expect(draft).toHaveText("A draft to keep");
   const draftHint = page.getByText("Finish or clear your draft before choosing a starting point.");
   await expect(draftHint).toBeVisible();
   await draft.fill("");
   await page.getByRole("button", { name: "Add files and more" }).click();
   await page.getByRole("menuitem", { name: "Starting points" }).click();
   await page.getByRole("menuitem", { name: "Review changes" }).click();
-  await expect(draft).toHaveValue(/^Review the current changes/);
+  await expect(draft).toHaveText(/^Review the current changes/);
   await expect(draftHint).toBeHidden();
   if (isMobile) await page.getByRole("button", { name: "Open menu", exact: true }).click();
   const primary = page.getByRole("navigation", { name: "Primary" });

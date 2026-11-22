@@ -56,7 +56,7 @@ test("a Code session started from Projects is saved in that same project", async
   await expect(page.getByRole("link", { name: "Code and Chat project" })).toHaveAttribute("href", `/projects/${id}?surface=code`);
   await page.getByRole("button", { name: "Choose a local folder" }).click();
   await page.getByRole("option", { name: /Project repo/ }).click();
-  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Summarize the project layout.");
+  await page.getByRole("combobox", { name: "Message", exact: true }).fill("Summarize the project layout.");
   await page.screenshot({ path: testInfo.outputPath("code-project.png"), animations: "disabled" });
   const created = page.waitForResponse((res) => new URL(res.url()).pathname === "/api/conversations" && res.request().method() === "POST");
   await page.getByRole("button", { name: "Send", exact: true }).click();

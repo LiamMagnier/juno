@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readQaFixtures } from "./support/fixtures";
 
 test("Code configures a delegated team and keeps the draft if the team cannot be saved", async ({ page }, testInfo) => {
   await page.route("**/api/code/workspaces", (route) => route.fulfill({
@@ -19,27 +20,46 @@ test("Code configures a delegated team and keeps the draft if the team cannot be
     return route.fulfill({ json: { ok: true } });
   });
   await page.goto("/code");
-  const draft = page.getByRole("textbox", { name: "Message", exact: true });
+  const draft = page.getByRole("combobox", { name: "Message", exact: true });
   await draft.fill("Make the checkout summary easier to scan.");
   await page.getByRole("button", { name: "Choose a local folder" }).click();
   await page.getByRole("option", { name: /Storefront/ }).click();
   const orchestrator = page.getByRole("button", { name: "Orchestrator", exact: true });
   await orchestrator.click();
   const picker = page.getByRole("dialog", { name: "Orchestrator" });
-  const delegated = picker.getByRole("button", { name: /Lead \+ workers/ });
+  const delegated = picker.getByRole("button", { name: "Swarm", exact: true });
   await delegated.click();
   await expect(delegated).toHaveAttribute("aria-pressed", "true");
   await expect(picker.getByRole("button", { name: /Architect/ })).toHaveCount(0);
   await picker.getByRole("button", { name: "More workers" }).click();
   await expect(picker.getByRole("group", { name: "Workers" })).toContainText("×4");
+  await expect(picker.getByRole("list", { name: "Team models" }).getByRole("listitem")).toHaveCount(6);
   await page.screenshot({ path: testInfo.outputPath("code-orchestrator.png"), animations: "disabled" });
-  await picker.getByRole("button", { name: "Close orchestrator" }).click();
+  const worker = picker.getByRole("button", { name: /^Worker 2:/ });
+  const previous = await worker.getAttribute("aria-label");
+  await worker.click();
+  await expect(picker.getByText("Choose a model for Worker 2.")).toBeVisible();
+  const search = picker.getByRole("textbox", { name: "Search models" });
+  await search.fill("Sonnet");
+  const option = picker.getByRole("option", { name: /Sonnet/ }).first();
+  await expect(option).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("code-swarm-models.png"), animations: "disabled" });
+  await option.click();
+  await picker.getByRole("button", { name: "Back to team" }).click();
+  await expect(worker).toBeFocused();
+  await expect(worker).toHaveAccessibleName(/Worker 2:.*Sonnet/);
+  expect(await worker.getAttribute("aria-label")).not.toBe(previous);
+  await picker.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByText("Couldn’t save the orchestrator. Check the team models or try again.")).toBeVisible();
-  await expect(draft).toHaveValue("Make the checkout summary easier to scan.");
+  await expect(draft).toHaveText("Make the checkout summary easier to scan.");
   await expect(page).toHaveURL(/\/code$/);
   await expect.poll(() => cleaned).toBe(true);
   expect(routing).toMatchObject({ preset: "lead-workers", workers: { length: 4 } });
+  const { workers } = routing as { workers: { model: string }[] };
+  expect(workers[1].model).toContain("sonnet");
+  expect(workers[0].model).not.toBe(workers[1].model);
+  expect(workers[2].model).toBe(workers[0].model);
 });
 
 test("Code opens Agents directly and keeps the composer usable at narrow widths", async ({ page, isMobile }, testInfo) => {
@@ -79,11 +99,111 @@ test("Code opens Agents directly and keeps the composer usable at narrow widths"
   await page.getByRole("button", { name: "Close the panel" }).click();
   await expect(pane).toBeHidden();
   if (isMobile) await expect(agents).toBeFocused();
-  const draft = page.getByRole("textbox", { name: "Message", exact: true });
+  const draft = page.getByRole("combobox", { name: "Message", exact: true });
   await expect(draft).toBeVisible();
   expect(await page.locator("[data-composer-row]").evaluate((bar) => bar.scrollWidth - bar.clientWidth)).toBeLessThanOrEqual(1);
   if (isMobile) {
     await page.setViewportSize({ width: 320, height: 740 });
     expect(await page.locator("[data-composer-row]").evaluate((bar) => bar.scrollWidth - bar.clientWidth)).toBeLessThanOrEqual(1);
+  }
+});
+
+
+test("Chat and Code share the resting editor and Code offers voice without a build-time relay URL", async ({ page }, testInfo) => {
+  await page.route("**/api/voice/relay-token*", (route) => route.fulfill({
+    status: 503, json: { error: "Realtime voice is not configured." },
+  }));
+  const geometry = async () => page.locator('.chat-composer[data-frame="home"]').evaluate((box) => {
+    const field = box.querySelector('[role="combobox"]')!;
+    const row = box.querySelector("[data-composer-row]")!;
+    const shellStyle = getComputedStyle(box);
+    const fieldStyle = getComputedStyle(field);
+    const rowStyle = getComputedStyle(row);
+    return {
+      radius: shellStyle.borderRadius,
+      padding: shellStyle.padding,
+      shadow: shellStyle.boxShadow,
+      field: [fieldStyle.fontSize, fieldStyle.padding, fieldStyle.minHeight],
+      controls: [rowStyle.padding, rowStyle.columnGap],
+    };
+  });
+  await page.goto("/chat");
+  const chatEditor = page.getByRole("combobox", { name: "Message Alevr", exact: true });
+  await expect(chatEditor).toBeEditable();
+  await chatEditor.evaluate((field) => field.blur());
+  const chat = await geometry();
+  await page.screenshot({ path: testInfo.outputPath("chat-reference.png"), animations: "disabled" });
+  await page.goto("/code");
+  const editor = page.getByRole("combobox", { name: "Message", exact: true });
+  await expect(editor).toBeEditable();
+  await editor.evaluate((field) => field.blur());
+  await expect.poll(geometry).toEqual(chat);
+  const launcher = page.getByRole("button", { name: "Start voice conversation" });
+  await expect(launcher).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("code-chat-composer.png"), animations: "disabled" });
+
+  const strokes = await page.locator('.chat-composer svg[data-interface-icon]').evaluateAll((icons) =>
+    icons.map((icon) => [getComputedStyle(icon).strokeWidth, getComputedStyle(icon.querySelector("path, circle, rect")!).vectorEffect]),
+  );
+  expect(strokes.length).toBeGreaterThan(2);
+  expect(strokes.every(([width, effect]) => width === "1.5px" && effect === "non-scaling-stroke")).toBe(true);
+
+  const token = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/voice/relay-token");
+  await launcher.click();
+  await token;
+  await expect(page.getByRole("alert").filter({ hasText: "Realtime voice is not configured." })).toBeVisible();
+  await page.getByRole("button", { name: "Close voice", exact: false }).click();
+  await expect(launcher).toBeVisible();
+
+  await editor.fill("Keep this draft");
+  await page.getByRole("button", { name: "Add files and more" }).click();
+  const add = page.getByRole("menu", { name: "Add files and more", exact: true });
+  await expect(add.getByText("Attach", { exact: true })).toBeVisible();
+  await expect(add.getByRole("menuitem", { name: "Photos & files" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("code-add-menu.png"), animations: "disabled" });
+  await add.getByRole("menuitem", { name: "Use a command" }).click();
+  await expect.poll(() => editor.evaluate((field) => (field as HTMLTextAreaElement).value)).toBe("Keep this draft\n/");
+  await expect(page.getByRole("listbox", { name: "Commands" })).toBeVisible();
+});
+
+test("the Swarm grid and activity follow persisted Code task events", async ({ page, isMobile }, testInfo) => {
+  const { qaCodeSessionId } = readQaFixtures();
+  expect(qaCodeSessionId).toBeTruthy();
+  const lead = { instanceId: "alevr", model: "anthropic:claude-opus-5-5" };
+  const worker = { instanceId: "alevr", model: "anthropic:claude-sonnet-5-5" };
+  const task = { id: "qa-swarm-task", status: "running", target: "device" };
+  await page.route(`**/api/code/routing/${qaCodeSessionId}`, (route) => route.fulfill({
+    json: { routing: { preset: "lead-workers", orchestrator: lead, workers: [lead, worker] } },
+  }));
+  await page.route("**/api/code/tasks?conversationId=*&limit=20", (route) => route.fulfill({ json: { tasks: [task] } }));
+  const agents = [
+    { id: "qa-worker-1", title: "Map the auth middleware", role: "worker", model: lead.model, status: "done" },
+    { id: "qa-worker-2", title: "Check the password reset form", role: "worker", model: worker.model, status: "running", currentActivity: "Inspecting the reset page" },
+  ];
+  await page.route(`**/api/code/tasks/${task.id}/events?*`, (route) => route.fulfill({
+    contentType: "text/event-stream",
+    body: `data: ${JSON.stringify({ type: "events", task, events: agents.map((agent, index) => ({
+      seq: index + 1, kind: "agent", createdAt: new Date().toISOString(), payload: { agent },
+    })) })}\n\n`,
+  }));
+
+  await page.goto(`/code/${qaCodeSessionId}`);
+  await expect(page.getByRole("button", { name: /^Orchestrator: Swarm/ })).toBeVisible();
+  await page.getByRole("button", { name: "Agents", exact: true }).click();
+  const panel = page.getByRole("tabpanel", { name: "Agents" });
+  const grid = panel.getByRole("list", { name: "Swarm agents" });
+  const workerTwo = grid.getByRole("button", { name: /Worker 2.*Sonnet/i });
+  await expect(grid.getByRole("listitem")).toHaveCount(3);
+  await expect(workerTwo).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("code-swarm-live.png"), animations: "disabled" });
+  await panel.getByRole("button", { name: "Activity", exact: true }).click();
+  const activity = panel.getByRole("list", { name: "Swarm activity" });
+  await expect(activity.getByText(/Check the password reset form/)).toBeVisible();
+  await panel.getByRole("button", { name: "Grid", exact: true }).click();
+  await workerTwo.click();
+  await expect(panel.getByRole("heading", { name: "Worker 2" })).toBeVisible();
+  if (isMobile) {
+    await panel.getByRole("button", { name: "All agents" }).click();
+    await expect(workerTwo).toBeFocused();
   }
 });
