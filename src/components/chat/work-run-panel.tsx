@@ -8,6 +8,9 @@ import { Collapse } from "@/components/ui/collapse";
 import { ChevronRight } from "@/components/ui/icons";
 import { Icon } from "@/components/ui/juno-icons";
 import { GalaxyMark } from "@/components/brand/galaxy-mark";
+import { AgentFace } from "@/components/agents/agent-face";
+import type { AgentAvatar } from "@/lib/agents/avatar";
+import type { AgentState } from "@/lib/agents/state-labels";
 import { CHAT_COMPOSER_FIELD_ID } from "@/components/chat/composer";
 import { NeedsLead, QuietButton, VerbButton } from "@/components/chat/decision";
 import { formatLiveSeconds, useHeldPhase, useLiveSeconds } from "@/components/chat/live-line";
@@ -74,6 +77,14 @@ function useSpokenTurns(events: ConversationWork["events"]) {
   );
 }
 
+/** The card's phase as an agent's face shows it (docs/design/AGENTS.md §4.2). */
+const PHASE_FACE: Record<"working" | "waiting" | "finished" | "error", AgentState> = {
+  working: "working",
+  waiting: "waiting",
+  finished: "done",
+  error: "blocked",
+};
+
 /** Where the run is in its plan: the step being worked on (1-based) and the count. */
 function planPosition(plan: readonly PlanStep[]): { at: number; total: number } | null {
   if (plan.length === 0) return null;
@@ -108,11 +119,14 @@ export function WorkRunPanel({
   work,
   className,
   actor,
+  actorAvatar,
 }: {
   work: ConversationWork;
   className?: string;
   /** Who is working, when it is one of the account's agents rather than Alevr. */
   actor?: string | null;
+  /** That agent's face: the card's mark is then who is doing the work, not Alevr's. */
+  actorAvatar?: AgentAvatar | null;
 }) {
   const { session, run } = work;
   const spoken = useSpokenTurns(work.events);
@@ -183,7 +197,14 @@ export function WorkRunPanel({
     >
       <header className="flex items-start gap-3 py-3 pl-4 pr-2.5">
         <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center text-muted-foreground">
-          <GalaxyMark phase={phase} size={20} eventKey={action?.title ?? phase} />
+          {/* An agent's task wears the agent's face in the run's state (a
+              still copy: the live one is in the sidebar's Orbit, and the
+              thread already names it). Alevr's own task keeps the mark. */}
+          {actorAvatar ? (
+            <AgentFace avatar={actorAvatar} state={PHASE_FACE[phase]} size="xs" still />
+          ) : (
+            <GalaxyMark phase={phase} size={20} eventKey={action?.title ?? phase} />
+          )}
         </span>
         <div className="min-w-0 flex-1">
           <h3 id={titleId} className="line-clamp-2 text-body font-medium text-foreground">

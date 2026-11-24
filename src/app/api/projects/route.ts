@@ -8,6 +8,9 @@ import { loadOwnerProjectTree } from "@/lib/projects/project-tree-server";
 
 export const runtime = "nodejs";
 
+/** How many of a project's latest chats its card previews. */
+const RECENT_CHATS_PER_PROJECT = 2;
+
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -22,6 +25,15 @@ export async function GET() {
         take: 1,
       },
       _count: { select: { conversations: true, files: { where: { deletedAt: null, fileName: { not: "__cover__" } } } } },
+      // The card's preview: what was last talked about in it, so a tile shows
+      // its own work instead of the same folder glyph as every other tile.
+      // Chats only (a Code session opens in Code) and nothing archived.
+      conversations: {
+        where: { kind: { not: "code" }, archivedAt: null },
+        orderBy: { lastMessageAt: "desc" },
+        take: RECENT_CHATS_PER_PROJECT,
+        select: { id: true, title: true, lastMessageAt: true },
+      },
     },
   });
 
@@ -57,6 +69,7 @@ export async function GET() {
         conversationCount: p._count.conversations,
         fileCount: p._count.files,
         coverUrl: p.files[0] ? await getViewUrl(p.files[0].storageKey) : null,
+        recentChats: p.conversations.map((c) => ({ id: c.id, title: c.title, at: c.lastMessageAt.toISOString() })),
       }))
     ),
   });

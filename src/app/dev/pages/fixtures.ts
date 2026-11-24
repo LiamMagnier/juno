@@ -111,6 +111,10 @@ export const PROJECTS = [
     fileCount: 6,
     starred: true,
     parentId: null,
+    recentChats: [
+      { id: "c-atlas-1", title: "Why the sync worker drops cursors", at: ago(2) },
+      { id: "c-atlas-2", title: "Interview notes: field ops at Halvorsen", at: ago(26) },
+    ],
   },
   {
     id: "p-home",
@@ -121,6 +125,10 @@ export const PROJECTS = [
     fileCount: 11,
     starred: false,
     parentId: null as string | null,
+    recentChats: [
+      { id: "c-home-1", title: "Does moving the boiler need a permit?", at: ago(30) },
+      { id: "c-home-2", title: "Kitchen budget, second pass", at: ago(80) },
+    ],
   },
   {
     id: "p-thesis",
@@ -131,6 +139,10 @@ export const PROJECTS = [
     fileCount: 38,
     starred: true,
     parentId: null as string | null,
+    recentChats: [
+      { id: "c-thesis-1", title: "Land surface temperature from Landsat 9", at: ago(72) },
+      { id: "c-thesis-2", title: "APA for a dataset with no author", at: ago(100) },
+    ],
   },
   {
     id: "p-kanji",
@@ -141,6 +153,7 @@ export const PROJECTS = [
     fileCount: 0,
     starred: false,
     parentId: null as string | null,
+    recentChats: [{ id: "c-kanji-1", title: "Te-form drills, round three", at: ago(160) }],
   },
   {
     id: "p-pricing",
@@ -151,6 +164,7 @@ export const PROJECTS = [
     fileCount: 2,
     starred: false,
     parentId: null as string | null,
+    recentChats: [{ id: "c-pricing-1", title: "Pricing page copy, second pass", at: ago(300) }],
   },
   // Folders: Atlas holds Research (which holds Interviews) and Launch; the
   // thesis holds Fieldwork. Drawn nested on /dev/pages?page=projects and as

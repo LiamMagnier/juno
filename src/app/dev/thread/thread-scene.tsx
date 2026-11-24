@@ -5,6 +5,7 @@ import { AppProvider, useApp } from "@/components/app/app-provider";
 import { AppShell } from "@/components/app/app-shell";
 import { MessageList } from "@/components/chat/message-list";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
+import { defaultAgentAvatar } from "@/lib/agents/avatar";
 import { MemoryUpdatedAnnouncement, MemoryUpdatedNotice } from "@/components/chat/memory-updated-notice";
 import { PHONE_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import type { ConversationWork } from "@/components/chat/use-conversation-work";
@@ -116,6 +117,9 @@ function SelectConversation({ id }: { id: string }) {
 
 const T0 = Date.now() - 10 * 60_000;
 const at = (s: number) => new Date(T0 + s * 1000).toISOString();
+
+/** Mira's face, seeded from her id as a real agent's default avatar is. */
+const MIRA_AVATAR = defaultAgentAvatar("cmiraagent000001");
 
 const ASK = "Compare Q3 Forecast.xlsx with Stripe, ask Mira to flag renewal risk and post a summary to #design in Slack";
 function range(label: string) {
@@ -336,7 +340,7 @@ export function ThreadScene({ scene }: { scene: "thread" | "thinking" | "settled
           )}
           <MessageList
             messages={messages}
-            inlineRuns={[{ id: "w-mira", createdAt: at(12), node: <WorkRunPanel work={work} actor="Mira" className="mt-5" /> }]}
+            inlineRuns={[{ id: "w-mira", createdAt: at(12), node: <WorkRunPanel work={work} actor="Mira" actorAvatar={MIRA_AVATAR} className="mt-5" /> }]}
             busy={scene === "thinking"}
             status={scene === "thinking" ? "thinking" : "idle"}
             artifacts={[]}

@@ -2956,6 +2956,11 @@ export function ChatView({ conversationId, initialMessages, initialHistory, init
                               ? agent.name
                               : undefined
                           }
+                          actorAvatar={
+                            agent && (session.agentId === undefined || session.agentId === agent.id)
+                              ? agent.avatar
+                              : undefined
+                          }
                         />
                       ),
                     })),

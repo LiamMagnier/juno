@@ -43,7 +43,9 @@ export function SearchField({
         aria-label={label}
         aria-busy={busy || undefined}
         placeholder={placeholder}
-        className="rounded-full pe-11 ps-9 [&::-webkit-search-cancel-button]:hidden"
+        // The field frame's own radius, like the Select and the segmented control
+        // it sits beside in every toolbar (a pill here was the one round shape in the row).
+        className="pe-11 ps-9 [&::-webkit-search-cancel-button]:hidden"
       />
       {value && (
         <Pressable

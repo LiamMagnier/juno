@@ -60,6 +60,8 @@ export interface FolderProject {
   starred?: boolean;
   /** Subfolders directly inside (the detail route counts them for us). */
   childCount?: number;
+  /** Its latest chats, newest first (the list route sends two): the card's preview. */
+  recentChats?: { id: string; title: string; at: string }[];
 }
 
 /* ─────────────────────────────── Drag and drop ─────────────────────────────── */
@@ -678,6 +680,9 @@ export function ProjectTile({
   const excerpt = (p.description ?? "").replace(/\s+/g, " ").trim();
   const activity = activityLabel(p);
   const hasActions = !!(onToggleStar || onRename || onMove || onDelete);
+  // Undefined when the route did not send them (a folder card, an old cache):
+  // then the card draws as it did, rather than claiming there are no chats.
+  const recent = p.recentChats?.slice(0, 2);
 
   // A folder card is narrow: chats, its own folders and the age, no prefix.
   const meta = compact
@@ -827,6 +832,32 @@ export function ProjectTile({
           {nameLink}
           {excerpt && <p className="mt-1 line-clamp-2 text-pretty text-ui text-muted-foreground">{excerpt}</p>}
         </div>
+
+        {/* What it holds, not what it is: its latest chats, each a door of its
+            own above the card's link. A project with none says so once; one
+            whose chats are all archived or Code sessions shows just its counts. */}
+        {recent && (
+          recent.length > 0 ? (
+            <ul className="pj-tile-recent relative z-[1]" aria-label={`Latest chats in ${p.name}`}>
+              {recent.map((chat) => (
+                <li key={chat.id}>
+                  <Link
+                    href={hrefFor(`/chat/${chat.id}`)}
+                    prefetch={false}
+                    {...intentPrefetch(router, hrefFor(`/chat/${chat.id}`))}
+                    draggable={false}
+                    className="pj-recent-row text-ui"
+                  >
+                    <MessageSquare className="size-3.5 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 truncate">{chat.title}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (p.conversationCount ?? 0) === 0 ? (
+            <p className="pj-tile-recent-empty text-ui">No chats yet</p>
+          ) : null
+        )}
 
         {folders.length > 0 && (
           <p className="pj-tile-folders relative z-[1] flex min-w-0 items-center gap-1.5 text-ui text-muted-foreground">

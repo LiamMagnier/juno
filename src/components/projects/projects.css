@@ -81,9 +81,9 @@
 .pj-tile[data-drop="refuse"] { opacity: 0.55; }
 .pj-tile[data-dragging] { opacity: 0.4; }
 
-.pj-projects-page {
-  max-width: 72rem;
-}
+/* Projects keeps the `wide` measure like Library, Activity and every other
+   list page (ui/app-page.tsx): a 72rem override here put its title 63px left
+   of the Library's, so moving between the two made the page jump. */
 
 .pj-toolbar {
   display: grid;
@@ -97,26 +97,6 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) auto;
   align-items: center;
   gap: .5rem;
-}
-
-.pj-layout-control {
-  display: flex;
-  align-items: center;
-  gap: .125rem;
-  --layout-inset: .125rem;
-  padding: var(--layout-inset);
-  border-radius: theme("borderRadius.field");
-  background: hsl(var(--muted));
-}
-
-.pj-layout-control button {
-  border-radius: calc(theme("borderRadius.field") - var(--layout-inset));
-}
-
-.pj-layout-control [aria-pressed="true"] {
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  box-shadow: 0 0 0 1px hsl(var(--foreground) / .08);
 }
 
 @container page (min-width: 46rem) {
@@ -141,7 +121,8 @@
   .pj-project-results[data-layout="grid"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-@container page (min-width: 66rem) {
+/* Three across once each card keeps ~18rem inside the wide measure. */
+@container page (min-width: 60rem) {
   .pj-project-results[data-layout="grid"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
@@ -170,6 +151,55 @@
 }
 .pj-tile-project[data-has-cover] .pj-kind-mark { display: none; }
 .pj-project-results[data-layout="list"] .pj-tile-project[data-has-cover] .pj-kind-mark { display: grid; }
+
+/* In the grid the name leads. The same folder glyph on every tile said only
+   what the page title already says, and pushed each project's own content
+   down; the list keeps it as the row's anchor. The heading leaves room for
+   the actions in the corner. */
+.pj-project-results[data-layout="grid"] .pj-kind-mark { display: none; }
+.pj-project-results[data-layout="grid"] .pj-tile-project:not([data-has-cover]) .pj-tile-heading { padding-inline-end: 3.5rem; }
+
+/* The latest chats: what a project holds, each its own door above the card's
+   link. Rows on the menu row's rhythm (radius 6, 8px inset), a hover fill
+   and no colour of their own. */
+.pj-tile-recent {
+  display: grid;
+  gap: .125rem;
+  margin-inline: -.5rem;
+}
+
+.pj-recent-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: .5rem;
+  padding: .3125rem .5rem;
+  border-radius: theme("borderRadius.control");
+  color: hsl(var(--muted-foreground));
+  outline: none;
+  transition: background-color var(--dur-fast) var(--ease-out-soft), color var(--dur-fast) var(--ease-out-soft);
+}
+.pj-recent-row:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
+.pj-recent-row:focus-visible { box-shadow: inset 0 0 0 2px hsl(var(--ring)); color: hsl(var(--foreground)); }
+
+.pj-tile-recent-empty { color: hsl(var(--ink-tertiary)); }
+
+.pj-project-results[data-layout="list"] .pj-tile-recent,
+.pj-project-results[data-layout="list"] .pj-tile-recent-empty { display: none; }
+
+/* The pin and the menu wait for the pointer or the keyboard on a desktop; a
+   pinned project keeps its pin, since that is state, not a control. Touch
+   always shows them (there is no hover to ask with). */
+@media (hover: hover) and (pointer: fine) {
+  .pj-tile-project .pj-actions > * {
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease-out-soft);
+  }
+  .pj-tile-project:hover .pj-actions > *,
+  .pj-tile-project:focus-within .pj-actions > *,
+  .pj-tile-project .pj-actions:has([data-state="open"]) > *,
+  .pj-tile-project .pj-actions > [aria-pressed="true"] { opacity: 1; }
+}
 
 .pj-tile-meta {
   display: flex;

@@ -4,6 +4,7 @@ import * as React from "react";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
 import { useWorkSessionFollower, type ConversationWork } from "@/components/chat/use-conversation-work";
 import type { ClientWorkSession } from "@/lib/work/serializers";
+import type { AgentAvatar } from "@/lib/agents/avatar";
 
 /**
  * One task's card in a conversation that can carry several.
@@ -18,11 +19,13 @@ import type { ClientWorkSession } from "@/lib/work/serializers";
 export function ConversationTaskPanel({
   session,
   actor,
+  actorAvatar,
   className,
   onReport,
 }: {
   session: ClientWorkSession;
   actor?: string;
+  actorAvatar?: AgentAvatar;
   className?: string;
   onReport: (sessionId: string, work: ConversationWork | null) => void;
 }) {
@@ -35,5 +38,5 @@ export function ConversationTaskPanel({
   React.useEffect(() => () => onReport(id, null), [id, onReport]);
 
   if (!work.session) return null;
-  return <WorkRunPanel work={work} className={className} actor={actor} />;
+  return <WorkRunPanel work={work} className={className} actor={actor} actorAvatar={actorAvatar} />;
 }
