@@ -129,7 +129,7 @@ struct JunoMobileMetaChip: View {
         }
         .foregroundStyle(Color.junoMutedForeground)
         .padding(.horizontal, JunoSpace.cozy)
-        .frame(height: 28)
+        .frame(minHeight: 28)
         // Metadata is chrome, not content: use the same native glass treatment
         // as the surrounding controls while keeping the label compact.
         .modifier(JunoGlassCapsule())

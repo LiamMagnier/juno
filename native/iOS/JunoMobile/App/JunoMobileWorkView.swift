@@ -1061,6 +1061,8 @@ private struct JunoMobileWorkThread: View {
 private struct JunoMobileWorkApprovalCard: View {
     let model: NativeWorkModel
     let approval: WorkApprovalRequest
+    @State private var approveHaptic = JunoMobileHapticTrigger()
+    @State private var denyHaptic = JunoMobileHapticTrigger()
 
     private var risk: JunoWorkRiskLevel? { JunoWorkRiskLevel(rawValue: approval.risk) }
 
@@ -1170,9 +1172,14 @@ private struct JunoMobileWorkApprovalCard: View {
             }
         }
         .accessibilityIdentifier("juno.mobile.work.approval")
+        .junoHaptic(JunoMobileHaptic.approve, trigger: approveHaptic)
+        .junoHaptic(JunoMobileHaptic.deny, trigger: denyHaptic)
     }
 
     private func decide(_ decision: JunoWorkApprovalDecision) {
+        // The phone's approve and deny haptics (JunoMobileFeedback): a grant
+        // lands as success, a refusal as a warning, on every approval card.
+        if decision == .denied { denyHaptic.fire() } else { approveHaptic.fire() }
         Task { await model.decide(approval, decision) }
     }
 

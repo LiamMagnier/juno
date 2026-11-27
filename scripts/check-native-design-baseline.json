@@ -69,12 +69,12 @@
     "files": {}
   },
   "targets": {
-    "total": 150,
+    "total": 145,
     "modules": {
       "JunoNativeKit (shared)": 34,
       "JunoCode (shared)": 45,
       "JunoDesktop (macOS)": 44,
-      "JunoMobile (iOS)": 27
+      "JunoMobile (iOS)": 22
     },
     "files": {
       "native/Packages/JunoCode/Sources/JunoCodeUI/CodeV2/Views/CodeV2Agents.swift": 3,
@@ -115,11 +115,10 @@
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/LiveUI/JunoLiveUIView.swift": 3,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/MermaidDiagramView.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileArchivedView.swift": 2,
-      "native/iOS/JunoMobile/App/JunoMobileCodeRemote.swift": 3,
+      "native/iOS/JunoMobile/App/JunoMobileCodeRemote.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileHandoff.swift": 1,
-      "native/iOS/JunoMobile/App/JunoMobileLinkComposer.swift": 3,
+      "native/iOS/JunoMobile/App/JunoMobileLinkComposer.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileLinkSurfaces.swift": 2,
-      "native/iOS/JunoMobile/App/JunoMobileLinkThread.swift": 3,
       "native/iOS/JunoMobile/App/JunoMobileMessageImages.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileMessageMenu.swift": 8,
       "native/iOS/JunoMobile/App/JunoMobileOnboarding.swift": 3,

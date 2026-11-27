@@ -31,8 +31,9 @@ public struct NativeChatApprovalCard: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 7) {
-                JunoIconView(riskIcon)
-                    .junoFont(size: 13, relativeTo: .body, weight: .semibold)
+                // The glyph draws at its own size (a font does not reach it),
+                // matched to the 13pt label beside it.
+                JunoIconView(riskIcon, size: 13)
                     .foregroundStyle(riskColor)
                 Text(riskLabel)
                     .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)

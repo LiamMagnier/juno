@@ -1020,7 +1020,7 @@ struct JunoMobileComposer: View {
         }
         .foregroundStyle(Color.primary)
         .padding(.horizontal, JunoSpace.cozy)
-        .frame(height: 28)
+        .frame(minHeight: 28)
         .modifier(JunoGlassCapsule())
       }
       .buttonStyle(.plain)
@@ -1078,6 +1078,8 @@ struct JunoMobileComposer: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("juno.mobile.chat-expand-draft")
+        // The 28pt capsule keeps its look; the target is the house 44.
+        .frame(minHeight: 44)
         .contentShape(.rect)
 
         if canAttachDraft {
@@ -1086,6 +1088,7 @@ struct JunoMobileComposer: View {
           }
           .buttonStyle(.plain)
           .accessibilityIdentifier("juno.mobile.chat-attach-draft")
+          .frame(minHeight: 44)
           .contentShape(.rect)
         }
         Spacer(minLength: 0)
@@ -1109,7 +1112,8 @@ struct JunoMobileComposer: View {
     }
     .foregroundStyle(Color.primary)
     .padding(.horizontal, JunoSpace.cozy)
-    .frame(height: 28)
+    // A floor, not a fixed height: the caption grows with Dynamic Type.
+    .frame(minHeight: 28)
     .modifier(JunoGlassCapsule())
   }
 
@@ -1550,6 +1554,9 @@ struct JunoMobileComposer: View {
           send()
         }
       }
+      // ⌘. stops a reply from an iPad's keyboard, the Mac's chord
+      // (JunoShortcutRegistry.stopGenerating); bound only while one is writing.
+      .keyboardShortcut(generatingHere ? KeyboardShortcut(".", modifiers: .command) : nil)
     }
   }
 

@@ -530,7 +530,7 @@ struct JunoMobileLinkDisclosure<Content: View>: View {
             .rotationEffect(.degrees(open ? 180 : 0))
           Spacer(minLength: 0)
         }
-        .frame(minHeight: 32)
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
@@ -583,7 +583,7 @@ struct JunoMobileLinkCommandRow: View {
               .foregroundStyle(Color.junoTertiaryInk)
           }
         }
-        .frame(minHeight: 32)
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
@@ -851,7 +851,7 @@ struct JunoMobileLinkQuestionCard: View {
                   if chosen { JunoIconView(.check, size: 13) }
                 }
                 .padding(.horizontal, JunoSpace.cozy)
-                .frame(height: 36)
+                .frame(minHeight: 36)
                 .background(Color.junoMuted.opacity(chosen ? 1 : 0.5), in: Capsule())
                 .padding(.vertical, JunoSpace.hairline)
                 .frame(minHeight: 44)

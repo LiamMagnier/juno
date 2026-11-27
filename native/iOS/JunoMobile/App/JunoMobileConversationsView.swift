@@ -567,6 +567,8 @@ private struct JunoMobileConversationDetail: View {
   /// A message's text on its way to the system share sheet.
   @State private var sharingMessage: JunoMobileSharedText?
   @State private var copyHaptic = JunoMobileHapticTrigger()
+  @State private var approveHaptic = JunoMobileHapticTrigger()
+  @State private var denyHaptic = JunoMobileHapticTrigger()
   /// An artifact the transcript can render from the reply's own tag, used when
   /// the stored row has not arrived. See ``openArtifact(_:)``.
   @State private var inlineArtifact: JunoMobileInlineArtifact?
@@ -1104,6 +1106,9 @@ private struct JunoMobileConversationDetail: View {
             errorMessage: model.chatApprovalError(for: approval.id),
             canAllowScope: model.canAllowChatApprovalScope(approval),
             decide: { decision in
+              // In the hand as on the screen: the phone's approve and deny
+              // haptics (JunoMobileFeedback), as Code's remote card plays them.
+              if decision == .deny { denyHaptic.fire() } else { approveHaptic.fire() }
               Task {
                 await model.decideChatApproval(approval, decision: decision)
               }
@@ -1390,6 +1395,18 @@ private struct JunoMobileConversationDetail: View {
       }
       .onChange(of: model.isGenerating) { wasGenerating, isGenerating in
         if wasGenerating, !isGenerating { pin.send(.settle) }
+        // "Response complete, N words." on the edge from writing to done, as
+        // the Mac (ChatTranscript) and the web announce it, so a VoiceOver
+        // reader learns the answer has finished without hunting for it.
+        guard wasGenerating, !isGenerating,
+          let last = messages.last, last.role == .assistant,
+          last.errorDescription == nil
+        else { return }
+        let words = NativeMessageContent.plainText(of: last.content)
+          .split(whereSeparator: \.isWhitespace).count
+        AccessibilityNotification.Announcement(
+          "Response complete, \(words) \(words == 1 ? "word" : "words")."
+        ).post()
       }
       .onChange(of: streamSignature) { _, _ in
         guard pin.state == .following, !userScrolling else { return }
@@ -1545,6 +1562,8 @@ private struct JunoMobileConversationDetail: View {
     scrollArea
       .modifier(JunoMobileSoftScrollEdges())
       .junoHaptic(JunoMobileHaptic.copy, trigger: copyHaptic)
+      .junoHaptic(JunoMobileHaptic.approve, trigger: approveHaptic)
+      .junoHaptic(JunoMobileHaptic.deny, trigger: denyHaptic)
       .sheet(item: $sharingMessage) { shared in
         JunoMobileShareSheet(items: [shared.text])
       }

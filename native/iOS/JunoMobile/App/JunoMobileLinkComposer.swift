@@ -306,7 +306,7 @@ struct JunoMobileLinkPlaceRows: View {
       }
       .font(.subheadline)
       .foregroundStyle(panel == open ? Color.primary : (muted ? Color.junoTertiaryInk : Color.junoSecondaryInk))
-      .frame(minHeight: 36)
+      .frame(minHeight: 44)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)

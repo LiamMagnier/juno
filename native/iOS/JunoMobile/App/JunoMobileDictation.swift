@@ -258,7 +258,7 @@ struct JunoMobileDictationRow: View {
             .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
             .foregroundStyle(Color.junoForeground)
             .padding(.horizontal, JunoSpace.cozy)
-            .frame(height: 36)
+            .frame(minHeight: 36)
             .modifier(JunoGlassCapsule())
             .frame(minHeight: 44)
             .contentShape(Rectangle())

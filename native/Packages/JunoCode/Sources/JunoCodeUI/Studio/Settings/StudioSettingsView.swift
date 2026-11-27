@@ -687,6 +687,8 @@ struct StudioEnvironmentSettings: View {
                         settings.update(scope) { $0.sandbox?.writablePaths?.removeAll { $0 == path } }
                     } label: { JunoIconView(.minus, size: 12) }
                     .buttonStyle(.borderless)
+                    .help("Remove")
+                    .accessibilityLabel("Remove \((path as NSString).abbreviatingWithTildeInPath)")
                 }
             }
             Button("Add Folder…") { choosingFolder = true }

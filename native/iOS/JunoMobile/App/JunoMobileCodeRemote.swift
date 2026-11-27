@@ -714,7 +714,7 @@ struct JunoMobileCodeWorkLog: View {
                   .rotationEffect(.degrees(expanded.contains(activity.id) ? 180 : 0))
               }
             }
-            .frame(minHeight: 32)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
           }
           .buttonStyle(.plain)

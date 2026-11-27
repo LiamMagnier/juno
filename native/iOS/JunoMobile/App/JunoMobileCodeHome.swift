@@ -133,7 +133,7 @@ struct JunoMobileCodeScopeBar<Overflow: View>: View {
       .font(.subheadline.weight(selected ? .medium : .regular))
       .foregroundStyle(muted ? Color.junoTertiaryInk : (selected ? Color.primary : Color.junoSecondaryInk))
       .padding(.horizontal, JunoSpace.cozy)
-      .frame(height: 36)
+      .frame(minHeight: 36)
       .contentShape(Capsule())
       .modifier(JunoMobileScopeGlass(on: selected, namespace: glassSpace))
       .frame(minHeight: 44)
