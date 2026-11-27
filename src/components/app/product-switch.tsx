@@ -283,7 +283,9 @@ function Segment({
             // weight (signature.css §10).
             "pressable relative inline-flex h-7 items-center gap-1 rounded-full px-3 text-nav leading-none outline-offset-1",
             "motion-reduce:active:scale-100 coarse:h-10",
-            here ? "font-medium text-foreground" : "font-normal text-muted-foreground hover:text-foreground",
+            // The segment you are not in sits on the track, a fill: plain muted
+            // ink measured 4.36:1 there (under 4.5), so it takes `muted-on-fill`.
+            here ? "font-medium text-foreground" : "font-normal text-muted-on-fill hover:text-foreground",
           )}
         >
           {here && (

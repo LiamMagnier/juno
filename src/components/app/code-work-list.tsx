@@ -129,6 +129,11 @@ export interface WorkRowActions {
 const ROW_KEBAB =
   "absolute right-1 top-1.5 grid size-7 place-items-center rounded-control text-muted-foreground opacity-0 outline-none transition-opacity duration-fast ease-out-soft hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 aria-expanded:bg-foreground/5 aria-expanded:text-foreground aria-expanded:opacity-100 coarse:size-10 coarse:opacity-100";
 const TRAILING_YIELDS = "transition-opacity duration-fast ease-out-soft group-hover:opacity-0 group-has-[[aria-expanded=true]]:opacity-0 group-has-[button:focus-visible]:opacity-0";
+/** A row's quiet captions (age, project, branch) on the hover and selected
+ *  fills: plain muted ink measured 4.24:1 on the selected fill, under 4.5.
+ *  `muted-on-fill` is the role made for it (4.9:1 in both themes), the way
+ *  Library's rows step their captions (library-browser.tsx). */
+const ROW_CAPTION_ON_FILL = "group-hover:text-muted-on-fill group-data-[active]:text-muted-on-fill";
 
 function WorkRow({
   t,
@@ -178,7 +183,7 @@ function WorkRow({
         >
           {t.title}
         </span>
-        <span className={cn("flex shrink-0 items-center gap-1 text-caption tabular-nums text-muted-foreground", actions && TRAILING_YIELDS)}>
+        <span className={cn("flex shrink-0 items-center gap-1 text-caption tabular-nums text-muted-foreground", ROW_CAPTION_ON_FILL, actions && TRAILING_YIELDS)}>
           {t.state === "running" ? (
             // The galaxy in Code's coral: the one working mark, still the moment the run stops.
             <GalaxyMark phase="working" size={14} className="text-[hsl(var(--signal))]" />
@@ -195,7 +200,7 @@ function WorkRow({
           {t.pinned && <span className="sr-only">Pinned</span>}
         </span>
       </span>
-      <span className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
+      <span className={cn("flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground", ROW_CAPTION_ON_FILL)}>
         {/* `title-fade-hug`: this label is as wide as its text, so the
             always-on fallback mask would fade the end of a name that fits
             (sidebar-column.css). */}
