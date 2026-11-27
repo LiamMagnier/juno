@@ -217,8 +217,15 @@ test("the streaming state is calm: no glow, a stop button, the queue as one cont
 test("Code uses the shared entry row and keeps agent setup underneath the composer", () => {
   const f = fixture("model-picker");
   const html = renderWorkspace({ model: { ...f.model }, ui: {} });
-  const foot = html.slice(html.indexOf("data-composer-row"), html.indexOf("cv2-tools-row"));
-  const tools = html.slice(html.indexOf("cv2-tools-row"), html.indexOf('class="cv2-strip"'));
+  // Card, then the strip that hangs from its lower edge (repo, branch, where it
+  // runs: border-top 0, bottom corners only), then the tools row. With the
+  // tools between them the strip hung from the tools capsule instead, its top
+  // edge lost under it and its inset 25px off the capsule's.
+  const stripAt = html.indexOf('class="cv2-strip"');
+  const toolsAt = html.indexOf("cv2-tools-row");
+  assert.ok(stripAt > html.indexOf("data-composer-row") && stripAt < toolsAt, "the strip sits between the card and the tools row");
+  const foot = html.slice(html.indexOf("data-composer-row"), stripAt);
+  const tools = html.slice(toolsAt);
   assert.match(foot, /aria-label="Add files and more"/);
   assert.match(foot, /aria-label="Model: Opus 5\.5, High"/);
   assert.match(foot, /aria-label="Send"/);

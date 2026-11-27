@@ -1051,6 +1051,46 @@ export const Composer = React.forwardRef<
       <ComposerFileInputs fileInputRef={fileInput} onFiles={attachments.addFiles} />
       {showFoot && escArmed !== null && running && <div className="cv2-under" role="status">Press Esc again to stop</div>}
       </DictationSwap>
+      {/* The strip hangs from the composer card (border-top 0, bottom corners
+          only), so it renders directly under it, before the tools row. */}
+      {!landing && (
+      <div className="cv2-strip" ref={stripRef}>
+        <span className="s" title={model.thread.cwd ?? model.thread.repo}>
+          <Glyph name="folder" size={12} />
+          {model.thread.repo}
+        </span>
+        {model.thread.branch && (
+          <span className="s cv2-trunc" title={model.thread.branch}>
+            <Glyph name="branch" size={12} />
+            <span className="cv2-trunc">{model.thread.branch}</span>
+          </span>
+        )}
+        <span className="cv2-grow" />
+        <button type="button" className="s" aria-haspopup="menu" aria-expanded={popover === "device"} onClick={() => toggle("device")}>
+          <Glyph name="laptop" size={12} />
+          {deviceName}
+          {model.offline ? <span className="lbl-long">, offline</span> : null}
+          <Glyph name="chevron-down" size={12} />
+        </button>
+        <ComposerPopover open={popover === "device"} onClose={() => setPopover(null)} width={280} align="right" offset={0} label="Where it runs" anchorRef={stripRef} role="menu">
+          <MenuList
+            label="Where it runs"
+            onClose={() => setPopover(null)}
+            entries={[
+              {
+                id: "mac",
+                label: model.device?.name ?? "This Mac",
+                l2: model.device ? (model.device.online && !model.offline ? "Connected" : "Offline. Open Alevr on it to reconnect") : "Open Alevr for Mac to run here",
+                icon: <Glyph name="laptop" size={16} />,
+                checked: !!model.device,
+              },
+              { kind: "sep", id: "s" },
+              { id: "conn", label: "Connections", icon: <Glyph name="plug" size={16} />, onSelect: () => actions.openConnections?.() },
+            ]}
+          />
+        </ComposerPopover>
+      </div>
+      )}
       {showFoot && !call && (
         <div className="composer-tray composer-tray--dock">
           <div ref={toolsRef} className="composer-tray__row cv2-tools-row">
@@ -1123,46 +1163,7 @@ export const Composer = React.forwardRef<
           </button>
         </div>
       )}
-      {landing ? (
-        under
-      ) : (
-      <div className="cv2-strip" ref={stripRef}>
-        <span className="s" title={model.thread.cwd ?? model.thread.repo}>
-          <Glyph name="folder" size={12} />
-          {model.thread.repo}
-        </span>
-        {model.thread.branch && (
-          <span className="s cv2-trunc" title={model.thread.branch}>
-            <Glyph name="branch" size={12} />
-            <span className="cv2-trunc">{model.thread.branch}</span>
-          </span>
-        )}
-        <span className="cv2-grow" />
-        <button type="button" className="s" aria-haspopup="menu" aria-expanded={popover === "device"} onClick={() => toggle("device")}>
-          <Glyph name="laptop" size={12} />
-          {deviceName}
-          {model.offline ? <span className="lbl-long">, offline</span> : null}
-          <Glyph name="chevron-down" size={12} />
-        </button>
-        <ComposerPopover open={popover === "device"} onClose={() => setPopover(null)} width={280} align="right" offset={0} label="Where it runs" anchorRef={stripRef} role="menu">
-          <MenuList
-            label="Where it runs"
-            onClose={() => setPopover(null)}
-            entries={[
-              {
-                id: "mac",
-                label: model.device?.name ?? "This Mac",
-                l2: model.device ? (model.device.online && !model.offline ? "Connected" : "Offline. Open Alevr on it to reconnect") : "Open Alevr for Mac to run here",
-                icon: <Glyph name="laptop" size={16} />,
-                checked: !!model.device,
-              },
-              { kind: "sep", id: "s" },
-              { id: "conn", label: "Connections", icon: <Glyph name="plug" size={16} />, onSelect: () => actions.openConnections?.() },
-            ]}
-          />
-        </ComposerPopover>
-      </div>
-      )}
+      {landing && under}
       {!landing && model.offline && (
         <div className="cv2-under">
           <span>Reconnect to run on {model.device?.name ?? "your Mac"}. Messages send when it is back.</span>
