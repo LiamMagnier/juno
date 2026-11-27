@@ -747,9 +747,10 @@ public extension AnyTransition {
 
     /// A page or product taking the column: the web's `rise-in` — a cross-fade
     /// with a 6pt lift on the way in, a plain fade on the way out. Under Reduce
-    /// Motion the lift is the travel that goes; the caller drops it through
-    /// ``JunoMotion/reduced(_:when:tier:)`` on the animation, and the offset
-    /// collapses into the same short cross-fade.
+    /// Motion the lift is the travel that goes: use ``junoPage(reducesTravel:)``.
+    /// The insertion carries its own `riseIn` animation, which wins over the
+    /// caller's `.animation(JunoMotion.reduced(…))`, so a reduced curve at the
+    /// call site does not remove the lift.
     static var junoPage: AnyTransition {
         .asymmetric(
             insertion: .opacity
@@ -757,6 +758,19 @@ public extension AnyTransition {
                 .animation(JunoMotion.riseIn),
             removal: .opacity.animation(JunoMotion.exit)
         )
+    }
+
+    /// ``junoPage`` under either travel-reduction preference: the new page
+    /// fades in place, without the lift. Pass
+    /// ``JunoAccessibilityPreferences/reducesTravel`` (or Reduce Motion).
+    static func junoPage(reducesTravel: Bool) -> AnyTransition {
+        reducesTravel ? .junoInline : .junoPage
+    }
+
+    /// ``junoOverlay`` under either travel-reduction preference: the arrival
+    /// is announced by the fade alone, without the 0.98 scale.
+    static func junoOverlay(reducesTravel: Bool) -> AnyTransition {
+        reducesTravel ? .junoInline : .junoOverlay
     }
 }
 

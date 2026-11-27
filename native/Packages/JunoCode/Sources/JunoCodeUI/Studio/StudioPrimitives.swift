@@ -98,10 +98,14 @@ public struct StudioStatusGlyph: View {
 }
 
 /// A thin turning arc. `TimelineView` rather than a repeating animation, so it
-/// stops costing anything the moment it leaves the screen.
+/// stops costing anything the moment it leaves the screen. Under Reduce Motion
+/// the loop stops and the arc holds still (the row's label still says it is
+/// working); otherwise it redraws at most 60 times a second, not at the
+/// display's full ProMotion rate, for a 10pt mark.
 public struct StudioSpinner: View {
     var color: Color = Studio.Ink.secondary
     var lineWidth: CGFloat = 1.5
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(color: Color = Studio.Ink.secondary, lineWidth: CGFloat = 1.5) {
         self.color = color
@@ -109,7 +113,7 @@ public struct StudioSpinner: View {
     }
 
     public var body: some View {
-        TimelineView(.animation) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { context in
             let turns = context.date.timeIntervalSinceReferenceDate / 0.9
             Circle()
                 .trim(from: 0, to: 0.7)

@@ -642,7 +642,7 @@ struct DesktopManageServerSheet: View {
                     .disabled(editor.isRemoving)
                     .accessibilityIdentifier("connections.manage-server.remove-confirm")
                 }
-                .transition(.junoOverlay)
+                .transition(.junoOverlay(reducesTravel: reduceMotion))
             } else {
                 HStack(spacing: JunoSpace.cozy) {
                     DesktopOutlineButton(title: "Remove Server", icon: .trash, destructive: true) {
@@ -665,7 +665,7 @@ struct DesktopManageServerSheet: View {
                         .tint(nil)
                         .keyboardShortcut(connector.connected ? .defaultAction : .cancelAction)
                 }
-                .transition(.junoOverlay)
+                .transition(.junoOverlay(reducesTravel: reduceMotion))
             }
         }
         .padding(.horizontal, JunoSpace.section)

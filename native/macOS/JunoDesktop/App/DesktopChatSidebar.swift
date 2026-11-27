@@ -760,10 +760,13 @@ struct DesktopSidebarStatusMark: View {
 }
 
 /// A thin turning arc in sidebar ink, driven by the clock so it costs nothing
-/// off screen.
+/// off screen. Holds still under Reduce Motion (loops stop) and redraws at
+/// most 60 times a second.
 private struct DesktopSidebarSpinner: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        TimelineView(.animation) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { context in
             let turns = context.date.timeIntervalSinceReferenceDate / 0.9
             Circle()
                 .trim(from: 0, to: 0.7)

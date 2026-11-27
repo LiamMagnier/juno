@@ -65,7 +65,7 @@ struct DesktopDestinationView: View {
             // whether this Mac takes Work, and the way to the switch.
             .environment(\.nativeAgentThisMac, thisMacForAgents)
             .id(destination.pageIdentity)
-            .transition(.junoPage)
+            .transition(.junoPage(reducesTravel: reduceMotion))
             .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: destination)
             // The window's open agent — a sidebar row, a notification, an
             // agent's thread header — is `.agent(id)` pushed on the Agents

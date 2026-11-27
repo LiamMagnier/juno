@@ -170,7 +170,7 @@ public struct StudioScreenControlBanner: View {
                     start: { Task { await controller.startComputerUse() } },
                     dismiss: { controller.dismissComputerUsePermissionNotice() }
                 )
-                .transition(reduceMotion ? .junoInline : .junoOverlay)
+                .transition(.junoOverlay(reducesTravel: reduceMotion))
             }
         }
         .padding(.horizontal, JunoSpace.regular)

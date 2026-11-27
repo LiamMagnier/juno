@@ -438,7 +438,7 @@ struct DesktopCodeWorkspace: View {
         }
         .overlay {
             if showingPalette {
-                palette.transition(.junoOverlay)
+                palette.transition(.junoOverlay(reducesTravel: reduceMotion))
             }
         }
         .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: showingPalette)

@@ -91,7 +91,7 @@ public struct StudioThreadView: View {
                     .help("Jump to the latest")
                     .accessibilityLabel("Jump to the latest")
                     .padding(.bottom, JunoSpace.cozy)
-                    .transition(.junoOverlay)
+                    .transition(.junoOverlay(reducesTravel: reduceMotion))
                 }
             }
             .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: isPinnedToBottom)
