@@ -872,12 +872,20 @@ private struct JunoMobileConversationDetail: View {
     }
   }
 
-  /// The reader's words a reply answers: the nearest question above it — a
-  /// research turn's title.
-  private func question(answeredBy message: NativeChatMessage) -> String? {
-    guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return nil }
-    return messages[..<index].last { $0.role == .user }
-      .map { NativeMessageContent.plainText(of: $0.content) }
+  /// The reader's words each reply answers, keyed by the reply's id: the
+  /// nearest question above it (a research turn's title). One pass over the
+  /// transcript, rather than a search of it for every row.
+  private static func questionsByAnswer(_ messages: [NativeChatMessage]) -> [String: String] {
+    var questions: [String: String] = [:]
+    var lastQuestion: String?
+    for message in messages {
+      if message.role == .user {
+        lastQuestion = NativeMessageContent.plainText(of: message.content)
+      } else if message.role == .assistant, let lastQuestion {
+        questions[message.id] = lastQuestion
+      }
+    }
+    return questions
   }
 
   /// This conversation's background research runs that draw something: live
@@ -888,7 +896,7 @@ private struct JunoMobileConversationDetail: View {
 
   /// Where each run goes: under the question it answers; else after the
   /// last turn created at or before it; else at the foot.
-  private var researchPlacement: (byMessage: [String: [NativeResearchRun]], atFoot: [NativeResearchRun]) {
+  private func researchPlacement(in messages: [NativeChatMessage]) -> (byMessage: [String: [NativeResearchRun]], atFoot: [NativeResearchRun]) {
     var byMessage: [String: [NativeResearchRun]] = [:]
     var atFoot: [NativeResearchRun] = []
     for run in researchRuns {
@@ -942,6 +950,10 @@ private struct JunoMobileConversationDetail: View {
 
   /// The answer currently being produced, if any.
   private var streamingMessageID: String? {
+    Self.streamingID(in: messages)
+  }
+
+  private static func streamingID(in messages: [NativeChatMessage]) -> String? {
     guard let last = messages.last, last.role == .assistant, last.isPending else { return nil }
     return last.id
   }
@@ -949,8 +961,8 @@ private struct JunoMobileConversationDetail: View {
   /// This run's clock as the given row should see it: live while the row is the
   /// one streaming, the frozen measurement on the row it belongs to, and empty
   /// for every message whose run this session never watched.
-  private func clock(for message: NativeChatMessage) -> JunoMobileRunClock {
-    if message.id == streamingMessageID {
+  private func clock(for message: NativeChatMessage, streamingID: String?) -> JunoMobileRunClock {
+    if message.id == streamingID {
       return JunoMobileRunClock(startedAt: runStartedAt)
     }
     if message.id == settledRunID {
@@ -1013,11 +1025,23 @@ private struct JunoMobileConversationDetail: View {
       // stack kept a stale layout (content height frozen while the answer
       // grew) and drew no rows in the viewport. An eager stack lays every
       // row out and follows the stream correctly.
+      //
+      // Read once per render. `messages` rebuilds, filters and sorts the
+      // whole conversation on every access (NativeConversationStore
+      // .visibleMessages), and each row used to ask for it about six times
+      // (the last id, the streaming id, its question, the research runs
+      // under it), so every streamed chunk cost O(n² log n). Rows now read
+      // these by id; the Mac transcript did the same (ChatTranscript).
+      let messages = self.messages
+      let lastID = messages.last?.id
+      let streamingID = Self.streamingID(in: messages)
+      let questions = Self.questionsByAnswer(messages)
+      let placement = researchPlacement(in: messages)
       VStack(spacing: JunoSpace.section) {
         ForEach(messages) { message in
           JunoMobileMessageRow(
             message: message,
-            clock: clock(for: message),
+            clock: clock(for: message, streamingID: streamingID),
             openArtifact: openArtifact,
             readAloud: readAloud,
             voiceID: voiceID,
@@ -1028,13 +1052,13 @@ private struct JunoMobileConversationDetail: View {
             // `isLast` is computed over the displayed messages and
             // not over the filed ones.
             regenerate: voiceSession == nil
-              && message.id == messages.last?.id
+              && message.id == lastID
               && message.role == .assistant
               && !model.isGenerating
               ? { model.retryLastMessage(conversationID: conversation.id) }
               : nil,
             continueResponse: voiceSession == nil
-              && message.id == messages.last?.id
+              && message.id == lastID
               && message.role == .assistant
               && model.canContinueSelectedConversation
               ? { _ = model.continueLastResponse(conversationID: conversation.id) }
@@ -1065,9 +1089,9 @@ private struct JunoMobileConversationDetail: View {
             quote: { text in quote(text) },
             share: { text in sharingMessage = JunoMobileSharedText(text: text) },
             onCopy: { copyHaptic.fire() },
-            researchQuestion: message.role == .assistant ? question(answeredBy: message) : nil,
+            researchQuestion: message.role == .assistant ? questions[message.id] : nil,
             openReport: { report in reportRoute = JunoMobileReportRoute(report: report) },
-            stopResearch: message.id == streamingMessageID ? { model.stopGeneration() } : nil
+            stopResearch: message.id == streamingID ? { model.stopGeneration() } : nil
           )
           // `rise-in`, as the web gives every new turn. Scoped to the
           // stack's `.animation(_:value: messages.count)` below, which
@@ -1086,12 +1110,12 @@ private struct JunoMobileConversationDetail: View {
           // The conversation's research runs that are not answers in it
           // (started on the web, or handed off), under the turn they
           // follow.
-          ForEach(researchPlacement.byMessage[message.id] ?? []) { run in
+          ForEach(placement.byMessage[message.id] ?? []) { run in
             researchBlock(run)
           }
         }
 
-        ForEach(researchPlacement.atFoot) { run in
+        ForEach(placement.atFoot) { run in
           researchBlock(run)
         }
 
