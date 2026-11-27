@@ -1,0 +1,83 @@
+[
+  {
+    "mode": "1440-light",
+    "name": "chat-home",
+    "route": "/chat",
+    "url": "http://127.0.0.1:3000/chat",
+    "ms": 22771,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "code-home",
+    "route": "/code",
+    "url": "http://127.0.0.1:3000/code",
+    "ms": 33604,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "code-session",
+    "route": "/code/cmwzb6iku00rv7doitqfk4i7z",
+    "url": "http://127.0.0.1:3000/code/cmwzb6iku00rv7doitqfk4i7z",
+    "ms": 22147,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "chat-home",
+    "route": "/chat",
+    "url": "http://127.0.0.1:3000/chat",
+    "ms": 22754,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "code-home",
+    "route": "/code",
+    "url": "http://127.0.0.1:3000/code",
+    "ms": 6552,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "code-session",
+    "route": "/code/cmwzb6iku00rv7doitqfk4i7z",
+    "url": "http://127.0.0.1:3000/code/cmwzb6iku00rv7doitqfk4i7z",
+    "ms": 21682,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "chat-home",
+    "route": "/chat",
+    "url": "http://127.0.0.1:3000/chat",
+    "ms": 5597,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "code-home",
+    "route": "/code",
+    "url": "http://127.0.0.1:3000/code",
+    "ms": 6048,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "code-session",
+    "route": "/code/cmwzb6iku00rv7doitqfk4i7z",
+    "url": "http://127.0.0.1:3000/code/cmwzb6iku00rv7doitqfk4i7z",
+    "ms": 21541,
+    "overflow": false,
+    "errors": []
+  }
+]

@@ -1,0 +1,314 @@
+[
+  {
+    "mode": "1440-light",
+    "name": "chat-home",
+    "route": "/chat",
+    "url": "http://127.0.0.1:3000/chat",
+    "ms": 7729,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "chat-thread",
+    "route": "/chat/cmwzb6ifp00017doivd2o0qra",
+    "url": "http://127.0.0.1:3000/chat/cmwzb6ifp00017doivd2o0qra",
+    "ms": 24508,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "code-home",
+    "route": "/code",
+    "url": "http://127.0.0.1:3000/code",
+    "ms": 25935,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "code-session",
+    "route": "/code/cmwzb6iku00rv7doitqfk4i7z",
+    "url": "http://127.0.0.1:3000/code/cmwzb6iku00rv7doitqfk4i7z",
+    "ms": 29422,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "agents",
+    "route": "/agents",
+    "url": "http://127.0.0.1:3000/agents",
+    "ms": 14447,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "work",
+    "route": "/work",
+    "error": "Error: page.evaluate: Execution context was destroyed, most likely because of a navigation"
+  },
+  {
+    "mode": "1440-light",
+    "name": "tasks",
+    "route": "/tasks",
+    "url": "http://127.0.0.1:3000/automations",
+    "ms": 25926,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "projects",
+    "route": "/projects",
+    "url": "http://127.0.0.1:3000/projects",
+    "ms": 9894,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "library",
+    "route": "/library",
+    "url": "http://127.0.0.1:3000/library",
+    "ms": 26620,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "activity",
+    "route": "/activity",
+    "url": "http://127.0.0.1:3000/activity",
+    "ms": 14954,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "memory",
+    "route": "/memory",
+    "url": "http://127.0.0.1:3000/memory",
+    "ms": 21729,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-light",
+    "name": "settings",
+    "route": "/settings",
+    "url": "http://127.0.0.1:3000/settings",
+    "ms": 12602,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "chat-home",
+    "route": "/chat",
+    "error": "Error: page.evaluate: Execution context was destroyed, most likely because of a navigation"
+  },
+  {
+    "mode": "1440-dark",
+    "name": "chat-thread",
+    "route": "/chat/cmwzb6ifp00017doivd2o0qra",
+    "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:3000/chat/cmwzb6ifp00017doivd2o0qra\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:3000/chat/cmwzb6ifp00017doivd2o0qra\", waiting until \"domcontentloaded\"\u001b[22m\n"
+  },
+  {
+    "mode": "1440-dark",
+    "name": "code-home",
+    "route": "/code",
+    "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:3000/code\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:3000/code\", waiting until \"domcontentloaded\"\u001b[22m\n"
+  },
+  {
+    "mode": "1440-dark",
+    "name": "code-session",
+    "route": "/code/cmwzb6iku00rv7doitqfk4i7z",
+    "url": "http://127.0.0.1:3000/code/cmwzb6iku00rv7doitqfk4i7z",
+    "ms": 44957,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "agents",
+    "route": "/agents",
+    "url": "http://127.0.0.1:3000/agents",
+    "ms": 20542,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "work",
+    "route": "/work",
+    "url": "http://127.0.0.1:3000/chat",
+    "ms": 25066,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "tasks",
+    "route": "/tasks",
+    "url": "http://127.0.0.1:3000/automations",
+    "ms": 22288,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "projects",
+    "route": "/projects",
+    "url": "http://127.0.0.1:3000/projects",
+    "ms": 12068,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "library",
+    "route": "/library",
+    "url": "http://127.0.0.1:3000/library",
+    "ms": 17913,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "activity",
+    "route": "/activity",
+    "url": "http://127.0.0.1:3000/activity",
+    "ms": 13998,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "memory",
+    "route": "/memory",
+    "url": "http://127.0.0.1:3000/memory",
+    "ms": 19882,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "1440-dark",
+    "name": "settings",
+    "route": "/settings",
+    "url": "http://127.0.0.1:3000/settings",
+    "ms": 12935,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "chat-home",
+    "route": "/chat",
+    "url": "http://127.0.0.1:3000/chat",
+    "ms": 16446,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "chat-thread",
+    "route": "/chat/cmwzb6ifp00017doivd2o0qra",
+    "url": "http://127.0.0.1:3000/chat/cmwzb6ifp00017doivd2o0qra",
+    "ms": 13796,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "code-home",
+    "route": "/code",
+    "url": "http://127.0.0.1:3000/code",
+    "ms": 26958,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "code-session",
+    "route": "/code/cmwzb6iku00rv7doitqfk4i7z",
+    "url": "http://127.0.0.1:3000/code/cmwzb6iku00rv7doitqfk4i7z",
+    "ms": 24499,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "agents",
+    "route": "/agents",
+    "url": "http://127.0.0.1:3000/agents",
+    "ms": 12391,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "work",
+    "route": "/work",
+    "url": "http://127.0.0.1:3000/chat",
+    "ms": 13358,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "tasks",
+    "route": "/tasks",
+    "url": "chrome-error://chromewebdata/",
+    "ms": 12704,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "projects",
+    "route": "/projects",
+    "url": "http://127.0.0.1:3000/projects",
+    "ms": 38266,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "library",
+    "route": "/library",
+    "url": "http://127.0.0.1:3000/library",
+    "ms": 19039,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "activity",
+    "route": "/activity",
+    "url": "http://127.0.0.1:3000/activity",
+    "ms": 9266,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "memory",
+    "route": "/memory",
+    "url": "http://127.0.0.1:3000/memory",
+    "ms": 14365,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "mode": "390-light",
+    "name": "settings",
+    "route": "/settings",
+    "url": "http://127.0.0.1:3000/settings",
+    "ms": 34999,
+    "overflow": false,
+    "errors": []
+  }
+]
