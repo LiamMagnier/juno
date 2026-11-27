@@ -460,7 +460,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                         .offset(x: 5, y: -5)
                         .accessibilityLabel("Remove \(attachment.name)").frame(minWidth: 44, minHeight: 44).contentShape(.rect)
                     }
-                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    .transition(.scale(scale: JunoMotion.scaleFrom(0.9, reduceMotion: reduceMotion)).combined(with: .opacity))
                 }
             }
             .padding(.horizontal, JunoSpace.regular)

@@ -504,7 +504,7 @@ struct JunoMobileCodeView: View {
   private var bottomComposer: some View {
     if cloudComposerOpen {
       composer
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .transition(.opacity.combined(with: reduceMotion ? .identity : .move(edge: .bottom)))
     } else if unpairedScopeDevice == nil {
       JunoMobileCodeDock(
         target: target,
@@ -1814,7 +1814,7 @@ private struct JunoMobileCodeSessionView: View {
         pendingCard
           .padding(JunoSpace.comfy)
           .junoMobileRaised(cornerRadius: 20)
-          .transition(.opacity.combined(with: .move(edge: .bottom)))
+          .transition(.opacity.combined(with: reduceMotion ? .identity : .move(edge: .bottom)))
       }
       followUpComposer
     }
@@ -2007,7 +2007,7 @@ private struct JunoMobileCodeSessionView: View {
         .contentShape(.rect)
       }
     }
-    .transition(.move(edge: .bottom).combined(with: .opacity))
+    .transition((reduceMotion ? AnyTransition.identity : .move(edge: .bottom)).combined(with: .opacity))
   }
 }
 

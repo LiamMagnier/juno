@@ -1099,7 +1099,7 @@ private struct JunoMobileConversationDetail: View {
           // does not run an insertion transition for rows that were
           // already there on the first layout, so a loaded history
           // arrives settled rather than cascading up the screen.
-          .transition(.opacity.combined(with: .offset(y: JunoSpace.snug)))
+          .transition(.opacity.combined(with: .offset(y: JunoMotion.shift(JunoSpace.snug, reduceMotion: reduceMotion))))
           .environment(\.junoFindHighlight, find.highlight(for: message.id))
           .junoPinnedTurnFrame(isPinned: message.id == pin.pinnedID) { frame in
             pinnedFrame = frame
@@ -1471,7 +1471,7 @@ private struct JunoMobileConversationDetail: View {
           .buttonStyle(.plain)
           .padding(.trailing, JunoSpace.regular)
           .padding(.bottom, JunoSpace.snug)
-          .transition(.scale.combined(with: .opacity))
+          .transition(.scale(scale: JunoMotion.scaleFrom(0, reduceMotion: reduceMotion)).combined(with: .opacity))
           .accessibilityLabel("Scroll to latest")
           .accessibilityIdentifier("juno.mobile.chat-scroll-bottom")
         }

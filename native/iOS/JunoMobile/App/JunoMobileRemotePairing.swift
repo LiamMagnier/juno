@@ -21,6 +21,7 @@ struct JunoMobileRemotePairingSheet: View {
   var cameraOverride: AnyView?
   var now: Date?
   var cameraAccessOverride: JunoMobileCameraAccess?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     Group {
@@ -70,7 +71,7 @@ struct JunoMobileRemotePairingSheet: View {
         )
       }
     }
-    .animation(JunoMotion.emphasized, value: model.phase)
+    .animation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion), value: model.phase)
     .task { await model.start() }
   }
 
@@ -183,7 +184,7 @@ struct JunoMobilePairingScannerScreen: View {
                 .padding(.horizontal, JunoSpace.regular)
                 .padding(.vertical, JunoSpace.snug)
                 .glassEffect(.regular, in: .rect(cornerRadius: JunoSpace.regular))
-                .transition(.opacity.combined(with: .offset(y: JunoSpace.snug)))
+                .transition(.opacity.combined(with: .offset(y: JunoMotion.shift(JunoSpace.snug, reduceMotion: reduceMotion))))
                 .accessibilityAddTraits(.updatesFrequently)
             }
             JunoMobilePairingPasteButton(scanned: scanned, overCamera: true)
@@ -623,6 +624,7 @@ private struct JunoMobilePairingBadge: View {
 struct JunoMobilePairingBridge: View {
   enum Stage { case pending, paired, apart }
   let state: Stage
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     JunoGlass(spacing: 0) {
@@ -640,7 +642,7 @@ struct JunoMobilePairingBridge: View {
                 .frame(width: 24, height: 24)
                 .background(Color.junoForeground, in: Circle())
                 .overlay(Circle().stroke(Color.junoCanvas, lineWidth: 2))
-                .transition(.scale.combined(with: .opacity))
+                .transition(.scale(scale: JunoMotion.scaleFrom(0, reduceMotion: reduceMotion)).combined(with: .opacity))
             }
           }
         link

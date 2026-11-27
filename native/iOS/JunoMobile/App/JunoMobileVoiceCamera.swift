@@ -250,6 +250,7 @@ final class JunoMobileVoiceScreenShare {
 struct JunoMobileVoiceSelfView: View {
     let camera: JunoMobileVoiceCamera
     let stop: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let width: CGFloat = 92
     private static let height: CGFloat = 122
@@ -258,7 +259,7 @@ struct JunoMobileVoiceSelfView: View {
         if let session = camera.session, camera.isLive {
             preview(session)
                 .frame(maxWidth: .infinity, alignment: .trailing)
-                .transition(.scale(scale: 0.9, anchor: .bottomTrailing).combined(with: .opacity))
+                .transition(.scale(scale: JunoMotion.scaleFrom(0.9, reduceMotion: reduceMotion), anchor: .bottomTrailing).combined(with: .opacity))
         }
     }
 

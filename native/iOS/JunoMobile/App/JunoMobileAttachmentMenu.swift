@@ -272,7 +272,7 @@ struct JunoMobileComposerActions: View {
                 if checked == true {
                     JunoIconView(.check, size: 14)
                         .foregroundStyle(Color.junoAccent)
-                        .transition(.scale.combined(with: .opacity))
+                        .transition(.scale(scale: JunoMotion.scaleFrom(0, reduceMotion: reduceMotion)).combined(with: .opacity))
                 }
             }
             .foregroundStyle(Color.junoForeground)

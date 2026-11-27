@@ -1823,7 +1823,7 @@ private struct DesktopCodeRemoteCanvas: View {
                     // Resolving an approval is one of the two moments the
                     // product rewards (the other is a run finishing): the
                     // card leaves with the one bouncy curve in the ladder.
-                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+                    .transition(.scale(scale: JunoMotion.scaleFrom(0.96, reduceMotion: reduceMotion)).combined(with: .opacity))
                 }
                 composer
             }

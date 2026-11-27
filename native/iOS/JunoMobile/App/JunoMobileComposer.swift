@@ -451,7 +451,7 @@ struct JunoMobileComposer: View {
               )
               .padding(.horizontal, JunoSpace.cozy)
               .padding(.top, JunoSpace.cozy)
-              .transition(.opacity.combined(with: .move(edge: .bottom)))
+              .transition(.opacity.combined(with: reduceMotion ? .identity : .move(edge: .bottom)))
             }
 
             if !showsCollapsedDraft {
@@ -463,7 +463,7 @@ struct JunoMobileComposer: View {
               )
               .padding(.horizontal, JunoSpace.snug)
               .padding(.top, JunoSpace.snug)
-              .transition(.opacity.combined(with: .move(edge: .bottom)))
+              .transition(.opacity.combined(with: reduceMotion ? .identity : .move(edge: .bottom)))
             }
 
             if voiceSession == nil, !armedTokens.isEmpty {
@@ -1540,7 +1540,7 @@ struct JunoMobileComposer: View {
   private var composerActionButton: some View {
     if !generatingHere, showsEndAction, let voiceSession {
       JunoMobileVoiceCallEnd(session: voiceSession) { endHaptic.fire() }
-        .transition(.scale.combined(with: .opacity))
+        .transition(.scale(scale: JunoMotion.scaleFrom(0, reduceMotion: reduceMotion)).combined(with: .opacity))
     } else {
       JunoMobileComposerPrimaryButton(face: primaryFace) {
         switch primaryFace {
