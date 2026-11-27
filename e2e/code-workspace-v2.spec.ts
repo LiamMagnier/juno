@@ -85,9 +85,11 @@ test("Code opens Agents directly and keeps the composer usable at narrow widths"
   }
   await page.screenshot({ path: testInfo.outputPath("code-landing.png"), animations: "disabled" });
   if (isMobile) await page.getByRole("button", { name: "Open menu", exact: true }).click();
+  // One run of destinations, then "Sessions": the Workspace and Tools group
+  // labels went in 5b7e3d3 ("Restore the Code sidebar's plain rhythm").
   const nav = page.getByRole("navigation", { name: "Primary" });
-  await expect(nav.getByText("Workspace", { exact: true })).toBeVisible();
-  await expect(nav.getByText("Tools", { exact: true })).toBeVisible();
+  await expect(nav).toBeVisible();
+  await expect(nav.getByText(/^(Workspace|Tools)$/)).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Sessions", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Pull requests", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("code-sidebar.png"), animations: "disabled" });

@@ -169,13 +169,21 @@ interface needs; the owning workstream decides the shape.
 | `tests/code-v2-web-workspace.test.ts` | 43/43 pass (one assertion updated for D8) |
 | `tests/wave2-p1-contrast.test.ts` | 13/13 pass |
 | ESLint on changed web files | clean |
-| `tsc --noEmit` | no errors in `src/` or changed files; 64 errors, all from sub-packages whose own dependencies are not installed here (`relay`, `runner/env-server`, `runner/agent-core/dist`) |
+| `tsc --noEmit` (before sub-package installs) | no errors in `src/` or changed files; 64 errors, all from sub-packages whose own dependencies were not installed (`relay`, `runner/env-server`, `runner/agent-core/dist`) |
+| `next build` (production, includes the full type check), after `npm ci` in `relay`, `runner/env-server`, `runner/agent-core` and its build, as `deploy.yml` does | passed |
 | `npm run native:design:check` | all 9 gates hold; targets 150 → 145 (ratchet locked) |
 | `npm run native:sync:check` | 16/16 gates hold |
-| Production e2e (`run-prod-e2e.sh`, Chromium): Code workspace v2, keyboard focus, composer submission | see the note under this table |
+| Production e2e (`run-prod-e2e.sh`, Chromium): Code workspace v2, keyboard focus, composer submission | 20/21 first run; the one failure was a stale assertion (below). After fixing it: Code workspace v2 6/6. |
 | Swift build, Swift tests, simulator, VoiceOver, Dynamic Type | **Not run: no Swift toolchain, Xcode or Apple simulator in this Linux container.** Every native change is static and must pass `native.yml` and a device check before release. |
 
-E2E: _filled in when the run completes._
+E2E: the failure was `code-workspace-v2.spec.ts` expecting "Workspace" and
+"Tools" group labels in the Code sidebar, which `5b7e3d3` (22 Nov) removed on
+purpose. Because it stopped there, the rest of that test (the Agents panel and
+the composer row at narrow widths on a session page) had not been running. The
+assertion now checks the labels are gone, and the whole test passes. The run
+used Chromium 158 (revision 1243, pre-installed) in place of the pinned 1234,
+linked under `~/.cache/ms-playwright`; Firefox, WebKit and the 390/1440 wave-2
+projects were not run.
 
 ## 10. Screenshots
 
