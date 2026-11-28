@@ -224,8 +224,11 @@ test("client: on a direct socket the key rides as the env server's request id", 
 });
 
 test("the swarm map's layout: the same places as the Mac and the iPhone (JunoSwarmMapTests.swift)", () => {
-  const node = (id: string, depth: number, children: ReturnType<typeof node>[] = []): Parameters<typeof stageLayout>[0][number] =>
-    ({ id, depth, children, label: id, state: "thinking", step: "" }) as Parameters<typeof stageLayout>[0][number];
+  // Named first: `ReturnType<typeof node>` inside node's own signature is a
+  // circular reference (TS7022), which failed the deploy typecheck.
+  type StageNode = Parameters<typeof stageLayout>[0][number];
+  const node = (id: string, depth: number, children: StageNode[] = []): StageNode =>
+    ({ id, depth, children, label: id, state: "thinking", step: "" }) as StageNode;
   const c = node("c", 2);
   const a = node("a", 1, [c]);
   const { spots, more } = stageLayout([a, c, node("b", 1), node("d", 1), node("e", 1)]);

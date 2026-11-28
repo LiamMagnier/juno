@@ -169,7 +169,8 @@ interface needs; the owning workstream decides the shape.
 | `tests/code-v2-web-workspace.test.ts` | 43/43 pass (one assertion updated for D8) |
 | `tests/wave2-p1-contrast.test.ts` | 13/13 pass |
 | ESLint on changed web files | clean |
-| `tsc --noEmit` (before sub-package installs) | no errors in `src/` or changed files; 64 errors, all from sub-packages whose own dependencies were not installed (`relay`, `runner/env-server`, `runner/agent-core/dist`) |
+| `tsc --noEmit` (before sub-package installs) | no errors in `src/` or changed files; 64 errors: 63 from sub-packages whose own dependencies were not installed, and one real error, TS7022 in `tests/code-v2-agents-tree.test.ts` (from `f34fe50`), which this pass first misread as environmental. It also failed main's deploy on 24 Nov. Fixed; `tsc --noEmit` now exits 0. |
+| CI on this branch (manual dispatch) | `native.yml`: success (the Swift changes build and their tests pass on macOS). `deploy.yml` gates: all passed except the typecheck above, fixed after. |
 | `next build` (production, includes the full type check), after `npm ci` in `relay`, `runner/env-server`, `runner/agent-core` and its build, as `deploy.yml` does | passed |
 | `npm run native:design:check` | all 9 gates hold; targets 150 → 145 (ratchet locked) |
 | `npm run native:sync:check` | 16/16 gates hold |
